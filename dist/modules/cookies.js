@@ -21,6 +21,10 @@
 
   window.digi2 = window.digi2 || {};
 
+  function _log(action, data) {
+    if (window.digi2.log) window.digi2.log('cookies', action, data);
+  }
+
   window.digi2.cookies = {
 
     /**
@@ -30,6 +34,7 @@
      * @param {object} options
      */
     set: function (name, value, options) {
+      _log('set → ' + name, { value: value, options: options });
       options = options || {};
       var parts = [
         encodeURIComponent(name) + '=' + encodeURIComponent(value),
@@ -65,7 +70,9 @@
       var match = document.cookie.match(
         new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)')
       );
-      return match ? decodeURIComponent(match[1]) : null;
+      var val = match ? decodeURIComponent(match[1]) : null;
+      _log('get → ' + name, val);
+      return val;
     },
 
     /**
@@ -102,6 +109,7 @@
      * @param {object} options  — { path, domain }
      */
     remove: function (name, options) {
+      _log('remove → ' + name);
       options = options || {};
       this.set(name, '', {
         days: -1,

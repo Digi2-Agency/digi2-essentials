@@ -130,10 +130,20 @@
  *   digi2.modules.require('cookies')                 Load on the fly, returns Promise
  *   digi2.modules.requireAll(['cookies', 'forms'])   Load multiple, returns Promise
  *
+ * ─── Debug Mode ──────────────────────────────────────────────────────────────
+ *
+ *   Add d2-debug-mode to the loader script tag to log all actions:
+ *
+ *   <script src="...digi2-loader.min.js" d2-popups d2-debug-mode></script>
+ *
+ *   digi2.log('module', 'action', data)   — logs only in debug mode
+ *   digi2.debug                           — true/false
+ *
  * ─── Data Attributes (HTML) ─────────────────────────────────────────────────
  *
  *   data-d2-show-popup="name"           Click to open a popup by name
  *   data-d2-form="name"                 Wrapper for form enhancement
+ *   d2-debug-mode                       Enable debug logging (on loader script)
  *
  * ─── How It Works ───────────────────────────────────────────────────────────
  *
@@ -147,6 +157,28 @@
   // ---- Namespace -----------------------------------------------------------
   window.digi2 = window.digi2 || {};
   window.digi2._loaded = window.digi2._loaded || {};
+
+  // ---- Debug mode ----------------------------------------------------------
+  // Detected from d2-debug-mode attribute on the loader script tag.
+  // digi2.log(module, action, data) — only outputs when debug is on.
+  var _debugDetected = false;
+  var _loaderTag = document.currentScript;
+  if (_loaderTag) {
+    _debugDetected = _loaderTag.hasAttribute('d2-debug-mode');
+  }
+  window.digi2.debug = _debugDetected;
+
+  var _logStyles = 'color:#7c3aed;font-weight:bold';
+
+  window.digi2.log = function (module, action, data) {
+    if (!window.digi2.debug) return;
+    var prefix = '%c[digi2.' + module + ']';
+    if (data !== undefined) {
+      console.log(prefix + ' ' + action, _logStyles, data);
+    } else {
+      console.log(prefix + ' ' + action, _logStyles);
+    }
+  };
 
   // ---- Event system --------------------------------------------------------
   var listeners = {};
@@ -172,6 +204,7 @@
   };
 
   window.digi2.emit = function (event, data) {
+    window.digi2.log('events', 'emit → ' + event, data);
     if (!listeners[event]) return;
     listeners[event].forEach(function (fn) { fn(data); });
   };
@@ -197,6 +230,8 @@
   // Auto-detect minified mode: if the loader itself is loaded as .min.js, load .min.js modules
   var useMin = /\.min\.js(\?|$)/.test(src);
 
+  window.digi2.log('loader', 'initialized', { baseUrl: baseUrl, minified: useMin, debug: window.digi2.debug });
+
   // ---- Internal: load a single module by name (returns a Promise) ----------
   var _loadPromises = {};
 
@@ -214,10 +249,12 @@
     _loadPromises[moduleName] = new Promise(function (resolve, reject) {
       var ext = useMin ? '.min.js' : '.js';
       var url = baseUrl + 'modules/' + moduleName + ext;
+      window.digi2.log('loader', 'loading module → ' + moduleName, url);
       var script = document.createElement('script');
       script.src = url;
       script.onload = function () {
         window.digi2._loaded[moduleName] = true;
+        window.digi2.log('loader', 'module loaded ✓ ' + moduleName);
         window.digi2.emit('module:loaded', moduleName);
         resolve(moduleName);
       };

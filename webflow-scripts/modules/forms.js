@@ -2,8 +2,10 @@
  * digi2 — Forms Module
  * Loaded automatically by digi2-loader.js when d2-forms is present.
  *
- * Wraps Webflow forms with UTM tracking, IP detection, GA client ID capture,
- * and page metadata — all via auto-injected hidden inputs.
+ * Features:
+ *   - UTM tracking, click IDs, GA client ID, IP, page meta (auto-injected hidden inputs)
+ *   - Validation engine with built-in rules + custom patterns
+ *   - On-blur + on-submit validation with CSS class + data-attribute error feedback
  *
  * Setup in Webflow:
  *   Wrap your form in a div with: data-d2-form="formName"
@@ -14,30 +16,44 @@
  *   digi2.forms.get('contact')
  *   digi2.forms.destroy('contact')
  *   digi2.forms.list()
+ *   digi2.forms.validate(value, rules)            — standalone validation utility
+ *   digi2.forms.addRule('ruleName', fn)            — register a custom rule globally
  *
- * Options:
- *   formSelector:       null           — override: target form by CSS selector instead of data-d2-form wrapper
- *   utmTracking:        true           — capture & inject UTM params (utm_source, utm_medium, utm_campaign, utm_content, utm_term)
- *   clickIdTracking:    true           — capture gclid, fbclid, msclkid
- *   gaClientId:         true           — capture GA4 client ID
- *   ipTracking:         false          — fetch & inject visitor IP (uses free API)
- *   pageMeta:           true           — inject page_url, page_title, page_referrer
- *   cookieDurationDays: 365            — how long UTM/click ID cookies persist
- *   customFields:       {}             — { fieldName: 'value' } — inject arbitrary hidden fields
- *   ipApiUrl:           'https://api.ipify.org?format=json' — IP lookup endpoint
- *   onReady:            null           — callback after all fields are injected
+ * Validation in create():
+ *   digi2.forms.create('contact', {
+ *     validation: {
+ *       name:  { required: true, minLength: 2, letters: true, spaces: true },
+ *       email: { required: true, email: true },
+ *       phone: { required: true, phone: true },
+ *     },
+ *     errorClass:     'd2-error',
+ *     errorAttribute: 'data-d2-error',
+ *     validateOn:     'blur',          — 'blur' | 'submit' | 'both' (default: 'both')
+ *     onValidationError: null,         — callback(fieldName, errors, inputEl)
+ *     onSubmit: null,                  — callback(data, formEl) — fires only if valid
+ *   })
  *
- * Auto-injected hidden input names (matching standard conventions):
- *   utm_campaign_hidden, utm_source_hidden, utm_medium_hidden, utm_content_hidden, utm_term_hidden
- *   gclid, fbclid, msclkid
- *   gaclientid
- *   page_url, page_title, page_referrer
- *   ip_address
+ * Standalone:
+ *   digi2.forms.validate('hello', { required: true, minLength: 3 })
+ *   → { valid: true, errors: [] }
+ *
+ *   digi2.forms.validate('', { required: true })
+ *   → { valid: false, errors: ['required'] }
+ *
+ * Auto-injected hidden input names:
+ *   utm_campaign_hidden, utm_source_hidden, utm_medium_hidden,
+ *   utm_content_hidden, utm_term_hidden,
+ *   gclid, fbclid, msclkid, gaclientid,
+ *   page_url, page_title, page_referrer, ip_address
  */
 (function () {
   'use strict';
 
   window.digi2 = window.digi2 || {};
+
+  function _log(action, data) {
+    if (window.digi2.log) window.digi2.log('forms', action, data);
+  }
 
   // ---------------------------------------------------------------------------
   // Cookie helpers — use digi2.cookies if available, fallback to internal
@@ -70,6 +86,135 @@
   var CLICK_IDS = ['gclid', 'fbclid', 'msclkid'];
 
   // ---------------------------------------------------------------------------
+  // Validation Engine
+  // ---------------------------------------------------------------------------
+  var BUILT_IN_RULES = {
+    required: function (val) {
+      return val !== null && val !== undefined && String(val).trim().length > 0;
+    },
+    email: function (val) {
+      if (!val) return true; // not required by itself — pair with required
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(val));
+    },
+    phone: function (val) {
+      if (!val) return true;
+      return /^[\d\s\-\+\(\)\.]{6,20}$/.test(String(val));
+    },
+    url: function (val) {
+      if (!val) return true;
+      return /^https?:\/\/.+\..+/.test(String(val));
+    },
+    number: function (val) {
+      if (!val) return true;
+      return /^-?\d+(\.\d+)?$/.test(String(val));
+    },
+    integer: function (val) {
+      if (!val) return true;
+      return /^-?\d+$/.test(String(val));
+    },
+    letters: function (val) {
+      if (!val) return true;
+      // only letters (Unicode-aware via no digits/specials check)
+      return /^[a-zA-ZÀ-ÿĀ-žА-яёЁ\s\-']+$/.test(String(val));
+    },
+    numbers: function (val) {
+      if (!val) return true;
+      return /^\d+$/.test(String(val));
+    },
+    alphanumeric: function (val) {
+      if (!val) return true;
+      return /^[a-zA-Z0-9]+$/.test(String(val));
+    },
+    noSpaces: function (val) {
+      if (!val) return true;
+      return !/\s/.test(String(val));
+    },
+    noSpecialChars: function (val) {
+      if (!val) return true;
+      return /^[a-zA-Z0-9\s]+$/.test(String(val));
+    },
+  };
+
+  // Rules that take a parameter value (not just boolean)
+  var PARAM_RULES = {
+    minLength: function (val, min) {
+      if (!val) return true;
+      return String(val).length >= min;
+    },
+    maxLength: function (val, max) {
+      if (!val) return true;
+      return String(val).length <= max;
+    },
+    min: function (val, min) {
+      if (!val) return true;
+      return Number(val) >= min;
+    },
+    max: function (val, max) {
+      if (!val) return true;
+      return Number(val) <= max;
+    },
+    pattern: function (val, regex) {
+      if (!val) return true;
+      var re = regex instanceof RegExp ? regex : new RegExp(regex);
+      return re.test(String(val));
+    },
+    equals: function (val, other) {
+      return String(val) === String(other);
+    },
+    matchField: function (val, fieldName, _form) {
+      // special — resolved at validation time with form context
+      if (!_form) return true;
+      var otherInput = _form.querySelector('[name="' + fieldName + '"]');
+      return otherInput ? String(val) === String(otherInput.value) : true;
+    },
+  };
+
+  // Custom rules registered via digi2.forms.addRule()
+  var customRules = {};
+
+  /**
+   * Validate a single value against a rules object.
+   * @param {*}      value
+   * @param {object} rules  e.g. { required: true, minLength: 3, email: true }
+   * @param {Element} [formEl]  optional form element (for matchField)
+   * @returns {{ valid: boolean, errors: string[] }}
+   */
+  function validateValue(value, rules, formEl) {
+    var errors = [];
+    var val = value !== null && value !== undefined ? String(value) : '';
+
+    for (var ruleName in rules) {
+      if (!rules.hasOwnProperty(ruleName)) continue;
+      var ruleVal = rules[ruleName];
+
+      // Skip disabled rules
+      if (ruleVal === false) continue;
+
+      var passed = true;
+
+      if (BUILT_IN_RULES[ruleName]) {
+        // Boolean rules: { required: true, email: true }
+        passed = BUILT_IN_RULES[ruleName](val);
+      } else if (PARAM_RULES[ruleName]) {
+        // Parameterized rules: { minLength: 3 }
+        passed = PARAM_RULES[ruleName](val, ruleVal, formEl);
+      } else if (customRules[ruleName]) {
+        // Custom rules
+        passed = customRules[ruleName](val, ruleVal, formEl);
+      } else {
+        console.warn('[digi2.forms] Unknown validation rule: ' + ruleName);
+        continue;
+      }
+
+      if (!passed) {
+        errors.push(ruleName);
+      }
+    }
+
+    return { valid: errors.length === 0, errors: errors };
+  }
+
+  // ---------------------------------------------------------------------------
   // FormManager (internal)
   // ---------------------------------------------------------------------------
   class FormManager {
@@ -86,12 +231,20 @@
         cookieDurationDays: 365,
         customFields: {},
         ipApiUrl: 'https://api.ipify.org?format=json',
+        validation: null,             // { fieldName: { rule: value, ... }, ... }
+        errorClass: 'd2-error',       // CSS class added to invalid fields
+        errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
+        validateOn: 'both',           // 'blur' | 'submit' | 'both'
+        onValidationError: null,      // callback(fieldName, errors, inputEl)
+        onSubmit: null,               // callback(data, formEl) — only fires if valid
         onReady: null,
         ...options,
       };
 
       this.formElement = null;
       this._injectedInputs = [];
+      this._boundBlurHandler = null;
+      this._boundSubmitHandler = null;
 
       this._init();
     }
@@ -106,13 +259,21 @@
         return;
       }
 
+      _log('init → ' + this.name, this.options);
+
       // 1. Capture URL params into cookies
       this._captureUrlParams();
 
       // 2. Inject hidden fields
       this._injectTrackingFields();
 
-      // 3. IP tracking (async)
+      // 3. Setup validation
+      if (this.options.validation) {
+        _log('validation setup → ' + this.name, this.options.validation);
+        this._setupValidation();
+      }
+
+      // 4. IP tracking (async)
       if (this.options.ipTracking) {
         this._fetchAndInjectIp();
       } else {
@@ -125,27 +286,138 @@
         if (input.parentNode) input.parentNode.removeChild(input);
       });
       this._injectedInputs = [];
+
+      if (this.formElement && this._boundBlurHandler) {
+        this.formElement.removeEventListener('focusout', this._boundBlurHandler);
+      }
+      if (this.formElement && this._boundSubmitHandler) {
+        this.formElement.removeEventListener('submit', this._boundSubmitHandler);
+      }
+
       this.formElement = null;
     }
 
     // ---- Find form ----------------------------------------------------------
 
     _findForm() {
-      // Option 1: explicit CSS selector
       if (this.options.formSelector) {
         return document.querySelector(this.options.formSelector);
       }
 
-      // Option 2: data-d2-form="name" wrapper
       var wrapper = document.querySelector('[data-d2-form="' + this.name + '"]');
       if (wrapper) {
-        // If the wrapper IS a form, use it directly
         if (wrapper.tagName === 'FORM') return wrapper;
-        // Otherwise find the form inside
         return wrapper.querySelector('form');
       }
 
       return null;
+    }
+
+    // ---- Validation ---------------------------------------------------------
+
+    _setupValidation() {
+      var self = this;
+      var validateOn = this.options.validateOn;
+
+      // Blur validation (delegated via focusout)
+      if (validateOn === 'blur' || validateOn === 'both') {
+        this._boundBlurHandler = function (e) {
+          var input = e.target;
+          if (!input || !input.name) return;
+          var fieldName = input.name;
+          var rules = self.options.validation[fieldName];
+          if (rules) {
+            self._validateField(fieldName, input);
+          }
+        };
+        this.formElement.addEventListener('focusout', this._boundBlurHandler);
+      }
+
+      // Submit validation
+      if (validateOn === 'submit' || validateOn === 'both') {
+        this._boundSubmitHandler = function (e) {
+          var allValid = self.validateAll();
+
+          if (!allValid) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }
+
+          // If onSubmit callback exists, prevent default and call it
+          if (typeof self.options.onSubmit === 'function') {
+            e.preventDefault();
+            self.options.onSubmit(self.getData(), self.formElement);
+          }
+        };
+        this.formElement.addEventListener('submit', this._boundSubmitHandler);
+      }
+    }
+
+    /**
+     * Validate a single field by name.
+     * @param {string} fieldName
+     * @param {Element} [inputEl] — auto-found if not provided
+     * @returns {{ valid: boolean, errors: string[] }}
+     */
+    _validateField(fieldName, inputEl) {
+      if (!inputEl) {
+        inputEl = this.formElement.querySelector('[name="' + fieldName + '"]');
+      }
+      if (!inputEl) return { valid: true, errors: [] };
+
+      var rules = this.options.validation[fieldName];
+      if (!rules) return { valid: true, errors: [] };
+
+      var result = validateValue(inputEl.value, rules, this.formElement);
+
+      _log('validate field → ' + fieldName, { value: inputEl.value, valid: result.valid, errors: result.errors });
+
+      // Apply/remove error indicators
+      if (result.valid) {
+        inputEl.classList.remove(this.options.errorClass);
+        inputEl.removeAttribute(this.options.errorAttribute);
+      } else {
+        inputEl.classList.add(this.options.errorClass);
+        inputEl.setAttribute(this.options.errorAttribute, result.errors.join(','));
+
+        if (typeof this.options.onValidationError === 'function') {
+          this.options.onValidationError(fieldName, result.errors, inputEl);
+        }
+      }
+
+      return result;
+    }
+
+    /**
+     * Validate all fields defined in the validation rules.
+     * @returns {boolean} true if all valid
+     */
+    validateAll() {
+      var allValid = true;
+      var validation = this.options.validation;
+
+      for (var fieldName in validation) {
+        if (!validation.hasOwnProperty(fieldName)) continue;
+        var result = this._validateField(fieldName);
+        if (!result.valid) allValid = false;
+      }
+
+      return allValid;
+    }
+
+    /**
+     * Clear all validation errors from the form.
+     */
+    clearErrors() {
+      if (!this.formElement) return;
+      var errorClass = this.options.errorClass;
+      var errorAttr = this.options.errorAttribute;
+      var errorEls = this.formElement.querySelectorAll('.' + errorClass);
+      errorEls.forEach(function (el) {
+        el.classList.remove(errorClass);
+        el.removeAttribute(errorAttr);
+      });
     }
 
     // ---- Capture URL params to cookies --------------------------------------
@@ -156,7 +428,6 @@
       try {
         var urlParams = new URLSearchParams(window.location.search);
 
-        // UTMs
         if (this.options.utmTracking) {
           UTM_PARAMS.forEach(function (param) {
             var val = urlParams.get(param);
@@ -164,7 +435,6 @@
           });
         }
 
-        // Click IDs
         if (this.options.clickIdTracking) {
           CLICK_IDS.forEach(function (param) {
             var val = urlParams.get(param);
@@ -172,7 +442,6 @@
           });
         }
 
-        // GA Client ID
         if (this.options.gaClientId && !_getCookie('gaclientid')) {
           var clientId = this._getGAClientId();
           if (clientId) _setCookie('gaclientid', clientId, days);
@@ -194,7 +463,6 @@
     // ---- Inject hidden fields -----------------------------------------------
 
     _injectTrackingFields() {
-      // UTMs — named: utm_campaign_hidden, utm_source_hidden, etc.
       if (this.options.utmTracking) {
         var self = this;
         UTM_PARAMS.forEach(function (param) {
@@ -202,7 +470,6 @@
         });
       }
 
-      // Click IDs — named as-is: gclid, fbclid, msclkid
       if (this.options.clickIdTracking) {
         var self2 = this;
         CLICK_IDS.forEach(function (param) {
@@ -210,19 +477,16 @@
         });
       }
 
-      // GA Client ID — named: gaclientid
       if (this.options.gaClientId) {
         this._injectField('gaclientid', _getCookie('gaclientid') || '');
       }
 
-      // Page meta — named: page_url, page_title, page_referrer
       if (this.options.pageMeta) {
         this._injectField('page_url', window.location.href);
         this._injectField('page_title', document.title);
         this._injectField('page_referrer', document.referrer || '');
       }
 
-      // Custom fields — named as provided
       var custom = this.options.customFields;
       for (var key in custom) {
         if (custom.hasOwnProperty(key)) {
@@ -234,7 +498,8 @@
     _injectField(name, value) {
       if (!this.formElement) return;
 
-      // Don't duplicate if already injected
+      _log('inject field → ' + name, value);
+
       var existing = this.formElement.querySelector('input[name="' + name + '"]');
       if (existing) {
         existing.value = value;
@@ -279,10 +544,6 @@
 
     // ---- Public helpers -----------------------------------------------------
 
-    /**
-     * Get all injected tracking data as an object.
-     * @returns {object}
-     */
     getData() {
       var data = {};
       this._injectedInputs.forEach(function (input) {
@@ -291,11 +552,6 @@
       return data;
     }
 
-    /**
-     * Manually set a hidden field value (creates it if missing).
-     * @param {string} name  — field name (prefix is NOT auto-added)
-     * @param {string} value
-     */
     setField(name, value) {
       this._injectField(name, value);
     }
@@ -331,6 +587,29 @@
 
     list: function () {
       return Object.keys(registry);
+    },
+
+    /**
+     * Standalone validation utility — validate any value against rules.
+     * @param {*}      value
+     * @param {object} rules   e.g. { required: true, minLength: 3, email: true }
+     * @returns {{ valid: boolean, errors: string[] }}
+     */
+    validate: function (value, rules) {
+      return validateValue(value, rules);
+    },
+
+    /**
+     * Register a custom validation rule globally.
+     * @param {string}   name  Rule name
+     * @param {function} fn    (value, ruleParam, formEl) → boolean
+     */
+    addRule: function (name, fn) {
+      if (typeof fn !== 'function') {
+        console.warn('[digi2.forms] addRule expects a function.');
+        return;
+      }
+      customRules[name] = fn;
     },
   };
 })();

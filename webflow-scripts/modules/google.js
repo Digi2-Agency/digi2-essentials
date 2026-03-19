@@ -25,11 +25,17 @@
 
   window.digi2 = window.digi2 || {};
 
+  function _log(action, data) {
+    if (window.digi2.log) window.digi2.log('google', action, data);
+  }
+
   // ---------------------------------------------------------------------------
   // Config — read from loader script attributes
   // ---------------------------------------------------------------------------
   var loaderScript = document.querySelector('script[src*="digi2-loader"]');
   var gtmId = loaderScript ? loaderScript.getAttribute('g-gtm-id') : null;
+
+  _log('init', { gtmId: gtmId });
 
   // ---------------------------------------------------------------------------
   // Consent categories
@@ -75,8 +81,10 @@
   }
 
   if (saved) {
+    _log('consent defaults restored from localStorage', saved);
     gtag('consent', 'default', saved);
   } else {
+    _log('consent defaults applied (all denied)');
     gtag('consent', 'default', DEFAULTS);
   }
 
@@ -135,6 +143,8 @@
   }
 
   function saveAndUpdate(consentState) {
+    _log('consent update', consentState);
+
     // Persist
     localStorage.setItem(STORAGE_KEY, JSON.stringify(consentState));
 

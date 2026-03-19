@@ -284,6 +284,103 @@ digi2.forms.create('contact', {
 | `customFields` | object | `{}` | `{ name: 'value' }` — extra hidden fields |
 | `ipApiUrl` | string | `'https://api.ipify.org?format=json'` | IP lookup endpoint |
 | `onReady` | function | `null` | Callback(instance) after fields injected |
+| `validation` | object | `null` | `{ fieldName: { rule: value, ... }, ... }` |
+| `errorClass` | string | `'d2-error'` | CSS class added to invalid fields |
+| `errorAttribute` | string | `'data-d2-error'` | Attribute set on invalid fields (value = error names) |
+| `validateOn` | string | `'both'` | `'blur'` `'submit'` `'both'` |
+| `onValidationError` | function | `null` | Callback(fieldName, errors, inputEl) |
+| `onSubmit` | function | `null` | Callback(data, formEl) — only fires if valid |
+
+### Validation Rules
+
+| Rule | Type | Description |
+|---|---|---|
+| `required` | boolean | Field must not be empty |
+| `email` | boolean | Valid email format |
+| `phone` | boolean | Valid phone (digits, spaces, dashes, parens, +) |
+| `url` | boolean | Valid URL starting with http(s):// |
+| `number` | boolean | Valid number (integer or decimal) |
+| `integer` | boolean | Valid integer only |
+| `letters` | boolean | Letters, spaces, hyphens, apostrophes only |
+| `numbers` | boolean | Digits only |
+| `alphanumeric` | boolean | Letters and digits only |
+| `noSpaces` | boolean | No whitespace allowed |
+| `noSpecialChars` | boolean | Letters, digits, spaces only |
+| `minLength` | number | Minimum string length |
+| `maxLength` | number | Maximum string length |
+| `min` | number | Minimum numeric value |
+| `max` | number | Maximum numeric value |
+| `pattern` | string/RegExp | Must match regex pattern |
+| `equals` | string | Must equal exact value |
+| `matchField` | string | Must match another field's value (by name) |
+
+### Validation Example
+
+```js
+digi2.forms.create('contact', {
+  validation: {
+    name:     { required: true, minLength: 2, letters: true },
+    email:    { required: true, email: true },
+    phone:    { phone: true },
+    password: { required: true, minLength: 8 },
+    confirm:  { required: true, matchField: 'password' },
+    age:      { number: true, min: 18, max: 120 },
+    website:  { url: true },
+    username: { required: true, alphanumeric: true, minLength: 3, maxLength: 20 },
+  },
+  errorClass: 'd2-error',
+  validateOn: 'both',
+  onValidationError: function (field, errors, el) {
+    console.log(field + ' failed:', errors);
+  },
+})
+```
+
+In Webflow, style invalid fields with a combo class:
+
+```css
+.d2-error {
+  border-color: #ef4444;
+}
+```
+
+Or target the attribute for per-rule styling:
+
+```css
+input[data-d2-error*="required"] { /* ... */ }
+input[data-d2-error*="email"]    { /* ... */ }
+```
+
+### Standalone Validation
+
+Use without a form instance:
+
+```js
+digi2.forms.validate('hello@test.com', { required: true, email: true })
+// → { valid: true, errors: [] }
+
+digi2.forms.validate('', { required: true, minLength: 3 })
+// → { valid: false, errors: ['required', 'minLength'] }
+
+digi2.forms.validate('abc', { pattern: /^\d+$/ })
+// → { valid: false, errors: ['pattern'] }
+```
+
+### Custom Rules
+
+```js
+digi2.forms.addRule('noBadWords', function (value, ruleParam) {
+  var banned = ['spam', 'test'];
+  return !banned.some(function (w) { return value.toLowerCase().includes(w); });
+});
+
+// Use it
+digi2.forms.create('feedback', {
+  validation: {
+    message: { required: true, noBadWords: true },
+  },
+})
+```
 
 ### Auto-Injected Hidden Inputs
 
@@ -306,15 +403,22 @@ digi2.forms.create('contact', {
 ### API
 
 ```js
+// Registry
 digi2.forms.create('name', options)
 digi2.forms.get('name')
 digi2.forms.destroy('name')
 digi2.forms.list()
 
+// Standalone validation
+digi2.forms.validate(value, rules)          // → { valid, errors }
+digi2.forms.addRule('name', fn)             // register custom rule
+
 // Instance methods
 var form = digi2.forms.get('contact')
-form.getData()                       // { utm_source_hidden: 'google', ... }
-form.setField('custom_field', '42')  // add/update a hidden field
+form.getData()                              // { utm_source_hidden: 'google', ... }
+form.setField('custom_field', '42')         // add/update a hidden field
+form.validateAll()                          // validate all fields, returns boolean
+form.clearErrors()                          // remove all error indicators
 ```
 
 ---
@@ -335,6 +439,46 @@ digi2.onReady(fn)                   // alias for digi2.on('loaded', fn)
 ```
 
 Subscribing to `loaded` after modules already loaded calls `fn` immediately — no race conditions.
+
+---
+
+## Debug Mode
+
+Add `d2-debug-mode` to the loader script tag to log all actions to the console:
+
+```html
+<script src="...digi2-loader.min.js" d2-popups d2-forms d2-debug-mode></script>
+```
+
+This enables colored console output for every action across all modules:
+
+```
+[digi2.loader]  initialized              { baseUrl: '...', minified: true, debug: true }
+[digi2.loader]  loading module → popups  https://cdn.../modules/popups.min.js
+[digi2.loader]  module loaded ✓ popups
+[digi2.popups]  init → newsletter        { popupSelector: '#nl-overlay', ... }
+[digi2.popups]  show → newsletter        { animation: 'slide-up' }
+[digi2.forms]   init → contact           { utmTracking: true, ... }
+[digi2.forms]   inject field → utm_source_hidden  'google'
+[digi2.forms]   validate field → email   { value: '', valid: false, errors: ['required'] }
+[digi2.google]  consent update           { analytics_storage: 'granted', ... }
+[digi2.events]  emit → consent:updated   { ... }
+```
+
+### Programmatic Control
+
+```js
+// Check if debug is on
+digi2.debug                              // true / false
+
+// Enable at runtime (without the attribute)
+digi2.debug = true
+
+// Manual logging from your own code
+digi2.log('myModule', 'some action', { data: 123 })
+```
+
+Remove `d2-debug-mode` for production — all `digi2.log()` calls become no-ops with zero overhead.
 
 ---
 

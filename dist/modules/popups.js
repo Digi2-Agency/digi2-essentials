@@ -76,6 +76,11 @@
     Object.assign(el.style, styles);
   }
 
+  // Debug helper
+  function _log(action, data) {
+    if (window.digi2.log) window.digi2.log('popups', action, data);
+  }
+
   // ---------------------------------------------------------------------------
   // PopupManager (internal)
   // ---------------------------------------------------------------------------
@@ -142,6 +147,8 @@
       this.isMobile = /Mobi|Android/i.test(navigator.userAgent);
       this.lastScrollY = window.scrollY;
 
+      _log('init → ' + this.name, this.options);
+
       this._attachTriggers();
       this._updatePageViews();
 
@@ -160,6 +167,7 @@
     }
 
     destroy() {
+      _log('destroy → ' + this.name);
       if (this._boundHandleMouseOut) {
         document.documentElement.removeEventListener('mouseout', this._boundHandleMouseOut);
       }
@@ -183,6 +191,7 @@
     show() {
       if (!this.popupElement || this.isVisible || this._animating) return;
 
+      _log('show → ' + this.name, { animation: this.options.animation });
       this.isVisible = true;
       const anim = this._getAnimation();
       const dur = this.options.animationDuration;
@@ -208,6 +217,7 @@
     hide() {
       if (!this.popupElement || !this.isVisible || this._animating) return;
 
+      _log('hide → ' + this.name);
       this.isVisible = false;
       const anim = this._getAnimation();
       const dur = this.options.animationDuration;
@@ -295,6 +305,7 @@
     _handleMouseOut(e) {
       if (this._isCookieSet() || this.isVisible) return;
       if (e.clientY <= 10) {
+        _log('exit-intent triggered (desktop) → ' + this.name);
         this.show();
       }
     }
@@ -310,6 +321,7 @@
         currentScrollY > 0
       ) {
         this.scrollTriggered = true;
+        _log('exit-intent triggered (mobile scroll) → ' + this.name);
         this.show();
       }
 
@@ -469,6 +481,7 @@
     var instance = registry[name];
     if (instance && instance.options.dataTagTrigger) {
       e.preventDefault();
+      _log('data-tag trigger clicked → ' + name, trigger);
       instance.show();
     }
   });
