@@ -349,29 +349,54 @@
       var merged = {};
 
       // Auto-detect: scan form for inputs matching known field names
+      var autoFound = [];
       if (this.options.autoValidation && this.formElement) {
         for (var fieldName in DEFAULT_FIELD_RULES) {
           if (!DEFAULT_FIELD_RULES.hasOwnProperty(fieldName)) continue;
           var input = this.formElement.querySelector('[name="' + fieldName + '"]');
           if (input) {
-            // Copy default rules for this field
             merged[fieldName] = Object.assign({}, DEFAULT_FIELD_RULES[fieldName]);
-            _log('auto-detected field → ' + fieldName, merged[fieldName]);
+            autoFound.push(fieldName);
           }
         }
+        if (autoFound.length > 0) {
+          _log('auto-detected fields', autoFound);
+        } else {
+          _log('no standard fields found (NAME, EMAIL, PHONE, MESSAGE, CONSENT_*)');
+        }
+      }
+
+      // Scan all form inputs and log them for debugging
+      if (this.formElement) {
+        var allInputs = this.formElement.querySelectorAll('input, textarea, select');
+        var inputNames = [];
+        allInputs.forEach(function (el) {
+          if (el.name && el.type !== 'hidden') inputNames.push(el.name);
+        });
+        _log('all form fields found', inputNames);
       }
 
       // User overrides: merge on top (per-field, per-rule)
       if (this.options.validation) {
+        var userFields = [];
         for (var key in this.options.validation) {
           if (!this.options.validation.hasOwnProperty(key)) continue;
           if (merged[key]) {
-            // Merge: user rules override individual defaults
             Object.assign(merged[key], this.options.validation[key]);
           } else {
             merged[key] = Object.assign({}, this.options.validation[key]);
           }
+          userFields.push(key);
         }
+        _log('user validation overrides', userFields);
+      }
+
+      // Log final resolved rules
+      var resolvedNames = Object.keys(merged);
+      if (resolvedNames.length > 0) {
+        _log('final validation rules', merged);
+      } else {
+        _log('no validation rules to apply');
       }
 
       return merged;
