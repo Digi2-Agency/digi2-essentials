@@ -95,7 +95,7 @@
         dataTagTrigger: true,         // listen for data-d2-show-popup="name" clicks globally
         cookieName: 'popup_clicked',
         cookieDurationDays: 1,
-        openOnLoad: true,
+        openOnLoad: false,
         animation: 'fade',           // none | fade | slide-up | slide-down | slide-left | slide-right | zoom
         animationDuration: 0.4,
         excludeUrls: [],

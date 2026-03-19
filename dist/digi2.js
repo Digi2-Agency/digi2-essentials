@@ -117,7 +117,7 @@
         dataTagTrigger: true,
         cookieName: 'popup_clicked',
         cookieDurationDays: 1,
-        openOnLoad: true,
+        openOnLoad: false,
         animation: 'fade',
         animationDuration: 0.4,
         excludeUrls: [],
