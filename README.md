@@ -289,6 +289,11 @@ digi2.forms.create('contact', {
 | `errorClass` | string | `'d2-error'` | CSS class added to invalid fields |
 | `errorAttribute` | string | `'data-d2-error'` | Attribute set on invalid fields (value = error names) |
 | `errorSelector` | string | `'[data-d2-form-error]'` | Selector for error message element in input's parent |
+| `errorDisplay` | string | `'inline'` | `'inline'` = per-field errors, `'summary'` = one block above submit |
+| `inputOnError` | object | `null` | CSS styles applied to invalid inputs (JS object) |
+| `inputOnValid` | object | `null` | CSS styles applied when input becomes valid (resets) |
+| `summarySelector` | string | `'[data-d2-form-summary]'` | Selector for summary container (used with `errorDisplay: 'summary'`) |
+| `summaryMessage` | string | `'Please fix the following errors:'` | Heading text for the summary block |
 | `validateOn` | string | `'both'` | `'blur'` `'submit'` `'both'` |
 | `onValidationError` | function | `null` | Callback(fieldName, errors, inputEl) |
 | `onSubmit` | function | `null` | Callback(data, formEl) — only fires if valid |
@@ -436,10 +441,77 @@ How it works:
 - The module walks up to 3 parent levels from the input to find error elements
 - The input itself always gets the `d2-error` CSS class and `data-d2-error` attribute regardless
 
+### Custom Input Error Styles
+
+Apply inline CSS to inputs on error — no need for a separate stylesheet:
+
+```js
+digi2.forms.create('contact', {
+  inputOnError: {
+    borderColor: '#ef4444',
+    boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.2)',
+    backgroundColor: '#fef2f2',
+  },
+  inputOnValid: {
+    borderColor: '',
+    boxShadow: '',
+    backgroundColor: '',
+  },
+})
+```
+
+When a field fails validation, `inputOnError` styles are applied directly. When it passes, `inputOnValid` restores them. Use empty strings to reset to the original Webflow styles.
+
+### Error Display Modes
+
+#### Inline mode (default)
+
+Per-field error elements next to each input:
+
+```js
+digi2.forms.create('contact', {
+  errorDisplay: 'inline',   // default
+})
+```
+
+#### Summary mode
+
+One error block above the submit button listing all failed fields:
+
+```js
+digi2.forms.create('contact', {
+  errorDisplay: 'summary',
+  summaryMessage: 'Please fix the following errors:',
+})
+```
+
+In Webflow, optionally place a summary container:
+
+```html
+<div data-d2-form-summary style="display: none;"></div>
+<button type="submit">Send</button>
+```
+
+If no `[data-d2-form-summary]` element exists, one is auto-created before the submit button. On failed submit it shows:
+
+> **Please fix the following errors:**
+> - **NAME**: required, minLength
+> - **EMAIL**: email
+
+The summary hides when all fields are valid. Inputs still get the `d2-error` class and `inputOnError` styles in both modes.
+
 ### Validation Example
 
 ```js
 digi2.forms.create('contact', {
+  inputOnError: {
+    borderColor: '#ef4444',
+    boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.2)',
+  },
+  inputOnValid: {
+    borderColor: '',
+    boxShadow: '',
+  },
   validation: {
     NAME:     { required: true, minLength: 2, letters: true },
     EMAIL:    { required: true, email: true },
@@ -448,7 +520,7 @@ digi2.forms.create('contact', {
     confirm:  { required: true, matchField: 'password' },
     age:      { number: true, min: 18, max: 120 },
   },
-  errorClass: 'd2-error',
+  errorDisplay: 'inline',
   validateOn: 'both',
   onValidationError: function (field, errors, el) {
     console.log(field + ' failed:', errors);
@@ -458,7 +530,7 @@ digi2.forms.create('contact', {
 
 ### Webflow Styling
 
-Style invalid fields with a combo class:
+Style invalid fields with a combo class (alternative to `inputOnError`):
 
 ```css
 .d2-error {

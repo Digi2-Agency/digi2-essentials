@@ -251,6 +251,11 @@
         errorClass: 'd2-error',       // CSS class added to invalid fields
         errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
         errorSelector: '[data-d2-form-error]', // selector for error message element inside input's parent
+        errorDisplay: 'inline',       // 'inline' = per-field errors | 'summary' = one block above submit
+        inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
+        inputOnValid: null,           // CSS object applied when input becomes valid (resets), e.g. { borderColor: '', boxShadow: '' }
+        summarySelector: '[data-d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
+        summaryMessage: 'Please fix the following errors:', // heading text for summary
         validateOn: 'both',           // 'blur' | 'submit' | 'both'
         onValidationError: null,      // callback(fieldName, errors, inputEl)
         onSubmit: null,               // callback(data, formEl) — only fires if valid
@@ -518,17 +523,27 @@
       if (result.valid) {
         inputEl.classList.remove(this.options.errorClass);
         inputEl.removeAttribute(this.options.errorAttribute);
+        // Restore styles
+        if (this.options.inputOnValid) {
+          Object.assign(inputEl.style, this.options.inputOnValid);
+        }
       } else {
         inputEl.classList.add(this.options.errorClass);
         inputEl.setAttribute(this.options.errorAttribute, result.errors.join(','));
+        // Apply error styles
+        if (this.options.inputOnError) {
+          Object.assign(inputEl.style, this.options.inputOnError);
+        }
 
         if (typeof this.options.onValidationError === 'function') {
           this.options.onValidationError(fieldName, result.errors, inputEl);
         }
       }
 
-      // Update per-rule error message elements
-      this._updateErrorElements(container, result.errors, result.valid);
+      // Update error display (inline per-field or summary — handled separately)
+      if (this.options.errorDisplay === 'inline') {
+        this._updateErrorElements(container, result.errors, result.valid);
+      }
 
       return result;
     }
@@ -540,14 +555,77 @@
     validateAll() {
       var allValid = true;
       var validation = this._resolvedValidation;
+      var failedFields = [];
 
       for (var fieldName in validation) {
         if (!validation.hasOwnProperty(fieldName)) continue;
         var result = this._validateField(fieldName);
-        if (!result.valid) allValid = false;
+        if (!result.valid) {
+          allValid = false;
+          failedFields.push({ name: fieldName, errors: result.errors });
+        }
+      }
+
+      // Summary mode: update the summary block
+      if (this.options.errorDisplay === 'summary') {
+        this._updateSummary(failedFields, allValid);
       }
 
       return allValid;
+    }
+
+    // ---- Summary error display ----------------------------------------------
+
+    /**
+     * Find or create the summary error container.
+     * Looks for [data-d2-form-summary] inside the form.
+     * If not found, creates one and inserts it before the submit button.
+     */
+    _getSummaryElement() {
+      if (!this.formElement) return null;
+
+      var el = this.formElement.querySelector(this.options.summarySelector);
+      if (el) return el;
+
+      // Auto-create: insert before submit button
+      el = document.createElement('div');
+      el.setAttribute('data-d2-form-summary', '');
+      el.style.display = 'none';
+
+      var submitBtn = this.formElement.querySelector('[type="submit"], button:not([type])');
+      if (submitBtn) {
+        submitBtn.parentNode.insertBefore(el, submitBtn);
+      } else {
+        this.formElement.appendChild(el);
+      }
+
+      _log('summary element auto-created');
+      return el;
+    }
+
+    /**
+     * Update the summary block with failed field names / errors.
+     */
+    _updateSummary(failedFields, allValid) {
+      var summaryEl = this._getSummaryElement();
+      if (!summaryEl) return;
+
+      if (allValid) {
+        summaryEl.style.display = 'none';
+        summaryEl.innerHTML = '';
+        return;
+      }
+
+      var html = '<p>' + this.options.summaryMessage + '</p><ul>';
+      failedFields.forEach(function (field) {
+        html += '<li><strong>' + field.name + '</strong>: ' + field.errors.join(', ') + '</li>';
+      });
+      html += '</ul>';
+
+      summaryEl.innerHTML = html;
+      summaryEl.style.display = 'flex';
+
+      _log('summary updated', failedFields);
     }
 
     /**
@@ -555,24 +633,23 @@
      */
     clearErrors() {
       if (!this.formElement) return;
+      var self = this;
       var errorClass = this.options.errorClass;
       var errorAttr = this.options.errorAttribute;
 
-      // Remove error class and attribute from inputs
+      // Remove error class, attribute, and restore styles on inputs
       var errorInputs = this.formElement.querySelectorAll('.' + errorClass);
       errorInputs.forEach(function (el) {
         el.classList.remove(errorClass);
         el.removeAttribute(errorAttr);
+        if (self.options.inputOnValid) {
+          Object.assign(el.style, self.options.inputOnValid);
+        }
       });
 
-      // Hide all error message elements (generic + per-rule)
-      var allErrorEls = this.formElement.querySelectorAll('[data-d2-form-error], [class*="data-d2-form-error-"]');
-      allErrorEls.forEach(function (el) {
-        el.style.display = 'none';
-      });
-
-      // Also catch per-rule elements by attribute selector
-      var perRuleEls = this.formElement.querySelectorAll(
+      // Hide all inline error message elements (generic + per-rule)
+      var allErrorEls = this.formElement.querySelectorAll(
+        '[data-d2-form-error], ' +
         '[data-d2-form-error-required], [data-d2-form-error-email], [data-d2-form-error-phone], ' +
         '[data-d2-form-error-minLength], [data-d2-form-error-maxLength], [data-d2-form-error-letters], ' +
         '[data-d2-form-error-numbers], [data-d2-form-error-pattern], [data-d2-form-error-url], ' +
@@ -580,9 +657,16 @@
         '[data-d2-form-error-number], [data-d2-form-error-integer], [data-d2-form-error-alphanumeric], ' +
         '[data-d2-form-error-noSpaces], [data-d2-form-error-noSpecialChars], [data-d2-form-error-equals]'
       );
-      perRuleEls.forEach(function (el) {
+      allErrorEls.forEach(function (el) {
         el.style.display = 'none';
       });
+
+      // Hide summary block
+      var summaryEl = this.formElement.querySelector(this.options.summarySelector);
+      if (summaryEl) {
+        summaryEl.style.display = 'none';
+        summaryEl.innerHTML = '';
+      }
     }
 
     // ---- Capture URL params to cookies --------------------------------------
