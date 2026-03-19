@@ -413,23 +413,80 @@
     }
 
     /**
-     * Find the error message element for a given input.
-     * Walks up to the closest parent that is a <label> or any wrapper,
-     * then looks for an element matching errorSelector (default: [data-d2-form-error]).
+     * Find the error container for a given input.
+     * Walks up to 3 parent levels from the input.
+     * Returns the parent element to search error elements within.
      */
-    _findErrorElement(inputEl) {
+    _findErrorContainer(inputEl) {
       if (!inputEl) return null;
-      var selector = this.options.errorSelector;
-
-      // Walk up: check parent, then grandparent (covers <label> wrapping or adjacent wrapper)
       var parent = inputEl.parentElement;
       for (var i = 0; i < 3 && parent; i++) {
-        var errorEl = parent.querySelector(selector);
-        if (errorEl) return errorEl;
+        // Check if this container has ANY error elements
+        if (parent.querySelector('[data-d2-form-error]') ||
+            parent.querySelector('[data-d2-form-error-required]') ||
+            parent.querySelector('[data-d2-form-error-email]')) {
+          return parent;
+        }
         parent = parent.parentElement;
       }
+      // Fallback: return immediate parent
+      return inputEl.parentElement;
+    }
 
-      return null;
+    /**
+     * Show/hide per-rule error elements within a container.
+     *
+     * Error elements use data attributes matching rule names:
+     *   data-d2-form-error-required    — shown when 'required' fails
+     *   data-d2-form-error-email       — shown when 'email' fails
+     *   data-d2-form-error-minLength   — shown when 'minLength' fails
+     *   data-d2-form-error-phone       — shown when 'phone' fails
+     *   ... etc for any rule name
+     *
+     *   data-d2-form-error             — generic fallback, shown when ANY rule fails
+     *                                    (only if no specific per-rule element matched)
+     *
+     * The attribute value is the error message text.
+     * Elements should be set to display:none in Webflow by default.
+     * When shown, display is set to 'flex'. When valid, back to 'none'.
+     */
+    _updateErrorElements(container, errors, isValid) {
+      if (!container) return;
+
+      // All possible per-rule error elements in this container
+      var allErrorEls = container.querySelectorAll('[data-d2-form-error-required], [data-d2-form-error-email], [data-d2-form-error-phone], [data-d2-form-error-minLength], [data-d2-form-error-maxLength], [data-d2-form-error-min], [data-d2-form-error-max], [data-d2-form-error-letters], [data-d2-form-error-numbers], [data-d2-form-error-pattern], [data-d2-form-error-url], [data-d2-form-error-matchField], [data-d2-form-error-integer], [data-d2-form-error-alphanumeric], [data-d2-form-error-noSpaces], [data-d2-form-error-noSpecialChars], [data-d2-form-error-number], [data-d2-form-error-equals]');
+
+      var genericEl = container.querySelector('[data-d2-form-error]');
+      var specificMatched = false;
+
+      if (isValid) {
+        // Hide everything
+        allErrorEls.forEach(function (el) { el.style.display = 'none'; });
+        if (genericEl) genericEl.style.display = 'none';
+        return;
+      }
+
+      // Hide all first, then show only the ones that match failed rules
+      allErrorEls.forEach(function (el) { el.style.display = 'none'; });
+
+      errors.forEach(function (ruleName) {
+        var selector = '[data-d2-form-error-' + ruleName + ']';
+        var el = container.querySelector(selector);
+        if (el) {
+          el.style.display = 'flex';
+          specificMatched = true;
+          _log('show error element → ' + ruleName, el.getAttribute('data-d2-form-error-' + ruleName));
+        }
+      });
+
+      // Generic fallback — only show if no specific error element was found
+      if (genericEl) {
+        if (specificMatched) {
+          genericEl.style.display = 'none';
+        } else {
+          genericEl.style.display = 'flex';
+        }
+      }
     }
 
     /**
@@ -454,29 +511,24 @@
 
       _log('validate field → ' + fieldName, { value: val, valid: result.valid, errors: result.errors });
 
-      // Find error message element
-      var errorEl = this._findErrorElement(inputEl);
+      // Find error container and update error elements
+      var container = this._findErrorContainer(inputEl);
 
-      // Apply/remove error indicators
+      // Apply/remove error indicators on the input itself
       if (result.valid) {
         inputEl.classList.remove(this.options.errorClass);
         inputEl.removeAttribute(this.options.errorAttribute);
-        if (errorEl) {
-          errorEl.style.display = 'none';
-          errorEl.textContent = '';
-        }
       } else {
         inputEl.classList.add(this.options.errorClass);
         inputEl.setAttribute(this.options.errorAttribute, result.errors.join(','));
-        if (errorEl) {
-          errorEl.style.display = '';
-          errorEl.textContent = errorEl.getAttribute('data-d2-form-error') || result.errors.join(', ');
-        }
 
         if (typeof this.options.onValidationError === 'function') {
           this.options.onValidationError(fieldName, result.errors, inputEl);
         }
       }
+
+      // Update per-rule error message elements
+      this._updateErrorElements(container, result.errors, result.valid);
 
       return result;
     }
@@ -505,19 +557,31 @@
       if (!this.formElement) return;
       var errorClass = this.options.errorClass;
       var errorAttr = this.options.errorAttribute;
-      var errorSelector = this.options.errorSelector;
 
+      // Remove error class and attribute from inputs
       var errorInputs = this.formElement.querySelectorAll('.' + errorClass);
       errorInputs.forEach(function (el) {
         el.classList.remove(errorClass);
         el.removeAttribute(errorAttr);
       });
 
-      // Also hide all error message elements
-      var errorMsgs = this.formElement.querySelectorAll(errorSelector);
-      errorMsgs.forEach(function (el) {
+      // Hide all error message elements (generic + per-rule)
+      var allErrorEls = this.formElement.querySelectorAll('[data-d2-form-error], [class*="data-d2-form-error-"]');
+      allErrorEls.forEach(function (el) {
         el.style.display = 'none';
-        el.textContent = '';
+      });
+
+      // Also catch per-rule elements by attribute selector
+      var perRuleEls = this.formElement.querySelectorAll(
+        '[data-d2-form-error-required], [data-d2-form-error-email], [data-d2-form-error-phone], ' +
+        '[data-d2-form-error-minLength], [data-d2-form-error-maxLength], [data-d2-form-error-letters], ' +
+        '[data-d2-form-error-numbers], [data-d2-form-error-pattern], [data-d2-form-error-url], ' +
+        '[data-d2-form-error-min], [data-d2-form-error-max], [data-d2-form-error-matchField], ' +
+        '[data-d2-form-error-number], [data-d2-form-error-integer], [data-d2-form-error-alphanumeric], ' +
+        '[data-d2-form-error-noSpaces], [data-d2-form-error-noSpecialChars], [data-d2-form-error-equals]'
+      );
+      perRuleEls.forEach(function (el) {
+        el.style.display = 'none';
       });
     }
 

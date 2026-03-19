@@ -361,23 +361,80 @@ digi2.forms.create('contact', {
 
 ### Error Message Elements
 
-In Webflow, place an error message element inside the input's parent (label or wrapper div). Give it a `data-d2-form-error` attribute:
+Place error elements inside the input's parent (label or wrapper div). Each error element targets a specific rule via its data attribute. Set them to `display: none` in Webflow by default.
+
+#### Per-rule errors (recommended)
+
+Each rule has its own error element — only the relevant one is shown:
+
+```html
+<label>
+  Email
+  <input type="email" name="EMAIL" />
+  <div data-d2-form-error-required style="display: none;">Email is required</div>
+  <div data-d2-form-error-email style="display: none;">Please enter a valid email</div>
+</label>
+```
+
+Available per-rule error attributes:
+
+| Attribute | Shown when |
+|---|---|
+| `data-d2-form-error-required` | Field is empty |
+| `data-d2-form-error-email` | Invalid email format |
+| `data-d2-form-error-phone` | Invalid phone format |
+| `data-d2-form-error-minLength` | Too short |
+| `data-d2-form-error-maxLength` | Too long |
+| `data-d2-form-error-min` | Number too small |
+| `data-d2-form-error-max` | Number too large |
+| `data-d2-form-error-letters` | Contains non-letter characters |
+| `data-d2-form-error-numbers` | Contains non-digit characters |
+| `data-d2-form-error-pattern` | Doesn't match regex |
+| `data-d2-form-error-url` | Invalid URL |
+| `data-d2-form-error-matchField` | Doesn't match other field |
+| `data-d2-form-error-integer` | Not a valid integer |
+| `data-d2-form-error-alphanumeric` | Not alphanumeric |
+| `data-d2-form-error-noSpaces` | Contains spaces |
+| `data-d2-form-error-noSpecialChars` | Contains special characters |
+| `data-d2-form-error-equals` | Doesn't match expected value |
+| `data-d2-form-error-number` | Not a valid number |
+
+#### Generic fallback
+
+If no per-rule error element exists, the generic one is shown instead:
 
 ```html
 <label>
   Name
   <input type="text" name="NAME" />
-  <div data-d2-form-error="This field is required" style="display: none;">
-    This field is required
-  </div>
+  <div data-d2-form-error style="display: none;">Please check this field</div>
+</label>
+```
+
+#### Full example with multiple error types
+
+```html
+<label>
+  Password
+  <input type="password" name="PASSWORD" />
+  <div data-d2-form-error-required style="display: none;">Password is required</div>
+  <div data-d2-form-error-minLength style="display: none;">Must be at least 8 characters</div>
+</label>
+
+<label>
+  Confirm Password
+  <input type="password" name="CONFIRM" />
+  <div data-d2-form-error-required style="display: none;">Please confirm your password</div>
+  <div data-d2-form-error-matchField style="display: none;">Passwords don't match</div>
 </label>
 ```
 
 How it works:
-- When validation **fails**, the error element is shown (`display: ''`) and its text is set to the `data-d2-form-error` attribute value
-- When validation **passes**, the error element is hidden
-- The module walks up to 3 parent levels from the input to find the error element
-- If no error element is found, it still applies the CSS class and data attribute to the input itself
+- When validation **fails**, matching error elements are shown (`display: flex`)
+- When validation **passes**, all error elements are hidden (`display: none`)
+- The generic `data-d2-form-error` only shows if no per-rule element matched
+- The module walks up to 3 parent levels from the input to find error elements
+- The input itself always gets the `d2-error` CSS class and `data-d2-error` attribute regardless
 
 ### Validation Example
 
