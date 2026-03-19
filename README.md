@@ -284,9 +284,11 @@ digi2.forms.create('contact', {
 | `customFields` | object | `{}` | `{ name: 'value' }` — extra hidden fields |
 | `ipApiUrl` | string | `'https://api.ipify.org?format=json'` | IP lookup endpoint |
 | `onReady` | function | `null` | Callback(instance) after fields injected |
-| `validation` | object | `null` | `{ fieldName: { rule: value, ... }, ... }` |
+| `autoValidation` | boolean | `true` | Auto-detect NAME, EMAIL, PHONE, etc. and apply default rules |
+| `validation` | object | `null` | `{ fieldName: { rule: value, ... }, ... }` — overrides/extends auto rules |
 | `errorClass` | string | `'d2-error'` | CSS class added to invalid fields |
 | `errorAttribute` | string | `'data-d2-error'` | Attribute set on invalid fields (value = error names) |
+| `errorSelector` | string | `'[data-d2-form-error]'` | Selector for error message element in input's parent |
 | `validateOn` | string | `'both'` | `'blur'` `'submit'` `'both'` |
 | `onValidationError` | function | `null` | Callback(fieldName, errors, inputEl) |
 | `onSubmit` | function | `null` | Callback(data, formEl) — only fires if valid |
@@ -314,19 +316,80 @@ digi2.forms.create('contact', {
 | `equals` | string | Must equal exact value |
 | `matchField` | string | Must match another field's value (by name) |
 
+### Auto-Validation (Standard Field Names)
+
+When `autoValidation` is `true` (default), the module scans the form for inputs with these standard `name` attributes and applies default rules automatically:
+
+| Input `name` | Default Rules |
+|---|---|
+| `NAME` | `required`, `minLength: 2`, `letters` |
+| `EMAIL` | `required`, `email` |
+| `PHONE` | `required`, `phone` |
+| `MESSAGE` | `required`, `minLength: 10` |
+| `CONSENT_GDPR` | `required` (checkbox) |
+| `CONSENT_EMAIL` | `required` (checkbox) |
+| `CONSENT_PHONE` | `required` (checkbox) |
+
+Zero-config example — just name your inputs correctly:
+
+```js
+digi2.forms.create('contact')
+// Auto-detects NAME, EMAIL, PHONE, MESSAGE, CONSENT_* and validates them
+```
+
+Override or extend auto rules:
+
+```js
+digi2.forms.create('contact', {
+  validation: {
+    NAME: { minLength: 3 },           // override: 3 chars instead of 2
+    COMPANY: { required: true },       // add a new field not in defaults
+  },
+})
+```
+
+Disable auto-validation entirely:
+
+```js
+digi2.forms.create('contact', {
+  autoValidation: false,
+  validation: {
+    email: { required: true, email: true },
+  },
+})
+```
+
+### Error Message Elements
+
+In Webflow, place an error message element inside the input's parent (label or wrapper div). Give it a `data-d2-form-error` attribute:
+
+```html
+<label>
+  Name
+  <input type="text" name="NAME" />
+  <div data-d2-form-error="This field is required" style="display: none;">
+    This field is required
+  </div>
+</label>
+```
+
+How it works:
+- When validation **fails**, the error element is shown (`display: ''`) and its text is set to the `data-d2-form-error` attribute value
+- When validation **passes**, the error element is hidden
+- The module walks up to 3 parent levels from the input to find the error element
+- If no error element is found, it still applies the CSS class and data attribute to the input itself
+
 ### Validation Example
 
 ```js
 digi2.forms.create('contact', {
   validation: {
-    name:     { required: true, minLength: 2, letters: true },
-    email:    { required: true, email: true },
-    phone:    { phone: true },
+    NAME:     { required: true, minLength: 2, letters: true },
+    EMAIL:    { required: true, email: true },
+    PHONE:    { phone: true },
     password: { required: true, minLength: 8 },
     confirm:  { required: true, matchField: 'password' },
     age:      { number: true, min: 18, max: 120 },
-    website:  { url: true },
-    username: { required: true, alphanumeric: true, minLength: 3, maxLength: 20 },
   },
   errorClass: 'd2-error',
   validateOn: 'both',
@@ -336,7 +399,9 @@ digi2.forms.create('contact', {
 })
 ```
 
-In Webflow, style invalid fields with a combo class:
+### Webflow Styling
+
+Style invalid fields with a combo class:
 
 ```css
 .d2-error {

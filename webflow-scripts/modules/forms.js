@@ -172,6 +172,21 @@
   // Custom rules registered via digi2.forms.addRule()
   var customRules = {};
 
+  // ---------------------------------------------------------------------------
+  // Default validation rules for standard field names
+  // Auto-applied when autoValidation is true (default).
+  // User-provided validation rules override/extend these.
+  // ---------------------------------------------------------------------------
+  var DEFAULT_FIELD_RULES = {
+    'NAME':           { required: true, minLength: 2, letters: true },
+    'EMAIL':          { required: true, email: true },
+    'PHONE':          { required: true, phone: true },
+    'MESSAGE':        { required: true, minLength: 10 },
+    'CONSENT_GDPR':   { required: true },
+    'CONSENT_EMAIL':  { required: true },
+    'CONSENT_PHONE':  { required: true },
+  };
+
   /**
    * Validate a single value against a rules object.
    * @param {*}      value
@@ -231,9 +246,11 @@
         cookieDurationDays: 365,
         customFields: {},
         ipApiUrl: 'https://api.ipify.org?format=json',
-        validation: null,             // { fieldName: { rule: value, ... }, ... }
+        autoValidation: true,         // auto-detect NAME, EMAIL, PHONE, etc. and apply default rules
+        validation: null,             // { fieldName: { rule: value, ... }, ... } — overrides/extends auto rules
         errorClass: 'd2-error',       // CSS class added to invalid fields
         errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
+        errorSelector: '[data-d2-form-error]', // selector for error message element inside input's parent
         validateOn: 'both',           // 'blur' | 'submit' | 'both'
         onValidationError: null,      // callback(fieldName, errors, inputEl)
         onSubmit: null,               // callback(data, formEl) — only fires if valid
@@ -267,9 +284,11 @@
       // 2. Inject hidden fields
       this._injectTrackingFields();
 
-      // 3. Setup validation
-      if (this.options.validation) {
-        _log('validation setup → ' + this.name, this.options.validation);
+      // 3. Build validation rules (auto-detect + user overrides)
+      this._resolvedValidation = this._buildValidationRules();
+
+      if (this._resolvedValidation && Object.keys(this._resolvedValidation).length > 0) {
+        _log('validation setup → ' + this.name, this._resolvedValidation);
         this._setupValidation();
       }
 
@@ -313,6 +332,46 @@
       return null;
     }
 
+    // ---- Auto-detection of validation rules --------------------------------
+
+    /**
+     * Build final validation rules by:
+     * 1. Scanning the form for inputs with known names (NAME, EMAIL, etc.)
+     * 2. Applying default rules from DEFAULT_FIELD_RULES
+     * 3. Merging/overriding with user-provided validation option
+     */
+    _buildValidationRules() {
+      var merged = {};
+
+      // Auto-detect: scan form for inputs matching known field names
+      if (this.options.autoValidation && this.formElement) {
+        for (var fieldName in DEFAULT_FIELD_RULES) {
+          if (!DEFAULT_FIELD_RULES.hasOwnProperty(fieldName)) continue;
+          var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+          if (input) {
+            // Copy default rules for this field
+            merged[fieldName] = Object.assign({}, DEFAULT_FIELD_RULES[fieldName]);
+            _log('auto-detected field → ' + fieldName, merged[fieldName]);
+          }
+        }
+      }
+
+      // User overrides: merge on top (per-field, per-rule)
+      if (this.options.validation) {
+        for (var key in this.options.validation) {
+          if (!this.options.validation.hasOwnProperty(key)) continue;
+          if (merged[key]) {
+            // Merge: user rules override individual defaults
+            Object.assign(merged[key], this.options.validation[key]);
+          } else {
+            merged[key] = Object.assign({}, this.options.validation[key]);
+          }
+        }
+      }
+
+      return merged;
+    }
+
     // ---- Validation ---------------------------------------------------------
 
     _setupValidation() {
@@ -325,8 +384,7 @@
           var input = e.target;
           if (!input || !input.name) return;
           var fieldName = input.name;
-          var rules = self.options.validation[fieldName];
-          if (rules) {
+          if (self._resolvedValidation[fieldName]) {
             self._validateField(fieldName, input);
           }
         };
@@ -355,6 +413,26 @@
     }
 
     /**
+     * Find the error message element for a given input.
+     * Walks up to the closest parent that is a <label> or any wrapper,
+     * then looks for an element matching errorSelector (default: [data-d2-form-error]).
+     */
+    _findErrorElement(inputEl) {
+      if (!inputEl) return null;
+      var selector = this.options.errorSelector;
+
+      // Walk up: check parent, then grandparent (covers <label> wrapping or adjacent wrapper)
+      var parent = inputEl.parentElement;
+      for (var i = 0; i < 3 && parent; i++) {
+        var errorEl = parent.querySelector(selector);
+        if (errorEl) return errorEl;
+        parent = parent.parentElement;
+      }
+
+      return null;
+    }
+
+    /**
      * Validate a single field by name.
      * @param {string} fieldName
      * @param {Element} [inputEl] — auto-found if not provided
@@ -366,20 +444,34 @@
       }
       if (!inputEl) return { valid: true, errors: [] };
 
-      var rules = this.options.validation[fieldName];
+      var rules = this._resolvedValidation[fieldName];
       if (!rules) return { valid: true, errors: [] };
 
-      var result = validateValue(inputEl.value, rules, this.formElement);
+      // For checkboxes, use checked state as the value
+      var val = inputEl.type === 'checkbox' ? (inputEl.checked ? 'on' : '') : inputEl.value;
 
-      _log('validate field → ' + fieldName, { value: inputEl.value, valid: result.valid, errors: result.errors });
+      var result = validateValue(val, rules, this.formElement);
+
+      _log('validate field → ' + fieldName, { value: val, valid: result.valid, errors: result.errors });
+
+      // Find error message element
+      var errorEl = this._findErrorElement(inputEl);
 
       // Apply/remove error indicators
       if (result.valid) {
         inputEl.classList.remove(this.options.errorClass);
         inputEl.removeAttribute(this.options.errorAttribute);
+        if (errorEl) {
+          errorEl.style.display = 'none';
+          errorEl.textContent = '';
+        }
       } else {
         inputEl.classList.add(this.options.errorClass);
         inputEl.setAttribute(this.options.errorAttribute, result.errors.join(','));
+        if (errorEl) {
+          errorEl.style.display = '';
+          errorEl.textContent = errorEl.getAttribute('data-d2-form-error') || result.errors.join(', ');
+        }
 
         if (typeof this.options.onValidationError === 'function') {
           this.options.onValidationError(fieldName, result.errors, inputEl);
@@ -390,12 +482,12 @@
     }
 
     /**
-     * Validate all fields defined in the validation rules.
+     * Validate all fields defined in the resolved validation rules.
      * @returns {boolean} true if all valid
      */
     validateAll() {
       var allValid = true;
-      var validation = this.options.validation;
+      var validation = this._resolvedValidation;
 
       for (var fieldName in validation) {
         if (!validation.hasOwnProperty(fieldName)) continue;
@@ -413,10 +505,19 @@
       if (!this.formElement) return;
       var errorClass = this.options.errorClass;
       var errorAttr = this.options.errorAttribute;
-      var errorEls = this.formElement.querySelectorAll('.' + errorClass);
-      errorEls.forEach(function (el) {
+      var errorSelector = this.options.errorSelector;
+
+      var errorInputs = this.formElement.querySelectorAll('.' + errorClass);
+      errorInputs.forEach(function (el) {
         el.classList.remove(errorClass);
         el.removeAttribute(errorAttr);
+      });
+
+      // Also hide all error message elements
+      var errorMsgs = this.formElement.querySelectorAll(errorSelector);
+      errorMsgs.forEach(function (el) {
+        el.style.display = 'none';
+        el.textContent = '';
       });
     }
 
