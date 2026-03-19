@@ -311,6 +311,72 @@
     },
   };
 
+  // ---- Auto-require proxies ------------------------------------------------
+  // If someone calls digi2.popups.create() before the module is loaded,
+  // the proxy intercepts it, loads the module, then replays the call.
+  // Once the real module loads, it overwrites the proxy on window.digi2.
+
+  var MODULE_MAP = {
+    popups: 'popups',
+    forms: 'forms',
+    cookies: 'cookies',
+    google: 'google',
+  };
+
+  function createProxy(namespace, moduleName) {
+    // Don't overwrite if the real module already loaded
+    if (window.digi2[namespace] && window.digi2._loaded[moduleName]) return;
+
+    var queue = [];
+
+    var handler = {
+      get: function (_target, method) {
+        return function () {
+          var args = Array.prototype.slice.call(arguments);
+          window.digi2.log('loader', 'auto-require "' + moduleName + '" for ' + namespace + '.' + method + '()');
+
+          return loadModule(moduleName).then(function () {
+            var real = window.digi2[namespace];
+            if (real && typeof real[method] === 'function') {
+              return real[method].apply(real, args);
+            } else {
+              console.error('[digi2] ' + namespace + '.' + method + ' not found after loading module.');
+            }
+          });
+        };
+      },
+    };
+
+    // Use Proxy if available (all modern browsers), fallback to a simple object
+    if (typeof Proxy !== 'undefined') {
+      window.digi2[namespace] = new Proxy({}, handler);
+    } else {
+      // Basic fallback — cover the most common methods
+      var fallback = {};
+      ['create', 'get', 'destroy', 'list', 'show', 'close', 'set', 'remove', 'has', 'getAll',
+       'validate', 'addRule', 'consent', 'dataLayerPush', 'getGtmId'].forEach(function (method) {
+        fallback[method] = function () {
+          var args = Array.prototype.slice.call(arguments);
+          window.digi2.log('loader', 'auto-require "' + moduleName + '" for ' + namespace + '.' + method + '()');
+          return loadModule(moduleName).then(function () {
+            var real = window.digi2[namespace];
+            if (real && typeof real[method] === 'function') {
+              return real[method].apply(real, args);
+            }
+          });
+        };
+      });
+      window.digi2[namespace] = fallback;
+    }
+  }
+
+  // Set up proxies for all known modules (only if not already loaded)
+  for (var ns in MODULE_MAP) {
+    if (MODULE_MAP.hasOwnProperty(ns)) {
+      createProxy(ns, MODULE_MAP[ns]);
+    }
+  }
+
   // ---- Discover requested modules from d2-* attributes --------------------
   var modules = [];
   var attrs = loaderScript.attributes;
