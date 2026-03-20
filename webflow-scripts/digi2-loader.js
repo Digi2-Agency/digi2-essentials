@@ -323,6 +323,7 @@
     tabs: 'tabs',
     sliders: 'sliders',
     animate: 'animate',
+    toasts: 'toasts',
   };
 
   function createProxy(namespace, moduleName) {
