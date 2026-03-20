@@ -383,9 +383,10 @@
       align-items: center;
       justify-content: space-between;
       width: 100%;
-      padding: 8px 20px 4px;
+      padding: 10px 20px;
       background: none;
       border: none;
+      border-bottom: 1px solid var(--border);
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
@@ -393,8 +394,10 @@
       color: var(--text-dim);
       cursor: pointer;
       user-select: none;
-      transition: color 0.15s;
+      transition: color 0.15s, background 0.15s;
     }
+
+    .sidebar-group-toggle:hover { color: var(--text); background: var(--surface-2); }
 
     .sidebar-group-toggle:hover { color: var(--text); }
 
@@ -596,7 +599,7 @@
     <span class="kbd">&#8984;E</span>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Setup
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -607,7 +610,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Popups
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -619,7 +622,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Forms
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -632,7 +635,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Cookies
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -642,7 +645,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Google / Consent
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -652,7 +655,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Tabs & Accordions
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -662,7 +665,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Sliders
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -672,7 +675,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Animations
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -682,7 +685,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Utilities
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
@@ -697,7 +700,7 @@
     </div>
   </div>
 
-  <div class="sidebar-group">
+  <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Core
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
