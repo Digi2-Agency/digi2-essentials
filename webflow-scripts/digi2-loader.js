@@ -325,6 +325,10 @@
     animate: 'animate',
     toasts: 'toasts',
     scroll: 'scroll',
+    lazy: 'lazy',
+    countdown: 'countdown',
+    filter: 'filter',
+    copy: 'copy',
   };
 
   function createProxy(namespace, moduleName) {

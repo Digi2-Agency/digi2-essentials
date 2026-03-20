@@ -885,5 +885,63 @@
       }
       customRules[name] = fn;
     },
+
+    /**
+     * Initialize password toggle on all [data-d2-password-toggle] elements.
+     * Clicking toggles the associated input between type="password" and type="text".
+     *
+     * Webflow setup:
+     *   <label>
+     *     Password
+     *     <input type="password" name="password">
+     *     <button type="button" data-d2-password-toggle>Show</button>
+     *   </label>
+     *
+     * Options:
+     *   data-d2-password-toggle            — toggles sibling/parent input
+     *   data-d2-password-toggle="#my-input" — toggles specific input by selector
+     *   data-d2-password-show="Show"       — text when password is hidden
+     *   data-d2-password-hide="Hide"       — text when password is visible
+     */
+    initPasswordToggles: function () {
+      document.addEventListener('click', function (e) {
+        var toggle = e.target.closest('[data-d2-password-toggle]');
+        if (!toggle) return;
+
+        e.preventDefault();
+
+        // Find the target input
+        var targetSel = toggle.getAttribute('data-d2-password-toggle');
+        var input = null;
+
+        if (targetSel && targetSel !== '') {
+          input = document.querySelector(targetSel);
+        }
+
+        if (!input) {
+          // Look for sibling or parent input
+          var parent = toggle.parentElement;
+          if (parent) input = parent.querySelector('input[type="password"], input[type="text"][data-d2-pw]');
+        }
+
+        if (!input) return;
+
+        if (input.type === 'password') {
+          input.type = 'text';
+          input.setAttribute('data-d2-pw', 'visible');
+          var hideText = toggle.getAttribute('data-d2-password-hide');
+          if (hideText) toggle.textContent = hideText;
+          _log('password toggle → visible');
+        } else {
+          input.type = 'password';
+          input.removeAttribute('data-d2-pw');
+          var showText = toggle.getAttribute('data-d2-password-show');
+          if (showText) toggle.textContent = showText;
+          _log('password toggle → hidden');
+        }
+      });
+
+      _log('password toggles initialized');
+    },
   };
 })();
