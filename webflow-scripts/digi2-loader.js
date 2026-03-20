@@ -322,6 +322,7 @@
     google: 'google',
     tabs: 'tabs',
     sliders: 'sliders',
+    animate: 'animate',
   };
 
   function createProxy(namespace, moduleName) {
