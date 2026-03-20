@@ -424,10 +424,34 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
 
     <h3>Live Demo</h3>
     <div class="demo-box">
-      <button class="btn" data-d2-show-popup="demo-fade">Fade</button>
-      <button class="btn" data-d2-show-popup="demo-slide-up">Slide Up</button>
-      <button class="btn" data-d2-show-popup="demo-slide-down">Slide Down</button>
-      <button class="btn" data-d2-show-popup="demo-zoom">Zoom</button>
+      <p style="margin-bottom:12px; font-size:11px; color:var(--text-dim);">Basic</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-fade">fade</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-zoom">zoom</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-zoom-in">zoom-in</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-blur">blur</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-zoom-blur">zoom-blur</button>
+      <p style="margin:12px 0 8px; font-size:11px; color:var(--text-dim);">Slide (subtle)</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-up">slide-up</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-down">slide-down</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-left">slide-left</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-right">slide-right</button>
+      <p style="margin:12px 0 8px; font-size:11px; color:var(--text-dim);">Slide (full)</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-full-up">slide-full-up</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-full-down">slide-full-down</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-full-left">slide-full-left</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-slide-full-right">slide-full-right</button>
+      <p style="margin:12px 0 8px; font-size:11px; color:var(--text-dim);">3D / Perspective</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-flip">flip</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-flip-y">flip-y</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-swing">swing</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-rotate">rotate</button>
+      <p style="margin:12px 0 8px; font-size:11px; color:var(--text-dim);">Physics</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-bounce">bounce</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-elastic">elastic</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-drop">drop</button>
+      <p style="margin:12px 0 8px; font-size:11px; color:var(--text-dim);">Transform</p>
+      <button class="btn btn--sm" data-d2-show-popup="demo-unfold">unfold</button>
+      <button class="btn btn--sm" data-d2-show-popup="demo-reveal">reveal</button>
     </div>
 
     <h3>Options</h3>
@@ -453,12 +477,28 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
     <table>
       <tr><th>Value</th><th>Effect</th></tr>
       <tr><td><code>none</code></td><td>Instant show/hide</td></tr>
-      <tr><td><code>fade</code></td><td>Opacity 0 → 1</td></tr>
-      <tr><td><code>slide-up</code></td><td>Fade + translate from bottom</td></tr>
-      <tr><td><code>slide-down</code></td><td>Fade + translate from top</td></tr>
-      <tr><td><code>slide-left</code></td><td>Fade + translate from right</td></tr>
-      <tr><td><code>slide-right</code></td><td>Fade + translate from left</td></tr>
-      <tr><td><code>zoom</code></td><td>Fade + scale from 85%</td></tr>
+      <tr><td><code>fade</code></td><td>Opacity fade</td></tr>
+      <tr><td><code>zoom</code></td><td>Scale up from 85%</td></tr>
+      <tr><td><code>zoom-in</code></td><td>Scale down from 115%</td></tr>
+      <tr><td><code>blur</code></td><td>Blur 12px → clear</td></tr>
+      <tr><td><code>zoom-blur</code></td><td>Scale + blur combined</td></tr>
+      <tr><td><code>slide-up</code></td><td>Subtle slide from bottom (30px)</td></tr>
+      <tr><td><code>slide-down</code></td><td>Subtle slide from top (30px)</td></tr>
+      <tr><td><code>slide-left</code></td><td>Subtle slide from right (30px)</td></tr>
+      <tr><td><code>slide-right</code></td><td>Subtle slide from left (30px)</td></tr>
+      <tr><td><code>slide-full-up</code></td><td>Full slide from bottom (100%)</td></tr>
+      <tr><td><code>slide-full-down</code></td><td>Full slide from top (100%)</td></tr>
+      <tr><td><code>slide-full-left</code></td><td>Full slide from right (100%)</td></tr>
+      <tr><td><code>slide-full-right</code></td><td>Full slide from left (100%)</td></tr>
+      <tr><td><code>flip</code></td><td>3D rotate on X axis</td></tr>
+      <tr><td><code>flip-y</code></td><td>3D rotate on Y axis</td></tr>
+      <tr><td><code>swing</code></td><td>3D swing from top (like a door)</td></tr>
+      <tr><td><code>rotate</code></td><td>Scale + 2D rotation</td></tr>
+      <tr><td><code>bounce</code></td><td>Springy overshoot scale</td></tr>
+      <tr><td><code>elastic</code></td><td>Elastic scale + translate</td></tr>
+      <tr><td><code>drop</code></td><td>Drop from above with bounce</td></tr>
+      <tr><td><code>unfold</code></td><td>Vertical unfold from top</td></tr>
+      <tr><td><code>reveal</code></td><td>Horizontal reveal from left</td></tr>
     </table>
   </section>
 
@@ -775,6 +815,24 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     <p>This popup uses the <code>zoom</code> animation.</p>
   </div>
 </div>
+<div class="popup__overlay" id="popup-zoom-in"><div class="popup__content"><button class="popup-close">&times;</button><h3>Zoom In</h3><p><code>zoom-in</code> — scales down from 115%.</p></div></div>
+<div class="popup__overlay" id="popup-blur"><div class="popup__content"><button class="popup-close">&times;</button><h3>Blur</h3><p><code>blur</code> — deblurs from 12px.</p></div></div>
+<div class="popup__overlay" id="popup-zoom-blur"><div class="popup__content"><button class="popup-close">&times;</button><h3>Zoom Blur</h3><p><code>zoom-blur</code> — scale + blur combined.</p></div></div>
+<div class="popup__overlay" id="popup-slide-left"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Left</h3><p><code>slide-left</code></p></div></div>
+<div class="popup__overlay" id="popup-slide-right"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Right</h3><p><code>slide-right</code></p></div></div>
+<div class="popup__overlay" id="popup-slide-full-up"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Full Up</h3><p><code>slide-full-up</code> — enters from bottom edge.</p></div></div>
+<div class="popup__overlay" id="popup-slide-full-down"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Full Down</h3><p><code>slide-full-down</code> — enters from top edge.</p></div></div>
+<div class="popup__overlay" id="popup-slide-full-left"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Full Left</h3><p><code>slide-full-left</code> — enters from right edge.</p></div></div>
+<div class="popup__overlay" id="popup-slide-full-right"><div class="popup__content"><button class="popup-close">&times;</button><h3>Slide Full Right</h3><p><code>slide-full-right</code> — enters from left edge.</p></div></div>
+<div class="popup__overlay" id="popup-flip"><div class="popup__content"><button class="popup-close">&times;</button><h3>Flip</h3><p><code>flip</code> — 3D rotation on X axis.</p></div></div>
+<div class="popup__overlay" id="popup-flip-y"><div class="popup__content"><button class="popup-close">&times;</button><h3>Flip Y</h3><p><code>flip-y</code> — 3D rotation on Y axis.</p></div></div>
+<div class="popup__overlay" id="popup-swing"><div class="popup__content"><button class="popup-close">&times;</button><h3>Swing</h3><p><code>swing</code> — hinged from top, like a door.</p></div></div>
+<div class="popup__overlay" id="popup-rotate"><div class="popup__content"><button class="popup-close">&times;</button><h3>Rotate</h3><p><code>rotate</code> — scale + 2D twist.</p></div></div>
+<div class="popup__overlay" id="popup-bounce"><div class="popup__content"><button class="popup-close">&times;</button><h3>Bounce</h3><p><code>bounce</code> — springy overshoot.</p></div></div>
+<div class="popup__overlay" id="popup-elastic"><div class="popup__content"><button class="popup-close">&times;</button><h3>Elastic</h3><p><code>elastic</code> — rubber band feel.</p></div></div>
+<div class="popup__overlay" id="popup-drop"><div class="popup__content"><button class="popup-close">&times;</button><h3>Drop</h3><p><code>drop</code> — falls from above with bounce.</p></div></div>
+<div class="popup__overlay" id="popup-unfold"><div class="popup__content"><button class="popup-close">&times;</button><h3>Unfold</h3><p><code>unfold</code> — vertical unfold from top.</p></div></div>
+<div class="popup__overlay" id="popup-reveal"><div class="popup__content"><button class="popup-close">&times;</button><h3>Reveal</h3><p><code>reveal</code> — horizontal reveal from left.</p></div></div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
 <!-- LOAD DIGI2 -->
@@ -790,26 +848,21 @@ digi2.modules.<span class="fn">list</span>()                              <span 
 <script>
   digi2.onReady(function () {
 
-    // ── Popups ──
-    digi2.popups.create('demo-fade', {
-      popupSelector: '#popup-fade',
-      animation: 'fade',
-      closeTriggerSelector: '.popup-close',
-    });
-    digi2.popups.create('demo-slide-up', {
-      popupSelector: '#popup-slide-up',
-      animation: 'slide-up',
-      closeTriggerSelector: '.popup-close',
-    });
-    digi2.popups.create('demo-slide-down', {
-      popupSelector: '#popup-slide-down',
-      animation: 'slide-down',
-      closeTriggerSelector: '.popup-close',
-    });
-    digi2.popups.create('demo-zoom', {
-      popupSelector: '#popup-zoom',
-      animation: 'zoom',
-      closeTriggerSelector: '.popup-close',
+    // ── Popups — create all animation demos ──
+    var anims = [
+      'fade', 'zoom', 'zoom-in', 'blur', 'zoom-blur',
+      'slide-up', 'slide-down', 'slide-left', 'slide-right',
+      'slide-full-up', 'slide-full-down', 'slide-full-left', 'slide-full-right',
+      'flip', 'flip-y', 'swing', 'rotate',
+      'bounce', 'elastic', 'drop',
+      'unfold', 'reveal',
+    ];
+    anims.forEach(function (anim) {
+      digi2.popups.create('demo-' + anim, {
+        popupSelector: '#popup-' + anim,
+        animation: anim,
+        closeTriggerSelector: '.popup-close',
+      });
     });
 
     // ── Forms ──

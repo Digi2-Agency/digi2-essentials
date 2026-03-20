@@ -69,6 +69,102 @@
       out:   (d) => ({ opacity: '0', transform: 'scale(0.85)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
       reset: ()  => ({ opacity: '', transform: '', transition: '' }),
     },
+    'zoom-in': {
+      setup: (d) => ({ opacity: '0', transform: 'scale(1.15)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', transform: 'scale(1)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scale(1.15)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'flip': {
+      setup: (d) => ({ opacity: '0', transform: 'perspective(800px) rotateX(-15deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', transform: 'perspective(800px) rotateX(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'perspective(800px) rotateX(15deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'flip-y': {
+      setup: (d) => ({ opacity: '0', transform: 'perspective(800px) rotateY(-15deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', transform: 'perspective(800px) rotateY(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'perspective(800px) rotateY(15deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'rotate': {
+      setup: (d) => ({ opacity: '0', transform: 'scale(0.8) rotate(-8deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', transform: 'scale(1) rotate(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scale(0.8) rotate(8deg)', transition: `opacity ${d}s ease, transform ${d}s ease` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'blur': {
+      setup: (d) => ({ opacity: '0', filter: 'blur(12px)', transition: `opacity ${d}s ease, filter ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', filter: 'blur(0)' }),
+      out:   (d) => ({ opacity: '0', filter: 'blur(12px)', transition: `opacity ${d}s ease, filter ${d}s ease` }),
+      reset: ()  => ({ opacity: '', filter: '', transition: '' }),
+    },
+    'bounce': {
+      setup: (d) => ({ opacity: '0', transform: 'scale(0.4)', transition: `opacity ${d * 0.4}s ease, transform ${d}s cubic-bezier(0.34, 1.56, 0.64, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'scale(1)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scale(0.4)', transition: `opacity ${d * 0.6}s ease, transform ${d}s cubic-bezier(0.36, 0, 0.66, -0.56)` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'elastic': {
+      setup: (d) => ({ opacity: '0', transform: 'scale(0.6) translateY(20px)', transition: `opacity ${d * 0.5}s ease, transform ${d}s cubic-bezier(0.68, -0.55, 0.265, 1.55)` }),
+      in:    ()  => ({ opacity: '1', transform: 'scale(1) translateY(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scale(0.6) translateY(20px)', transition: `opacity ${d * 0.5}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'drop': {
+      setup: (d) => ({ opacity: '0', transform: 'translateY(-60px) scale(0.9)', transition: `opacity ${d * 0.5}s ease, transform ${d}s cubic-bezier(0.34, 1.56, 0.64, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'translateY(0) scale(1)' }),
+      out:   (d) => ({ opacity: '0', transform: 'translateY(-60px) scale(0.9)', transition: `opacity ${d * 0.4}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'swing': {
+      setup: (d) => ({ opacity: '0', transform: 'perspective(600px) rotateX(-30deg)', transformOrigin: 'top center', transition: `opacity ${d * 0.4}s ease, transform ${d}s cubic-bezier(0.34, 1.56, 0.64, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'perspective(600px) rotateX(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'perspective(600px) rotateX(-30deg)', transition: `opacity ${d * 0.4}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transformOrigin: '', transition: '' }),
+    },
+    'slide-full-up': {
+      setup: (d) => ({ opacity: '0', transform: 'translateY(100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'translateY(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'translateY(100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'slide-full-down': {
+      setup: (d) => ({ opacity: '0', transform: 'translateY(-100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'translateY(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'translateY(-100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'slide-full-left': {
+      setup: (d) => ({ opacity: '0', transform: 'translateX(100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'translateX(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'translateX(100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'slide-full-right': {
+      setup: (d) => ({ opacity: '0', transform: 'translateX(-100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'translateX(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'translateX(-100%)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transition: '' }),
+    },
+    'unfold': {
+      setup: (d) => ({ opacity: '0', transform: 'scaleY(0)', transformOrigin: 'top center', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'scaleY(1)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scaleY(0)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transformOrigin: '', transition: '' }),
+    },
+    'reveal': {
+      setup: (d) => ({ opacity: '0', transform: 'scaleX(0)', transformOrigin: 'left center', transition: `opacity ${d * 0.3}s ease, transform ${d}s cubic-bezier(0.22, 1, 0.36, 1)` }),
+      in:    ()  => ({ opacity: '1', transform: 'scaleX(1)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scaleX(0)', transition: `opacity ${d * 0.3}s ease, transform ${d}s ease-in` }),
+      reset: ()  => ({ opacity: '', transform: '', transformOrigin: '', transition: '' }),
+    },
+    'zoom-blur': {
+      setup: (d) => ({ opacity: '0', transform: 'scale(0.85)', filter: 'blur(8px)', transition: `opacity ${d}s ease, transform ${d}s ease, filter ${d}s ease` }),
+      in:    ()  => ({ opacity: '1', transform: 'scale(1)', filter: 'blur(0)' }),
+      out:   (d) => ({ opacity: '0', transform: 'scale(0.85)', filter: 'blur(8px)', transition: `opacity ${d}s ease, transform ${d}s ease, filter ${d}s ease` }),
+      reset: ()  => ({ opacity: '', transform: '', filter: '', transition: '' }),
+    },
   };
 
   // Helper — apply a style object to an element
