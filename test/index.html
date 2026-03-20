@@ -565,6 +565,17 @@
   <a href="#forms-tracking">↳ UTM Tracking</a>
   <a href="#google">Google / Consent</a>
 
+  <div class="sidebar-section">Components</div>
+  <a href="#tabs">Tabs & Accordions</a>
+  <a href="#sliders">Sliders</a>
+  <a href="#animate">Scroll Animations</a>
+  <a href="#toasts">Toasts</a>
+  <a href="#scroll">Smooth Scroll</a>
+  <a href="#lazy">Lazy Loading</a>
+  <a href="#countdown">Countdown</a>
+  <a href="#filter">CMS Filtering</a>
+  <a href="#copy">Copy to Clipboard</a>
+
   <div class="sidebar-section">Core</div>
   <a href="#events">Events</a>
   <a href="#modules">Module Management</a>
@@ -950,6 +961,220 @@ digi2.google.<span class="fn">dataLayerPush</span>({ <span class="prop">event</s
 digi2.google.<span class="fn">getGtmId</span>()</code></pre>
   </section>
 
+  <!-- ── TABS ── -->
+  <section id="tabs">
+    <h2>Tabs & Accordions</h2>
+    <pre><code><span class="comment">// Tabs mode</span>
+digi2.tabs.<span class="fn">create</span>(<span class="string">'pricing'</span>, { <span class="prop">animation</span>: <span class="string">'fade'</span> })
+
+<span class="comment">// Accordion mode</span>
+digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
+  <span class="prop">mode</span>: <span class="string">'accordion'</span>,
+  <span class="prop">allowMultiple</span>: <span class="keyword">true</span>,
+  <span class="prop">animation</span>: <span class="string">'slide-down'</span>,
+})</code></pre>
+    <h3>Live Demo — Tabs</h3>
+    <div class="demo-box" data-d2-tab-group="demo-tabs">
+      <div style="display:flex; gap:8px; margin-bottom:16px;">
+        <button class="btn btn--sm" data-d2-tab="tab-1">Tab 1</button>
+        <button class="btn btn--sm btn--outline" data-d2-tab="tab-2">Tab 2</button>
+        <button class="btn btn--sm btn--outline" data-d2-tab="tab-3">Tab 3</button>
+      </div>
+      <div data-d2-tab-content="tab-1"><p>Content for Tab 1. This is the default open tab.</p></div>
+      <div data-d2-tab-content="tab-2"><p>Content for Tab 2. Switches with fade animation.</p></div>
+      <div data-d2-tab-content="tab-3"><p>Content for Tab 3. Try clicking between tabs.</p></div>
+    </div>
+    <h3>Live Demo — Accordion</h3>
+    <div class="demo-box" data-d2-tab-group="demo-accordion">
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" data-d2-tab="acc-1" style="width:100%; text-align:left;">Question 1</button></div>
+      <div data-d2-tab-content="acc-1"><p style="padding:8px 0 16px;">Answer to question 1. Multiple panels can be open at once.</p></div>
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" data-d2-tab="acc-2" style="width:100%; text-align:left;">Question 2</button></div>
+      <div data-d2-tab-content="acc-2"><p style="padding:8px 0 16px;">Answer to question 2.</p></div>
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" data-d2-tab="acc-3" style="width:100%; text-align:left;">Question 3</button></div>
+      <div data-d2-tab-content="acc-3"><p style="padding:8px 0 16px;">Answer to question 3.</p></div>
+    </div>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>mode</code></td><td><code>'tabs'</code></td><td>tabs | accordion</td></tr>
+      <tr><td><code>allowMultiple</code></td><td><code>false</code></td><td>Accordion: multiple open</td></tr>
+      <tr><td><code>animation</code></td><td><code>'fade'</code></td><td>none | fade | slide-up | slide-down | zoom</td></tr>
+      <tr><td><code>hashSync</code></td><td><code>false</code></td><td>Sync with URL hash</td></tr>
+      <tr><td><code>activeClass</code></td><td><code>'d2-tab-active'</code></td><td>Class on active trigger</td></tr>
+    </table>
+  </section>
+
+  <!-- ── SLIDERS ── -->
+  <section id="sliders">
+    <h2>Sliders</h2>
+    <pre><code>digi2.sliders.<span class="fn">create</span>(<span class="string">'hero'</span>, {
+  <span class="prop">autoplay</span>: <span class="string">4000</span>,
+  <span class="prop">loop</span>: <span class="keyword">true</span>,
+  <span class="prop">slidesPerView</span>: <span class="string">1</span>,
+  <span class="prop">gap</span>: <span class="string">16</span>,
+  <span class="prop">draggable</span>: <span class="keyword">true</span>,
+})</code></pre>
+    <h3>Live Demo</h3>
+    <div class="demo-box" data-d2-slider="demo-slider" style="max-width:100%;">
+      <div data-d2-slider-track>
+        <div data-d2-slide style="background:var(--accent-dim); padding:40px; border-radius:8px; text-align:center;">Slide 1 — drag me</div>
+        <div data-d2-slide style="background:rgba(34,197,94,0.15); padding:40px; border-radius:8px; text-align:center;">Slide 2</div>
+        <div data-d2-slide style="background:rgba(59,130,246,0.15); padding:40px; border-radius:8px; text-align:center;">Slide 3</div>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px; align-items:center;">
+        <button class="btn btn--sm btn--outline" data-d2-slider-prev>&larr;</button>
+        <div data-d2-slider-dots style="display:flex; gap:6px;"></div>
+        <button class="btn btn--sm btn--outline" data-d2-slider-next>&rarr;</button>
+      </div>
+    </div>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>direction</code></td><td><code>'horizontal'</code></td><td>horizontal | vertical</td></tr>
+      <tr><td><code>slidesPerView</code></td><td><code>1</code></td><td>Visible slides</td></tr>
+      <tr><td><code>loop</code></td><td><code>false</code></td><td>Loop back</td></tr>
+      <tr><td><code>autoplay</code></td><td><code>false</code></td><td>false or ms interval</td></tr>
+      <tr><td><code>draggable</code></td><td><code>true</code></td><td>Touch/mouse drag</td></tr>
+    </table>
+    <pre><code><span class="comment">// Instance API</span>
+instance.<span class="fn">next</span>()  |  instance.<span class="fn">prev</span>()  |  instance.<span class="fn">goTo</span>(<span class="string">2</span>)
+instance.<span class="fn">addSlide</span>(<span class="string">'&lt;div&gt;New&lt;/div&gt;'</span>)  |  instance.<span class="fn">removeSlide</span>(<span class="string">0</span>)
+instance.<span class="fn">play</span>()  |  instance.<span class="fn">pause</span>()  |  instance.<span class="fn">getActive</span>()  |  instance.<span class="fn">getCount</span>()</code></pre>
+  </section>
+
+  <!-- ── ANIMATE ── -->
+  <section id="animate">
+    <h2>Scroll Animations</h2>
+    <pre><code>&lt;div <span class="prop">data-d2-animate</span>=<span class="string">"fade-up"</span>&gt;Appears on scroll&lt;/div&gt;
+&lt;div <span class="prop">data-d2-animate</span>=<span class="string">"zoom"</span> <span class="prop">data-d2-delay</span>=<span class="string">"200"</span>&gt;Delayed&lt;/div&gt;
+
+<span class="comment">&lt;!-- Stagger children --&gt;</span>
+&lt;div <span class="prop">data-d2-stagger</span>=<span class="string">"100"</span>&gt;
+  &lt;div <span class="prop">data-d2-animate</span>=<span class="string">"fade-up"</span>&gt;Item 1&lt;/div&gt;
+  &lt;div <span class="prop">data-d2-animate</span>=<span class="string">"fade-up"</span>&gt;Item 2&lt;/div&gt;
+&lt;/div&gt;</code></pre>
+    <pre><code>digi2.animate.<span class="fn">init</span>({ <span class="prop">once</span>: <span class="keyword">true</span> })
+digi2.animate.<span class="fn">refresh</span>()    <span class="comment">// after CMS/AJAX</span>
+digi2.animate.<span class="fn">presets</span>()    <span class="comment">// list all 22 names</span></code></pre>
+    <p>22 presets (same as popup animations). Respects <code>prefers-reduced-motion</code>.</p>
+  </section>
+
+  <!-- ── TOASTS ── -->
+  <section id="toasts">
+    <h2>Toasts</h2>
+    <div class="demo-box">
+      <button class="btn btn--sm btn--green" onclick="digi2.toasts.success('Operation successful!')">Success</button>
+      <button class="btn btn--sm btn--red" onclick="digi2.toasts.error('Something went wrong')">Error</button>
+      <button class="btn btn--sm btn--yellow" onclick="digi2.toasts.warning('Check your input')">Warning</button>
+      <button class="btn btn--sm" onclick="digi2.toasts.info('New update available')">Info</button>
+      <button class="btn btn--sm btn--outline" onclick="digi2.toasts.show('Custom toast', {duration:5000})">Custom</button>
+    </div>
+    <pre><code>digi2.toasts.<span class="fn">success</span>(<span class="string">'Saved!'</span>)
+digi2.toasts.<span class="fn">error</span>(<span class="string">'Failed'</span>)
+digi2.toasts.<span class="fn">warning</span>(<span class="string">'Warning'</span>)
+digi2.toasts.<span class="fn">info</span>(<span class="string">'Info'</span>)
+digi2.toasts.<span class="fn">show</span>(<span class="string">'Message'</span>, { <span class="prop">type</span>: <span class="string">'default'</span>, <span class="prop">duration</span>: <span class="string">5000</span>, <span class="prop">position</span>: <span class="string">'bottom-center'</span> })
+digi2.toasts.<span class="fn">dismissAll</span>()</code></pre>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>type</code></td><td><code>'default'</code></td><td>default | success | error | warning | info</td></tr>
+      <tr><td><code>duration</code></td><td><code>3000</code></td><td>ms (0 = no auto-dismiss)</td></tr>
+      <tr><td><code>position</code></td><td><code>'top-right'</code></td><td>top/bottom + left/center/right</td></tr>
+    </table>
+  </section>
+
+  <!-- ── SCROLL ── -->
+  <section id="scroll">
+    <h2>Smooth Scroll</h2>
+    <pre><code>&lt;a <span class="prop">data-d2-scroll</span>=<span class="string">"#features"</span>&gt;Features&lt;/a&gt;
+&lt;button <span class="prop">data-d2-scroll-top</span>&gt;&uarr; Top&lt;/button&gt;</code></pre>
+    <pre><code>digi2.scroll.<span class="fn">init</span>({ <span class="prop">offset</span>: <span class="string">80</span> })
+digi2.scroll.<span class="fn">to</span>(<span class="string">'#section'</span>)
+digi2.scroll.<span class="fn">toTop</span>()
+digi2.scroll.<span class="fn">getActive</span>()    <span class="comment">// current section id</span></code></pre>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>offset</code></td><td><code>80</code></td><td>px for fixed headers</td></tr>
+      <tr><td><code>speed</code></td><td><code>800</code></td><td>Scroll duration ms</td></tr>
+      <tr><td><code>activeClass</code></td><td><code>'d2-scroll-active'</code></td><td>Class on active link</td></tr>
+    </table>
+  </section>
+
+  <!-- ── LAZY ── -->
+  <section id="lazy">
+    <h2>Lazy Loading</h2>
+    <pre><code>&lt;img <span class="prop">data-d2-lazy</span>=<span class="string">"real.jpg"</span> src=<span class="string">"tiny.jpg"</span> alt=<span class="string">"..."</span>&gt;
+&lt;video <span class="prop">data-d2-lazy</span>=<span class="string">"video.mp4"</span>&gt;&lt;/video&gt;
+&lt;div <span class="prop">data-d2-lazy-bg</span>=<span class="string">"bg.jpg"</span>&gt;...&lt;/div&gt;</code></pre>
+    <pre><code>digi2.lazy.<span class="fn">init</span>({ <span class="prop">blur</span>: <span class="keyword">true</span>, <span class="prop">rootMargin</span>: <span class="string">'200px 0px'</span> })
+digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// after CMS/AJAX</span></code></pre>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>blur</code></td><td><code>true</code></td><td>Blur-up effect</td></tr>
+      <tr><td><code>blurAmount</code></td><td><code>15</code></td><td>px blur</td></tr>
+      <tr><td><code>rootMargin</code></td><td><code>'200px 0px'</code></td><td>Preload distance</td></tr>
+    </table>
+  </section>
+
+  <!-- ── COUNTDOWN ── -->
+  <section id="countdown">
+    <h2>Countdown</h2>
+    <pre><code>&lt;div <span class="prop">data-d2-countdown</span>=<span class="string">"2025-12-31T23:59:59"</span>&gt;
+  &lt;span <span class="prop">data-d2-countdown-days</span>&gt;00&lt;/span&gt;d
+  &lt;span <span class="prop">data-d2-countdown-hours</span>&gt;00&lt;/span&gt;h
+  &lt;span <span class="prop">data-d2-countdown-minutes</span>&gt;00&lt;/span&gt;m
+  &lt;span <span class="prop">data-d2-countdown-seconds</span>&gt;00&lt;/span&gt;s
+&lt;/div&gt;</code></pre>
+    <h3>Live Demo</h3>
+    <div class="demo-box" data-d2-countdown="2026-12-31T23:59:59" id="countdown-demo" style="font-family:var(--font-mono); font-size:24px; text-align:center;">
+      <span data-d2-countdown-days>00</span><span style="color:var(--text-dim)">d </span>
+      <span data-d2-countdown-hours>00</span><span style="color:var(--text-dim)">h </span>
+      <span data-d2-countdown-minutes>00</span><span style="color:var(--text-dim)">m </span>
+      <span data-d2-countdown-seconds>00</span><span style="color:var(--text-dim)">s</span>
+    </div>
+    <pre><code>digi2.countdown.<span class="fn">create</span>(<span class="string">'launch'</span>, {
+  <span class="prop">targetDate</span>: <span class="string">'2025-12-31T23:59:59'</span>,
+  <span class="prop">onComplete</span>: <span class="keyword">function</span>() { <span class="fn">console.log</span>(<span class="string">'Done!'</span>) },
+})
+<span class="comment">// instance.pause() | .resume() | .reset('2026-06-01') | .getRemaining()</span></code></pre>
+  </section>
+
+  <!-- ── FILTER ── -->
+  <section id="filter">
+    <h2>CMS Filtering</h2>
+    <h3>Live Demo</h3>
+    <div class="demo-box" data-d2-filter-group="demo-filter">
+      <div style="display:flex; gap:8px; margin-bottom:16px;">
+        <button class="btn btn--sm" data-d2-filter="all">All</button>
+        <button class="btn btn--sm btn--outline" data-d2-filter="design">Design</button>
+        <button class="btn btn--sm btn--outline" data-d2-filter="dev">Dev</button>
+        <button class="btn btn--sm btn--outline" data-d2-filter="marketing">Marketing</button>
+      </div>
+      <div data-d2-filter-list style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+        <div data-d2-filter-item data-d2-filter-category="design" style="padding:16px; background:var(--surface-2); border-radius:6px;">Brand Identity</div>
+        <div data-d2-filter-item data-d2-filter-category="dev" style="padding:16px; background:var(--surface-2); border-radius:6px;">Web App</div>
+        <div data-d2-filter-item data-d2-filter-category="marketing" style="padding:16px; background:var(--surface-2); border-radius:6px;">SEO Campaign</div>
+        <div data-d2-filter-item data-d2-filter-category="design,dev" style="padding:16px; background:var(--surface-2); border-radius:6px;">UI/UX + Frontend</div>
+        <div data-d2-filter-item data-d2-filter-category="marketing" style="padding:16px; background:var(--surface-2); border-radius:6px;">Social Media</div>
+        <div data-d2-filter-item data-d2-filter-category="dev" style="padding:16px; background:var(--surface-2); border-radius:6px;">API Integration</div>
+      </div>
+    </div>
+    <pre><code>digi2.filter.<span class="fn">create</span>(<span class="string">'portfolio'</span>, { <span class="prop">animation</span>: <span class="string">'zoom'</span> })
+<span class="comment">// instance.filterBy('web') | .getActive() | .getVisibleCount()</span></code></pre>
+  </section>
+
+  <!-- ── COPY ── -->
+  <section id="copy">
+    <h2>Copy to Clipboard</h2>
+    <div class="demo-box">
+      <code id="promo-code" style="display:inline-block; padding:8px 16px; background:var(--surface-2); border-radius:6px; margin-right:8px;">DIGI2-PROMO-2025</code>
+      <button class="btn btn--sm" data-d2-copy data-d2-copy-target="#promo-code">Copy Code</button>
+    </div>
+    <pre><code>&lt;button <span class="prop">data-d2-copy</span>=<span class="string">"Text to copy"</span>&gt;Copy&lt;/button&gt;
+&lt;button <span class="prop">data-d2-copy</span> <span class="prop">data-d2-copy-target</span>=<span class="string">"#element"</span>&gt;Copy&lt;/button&gt;</code></pre>
+    <pre><code>digi2.copy.<span class="fn">init</span>({ <span class="prop">showToast</span>: <span class="keyword">true</span> })
+digi2.copy.<span class="fn">text</span>(<span class="string">'Hello'</span>)
+digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'</span>)</code></pre>
+  </section>
+
   <!-- ── EVENTS ── -->
   <section id="events">
     <h2>Events</h2>
@@ -1052,6 +1277,15 @@ digi2.modules.<span class="fn">list</span>()                              <span 
   d2-popups
   d2-cookies
   d2-forms
+  d2-tabs
+  d2-sliders
+  d2-animate
+  d2-toasts
+  d2-scroll
+  d2-lazy
+  d2-countdown
+  d2-filter
+  d2-copy
   d2-gtm="GTM-TEST123"
   d2-debug-mode
 ></script>
@@ -1087,6 +1321,34 @@ digi2.modules.<span class="fn">list</span>()                              <span 
         boxShadow: '',
       },
     });
+    digi2.forms.initPasswordToggles();
+
+    // ── Tabs ──
+    digi2.tabs.create('demo-tabs', { animation: 'fade' });
+    digi2.tabs.create('demo-accordion', { mode: 'accordion', allowMultiple: true, animation: 'slide-down' });
+
+    // ── Sliders ──
+    digi2.sliders.create('demo-slider', { loop: true, gap: 12 });
+
+    // ── Animate ──
+    digi2.animate.init({ once: true });
+
+    // ── Scroll ──
+    digi2.scroll.init({ offset: 0 });
+
+    // ── Lazy ──
+    digi2.lazy.init();
+
+    // ── Countdown ──
+    digi2.countdown.create('demo-countdown', {
+      targetDate: '2026-12-31T23:59:59',
+    });
+
+    // ── Filter ──
+    digi2.filter.create('demo-filter', { animation: 'zoom' });
+
+    // ── Copy ──
+    digi2.copy.init({ showToast: true });
 
     // ── Consent grid ──
     renderConsent();
@@ -1127,7 +1389,7 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     var el = document.getElementById('module-status');
     if (!el) return;
     var loaded = digi2.modules.list();
-    var all = ['google', 'popups', 'cookies', 'forms'];
+    var all = ['google', 'popups', 'cookies', 'forms', 'tabs', 'sliders', 'animate', 'toasts', 'scroll', 'lazy', 'countdown', 'filter', 'copy'];
     var html = '';
     all.forEach(function (name) {
       var isLoaded = loaded.indexOf(name) !== -1;
