@@ -1494,54 +1494,62 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     var sidebarLinks = document.querySelectorAll('.sidebar a');
     var sidebarGroups = document.querySelectorAll('.sidebar .sidebar-group');
     var currentGroup = null;
+    var allSections = Array.from(document.querySelectorAll('section[id]'));
 
     function updateSidebar(sectionId) {
-      // Remove active from all links
       sidebarLinks.forEach(function (l) { l.classList.remove('active'); });
 
-      // Find matching link
       var activeLink = document.querySelector('.sidebar a[href="#' + sectionId + '"]');
       if (!activeLink) return;
 
-      // Highlight it
       activeLink.classList.add('active');
 
-      // Find its parent group
       var group = activeLink.closest('.sidebar-group');
       if (!group) return;
 
-      // If it's a different group than current, collapse old and expand new
       if (group !== currentGroup) {
-        // Collapse all groups
         sidebarGroups.forEach(function (g) {
           g.classList.add('is-collapsed');
         });
-
-        // Expand the active group
         group.classList.remove('is-collapsed');
         currentGroup = group;
       }
 
-      // Scroll the active link into view in sidebar
       activeLink.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
 
-    var scrollObserver = new IntersectionObserver(function (entries) {
-      // Find the most visible entry
-      var best = null;
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          if (!best || entry.intersectionRatio > best.intersectionRatio) {
-            best = entry;
+    // Use scroll event instead of IntersectionObserver for more reliable top-section detection
+    var spyTicking = false;
+
+    function onSpyScroll() {
+      if (spyTicking) return;
+      spyTicking = true;
+
+      requestAnimationFrame(function () {
+        spyTicking = false;
+
+        var scrollY = window.scrollY + 120; // offset for "current" position
+        var current = null;
+
+        // Walk sections top-to-bottom, pick the last one whose top is above scrollY
+        for (var i = 0; i < allSections.length; i++) {
+          var rect = allSections[i].getBoundingClientRect();
+          var sectionTop = rect.top + window.scrollY;
+          if (sectionTop <= scrollY) {
+            current = allSections[i].id;
+          } else {
+            break;
           }
         }
-      });
-      if (best) {
-        updateSidebar(best.target.id);
-      }
-    }, { rootMargin: '-10% 0px -60% 0px', threshold: [0, 0.25, 0.5] });
 
-    document.querySelectorAll('section[id]').forEach(function (s) { scrollObserver.observe(s); });
+        if (current) {
+          updateSidebar(current);
+        }
+      });
+    }
+
+    window.addEventListener('scroll', onSpyScroll, { passive: true });
+    onSpyScroll(); // initial
   });
 
   function renderConsent() {
