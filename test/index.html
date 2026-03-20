@@ -375,6 +375,52 @@
       pointer-events: none;
     }
 
+    /* ── Collapsible sidebar groups ── */
+    .sidebar-group {}
+
+    .sidebar-group-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 8px 20px 4px;
+      background: none;
+      border: none;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-dim);
+      cursor: pointer;
+      user-select: none;
+      transition: color 0.15s;
+    }
+
+    .sidebar-group-toggle:hover { color: var(--text); }
+
+    .sidebar-group-toggle .chevron {
+      width: 12px;
+      height: 12px;
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+
+    .sidebar-group.is-collapsed .chevron {
+      transform: rotate(-90deg);
+    }
+
+    .sidebar-group-items {
+      overflow: hidden;
+      max-height: 600px;
+      transition: max-height 0.25s ease, opacity 0.2s ease;
+      opacity: 1;
+    }
+
+    .sidebar-group.is-collapsed .sidebar-group-items {
+      max-height: 0;
+      opacity: 0;
+    }
+
     /* ── Command palette / Search modal ── */
     .search-overlay {
       display: none;
@@ -550,36 +596,118 @@
     <span class="kbd">&#8984;E</span>
   </div>
 
-  <div class="sidebar-section">Setup</div>
-  <a href="#setup">Installation</a>
-  <a href="#debug">Debug Mode</a>
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Setup
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#setup">Installation</a>
+      <a href="#debug">Debug Mode</a>
+    </div>
+  </div>
 
-  <div class="sidebar-section">Modules</div>
-  <a href="#popups">Popups</a>
-  <a href="#popups-animations">↳ Animations</a>
-  <a href="#popups-triggers">↳ Triggers</a>
-  <a href="#cookies">Cookies</a>
-  <a href="#forms">Forms</a>
-  <a href="#forms-validation">↳ Validation</a>
-  <a href="#forms-errors">↳ Error Elements</a>
-  <a href="#forms-tracking">↳ UTM Tracking</a>
-  <a href="#google">Google / Consent</a>
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Popups
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#popups">Overview</a>
+      <a href="#popups-animations">Animations</a>
+      <a href="#popups-triggers">Triggers</a>
+    </div>
+  </div>
 
-  <div class="sidebar-section">Components</div>
-  <a href="#tabs">Tabs & Accordions</a>
-  <a href="#sliders">Sliders</a>
-  <a href="#animate">Scroll Animations</a>
-  <a href="#toasts">Toasts</a>
-  <a href="#scroll">Smooth Scroll</a>
-  <a href="#lazy">Lazy Loading</a>
-  <a href="#countdown">Countdown</a>
-  <a href="#filter">CMS Filtering</a>
-  <a href="#copy">Copy to Clipboard</a>
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Forms
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#forms">Overview</a>
+      <a href="#forms-validation">Validation</a>
+      <a href="#forms-errors">Error Elements</a>
+      <a href="#forms-tracking">UTM Tracking</a>
+    </div>
+  </div>
 
-  <div class="sidebar-section">Core</div>
-  <a href="#events">Events</a>
-  <a href="#modules">Module Management</a>
-  <a href="#data-attrs">Data Attributes</a>
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Cookies
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#cookies">Overview</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Google / Consent
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#google">Overview</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Tabs & Accordions
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#tabs">Overview</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Sliders
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#sliders">Overview</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Animations
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#animate">Scroll Animations</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Utilities
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#toasts">Toasts</a>
+      <a href="#scroll">Smooth Scroll</a>
+      <a href="#lazy">Lazy Loading</a>
+      <a href="#countdown">Countdown</a>
+      <a href="#filter">CMS Filtering</a>
+      <a href="#copy">Copy to Clipboard</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Core
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#events">Events</a>
+      <a href="#modules">Module Management</a>
+      <a href="#data-attrs">Data Attributes</a>
+    </div>
+  </div>
 </nav>
 
 <!-- ═══════════════════════════════════════════════════════════════════════ -->
