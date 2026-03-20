@@ -321,6 +321,7 @@
     cookies: 'cookies',
     google: 'google',
     tabs: 'tabs',
+    sliders: 'sliders',
   };
 
   function createProxy(namespace, moduleName) {
