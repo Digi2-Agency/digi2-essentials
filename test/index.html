@@ -1490,18 +1490,58 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     // ── Cookie demo ──
     updateCookieDemo();
 
-    // ── Sidebar active state ──
-    var links = document.querySelectorAll('.sidebar a');
-    var observer = new IntersectionObserver(function (entries) {
+    // ── Sidebar scroll spy with collapsible management ──
+    var sidebarLinks = document.querySelectorAll('.sidebar a');
+    var sidebarGroups = document.querySelectorAll('.sidebar .sidebar-group');
+    var currentGroup = null;
+
+    function updateSidebar(sectionId) {
+      // Remove active from all links
+      sidebarLinks.forEach(function (l) { l.classList.remove('active'); });
+
+      // Find matching link
+      var activeLink = document.querySelector('.sidebar a[href="#' + sectionId + '"]');
+      if (!activeLink) return;
+
+      // Highlight it
+      activeLink.classList.add('active');
+
+      // Find its parent group
+      var group = activeLink.closest('.sidebar-group');
+      if (!group) return;
+
+      // If it's a different group than current, collapse old and expand new
+      if (group !== currentGroup) {
+        // Collapse all groups
+        sidebarGroups.forEach(function (g) {
+          g.classList.add('is-collapsed');
+        });
+
+        // Expand the active group
+        group.classList.remove('is-collapsed');
+        currentGroup = group;
+      }
+
+      // Scroll the active link into view in sidebar
+      activeLink.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    var scrollObserver = new IntersectionObserver(function (entries) {
+      // Find the most visible entry
+      var best = null;
       entries.forEach(function (entry) {
         if (entry.isIntersecting) {
-          links.forEach(function (l) { l.classList.remove('active'); });
-          var active = document.querySelector('.sidebar a[href="#' + entry.target.id + '"]');
-          if (active) active.classList.add('active');
+          if (!best || entry.intersectionRatio > best.intersectionRatio) {
+            best = entry;
+          }
         }
       });
-    }, { rootMargin: '-20% 0px -70% 0px' });
-    document.querySelectorAll('section[id]').forEach(function (s) { observer.observe(s); });
+      if (best) {
+        updateSidebar(best.target.id);
+      }
+    }, { rootMargin: '-10% 0px -60% 0px', threshold: [0, 0.25, 0.5] });
+
+    document.querySelectorAll('section[id]').forEach(function (s) { scrollObserver.observe(s); });
   });
 
   function renderConsent() {
