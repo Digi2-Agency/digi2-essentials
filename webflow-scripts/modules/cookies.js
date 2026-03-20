@@ -111,11 +111,18 @@
     remove: function (name, options) {
       _log('remove → ' + name);
       options = options || {};
-      this.set(name, '', {
-        days: -1,
-        path: options.path || '/',
-        domain: options.domain || undefined,
-      });
+      // Use max-age=0 AND past expires for maximum browser compatibility
+      var path = options.path || '/';
+      var parts = [
+        encodeURIComponent(name) + '=',
+        'expires=Thu, 01 Jan 1970 00:00:00 GMT',
+        'max-age=0',
+        'path=' + path,
+      ];
+      if (options.domain) {
+        parts.push('domain=' + options.domain);
+      }
+      document.cookie = parts.join(';');
     },
   };
 })();
