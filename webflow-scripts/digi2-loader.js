@@ -320,6 +320,7 @@
     forms: 'forms',
     cookies: 'cookies',
     google: 'google',
+    tabs: 'tabs',
   };
 
   function createProxy(namespace, moduleName) {
