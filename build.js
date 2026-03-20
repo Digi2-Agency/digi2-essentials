@@ -109,14 +109,7 @@ async function buildAll() {
 
   console.log(`\n  digi2 build — ${files.length} files\n`);
 
-  // Also copy raw (unminified) files to dist for source access
-  for (const file of files) {
-    const outPath = path.join(DIST_DIR, file.relative);
-    ensureDir(outPath);
-    fs.copyFileSync(file.src, outPath);
-  }
-
-  // Minify
+  // Minify only (no raw copies in dist)
   for (const file of files) {
     await buildFile(file);
   }

@@ -375,16 +375,15 @@
     <pre><code><span class="comment">&lt;!-- Load only what you need via d2-* attributes --&gt;</span>
 &lt;script
   src=<span class="string">"https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"</span>
-  <span class="prop">d2-google</span>
+  <span class="prop">d2-gtm</span>=<span class="string">"GTM-XXXXXXX"</span>
   <span class="prop">d2-popups</span>
   <span class="prop">d2-cookies</span>
   <span class="prop">d2-forms</span>
-  <span class="prop">g-gtm-id</span>=<span class="string">"GTM-XXXXXXX"</span>
 &gt;&lt;/script&gt;</code></pre>
 
     <table>
       <tr><th>Attribute</th><th>Module</th><th>Size (min)</th></tr>
-      <tr><td><code>d2-google</code></td><td>Consent Mode V2 + GTM</td><td>2.5 KB</td></tr>
+      <tr><td><code>d2-gtm="ID"</code></td><td>Consent Mode V2 + GTM</td><td>2.5 KB</td></tr>
       <tr><td><code>d2-popups</code></td><td>Popup / modal manager</td><td>8.4 KB</td></tr>
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
       <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM</td><td>12.1 KB</td></tr>
@@ -675,7 +674,7 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
   <!-- ── GOOGLE ── -->
   <section id="google">
     <h2>Google / Consent</h2>
-    <p>Handles Consent Mode V2, GTM injection, consent manager. Configured via <code>g-gtm-id</code> attribute.</p>
+    <p>Handles Consent Mode V2, GTM injection, consent manager. Configured via <code>d2-gtm="GTM-XXX"</code> on the loader tag.</p>
 
     <h3>Consent Categories</h3>
     <div class="consent-grid" id="consent-grid"></div>
@@ -736,7 +735,7 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><td><code>data-d2-form-error-{rule}</code></td><td>Inside label</td><td>Per-rule error message</td></tr>
       <tr><td><code>data-d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>
       <tr><td><code>d2-debug-mode</code></td><td>Loader script</td><td>Enable debug logging</td></tr>
-      <tr><td><code>g-gtm-id="GTM-XXX"</code></td><td>Loader script</td><td>GTM container ID</td></tr>
+      <tr><td><code>d2-gtm="GTM-XXX"</code></td><td>Loader script</td><td>GTM ID — auto-loads google module</td></tr>
     </table>
   </section>
 
@@ -784,9 +783,8 @@ digi2.modules.<span class="fn">list</span>()                              <span 
   d2-popups
   d2-cookies
   d2-forms
-  d2-google
+  d2-gtm="GTM-TEST123"
   d2-debug-mode
-  g-gtm-id="GTM-TEST123"
 ></script>
 
 <script>

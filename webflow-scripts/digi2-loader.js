@@ -5,23 +5,22 @@
  * ─── Setup ──────────────────────────────────────────────────────────────────
  *
  *   <script src="https://cdn.jsdelivr.net/gh/YOUR_ORG/digi2@latest/digi2-loader.js"
- *     d2-google
+ *     d2-gtm="GTM-XXXXXXX"
  *     d2-popups
  *     d2-cookies
  *     d2-forms
- *     g-gtm-id="GTM-XXXXXXX"
  *   ></script>
  *
  * ─── Available Modules ──────────────────────────────────────────────────────
  *
- *   d2-google   →  modules/google.js    Consent Mode V2 + GTM + consent manager
+ *   d2-gtm="ID" →  modules/google.js    Consent Mode V2 + GTM + consent manager (auto-loaded)
  *   d2-popups   →  modules/popups.js    Popup/modal manager with animations
  *   d2-cookies  →  modules/cookies.js   Cookie get/set/remove helpers
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
- *   g-gtm-id="GTM-XXXXXXX"             GTM container ID (used by d2-google)
+ *   d2-gtm="GTM-XXXXXXX"               GTM container ID — auto-loads google module
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
@@ -77,7 +76,7 @@
  *
  *   Configured via loader attributes (not JS options):
  *
- *     g-gtm-id="GTM-XXXXXXX"             Required — your GTM container ID
+ *     d2-gtm="GTM-XXXXXXX"               Required — set on the loader script tag
  *
  *   Auto-handled:
  *     - Consent Mode V2 defaults (all denied)
@@ -381,9 +380,21 @@
   var modules = [];
   var attrs = loaderScript.attributes;
 
+  // Special: d2-gtm="GTM-XXX" — auto-loads google module and stores the ID
+  var gtmAttr = loaderScript.getAttribute('d2-gtm');
+  if (gtmAttr) {
+    window.digi2._gtmId = gtmAttr;
+    window.digi2.log('loader', 'd2-gtm detected → ' + gtmAttr);
+  }
+
   for (var i = 0; i < attrs.length; i++) {
     var name = attrs[i].name;
-    if (name.indexOf('d2-') === 0) {
+    if (name === 'd2-gtm') {
+      // d2-gtm="ID" loads the google module
+      if (modules.indexOf('google') === -1) modules.push('google');
+    } else if (name === 'd2-debug-mode') {
+      // skip — not a module
+    } else if (name.indexOf('d2-') === 0) {
       modules.push(name.substring(3)); // "d2-popups" → "popups"
     }
   }

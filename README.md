@@ -11,15 +11,14 @@ Add a single script tag to your Webflow project's **Custom Code** (Site Settings
 ```html
 <script
   src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"
-  d2-google
+  d2-gtm="GTM-XXXXXXX"
   d2-popups
   d2-cookies
   d2-forms
-  g-gtm-id="GTM-XXXXXXX"
 ></script>
 ```
 
-Only the modules you declare via `d2-*` attributes get loaded. The loader itself is **1.9 KB**.
+Only the modules you declare via `d2-*` attributes get loaded. `d2-gtm` auto-loads the google module. The loader itself is **1.9 KB**.
 
 ---
 
@@ -43,7 +42,7 @@ The loader reads its own `src` to derive the base URL, then injects `<script>` t
 
 | Attribute | Module | Size (min) | Description |
 |---|---|---|---|
-| `d2-google` | `modules/google.js` | 2.2 KB | Consent Mode V2 + GTM injection + consent manager |
+| `d2-gtm="ID"` | `modules/google.js` | 2.5 KB | Consent Mode V2 + GTM injection + consent manager |
 | `d2-popups` | `modules/popups.js` | 8.1 KB | Popup/modal manager with animations |
 | `d2-cookies` | `modules/cookies.js` | 961 B | Cookie get/set/remove helpers |
 | `d2-forms` | `modules/forms.js` | 3.7 KB | Form enhancement with UTM, IP, GA tracking |
@@ -54,11 +53,10 @@ The loader reads its own `src` to derive the base URL, then injects `<script>` t
 
 | Attribute | Required | Description |
 |---|---|---|
-| `d2-google` | No | Load the Google module |
+| `d2-gtm="GTM-XXX"` | No | GTM container ID — auto-loads google module |
 | `d2-popups` | No | Load the Popups module |
 | `d2-cookies` | No | Load the Cookies module |
 | `d2-forms` | No | Load the Forms module |
-| `g-gtm-id="GTM-XXX"` | If using `d2-google` | Your GTM container ID |
 
 ---
 
@@ -738,12 +736,14 @@ webflow-scripts/              ← source files (development)
     cookies.js
     forms.js
 
-dist/                         ← built files (production)
-  digi2-loader.js             ← raw copy
-  digi2-loader.min.js         ← minified
+dist/                         ← built files (production, minified only)
+  digi2-loader.min.js
+  digi2.min.js
   modules/
-    *.js                      ← raw copies
-    *.min.js                  ← minified
+    cookies.min.js
+    forms.min.js
+    google.min.js
+    popups.min.js
 
 build.js                      ← build script (Terser)
 package.json
@@ -757,11 +757,10 @@ package.json
 <!-- In Webflow: Site Settings → Custom Code → Head Code -->
 <script
   src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"
-  d2-google
+  d2-gtm="GTM-WF7W3BH4"
   d2-popups
   d2-cookies
   d2-forms
-  g-gtm-id="GTM-WF7W3BH4"
 ></script>
 
 <script>

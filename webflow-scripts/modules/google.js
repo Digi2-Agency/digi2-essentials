@@ -30,10 +30,9 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Config — read from loader script attributes
+  // Config — read GTM ID from digi2._gtmId (set by loader from d2-gtm="...")
   // ---------------------------------------------------------------------------
-  var loaderScript = document.querySelector('script[src*="digi2-loader"]');
-  var gtmId = loaderScript ? loaderScript.getAttribute('g-gtm-id') : null;
+  var gtmId = window.digi2._gtmId || null;
 
   _log('init', { gtmId: gtmId });
 
