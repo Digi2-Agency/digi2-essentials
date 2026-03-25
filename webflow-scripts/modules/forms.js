@@ -365,6 +365,11 @@
     // ---- Find form ----------------------------------------------------------
 
     _findForm() {
+      // Direct element reference (used by createAll)
+      if (this.options._formElement) {
+        return this.options._formElement;
+      }
+
       if (this.options.formSelector) {
         return document.querySelector(this.options.formSelector);
       }
@@ -1021,12 +1026,8 @@
           return;
         }
 
-        // Give the form a unique ID if it doesn't have one, so formSelector works
-        if (!form.id) {
-          form.id = 'd2-form-' + registryKey;
-        }
-
-        var opts = Object.assign({}, options, { formSelector: '#' + form.id });
+        // Pass direct element reference — avoids duplicate ID issues
+        var opts = Object.assign({}, options, { _formElement: form });
         var instance = new FormManager(registryKey, opts);
         registry[registryKey] = instance;
         created.push(instance);
