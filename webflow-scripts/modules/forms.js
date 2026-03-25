@@ -60,20 +60,17 @@
   // Cookie helpers — use digi2.cookies if available, fallback to internal
   // ---------------------------------------------------------------------------
   function _setCookie(name, value, days) {
-    if (window.digi2.cookies && window.digi2.cookies.set) {
-      window.digi2.cookies.set(name, value, { days: days, path: '/', sameSite: 'Lax' });
-    } else {
-      var date = new Date();
-      date.setTime(date.getTime() + days * 864e5);
-      document.cookie = encodeURIComponent(name) + '=' + encodeURIComponent(value) +
-        ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
-    }
+    // Always use direct cookie setting — avoids proxy/Promise issues
+    // when the cookies module hasn't loaded yet.
+    var date = new Date();
+    date.setTime(date.getTime() + days * 864e5);
+    document.cookie = encodeURIComponent(name) + '=' + encodeURIComponent(value) +
+      ';expires=' + date.toUTCString() + ';path=/;SameSite=Lax';
   }
 
   function _getCookie(name) {
-    if (window.digi2.cookies && window.digi2.cookies.get) {
-      return window.digi2.cookies.get(name);
-    }
+    // Always use direct cookie parsing — avoids proxy/Promise issues
+    // when the cookies module hasn't loaded yet.
     var match = document.cookie.match(
       new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)')
     );
@@ -783,29 +780,87 @@
 
     // ---- Inject hidden fields -----------------------------------------------
 
+    /**
+     * Check if the form already has a field with this name (any case).
+     * Prevents duplicate tracking fields when the user already placed
+     * equivalent fields in Webflow (e.g. UTM_SOURCE vs utm_source_hidden).
+     */
+    _hasField(name) {
+      if (!this.formElement) return false;
+      // Exact match
+      if (this.formElement.querySelector('input[name="' + name + '"]')) return true;
+
+      // Known aliases: digi2 field name → common Webflow equivalents (uppercase)
+      var ALIASES = {
+        'gclid':              ['GOOGLE_ADS_ID', 'GCLID'],
+        'fbclid':             ['META_ADS_ID', 'FBCLID'],
+        'msclkid':            ['MSCLKID', 'BING_ADS_ID'],
+        'gaclientid':         ['GOOGLE_ANALYTICS_ID', 'GACLIENTID', 'GA_CLIENT_ID'],
+        'page_url':           ['PAGE_URL'],
+        'page_title':         ['PAGE_TITLE'],
+        'page_referrer':      ['PAGE_REFERRER', 'REFERRER'],
+      };
+
+      // Build list of names to check
+      var upper = name.toUpperCase().replace(/_HIDDEN$/, '');
+      var namesToCheck = [upper];
+      var aliases = ALIASES[name] || ALIASES[name.replace(/_hidden$/, '')];
+      if (aliases) {
+        namesToCheck = namesToCheck.concat(aliases);
+      }
+
+      var inputs = this.formElement.querySelectorAll('input');
+      for (var i = 0; i < inputs.length; i++) {
+        var inputUpper = inputs[i].name.toUpperCase();
+        for (var j = 0; j < namesToCheck.length; j++) {
+          if (inputUpper === namesToCheck[j]) return true;
+        }
+      }
+      return false;
+    }
+
     _injectTrackingFields() {
       if (this.options.utmTracking) {
         var self = this;
         UTM_PARAMS.forEach(function (param) {
-          self._injectField(param + '_hidden', _getCookie(param) || '');
+          var fieldName = param + '_hidden';
+          if (!self._hasField(fieldName)) {
+            self._injectField(fieldName, _getCookie(param) || '');
+          } else {
+            _log('skip duplicate → ' + fieldName);
+          }
         });
       }
 
       if (this.options.clickIdTracking) {
         var self2 = this;
         CLICK_IDS.forEach(function (param) {
-          self2._injectField(param, _getCookie(param) || '');
+          if (!self2._hasField(param)) {
+            self2._injectField(param, _getCookie(param) || '');
+          } else {
+            _log('skip duplicate → ' + param);
+          }
         });
       }
 
       if (this.options.gaClientId) {
-        this._injectField('gaclientid', _getCookie('gaclientid') || '');
+        if (!this._hasField('gaclientid')) {
+          this._injectField('gaclientid', _getCookie('gaclientid') || '');
+        } else {
+          _log('skip duplicate → gaclientid');
+        }
       }
 
       if (this.options.pageMeta) {
-        this._injectField('page_url', window.location.href);
-        this._injectField('page_title', document.title);
-        this._injectField('page_referrer', document.referrer || '');
+        if (!this._hasField('page_url')) {
+          this._injectField('page_url', window.location.href);
+        }
+        if (!this._hasField('page_title')) {
+          this._injectField('page_title', document.title);
+        }
+        if (!this._hasField('page_referrer')) {
+          this._injectField('page_referrer', document.referrer || '');
+        }
       }
 
       var custom = this.options.customFields;
