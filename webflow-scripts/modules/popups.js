@@ -200,6 +200,7 @@
         openOnExitIntent: false,
         openAfterPageViews: null,
         sessionStorageKey: 'popupPageViews',
+        lockScrollOnShow: true,       // lock body scroll when popup is visible
         onOpen: null,
         onClose: null,
         ...options,
@@ -289,6 +290,11 @@
 
       _log('show → ' + this.name, { animation: this.options.animation });
       this.isVisible = true;
+
+      if (this.options.lockScrollOnShow) {
+        this._savedOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+      }
       const anim = this._getAnimation();
       const dur = this.options.animationDuration;
 
@@ -322,6 +328,11 @@
         this.popupElement.style.display = 'none';
         applyStyles(this.popupElement, anim.reset());
         this._animating = false;
+
+        if (this.options.lockScrollOnShow) {
+          document.body.style.overflow = this._savedOverflow || '';
+        }
+
         if (typeof this.options.onClose === 'function') this.options.onClose(this);
       };
 
