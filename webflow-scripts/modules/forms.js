@@ -970,6 +970,26 @@
       return instance;
     },
 
+    /**
+     * Auto-initialize all [data-d2-form] elements on the page.
+     * Each gets its own FormManager instance with shared options.
+     * @param {object} [options]  — shared options applied to all forms
+     * @returns {object[]} array of created FormManager instances
+     */
+    createAll: function (options) {
+      var wrappers = document.querySelectorAll('[data-d2-form]');
+      var created = [];
+      wrappers.forEach(function (wrapper) {
+        var name = wrapper.getAttribute('data-d2-form');
+        if (!name || registry[name]) return;
+        var instance = new FormManager(name, options || {});
+        registry[name] = instance;
+        created.push(instance);
+      });
+      _log('createAll → ' + created.length + ' forms', created.map(function (f) { return f.name; }));
+      return created;
+    },
+
     get: function (name) {
       return registry[name];
     },
