@@ -322,6 +322,21 @@
       if (this._resolvedValidation && Object.keys(this._resolvedValidation).length > 0) {
         _log('validation setup → ' + this.name, this._resolvedValidation);
         this._setupValidation();
+
+        // Remove native `required` attributes on fields that digi2 validates.
+        // Browser validation fires before JS submit handlers, blocking digi2
+        // from showing its own inline errors on the first click.
+        var self = this;
+        for (var fieldName in this._resolvedValidation) {
+          if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
+          var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+          if (input && input.hasAttribute('required')) {
+            input.removeAttribute('required');
+            _log('removed native required → ' + fieldName);
+          }
+        }
+        // Also disable Webflow's novalidate isn't always set
+        this.formElement.setAttribute('novalidate', '');
       }
 
       // 5. IP tracking (async)
@@ -499,14 +514,14 @@
         this.formElement.addEventListener('focusout', this._boundBlurHandler);
       }
 
-      // Submit validation
+      // Submit validation — use capture phase to run BEFORE Webflow's handler
       if (validateOn === 'submit' || validateOn === 'both') {
         this._boundSubmitHandler = function (e) {
           var allValid = self.validateAll();
 
           if (!allValid) {
             e.preventDefault();
-            e.stopPropagation();
+            e.stopImmediatePropagation();
             return false;
           }
 
@@ -516,7 +531,7 @@
             self.options.onSubmit(self.getData(), self.formElement);
           }
         };
-        this.formElement.addEventListener('submit', this._boundSubmitHandler);
+        this.formElement.addEventListener('submit', this._boundSubmitHandler, true);
       }
     }
 
