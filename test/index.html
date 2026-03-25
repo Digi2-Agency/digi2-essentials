@@ -276,11 +276,7 @@
     .popup-close:hover { color: var(--text); }
 
     /* ── Error elements ── */
-    [data-d2-form-error],
-    [data-d2-form-error-required],
-    [data-d2-form-error-email],
-    [data-d2-form-error-minLength],
-    [data-d2-form-error-phone] {
+    [data-d2-form-error] {
       display: none;
       color: var(--red);
       font-size: 11px;
@@ -931,28 +927,24 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
       <form>
         <label>Name
           <input type="text" name="NAME" placeholder="John Doe">
-          <div data-d2-form-error-required style="display:none">Name is required</div>
-          <div data-d2-form-error-minLength style="display:none">At least 2 characters</div>
+          <div data-d2-form-error style="display:none"></div>
         </label>
         <label>Email
           <input type="email" name="EMAIL" placeholder="john@example.com">
-          <div data-d2-form-error-required style="display:none">Email is required</div>
-          <div data-d2-form-error-email style="display:none">Enter a valid email</div>
+          <div data-d2-form-error style="display:none"></div>
         </label>
         <label>Phone
           <input type="tel" name="PHONE" placeholder="+48 123 456 789">
-          <div data-d2-form-error-required style="display:none">Phone is required</div>
-          <div data-d2-form-error-phone style="display:none">Enter a valid phone number</div>
+          <div data-d2-form-error style="display:none"></div>
         </label>
         <label>Message
           <textarea name="MESSAGE" placeholder="Your message..."></textarea>
-          <div data-d2-form-error-required style="display:none">Message is required</div>
-          <div data-d2-form-error-minLength style="display:none">At least 30 characters</div>
+          <div data-d2-form-error style="display:none"></div>
         </label>
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
           <input type="checkbox" name="CONSENT_GDPR" style="width:auto; margin:0;">
           I agree to GDPR terms
-          <div data-d2-form-error-required style="display:none; margin:0;">Required</div>
+          <div data-d2-form-error style="display:none; margin:0;"></div>
         </label>
         <button type="submit" class="btn">Submit</button>
       </form>
@@ -1041,27 +1033,14 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
 
   <section id="forms-errors">
     <h2>Error Elements</h2>
-    <h3>Per-rule (recommended)</h3>
+    <h3>Setup</h3>
+    <p>Add one <code>data-d2-form-error</code> element per field, hidden by default. The module finds the closest one to each input and sets its text from <code>errorMessages</code>.</p>
     <pre><code>&lt;label&gt;
   Email
   &lt;input type=<span class="string">"email"</span> name=<span class="string">"EMAIL"</span> /&gt;
-  &lt;div <span class="prop">data-d2-form-error-required</span> style=<span class="string">"display:none"</span>&gt;Required&lt;/div&gt;
-  &lt;div <span class="prop">data-d2-form-error-email</span> style=<span class="string">"display:none"</span>&gt;Invalid email&lt;/div&gt;
+  &lt;div <span class="prop">data-d2-form-error</span> style=<span class="string">"display:none"</span>&gt;&lt;/div&gt;
 &lt;/label&gt;</code></pre>
-
-    <h3>Available Error Attributes</h3>
-    <table>
-      <tr><th>Attribute</th><th>Shown when</th></tr>
-      <tr><td><code>data-d2-form-error-required</code></td><td>Field is empty</td></tr>
-      <tr><td><code>data-d2-form-error-email</code></td><td>Invalid email</td></tr>
-      <tr><td><code>data-d2-form-error-phone</code></td><td>Invalid phone</td></tr>
-      <tr><td><code>data-d2-form-error-minLength</code></td><td>Too short</td></tr>
-      <tr><td><code>data-d2-form-error-maxLength</code></td><td>Too long</td></tr>
-      <tr><td><code>data-d2-form-error-letters</code></td><td>Non-letter chars</td></tr>
-      <tr><td><code>data-d2-form-error-pattern</code></td><td>Regex mismatch</td></tr>
-      <tr><td><code>data-d2-form-error-matchField</code></td><td>Fields don't match</td></tr>
-      <tr><td><code>data-d2-form-error</code></td><td>Generic fallback</td></tr>
-    </table>
+    <p>When validation fails, the first error's message is injected as text content and <code>display: flex</code> is applied. When valid, it's hidden and cleared.</p>
 
     <h3>Error Display Modes</h3>
     <pre><code><span class="comment">// Per-field (default)</span>
@@ -1372,8 +1351,7 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><th>Attribute</th><th>Element</th><th>Description</th></tr>
       <tr><td><code>data-d2-show-popup="name"</code></td><td>Any</td><td>Click opens popup by name</td></tr>
       <tr><td><code>data-d2-form="name"</code></td><td>Div wrapping form</td><td>Marks form for enhancement</td></tr>
-      <tr><td><code>data-d2-form-error</code></td><td>Inside label</td><td>Generic error message</td></tr>
-      <tr><td><code>data-d2-form-error-{rule}</code></td><td>Inside label</td><td>Per-rule error message</td></tr>
+      <tr><td><code>data-d2-form-error</code></td><td>Inside label</td><td>Error message element (text set from errorMessages)</td></tr>
       <tr><td><code>data-d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>
       <tr><td><code>d2-debug-mode</code></td><td>Loader script</td><td>Enable debug logging</td></tr>
       <tr><td><code>d2-gtm="GTM-XXX"</code></td><td>Loader script</td><td>GTM ID — auto-loads google module</td></tr>
