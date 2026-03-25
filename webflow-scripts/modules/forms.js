@@ -28,6 +28,7 @@
  *     },
  *     errorClass:     'd2-error',
  *     errorAttribute: 'data-d2-error',
+ *     errorMessages:  { minLength: 'Too short!', required: 'Fill this in.' },  — optional custom error messages
  *     validateOn:     'blur',          — 'blur' | 'submit' | 'both' (default: 'both')
  *     onValidationError: null,         — callback(fieldName, errors, inputEl)
  *     onSubmit: null,                  — callback(data, formEl) — fires only if valid
@@ -173,6 +174,31 @@
   var customRules = {};
 
   // ---------------------------------------------------------------------------
+  // Default error messages for built-in rules
+  // Use {param} placeholder for the rule parameter value.
+  // ---------------------------------------------------------------------------
+  var DEFAULT_ERROR_MESSAGES = {
+    required:        'This field is required.',
+    email:           'Please enter a valid email address.',
+    phone:           'Please enter a valid phone number.',
+    url:             'Please enter a valid URL.',
+    number:          'Please enter a valid number.',
+    integer:         'Please enter a whole number.',
+    letters:         'Only letters are allowed.',
+    numbers:         'Only numbers are allowed.',
+    alphanumeric:    'Only letters and numbers are allowed.',
+    noSpaces:        'Spaces are not allowed.',
+    noSpecialChars:  'Special characters are not allowed.',
+    minLength:       'Must be at least {param} characters.',
+    maxLength:       'Must be no more than {param} characters.',
+    min:             'Must be at least {param}.',
+    max:             'Must be no more than {param}.',
+    pattern:         'Invalid format.',
+    equals:          'Values do not match.',
+    matchField:      'Fields do not match.',
+  };
+
+  // ---------------------------------------------------------------------------
   // Default validation rules for standard field names
   // Auto-applied when autoValidation is true (default).
   // User-provided validation rules override/extend these.
@@ -181,7 +207,7 @@
     'NAME':           { required: true, minLength: 2, letters: true },
     'EMAIL':          { required: true, email: true },
     'PHONE':          { required: true, phone: true },
-    'MESSAGE':        { required: true, minLength: 10 },
+    'MESSAGE':        { required: true, minLength: 30 },
     'CONSENT_GDPR':   { required: true },
     'CONSENT_EMAIL':  { required: true },
     'CONSENT_PHONE':  { required: true },
@@ -252,6 +278,7 @@
         errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
         errorSelector: '[data-d2-form-error]', // selector for error message element inside input's parent
         errorDisplay: 'inline',       // 'inline' = per-field errors | 'summary' = one block above submit
+        errorMessages: null,          // { ruleName: 'Custom message', ... } — overrides default error messages
         inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
         inputOnValid: null,           // CSS object applied when input becomes valid (resets), e.g. { borderColor: '', boxShadow: '' }
         summarySelector: '[data-d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
@@ -402,6 +429,24 @@
       return merged;
     }
 
+    // ---- Error message resolution -------------------------------------------
+
+    /**
+     * Resolve the human-readable error message for a given rule.
+     * Priority: user errorMessages > default messages > rule name fallback.
+     * @param {string} ruleName   e.g. 'minLength'
+     * @param {*}      ruleParam  e.g. 30 (the param value from the rule config)
+     * @returns {string}
+     */
+    _getErrorMessage(ruleName, ruleParam) {
+      var userMessages = this.options.errorMessages;
+      var msg = (userMessages && userMessages[ruleName]) || DEFAULT_ERROR_MESSAGES[ruleName] || ruleName;
+      if (ruleParam !== undefined && ruleParam !== true) {
+        msg = msg.replace(/\{param\}/g, String(ruleParam));
+      }
+      return msg;
+    }
+
     // ---- Validation ---------------------------------------------------------
 
     _setupValidation() {
@@ -480,8 +525,9 @@
      * Elements should be set to display:none in Webflow by default.
      * When shown, display is set to 'flex'. When valid, back to 'none'.
      */
-    _updateErrorElements(container, errors, isValid) {
+    _updateErrorElements(container, errors, isValid, fieldRules) {
       if (!container) return;
+      var self = this;
 
       // All possible per-rule error elements in this container
       var allErrorEls = container.querySelectorAll('[data-d2-form-error-required], [data-d2-form-error-email], [data-d2-form-error-phone], [data-d2-form-error-minLength], [data-d2-form-error-maxLength], [data-d2-form-error-min], [data-d2-form-error-max], [data-d2-form-error-letters], [data-d2-form-error-numbers], [data-d2-form-error-pattern], [data-d2-form-error-url], [data-d2-form-error-matchField], [data-d2-form-error-integer], [data-d2-form-error-alphanumeric], [data-d2-form-error-noSpaces], [data-d2-form-error-noSpecialChars], [data-d2-form-error-number], [data-d2-form-error-equals]');
@@ -500,12 +546,16 @@
       allErrorEls.forEach(function (el) { el.style.display = 'none'; });
 
       errors.forEach(function (ruleName) {
+        var ruleParam = fieldRules ? fieldRules[ruleName] : undefined;
+        var msg = self._getErrorMessage(ruleName, ruleParam);
+
         var selector = '[data-d2-form-error-' + ruleName + ']';
         var el = container.querySelector(selector);
         if (el) {
           el.style.display = 'flex';
+          el.textContent = msg;
           specificMatched = true;
-          _log('show error element → ' + ruleName, el.getAttribute('data-d2-form-error-' + ruleName));
+          _log('show error element → ' + ruleName, msg);
         }
       });
 
@@ -514,6 +564,10 @@
         if (specificMatched) {
           genericEl.style.display = 'none';
         } else {
+          // Show first error message in the generic element
+          var firstRule = errors[0];
+          var firstParam = fieldRules ? fieldRules[firstRule] : undefined;
+          genericEl.textContent = self._getErrorMessage(firstRule, firstParam);
           genericEl.style.display = 'flex';
         }
       }
@@ -567,7 +621,7 @@
 
       // Update error display (inline per-field or summary — handled separately)
       if (this.options.errorDisplay === 'inline') {
-        this._updateErrorElements(container, result.errors, result.valid);
+        this._updateErrorElements(container, result.errors, result.valid, rules);
       }
 
       return result;
@@ -634,6 +688,7 @@
     _updateSummary(failedFields, allValid) {
       var summaryEl = this._getSummaryElement();
       if (!summaryEl) return;
+      var self = this;
 
       if (allValid) {
         summaryEl.style.display = 'none';
@@ -643,7 +698,11 @@
 
       var html = '<p>' + this.options.summaryMessage + '</p><ul>';
       failedFields.forEach(function (field) {
-        html += '<li><strong>' + field.name + '</strong>: ' + field.errors.join(', ') + '</li>';
+        var fieldRules = self._resolvedValidation[field.name] || {};
+        var messages = field.errors.map(function (ruleName) {
+          return self._getErrorMessage(ruleName, fieldRules[ruleName]);
+        });
+        html += '<li><strong>' + field.name + '</strong>: ' + messages.join(', ') + '</li>';
       });
       html += '</ul>';
 
