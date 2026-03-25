@@ -42,10 +42,9 @@
  *   → { valid: false, errors: ['required'] }
  *
  * Auto-injected hidden input names:
- *   utm_campaign_hidden, utm_source_hidden, utm_medium_hidden,
- *   utm_content_hidden, utm_term_hidden,
- *   gclid, fbclid, msclkid, gaclientid,
- *   page_url, page_title, page_referrer, ip_address
+ *   UTM_CAMPAIGN, UTM_SOURCE, UTM_MEDIUM, UTM_CONTENT, UTM_TERM,
+ *   GCLID, FBCLID, MSCLKID, GOOGLE_ANALYTICS_ID,
+ *   PAGE_URL, PAGE_TITLE, PAGE_REFERRER, IP_ADDRESS
  */
 (function () {
   'use strict';
@@ -807,19 +806,20 @@
 
       // Known aliases: digi2 field name → common Webflow equivalents (uppercase)
       var ALIASES = {
-        'gclid':              ['GOOGLE_ADS_ID', 'GCLID'],
-        'fbclid':             ['META_ADS_ID', 'FBCLID'],
-        'msclkid':            ['MSCLKID', 'BING_ADS_ID'],
-        'gaclientid':         ['GOOGLE_ANALYTICS_ID', 'GACLIENTID', 'GA_CLIENT_ID'],
-        'page_url':           ['PAGE_URL'],
-        'page_title':         ['PAGE_TITLE'],
-        'page_referrer':      ['PAGE_REFERRER', 'REFERRER'],
+        'GCLID':              ['GOOGLE_ADS_ID'],
+        'FBCLID':             ['META_ADS_ID'],
+        'MSCLKID':            ['BING_ADS_ID'],
+        'GOOGLE_ANALYTICS_ID':['GACLIENTID', 'GA_CLIENT_ID'],
+        'PAGE_URL':           [],
+        'PAGE_TITLE':         [],
+        'PAGE_REFERRER':      ['REFERRER'],
+        'IP_ADDRESS':         [],
       };
 
       // Build list of names to check
-      var upper = name.toUpperCase().replace(/_HIDDEN$/, '');
+      var upper = name.toUpperCase();
       var namesToCheck = [upper];
-      var aliases = ALIASES[name] || ALIASES[name.replace(/_hidden$/, '')];
+      var aliases = ALIASES[upper];
       if (aliases) {
         namesToCheck = namesToCheck.concat(aliases);
       }
@@ -838,7 +838,7 @@
       if (this.options.utmTracking) {
         var self = this;
         UTM_PARAMS.forEach(function (param) {
-          var fieldName = param + '_hidden';
+          var fieldName = param.toUpperCase();
           if (!self._hasField(fieldName)) {
             self._injectField(fieldName, _getCookie(param) || '');
           } else {
@@ -850,31 +850,32 @@
       if (this.options.clickIdTracking) {
         var self2 = this;
         CLICK_IDS.forEach(function (param) {
-          if (!self2._hasField(param)) {
-            self2._injectField(param, _getCookie(param) || '');
+          var fieldName = param.toUpperCase();
+          if (!self2._hasField(fieldName)) {
+            self2._injectField(fieldName, _getCookie(param) || '');
           } else {
-            _log('skip duplicate → ' + param);
+            _log('skip duplicate → ' + fieldName);
           }
         });
       }
 
       if (this.options.gaClientId) {
-        if (!this._hasField('gaclientid')) {
-          this._injectField('gaclientid', _getCookie('gaclientid') || '');
+        if (!this._hasField('GOOGLE_ANALYTICS_ID')) {
+          this._injectField('GOOGLE_ANALYTICS_ID', _getCookie('gaclientid') || '');
         } else {
-          _log('skip duplicate → gaclientid');
+          _log('skip duplicate → GOOGLE_ANALYTICS_ID');
         }
       }
 
       if (this.options.pageMeta) {
-        if (!this._hasField('page_url')) {
-          this._injectField('page_url', window.location.href);
+        if (!this._hasField('PAGE_URL')) {
+          this._injectField('PAGE_URL', window.location.href);
         }
-        if (!this._hasField('page_title')) {
-          this._injectField('page_title', document.title);
+        if (!this._hasField('PAGE_TITLE')) {
+          this._injectField('PAGE_TITLE', document.title);
         }
-        if (!this._hasField('page_referrer')) {
-          this._injectField('page_referrer', document.referrer || '');
+        if (!this._hasField('PAGE_REFERRER')) {
+          this._injectField('PAGE_REFERRER', document.referrer || '');
         }
       }
 
@@ -914,11 +915,11 @@
         .then(function (res) { return res.json(); })
         .then(function (data) {
           var ip = data.ip || data.IP || '';
-          self._injectField('ip_address', ip);
+          self._injectField('IP_ADDRESS', ip);
         })
         .catch(function (err) {
           console.warn('[digi2.forms] IP fetch failed:', err);
-          self._injectField('ip_address', '');
+          self._injectField('IP_ADDRESS', '');
         })
         .finally(function () {
           self._fireReady();
