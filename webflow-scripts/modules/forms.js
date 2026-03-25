@@ -273,7 +273,7 @@
         validation: null,             // { fieldName: { rule: value, ... }, ... } — overrides/extends auto rules
         errorClass: 'd2-error',       // CSS class added to invalid fields
         errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
-        errorSelector: '[data-d2-form-error-text]', // selector for error message element inside input's parent
+        errorSelector: '[d2-form-error-text]', // selector for error message element inside input's parent
         errorDisplay: 'inline',       // 'inline' = per-field errors | 'summary' = one block above submit
         errorMessages: null,          // { ruleName: 'Custom message', ... } — overrides default error messages
         inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
@@ -521,14 +521,14 @@
     }
 
     /**
-     * Find the closest [data-d2-form-error-text] element for a given input.
+     * Find the closest [d2-form-error-text] element for a given input.
      * Searches siblings first, then walks up to 3 parent levels.
      */
     _findErrorElement(inputEl) {
       if (!inputEl) return null;
       var parent = inputEl.parentElement;
       for (var i = 0; i < 3 && parent; i++) {
-        var el = parent.querySelector('[data-d2-form-error-text]');
+        var el = parent.querySelector('[d2-form-error-text]');
         if (el) return el;
         parent = parent.parentElement;
       }
@@ -538,14 +538,14 @@
     /**
      * Show or hide the error element for a field.
      *
-     * Uses a single [data-d2-form-error-text] element per field.
+     * Uses a single [d2-form-error-text] element per field.
      * Text content is set from errorMessages (custom or default).
      * Shows the first failed rule's message.
      *
      * Webflow setup:
      *   <label>
      *     <input name="EMAIL">
-     *     <div data-d2-form-error-text style="display:none"></div>
+     *     <div d2-form-error-text style="display:none"></div>
      *   </label>
      */
     _updateErrorElement(errorEl, errors, isValid, fieldRules) {
@@ -589,7 +589,7 @@
 
       _log('validate field → ' + fieldName, { value: val, valid: result.valid, errors: result.errors });
 
-      // Find the closest [data-d2-form-error-text] element for this input
+      // Find the closest [d2-form-error-text] element for this input
       var errorEl = this._findErrorElement(inputEl);
 
       // Apply/remove error indicators on the input itself
@@ -724,7 +724,7 @@
       });
 
       // Hide all inline error elements
-      var allErrorEls = this.formElement.querySelectorAll('[data-d2-form-error-text]');
+      var allErrorEls = this.formElement.querySelectorAll('[d2-form-error-text]');
       allErrorEls.forEach(function (el) {
         el.style.display = 'none';
         el.textContent = '';
