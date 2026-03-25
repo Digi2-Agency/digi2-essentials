@@ -310,13 +310,16 @@
 
       _log('init → ' + this.name, this.options);
 
-      // 1. Capture URL params into cookies
+      // 1. Neutralize browser autofill background color
+      this._injectAutofillReset();
+
+      // 2. Capture URL params into cookies
       this._captureUrlParams();
 
-      // 2. Inject hidden fields
+      // 3. Inject hidden fields
       this._injectTrackingFields();
 
-      // 3. Build validation rules (auto-detect + user overrides)
+      // 4. Build validation rules (auto-detect + user overrides)
       this._resolvedValidation = this._buildValidationRules();
 
       if (this._resolvedValidation && Object.keys(this._resolvedValidation).length > 0) {
@@ -324,7 +327,7 @@
         this._setupValidation();
       }
 
-      // 4. IP tracking (async)
+      // 5. IP tracking (async)
       if (this.options.ipTracking) {
         this._fetchAndInjectIp();
       } else {
@@ -362,6 +365,39 @@
       }
 
       return null;
+    }
+
+    // ---- Autofill background reset -----------------------------------------
+
+    /**
+     * Inject a <style> tag that removes the browser autofill background color
+     * (Chrome/Safari's yellow/blue :-webkit-autofill highlight).
+     * Scoped to this form's inputs only.
+     */
+    _injectAutofillReset() {
+      if (!this.formElement) return;
+
+      var formSel = this.formElement.id
+        ? '#' + this.formElement.id
+        : '[data-d2-form="' + this.name + '"] form';
+
+      var css =
+        formSel + ' input:-webkit-autofill,' +
+        formSel + ' input:-webkit-autofill:hover,' +
+        formSel + ' input:-webkit-autofill:focus,' +
+        formSel + ' input:-webkit-autofill:active,' +
+        formSel + ' textarea:-webkit-autofill,' +
+        formSel + ' select:-webkit-autofill {' +
+        '  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;' +
+        '  -webkit-text-fill-color: inherit !important;' +
+        '  transition: background-color 5000s ease-in-out 0s;' +
+        '}';
+
+      var style = document.createElement('style');
+      style.textContent = css;
+      document.head.appendChild(style);
+
+      _log('autofill background reset injected → ' + this.name);
     }
 
     // ---- Auto-detection of validation rules --------------------------------
