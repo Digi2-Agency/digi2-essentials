@@ -919,6 +919,11 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
     <span class="prop">borderColor</span>: <span class="string">''</span>,
     <span class="prop">boxShadow</span>: <span class="string">''</span>,
   },
+  <span class="prop">errorMessages</span>: {
+    <span class="prop">required</span>: <span class="string">'This field is required.'</span>,
+    <span class="prop">minLength</span>: <span class="string">'Must be at least {param} characters.'</span>,
+    <span class="prop">email</span>: <span class="string">'Please enter a valid email.'</span>,
+  },
 })</code></pre>
 
     <h3>Live Demo</h3>
@@ -942,7 +947,7 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
         <label>Message
           <textarea name="MESSAGE" placeholder="Your message..."></textarea>
           <div data-d2-form-error-required style="display:none">Message is required</div>
-          <div data-d2-form-error-minLength style="display:none">At least 10 characters</div>
+          <div data-d2-form-error-minLength style="display:none">At least 30 characters</div>
         </label>
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
           <input type="checkbox" name="CONSENT_GDPR" style="width:auto; margin:0;">
@@ -963,7 +968,7 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
       <tr><td><code>NAME</code></td><td>required, minLength: 2, letters</td></tr>
       <tr><td><code>EMAIL</code></td><td>required, email</td></tr>
       <tr><td><code>PHONE</code></td><td>required, phone</td></tr>
-      <tr><td><code>MESSAGE</code></td><td>required, minLength: 10</td></tr>
+      <tr><td><code>MESSAGE</code></td><td>required, minLength: 30</td></tr>
       <tr><td><code>CONSENT_GDPR</code></td><td>required (checkbox)</td></tr>
       <tr><td><code>CONSENT_EMAIL</code></td><td>required (checkbox)</td></tr>
       <tr><td><code>CONSENT_PHONE</code></td><td>required (checkbox)</td></tr>
@@ -1003,6 +1008,35 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
     <pre><code>digi2.forms.<span class="fn">addRule</span>(<span class="string">'noBadWords'</span>, <span class="keyword">function</span>(value) {
   <span class="keyword">return</span> ![<span class="string">'spam'</span>, <span class="string">'test'</span>].some(w => value.includes(w))
 })</code></pre>
+
+    <h3>Custom Error Messages</h3>
+    <p>Override default error messages by passing <code>errorMessages</code> when creating a form. Use <code>{param}</code> as a placeholder for the rule's parameter value.</p>
+    <pre><code>digi2.forms.<span class="fn">create</span>(<span class="string">'contact'</span>, {
+  <span class="prop">errorMessages</span>: {
+    <span class="prop">required</span>:  <span class="string">'Please fill this in.'</span>,
+    <span class="prop">minLength</span>: <span class="string">'Too short — at least {param} characters.'</span>,
+    <span class="prop">maxLength</span>: <span class="string">'Too long — max {param} characters.'</span>,
+    <span class="prop">email</span>:     <span class="string">'That doesn\'t look like an email.'</span>,
+    <span class="prop">phone</span>:     <span class="string">'Enter a valid phone number.'</span>,
+  }
+})</code></pre>
+    <p>Built-in defaults are provided for every rule. Your overrides only replace the ones you specify.</p>
+    <table>
+      <tr><th>Rule</th><th>Default Message</th></tr>
+      <tr><td><code>required</code></td><td>This field is required.</td></tr>
+      <tr><td><code>email</code></td><td>Please enter a valid email address.</td></tr>
+      <tr><td><code>phone</code></td><td>Please enter a valid phone number.</td></tr>
+      <tr><td><code>url</code></td><td>Please enter a valid URL.</td></tr>
+      <tr><td><code>minLength</code></td><td>Must be at least {param} characters.</td></tr>
+      <tr><td><code>maxLength</code></td><td>Must be no more than {param} characters.</td></tr>
+      <tr><td><code>min</code></td><td>Must be at least {param}.</td></tr>
+      <tr><td><code>max</code></td><td>Must be no more than {param}.</td></tr>
+      <tr><td><code>letters</code></td><td>Only letters are allowed.</td></tr>
+      <tr><td><code>numbers</code></td><td>Only numbers are allowed.</td></tr>
+      <tr><td><code>pattern</code></td><td>Invalid format.</td></tr>
+      <tr><td><code>equals</code></td><td>Values do not match.</td></tr>
+      <tr><td><code>matchField</code></td><td>Fields do not match.</td></tr>
+    </table>
   </section>
 
   <section id="forms-errors">
