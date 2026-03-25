@@ -851,8 +851,13 @@
         var self2 = this;
         CLICK_IDS.forEach(function (param) {
           var fieldName = param.toUpperCase();
+          var val = _getCookie(param) || '';
+          if (!val) {
+            _log('skip empty click ID → ' + fieldName);
+            return;
+          }
           if (!self2._hasField(fieldName)) {
-            self2._injectField(fieldName, _getCookie(param) || '');
+            self2._injectField(fieldName, val);
           } else {
             _log('skip duplicate → ' + fieldName);
           }
