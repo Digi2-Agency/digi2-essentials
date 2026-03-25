@@ -304,7 +304,7 @@
         return;
       }
 
-      _log('init → ' + this.name, this.options);
+      _log('init → ' + this.name, { errorMessages: !!this.options.errorMessages, options: this.options });
 
       // 1. Neutralize browser autofill background color
       this._injectAutofillReset();
@@ -487,7 +487,9 @@
      */
     _getErrorMessage(ruleName, ruleParam) {
       var userMessages = this.options.errorMessages;
-      var msg = (userMessages && userMessages[ruleName]) || DEFAULT_ERROR_MESSAGES[ruleName] || ruleName;
+      var isCustom = !!(userMessages && userMessages[ruleName]);
+      var msg = (isCustom ? userMessages[ruleName] : null) || DEFAULT_ERROR_MESSAGES[ruleName] || ruleName;
+      _log('error message → ' + ruleName, { custom: isCustom, message: msg });
       if (ruleParam !== undefined && ruleParam !== true) {
         msg = msg.replace(/\{param\}/g, String(ruleParam));
       }
