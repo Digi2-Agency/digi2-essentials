@@ -973,21 +973,65 @@
     },
 
     /**
-     * Auto-initialize all [data-d2-form] elements on the page.
-     * Each gets its own FormManager instance with shared options.
-     * @param {object} [options]  — shared options applied to all forms
+     * Auto-initialize [data-d2-form] elements on the page.
+     *
+     * Usage:
+     *   createAll({ ...options })               — all [data-d2-form] elements
+     *   createAll('contact-form', { ...opts })  — only [data-d2-form="contact-form"]
+     *
+     * Multiple elements with the same name get unique registry keys:
+     *   contact-form, contact-form-2, contact-form-3, etc.
+     *
+     * @param {string} [nameFilter]  — only init elements with this data-d2-form value
+     * @param {object} [options]     — shared options applied to all forms
      * @returns {object[]} array of created FormManager instances
      */
-    createAll: function (options) {
-      var wrappers = document.querySelectorAll('[data-d2-form]');
+    createAll: function (nameFilter, options) {
+      // Allow createAll({ opts }) without name filter
+      if (typeof nameFilter === 'object' && nameFilter !== null) {
+        options = nameFilter;
+        nameFilter = null;
+      }
+      options = options || {};
+
+      var selector = nameFilter
+        ? '[data-d2-form="' + nameFilter + '"]'
+        : '[data-d2-form]';
+      var wrappers = document.querySelectorAll(selector);
       var created = [];
+      var nameCount = {};
+
       wrappers.forEach(function (wrapper) {
-        var name = wrapper.getAttribute('data-d2-form');
-        if (!name || registry[name]) return;
-        var instance = new FormManager(name, options || {});
-        registry[name] = instance;
+        var baseName = wrapper.getAttribute('data-d2-form');
+        if (!baseName) return;
+
+        // Generate unique registry key for duplicates
+        nameCount[baseName] = (nameCount[baseName] || 0) + 1;
+        var registryKey = nameCount[baseName] === 1
+          ? baseName
+          : baseName + '-' + nameCount[baseName];
+
+        if (registry[registryKey]) return;
+
+        // Pass the wrapper element directly via formSelector so
+        // FormManager doesn't re-query and hit the first match only
+        var form = wrapper.tagName === 'FORM' ? wrapper : wrapper.querySelector('form');
+        if (!form) {
+          _log('createAll: no <form> found in → ' + baseName);
+          return;
+        }
+
+        // Give the form a unique ID if it doesn't have one, so formSelector works
+        if (!form.id) {
+          form.id = 'd2-form-' + registryKey;
+        }
+
+        var opts = Object.assign({}, options, { formSelector: '#' + form.id });
+        var instance = new FormManager(registryKey, opts);
+        registry[registryKey] = instance;
         created.push(instance);
       });
+
       _log('createAll → ' + created.length + ' forms', created.map(function (f) { return f.name; }));
       return created;
     },
