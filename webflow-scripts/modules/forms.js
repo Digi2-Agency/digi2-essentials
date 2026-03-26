@@ -629,18 +629,30 @@
       // Find the closest [d2-form-error-text] element for this input
       var errorEl = this._findErrorElement(inputEl);
 
-      // Apply/remove error indicators on the input itself
+      // Determine the target element for error styling.
+      // If the input is hidden (checkbox, opacity:0, display:none, type:hidden),
+      // apply error styles to the closest <label> parent instead.
+      var isHidden = inputEl.type === 'hidden' ||
+        inputEl.type === 'checkbox' ||
+        inputEl.type === 'radio' ||
+        getComputedStyle(inputEl).display === 'none' ||
+        getComputedStyle(inputEl).visibility === 'hidden' ||
+        parseFloat(getComputedStyle(inputEl).opacity) === 0;
+
+      var styleTarget = isHidden ? inputEl.closest('label') || inputEl : inputEl;
+
+      // Apply/remove error indicators
       if (result.valid) {
-        inputEl.classList.remove(this.options.errorClass);
-        inputEl.removeAttribute(this.options.errorAttribute);
+        styleTarget.classList.remove(this.options.errorClass);
+        styleTarget.removeAttribute(this.options.errorAttribute);
         if (this.options.inputOnValid) {
-          Object.assign(inputEl.style, this.options.inputOnValid);
+          Object.assign(styleTarget.style, this.options.inputOnValid);
         }
       } else {
-        inputEl.classList.add(this.options.errorClass);
-        inputEl.setAttribute(this.options.errorAttribute, result.errors.join(','));
+        styleTarget.classList.add(this.options.errorClass);
+        styleTarget.setAttribute(this.options.errorAttribute, result.errors.join(','));
         if (this.options.inputOnError) {
-          Object.assign(inputEl.style, this.options.inputOnError);
+          Object.assign(styleTarget.style, this.options.inputOnError);
         }
 
         if (typeof this.options.onValidationError === 'function') {
