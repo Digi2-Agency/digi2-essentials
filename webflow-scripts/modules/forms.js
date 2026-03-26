@@ -632,12 +632,13 @@
       // Determine the target element for error styling.
       // If the input is hidden (checkbox, opacity:0, display:none, type:hidden),
       // apply error styles to the closest <label> parent instead.
+      var computedStyle = getComputedStyle(inputEl);
       var isHidden = inputEl.type === 'hidden' ||
         inputEl.type === 'checkbox' ||
         inputEl.type === 'radio' ||
-        getComputedStyle(inputEl).display === 'none' ||
-        getComputedStyle(inputEl).visibility === 'hidden' ||
-        parseFloat(getComputedStyle(inputEl).opacity) === 0;
+        computedStyle.display === 'none' ||
+        computedStyle.visibility === 'hidden' ||
+        parseFloat(computedStyle.opacity) < 0.1;
 
       var styleTarget = isHidden ? inputEl.closest('label') || inputEl : inputEl;
 
