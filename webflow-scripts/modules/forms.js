@@ -445,11 +445,27 @@
         }
       }
 
-      // Scan all form inputs and log them for debugging
-      if (this.formElement) {
-        var allInputs = this.formElement.querySelectorAll('input, textarea, select');
-        var inputNames = [];
+      // Auto-detect [required] attribute on any input not already in merged
+      var requiredFound = [];
+      if (this.options.autoValidation && this.formElement) {
+        var allInputs = this.formElement.querySelectorAll('input[required], textarea[required], select[required]');
         allInputs.forEach(function (el) {
+          if (!el.name || el.type === 'hidden') return;
+          if (!merged[el.name]) {
+            merged[el.name] = { required: true };
+            requiredFound.push(el.name);
+          }
+        });
+        if (requiredFound.length > 0) {
+          _log('auto-detected [required] fields', requiredFound);
+        }
+      }
+
+      // Log all form fields for debugging
+      if (this.formElement) {
+        var debugInputs = this.formElement.querySelectorAll('input, textarea, select');
+        var inputNames = [];
+        debugInputs.forEach(function (el) {
           if (el.name && el.type !== 'hidden') inputNames.push(el.name);
         });
         _log('all form fields found', inputNames);
