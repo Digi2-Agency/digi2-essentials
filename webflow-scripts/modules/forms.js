@@ -34,6 +34,8 @@
  *     errorColor:     '#ef4444',       — color for auto-created error text
  *     errorLocation:  'below',         — 'below' | 'above' (relative to input)
  *     errorWrapClass: '',              — CSS class for auto-created <label> wrapper
+ *     errorWrapStyle: { marginBottom: '16px' },  — CSS object for <label> wrapper
+ *     errorTextStyle: { padding: '2px 0' },      — CSS object for error text (overrides defaults)
  *     validateOn:     'blur',          — 'blur' | 'submit' | 'both' (default: 'both')
  *     onValidationError: null,         — callback(fieldName, errors, inputEl)
  *     onSubmit: null,                  — callback(data, formEl) — fires only if valid
@@ -285,6 +287,8 @@
         errorColor: '#ef4444',        // color for auto-created error text
         errorLocation: 'below',       // 'below' | 'above' — placement relative to input
         errorWrapClass: '',           // CSS class for auto-created <label> wrapper
+        errorWrapStyle: null,         // CSS object for <label> wrapper, e.g. { marginBottom: '16px' }
+        errorTextStyle: null,         // CSS object for error text element (overrides default absolute styles)
         inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
         inputOnValid: null,           // CSS object applied when input becomes valid (resets), e.g. { borderColor: '', boxShadow: '' }
         summarySelector: '[data-d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
@@ -595,6 +599,11 @@
           this._autoCreatedWrappers.push({ wrapper: wrapper, input: input });
         }
 
+        // Apply custom wrapper styles
+        if (opts.errorWrapStyle) {
+          Object.assign(wrapper.style, opts.errorWrapStyle);
+        }
+
         // --- Create error text element (absolutely positioned) ---
         var errorEl = document.createElement('div');
         errorEl.setAttribute('d2-form-error-text', '');
@@ -610,6 +619,11 @@
           errorEl.style.bottom = '100%';
         } else {
           errorEl.style.top = '100%';
+        }
+
+        // Apply custom error text styles (overrides defaults)
+        if (opts.errorTextStyle) {
+          Object.assign(errorEl.style, opts.errorTextStyle);
         }
 
         wrapper.appendChild(errorEl);

@@ -1054,6 +1054,29 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
   <span class="prop">inputOnError</span>: { <span class="prop">borderColor</span>: <span class="string">'#ef4444'</span>, <span class="prop">boxShadow</span>: <span class="string">'0 0 0 2px rgba(239,68,68,0.2)'</span> },
   <span class="prop">inputOnValid</span>: { <span class="prop">borderColor</span>: <span class="string">''</span>, <span class="prop">boxShadow</span>: <span class="string">''</span> },
 }</code></pre>
+
+    <h3>Auto Error Elements</h3>
+    <p>Set <code>autoErrorElements: true</code> to auto-create <code>[d2-form-error-text]</code> elements — no manual Webflow setup needed. Each validated input gets wrapped in a <code>&lt;label&gt;</code> (if not already inside one) and an absolutely positioned error text <code>&lt;div&gt;</code> is appended below.</p>
+    <pre><code>{
+  <span class="prop">autoErrorElements</span>: <span class="literal">true</span>,
+  <span class="prop">errorFontSize</span>:     <span class="string">'11px'</span>,          <span class="comment">// font-size for error text</span>
+  <span class="prop">errorColor</span>:        <span class="string">'#ef4444'</span>,       <span class="comment">// color for error text</span>
+  <span class="prop">errorLocation</span>:     <span class="string">'below'</span>,        <span class="comment">// 'below' | 'above'</span>
+  <span class="prop">errorWrapClass</span>:    <span class="string">'my-field'</span>,     <span class="comment">// CSS class on &lt;label&gt; wrapper</span>
+  <span class="prop">errorWrapStyle</span>:    { <span class="prop">marginBottom</span>: <span class="string">'16px'</span> },  <span class="comment">// CSS object for &lt;label&gt; wrapper</span>
+  <span class="prop">errorTextStyle</span>:    { <span class="prop">padding</span>: <span class="string">'2px 0'</span> },    <span class="comment">// CSS object for error text (overrides defaults)</span>
+}</code></pre>
+    <p>Skips checkboxes, radios, and hidden inputs. If an input already has a manual <code>[d2-form-error-text]</code> element nearby, it is reused and no wrapper is created.</p>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>autoErrorElements</code></td><td><code>false</code></td><td>Enable auto-creation of error text elements</td></tr>
+      <tr><td><code>errorFontSize</code></td><td><code>'12px'</code></td><td>Font size for error text</td></tr>
+      <tr><td><code>errorColor</code></td><td><code>'#ef4444'</code></td><td>Color for error text</td></tr>
+      <tr><td><code>errorLocation</code></td><td><code>'below'</code></td><td><code>'below'</code> or <code>'above'</code> the input</td></tr>
+      <tr><td><code>errorWrapClass</code></td><td><code>''</code></td><td>CSS class added to the <code>&lt;label&gt;</code> wrapper</td></tr>
+      <tr><td><code>errorWrapStyle</code></td><td><code>null</code></td><td>CSS object applied to the <code>&lt;label&gt;</code> wrapper</td></tr>
+      <tr><td><code>errorTextStyle</code></td><td><code>null</code></td><td>CSS object applied to error text (overrides defaults)</td></tr>
+    </table>
   </section>
 
   <section id="forms-tracking">
