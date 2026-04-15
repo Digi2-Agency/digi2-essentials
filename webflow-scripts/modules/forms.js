@@ -563,7 +563,7 @@
         if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
 
         var input = this.formElement.querySelector('[name="' + fieldName + '"]');
-        if (!input || input.type === 'hidden') continue;
+        if (!input || input.type === 'hidden' || input.type === 'checkbox' || input.type === 'radio') continue;
 
         // Skip if an error element already exists for this input
         if (this._findErrorElement(input)) continue;
