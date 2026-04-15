@@ -29,13 +29,11 @@
  *     errorClass:     'd2-error',
  *     errorAttribute: 'data-d2-error',
  *     errorMessages:  { minLength: 'Too short!', required: 'Fill this in.' },  — optional custom error messages
- *     autoErrorElements: true,         — auto-create [d2-form-error-text] elements (no manual Webflow setup needed)
+ *     autoErrorElements: true,         — auto-create [d2-form-error-text] with <label> wrapping + position:absolute
  *     errorFontSize:  '12px',          — font-size for auto-created error text
  *     errorColor:     '#ef4444',       — color for auto-created error text
  *     errorLocation:  'below',         — 'below' | 'above' (relative to input)
- *     errorWrap:      false,           — wrap input + error in a container element
- *     errorWrapTag:   'div',           — wrapper tag name (e.g. 'div', 'label')
- *     errorWrapClass: '',              — CSS class for wrapper element
+ *     errorWrapClass: '',              — CSS class for auto-created <label> wrapper
  *     validateOn:     'blur',          — 'blur' | 'submit' | 'both' (default: 'both')
  *     onValidationError: null,         — callback(fieldName, errors, inputEl)
  *     onSubmit: null,                  — callback(data, formEl) — fires only if valid
@@ -286,9 +284,7 @@
         errorFontSize: '12px',        // font-size for auto-created error text
         errorColor: '#ef4444',        // color for auto-created error text
         errorLocation: 'below',       // 'below' | 'above' — placement relative to input
-        errorWrap: false,             // wrap input + error text in a container element
-        errorWrapTag: 'div',          // tag name for wrapper element
-        errorWrapClass: '',           // CSS class for wrapper element
+        errorWrapClass: '',           // CSS class for auto-created <label> wrapper
         inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
         inputOnValid: null,           // CSS object applied when input becomes valid (resets), e.g. { borderColor: '', boxShadow: '' }
         summarySelector: '[data-d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
@@ -303,6 +299,7 @@
       this.formElement = null;
       this._injectedInputs = [];
       this._autoCreatedElements = [];
+      this._autoCreatedWrappers = [];
       this._boundBlurHandler = null;
       this._boundSubmitHandler = null;
 
@@ -371,11 +368,22 @@
       });
       this._injectedInputs = [];
 
-      // Clean up auto-created error elements / wrappers
+      // Clean up auto-created error elements
       this._autoCreatedElements.forEach(function (el) {
         if (el.parentNode) el.parentNode.removeChild(el);
       });
       this._autoCreatedElements = [];
+
+      // Unwrap auto-created label wrappers (move input back, remove label)
+      this._autoCreatedWrappers.forEach(function (entry) {
+        var wrapper = entry.wrapper;
+        var input = entry.input;
+        var parent = wrapper.parentNode;
+        if (!parent) return;
+        parent.insertBefore(input, wrapper);
+        parent.removeChild(wrapper);
+      });
+      this._autoCreatedWrappers = [];
 
       if (this.formElement && this._boundBlurHandler) {
         this.formElement.removeEventListener('focusout', this._boundBlurHandler);
@@ -546,11 +554,10 @@
 
     /**
      * For each validated field, auto-create a [d2-form-error-text] element
-     * if one doesn't already exist nearby.
+     * inside a <label> wrapper with position:absolute so it doesn't affect layout.
      *
-     * When errorWrap is true, the input is wrapped in a container element
-     * (tag from errorWrapTag, class from errorWrapClass) together with
-     * the error text element.
+     * If the input is already inside a <label>, reuses it.
+     * Otherwise creates a new <label> and wraps the input.
      */
     _createAutoErrorElements() {
       if (!this.options.autoErrorElements || !this.formElement) return;
@@ -568,44 +575,45 @@
         // Skip if an error element already exists for this input
         if (this._findErrorElement(input)) continue;
 
-        // Create the error text element
-        var errorEl = document.createElement('div');
-        errorEl.setAttribute('d2-form-error-text', '');
-        errorEl.style.display = 'none';
-        errorEl.style.fontSize = opts.errorFontSize;
-        errorEl.style.color = opts.errorColor;
+        // --- Ensure input is inside a <label> with position:relative ---
+        var existingLabel = input.closest('label');
+        var wrapper;
 
-        if (opts.errorWrap) {
-          // Wrap: create container, move input into it, add error element
-          var wrapper = document.createElement(opts.errorWrapTag);
+        if (existingLabel) {
+          wrapper = existingLabel;
+          wrapper.style.position = 'relative';
+          wrapper.style.display = 'block';
+        } else {
+          wrapper = document.createElement('label');
+          wrapper.style.position = 'relative';
+          wrapper.style.display = 'block';
           if (opts.errorWrapClass) wrapper.className = opts.errorWrapClass;
 
           input.parentNode.insertBefore(wrapper, input);
           wrapper.appendChild(input);
 
-          if (opts.errorLocation === 'above') {
-            wrapper.insertBefore(errorEl, input);
-          } else {
-            wrapper.appendChild(errorEl);
-          }
-
-          this._autoCreatedElements.push(wrapper);
-        } else {
-          // No wrap: insert error element as a sibling of the input
-          if (opts.errorLocation === 'above') {
-            input.parentNode.insertBefore(errorEl, input);
-          } else {
-            // Insert after input
-            if (input.nextSibling) {
-              input.parentNode.insertBefore(errorEl, input.nextSibling);
-            } else {
-              input.parentNode.appendChild(errorEl);
-            }
-          }
-
-          this._autoCreatedElements.push(errorEl);
+          this._autoCreatedWrappers.push({ wrapper: wrapper, input: input });
         }
 
+        // --- Create error text element (absolutely positioned) ---
+        var errorEl = document.createElement('div');
+        errorEl.setAttribute('d2-form-error-text', '');
+        errorEl.style.display = 'none';
+        errorEl.style.position = 'absolute';
+        errorEl.style.left = '0';
+        errorEl.style.width = '100%';
+        errorEl.style.fontSize = opts.errorFontSize;
+        errorEl.style.color = opts.errorColor;
+        errorEl.style.pointerEvents = 'none';
+
+        if (opts.errorLocation === 'above') {
+          errorEl.style.bottom = '100%';
+        } else {
+          errorEl.style.top = '100%';
+        }
+
+        wrapper.appendChild(errorEl);
+        this._autoCreatedElements.push(errorEl);
         created.push(fieldName);
       }
 
@@ -696,7 +704,7 @@
       var ruleParam = fieldRules ? fieldRules[firstRule] : undefined;
       var msg = this._getErrorMessage(firstRule, ruleParam);
       errorEl.textContent = msg;
-      errorEl.style.display = 'flex';
+      errorEl.style.display = 'block';
 
       _log('show error → ' + firstRule, msg);
     }
