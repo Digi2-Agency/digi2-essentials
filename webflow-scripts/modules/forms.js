@@ -670,8 +670,12 @@
       if (!inputEl) return null;
       var parent = inputEl.parentElement;
       for (var i = 0; i < 3 && parent; i++) {
-        var el = parent.querySelector('[d2-form-error-text]');
-        if (el) return el;
+        // Check direct children only — querySelector would search the
+        // entire subtree and match error elements belonging to other fields.
+        var children = parent.children;
+        for (var j = 0; j < children.length; j++) {
+          if (children[j].hasAttribute('d2-form-error-text')) return children[j];
+        }
         parent = parent.parentElement;
       }
       return null;
