@@ -230,9 +230,11 @@
         }
       }
       if (this.options.defaultSort && this.options.defaultSort.field) {
+        var dsOrder = this.options.defaultSort.order;
         this._sort = {
           field: this.options.defaultSort.field,
           dir: this.options.defaultSort.dir === 'desc' ? 'desc' : 'asc',
+          order: Array.isArray(dsOrder) && dsOrder.length ? dsOrder.slice() : null,
         };
       }
 
@@ -286,7 +288,7 @@
     // -----------------------------------------------------------------------
     // Public API — sort
     // -----------------------------------------------------------------------
-    sort(field, dir) {
+    sort(field, dir, order) {
       if (!field) { this.clearSort(); return; }
 
       // Toggle when same field clicked again and no explicit dir given
@@ -297,7 +299,11 @@
       }
       if (dir !== 'asc' && dir !== 'desc') dir = 'asc';
 
-      this._sort = { field: field, dir: dir };
+      this._sort = {
+        field: field,
+        dir: dir,
+        order: Array.isArray(order) && order.length ? order.slice() : null,
+      };
       this._render();
 
       if (typeof this.options.onSort === 'function') {
@@ -512,6 +518,27 @@
       if (!this._sort || !this._sort.field) return matching;
       var field = this._sort.field;
       var dir = this._sort.dir === 'desc' ? -1 : 1;
+
+      // Custom value order overrides type-based comparison entirely.
+      // Values listed explicitly sort by their position in the array;
+      // anything not in the list goes to the end (stable, case-insensitive match).
+      var order = this._sort.order;
+      if (order && order.length) {
+        var orderMap = {};
+        for (var i = 0; i < order.length; i++) {
+          orderMap[String(order[i]).toLowerCase().trim()] = i;
+        }
+        var UNRANKED = order.length; // anything unknown lands after the known set
+        var rank = function (val) {
+          if (val == null || val === '') return UNRANKED + 1;
+          var key = String(val).toLowerCase().trim();
+          return key in orderMap ? orderMap[key] : UNRANKED;
+        };
+        matching.sort(function (a, b) {
+          return dir * (rank(a.fields[field]) - rank(b.fields[field]));
+        });
+        return matching;
+      }
 
       // Resolve type with this priority:
       //   1. `d2-cms-sort-type` on the sort button (explicit override)
@@ -814,7 +841,13 @@
     v = el.getAttribute('d2-cms-sort-by');
     if (v) {
       var dir = el.getAttribute('d2-cms-sort-dir');
-      opts.defaultSort = { field: v, dir: dir === 'desc' ? 'desc' : 'asc' };
+      var orderRaw = el.getAttribute('d2-cms-sort-order');
+      var order = orderRaw ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : null;
+      opts.defaultSort = {
+        field: v,
+        dir: dir === 'desc' ? 'desc' : 'asc',
+        order: order && order.length ? order : undefined,
+      };
     }
 
     v = el.getAttribute('d2-cms-filter-match');
@@ -874,7 +907,9 @@
     if (sortBtn) {
       var field = sortBtn.getAttribute('d2-cms-sort');
       var forced = sortBtn.getAttribute('d2-cms-sort-dir');
-      instance.sort(field, forced || undefined);
+      var orderRaw = sortBtn.getAttribute('d2-cms-sort-order');
+      var order = orderRaw ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : undefined;
+      instance.sort(field, forced || undefined, order);
     } else if (filterBtn) {
       var parsed = parseFilterAttr(filterBtn.getAttribute('d2-cms-filter'));
       if (parsed) instance.toggleFilter(parsed.key, parsed.value);

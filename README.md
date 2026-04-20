@@ -660,13 +660,18 @@ You can configure a list entirely from HTML — the module auto-initializes ever
 <div d2-cms-list="products"
      d2-cms-per-page="8"
      d2-cms-load-mode="scroll"
-     d2-cms-sort-by="title"             <!-- default sort field; asc by default -->
-     d2-cms-sort-dir="desc"             <!-- optional override to desc -->
+     d2-cms-sort-by="status"
+     d2-cms-sort-order="new|featured|sale|regular"   <!-- custom value order -->
      d2-cms-filter-match="AND"
      d2-cms-hidden-class="is-hidden"
      d2-cms-scroll-offset="300">
   …items…
 </div>
+
+<!-- Works on buttons too: -->
+<button d2-cms-target="products"
+        d2-cms-sort="status"
+        d2-cms-sort-order="new|featured|sale|regular">By status</button>
 ```
 
 ### Options
@@ -698,6 +703,7 @@ You can configure a list entirely from HTML — the module auto-initializes ever
 | `d2-cms-load-mode="scroll\|button\|all"` | list container | Attribute-init: reveal mode |
 | `d2-cms-sort-by="field"` | list container | Attribute-init: default sort field (asc unless `d2-cms-sort-dir="desc"`) |
 | `d2-cms-sort-dir="asc\|desc"` | list container OR sort button | List: override default sort direction. Button: force a fixed direction (no toggle) |
+| `d2-cms-sort-order="a\|b\|c"` | list container OR sort button | Custom value order — items whose field equals `a` sort first, then `b`, then `c`, then anything else. Overrides type-based comparison |
 | `d2-cms-filter-match="AND\|OR"` | list container | Attribute-init: filter match mode across keys |
 | `d2-cms-hidden-class="..."` | list container | Attribute-init: CSS class for hidden items |
 | `d2-cms-scroll-offset="300"` | list container | Attribute-init: px before sentinel triggers next reveal |
