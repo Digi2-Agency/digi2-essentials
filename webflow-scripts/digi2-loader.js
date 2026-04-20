@@ -329,6 +329,7 @@
     countdown: 'countdown',
     filter: 'filter',
     copy: 'copy',
+    cms: 'cms',
   };
 
   function createProxy(namespace, moduleName) {

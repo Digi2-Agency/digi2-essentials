@@ -45,6 +45,7 @@ Only the modules you declare get loaded. Loader: **3.7 KB**.
 | `d2-lazy` | lazy | 2.5 KB | Lazy images/video/iframes + blur-up |
 | `d2-countdown` | countdown | 3.3 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
+| `d2-cms` | cms | 10.8 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 1.9 KB | Clipboard copy with toast feedback |
 
 Total (all modules): **84.9 KB min** / ~30 KB gzipped.
@@ -600,6 +601,123 @@ instance.filterBy('web')
 instance.filterBy('all')
 instance.getActive()
 instance.getVisibleCount()
+```
+
+---
+
+## CMS List (sort + filter + load more)
+
+Operates on a Webflow CMS Collection List that's already in the DOM (Webflow renders up to 100 items per list server-side). Provides:
+
+- **Sort** — clickable column-header buttons that toggle asc / desc / off.
+- **Filter** — toggle buttons grouped by key (`category:shoes`, `tag:new`, …). AND across keys, OR within a key.
+- **Progressive reveal** — show only `perPage` items, reveal more on scroll or via a load-more button.
+
+> **Attribute prefix note:** This module uses `d2-cms-*` attributes **without** the `data-` prefix (deliberate — keeps Webflow Designer's custom-attribute fields shorter). This is the only module in the library that does this. Don't "fix" it.
+
+```html
+<!-- The collection list (replace .w-dyn-items with whatever wraps your items) -->
+<div d2-cms-list="products" class="w-dyn-items">
+  <div d2-cms-item
+       d2-cms-field-title="Alpha Sneaker"
+       d2-cms-field-price="129"
+       d2-cms-field-category="shoes">…</div>
+  <div d2-cms-item
+       d2-cms-field-title="Beta Cap"
+       d2-cms-field-price="29"
+       d2-cms-field-category="hats">…</div>
+  <!-- … bind values from your Webflow CMS fields into these attributes in the Designer -->
+</div>
+
+<!-- Sort buttons (click toggles asc → desc → off) -->
+<button d2-cms-target="products" d2-cms-sort="title">Title</button>
+<button d2-cms-target="products" d2-cms-sort="price" d2-cms-sort-type="number">Price</button>
+
+<!-- Filter buttons (click toggles on/off; key:value) -->
+<button d2-cms-target="products" d2-cms-filter="category:shoes">Shoes</button>
+<button d2-cms-target="products" d2-cms-filter="category:hats">Hats</button>
+
+<!-- Optional load-more button (only used when loadMode: 'button') -->
+<button d2-cms-target="products" d2-cms-load-more>Load more</button>
+
+<!-- Optional empty-state element -->
+<div d2-cms-target="products" d2-cms-empty>No matches.</div>
+```
+
+```js
+digi2.cms.createList('products', {
+  perPage: 12,
+  loadMode: 'scroll',           // 'scroll' | 'button' | 'all'
+  defaultSort: { field: 'price', dir: 'asc' },
+});
+```
+
+You can also expose field values via nested elements instead of attributes:
+
+```html
+<div d2-cms-item>
+  <h3 d2-cms-field="title">Alpha Sneaker</h3>
+  <span d2-cms-field="price">129</span>
+</div>
+```
+
+### Options
+
+| Option | Default | Description |
+|---|---|---|
+| `listSelector` | `null` | CSS selector for the list container (alternative to `d2-cms-list="name"` attribute) |
+| `itemSelector` | `null` | CSS selector for items (default: `[d2-cms-item]` if present, else direct children) |
+| `perPage` | `12` | Initial visible count + increment per load |
+| `loadMode` | `'scroll'` | `'scroll'` (IntersectionObserver), `'button'`, or `'all'` (no pagination) |
+| `scrollOffset` | `200` | Px before sentinel triggers next reveal (rootMargin) |
+| `defaultSort` | `null` | `{ field: 'price', dir: 'asc' }` |
+| `defaultFilters` | `{}` | `{ category: ['shoes', 'hats'] }` |
+| `filterMatchMode` | `'AND'` | `'AND'` across keys (always OR within a key's values) |
+| `emptySelector` | `null` | Selector for the empty-state element (defaults to `[d2-cms-empty][d2-cms-target="<name>"]`) |
+| `hiddenClass` | `null` | Optional CSS class for hidden items (default: inline `display:none`) |
+| `hideNativePagination` | `true` | Hide sibling `.w-pagination-wrapper` |
+| `onChange` | `null` | `(state) => {}` — fires after any sort / filter / reveal |
+| `onSort` | `null` | `(field, dir) => {}` |
+| `onFilter` | `null` | `(filters) => {}` |
+| `onLoadMore` | `null` | `(visibleCount, totalMatching) => {}` |
+
+### Attribute reference
+
+| Attribute | On | Purpose |
+|---|---|---|
+| `d2-cms-list="name"` | list container | Marks the list and gives it a name |
+| `d2-cms-item` | each item (optional) | Explicit item marker; defaults to direct children |
+| `d2-cms-field-{name}="value"` | item | Sortable / filterable field value |
+| `d2-cms-field="{name}"` | element inside item | Alternative: read `.textContent` of this element |
+| `d2-cms-sort="field"` | button | Click toggles sort by this field |
+| `d2-cms-sort-type="number\|string\|date"` | button | Override auto-detection of value type |
+| `d2-cms-sort-dir="asc\|desc"` | button | Force a fixed direction (no toggle) |
+| `d2-cms-filter="key:value"` | button | Toggle a filter |
+| `d2-cms-load-more` | button | Reveal next `perPage` items |
+| `d2-cms-target="name"` | sort/filter/load-more buttons | Target a specific list by name (or place button inside `[d2-cms-list]` to scope automatically) |
+| `d2-cms-empty` | any element | Shown when 0 items match |
+| `d2-cms-sort-active="asc\|desc"` | button | (Set by module) Reflects current sort — style with `[d2-cms-sort-active="desc"]` selectors |
+| `d2-cms-filter-active` | button | (Set by module) Reflects active filter |
+| `d2-cms-load-more-done` | button | (Set by module) Set when no more items to reveal (button is also hidden) |
+
+### API
+
+```js
+const list = digi2.cms.get('products');
+
+list.sort('price', 'asc')      // dir optional → toggles asc → desc → off
+list.clearSort()
+list.filter({ category: ['shoes'] })
+list.addFilter('category', 'hats')
+list.removeFilter('category', 'hats')
+list.toggleFilter('category', 'shoes')
+list.clearFilters()
+list.loadMore()                // next perPage
+list.loadAll()
+list.reset()                   // no sort, no filters, first page
+list.refresh()                 // re-scan items (after Webflow re-renders the list)
+list.getState()                // { visible, totalMatching, total, sort, filters }
+list.destroy()
 ```
 
 ---
