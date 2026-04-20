@@ -299,11 +299,20 @@
       }
       if (dir !== 'asc' && dir !== 'desc') dir = 'asc';
 
-      this._sort = {
-        field: field,
-        dir: dir,
-        order: Array.isArray(order) && order.length ? order.slice() : null,
-      };
+      // Resolve the custom order:
+      //   - caller provided one  → use it
+      //   - same field, no new   → keep the previous order (don't wipe the
+      //                            list-level `d2-cms-sort-order` just because
+      //                            a sort button doesn't redeclare it)
+      //   - different field      → no order (fresh sort)
+      var finalOrder = null;
+      if (Array.isArray(order) && order.length) {
+        finalOrder = order.slice();
+      } else if (this._sort && this._sort.field === field && this._sort.order) {
+        finalOrder = this._sort.order.slice();
+      }
+
+      this._sort = { field: field, dir: dir, order: finalOrder };
       this._render();
 
       if (typeof this.options.onSort === 'function') {
