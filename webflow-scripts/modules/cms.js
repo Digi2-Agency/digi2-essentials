@@ -1138,7 +1138,13 @@
           if (label.textContent !== def) label.textContent = def;
           return;
         }
-        var text = self._findActiveSortOptionText(self._sort.field, self._sort.dir);
+        // Scope the lookup: when the label sits inside a Webflow dropdown (or
+        // any [d2-cms-sort-scope] wrapper), only options within that same
+        // scope can drive its text. This prevents unrelated sort triggers
+        // elsewhere on the page (e.g. table-header sort buttons) from
+        // hijacking a dropdown's trigger label.
+        var scope = label.closest('[d2-cms-sort-scope], .w-dropdown') || null;
+        var text = self._findActiveSortOptionText(self._sort.field, self._sort.dir, scope);
         var next = (text != null && text !== '') ? text : def;
         if (label.textContent !== next) label.textContent = next;
       });
@@ -1147,7 +1153,8 @@
     // Returns the text (or `d2-cms-sort-option-label` override) of whichever
     // option element — <option> inside a targeted <select> or a targeted
     // [d2-cms-sort] div — best matches the active sort field + direction.
-    _findActiveSortOptionText(field, dir) {
+    // When `scope` is provided, only candidates inside that element count.
+    _findActiveSortOptionText(field, dir, scope) {
       var self = this;
       var candidates = [];
 
@@ -1157,10 +1164,15 @@
         var sel = opts[i].closest('select');
         if (!sel) continue;
         if (_resolveTargetName(sel) !== self.name) continue;
+        if (scope && !scope.contains(opts[i])) continue;
         candidates.push(opts[i]);
       }
       // [d2-cms-sort] divs / buttons targeting this list
-      candidates = candidates.concat(this._buttonsForName('[d2-cms-sort]'));
+      var btnCands = this._buttonsForName('[d2-cms-sort]');
+      for (var b = 0; b < btnCands.length; b++) {
+        if (scope && !scope.contains(btnCands[b])) continue;
+        candidates.push(btnCands[b]);
+      }
 
       var exact = null, fieldOnly = null;
       for (var j = 0; j < candidates.length; j++) {
@@ -1194,6 +1206,10 @@
         }
         var def = label._d2CmsFilterLabelDefault;
         var key = label.getAttribute('d2-cms-filter-label');
+        // Only options inside the same dropdown/scope as the label can drive
+        // its text — keeps unrelated filter triggers outside this dropdown
+        // from overwriting the label.
+        var scope = label.closest('[d2-cms-filter-scope], .w-dropdown') || null;
 
         var activeValues = [];
         if (key) {
@@ -1210,13 +1226,23 @@
           }
         }
 
+        // When scoped, keep only values whose matching [d2-cms-filter] option
+        // lives inside this label's scope. A dropdown of "status" options
+        // should stay on its default text when the user activates a different
+        // filter (e.g. from a table-header chip).
+        if (scope && activeValues.length) {
+          activeValues = activeValues.filter(function (val) {
+            return self._findActiveFilterOptionText(key, val, scope) != null;
+          });
+        }
+
         if (!activeValues.length) {
           if (label.textContent !== def) label.textContent = def;
           return;
         }
 
         var texts = activeValues.map(function (val) {
-          var t = self._findActiveFilterOptionText(key, val);
+          var t = self._findActiveFilterOptionText(key, val, scope);
           return (t != null && t !== '') ? t : val;
         });
         var next = texts.join(', ');
@@ -1226,10 +1252,12 @@
 
     // Returns the text (or `d2-cms-filter-option-label` override) of the
     // [d2-cms-filter] element matching the given key+value pair. When `key`
-    // is null/empty the lookup matches on value alone.
-    _findActiveFilterOptionText(key, value) {
+    // is null/empty the lookup matches on value alone. When `scope` is set,
+    // only candidates inside that element count.
+    _findActiveFilterOptionText(key, value, scope) {
       var candidates = this._buttonsForName('[d2-cms-filter]');
       for (var i = 0; i < candidates.length; i++) {
+        if (scope && !scope.contains(candidates[i])) continue;
         var parsed = parseFilterAttr(candidates[i].getAttribute('d2-cms-filter'));
         if (!parsed) continue;
         if (key && parsed.key !== key) continue;
