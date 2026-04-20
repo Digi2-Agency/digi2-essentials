@@ -5,11 +5,11 @@
  * Countdown timer for landing pages, promos, launches.
  *
  * Webflow setup:
- *   <div data-d2-countdown="2025-12-31T23:59:59">
- *     <span data-d2-countdown-days>00</span>d
- *     <span data-d2-countdown-hours>00</span>h
- *     <span data-d2-countdown-minutes>00</span>m
- *     <span data-d2-countdown-seconds>00</span>s
+ *   <div d2-countdown="2025-12-31T23:59:59">
+ *     <span d2-countdown-days>00</span>d
+ *     <span d2-countdown-hours>00</span>h
+ *     <span d2-countdown-minutes>00</span>m
+ *     <span d2-countdown-seconds>00</span>s
  *   </div>
  *
  * API:
@@ -70,7 +70,7 @@
       }
 
       // Resolve target date
-      var target = this.options.targetDate || this.containerEl.getAttribute('data-d2-countdown');
+      var target = this.options.targetDate || this.containerEl.getAttribute('d2-countdown');
       if (!target) {
         console.warn('[digi2.countdown] "' + this.name + '" — no target date.');
         return;
@@ -85,10 +85,10 @@
 
       // Find display elements
       this._elements = {
-        days: this.containerEl.querySelector('[data-d2-countdown-days]'),
-        hours: this.containerEl.querySelector('[data-d2-countdown-hours]'),
-        minutes: this.containerEl.querySelector('[data-d2-countdown-minutes]'),
-        seconds: this.containerEl.querySelector('[data-d2-countdown-seconds]'),
+        days: this.containerEl.querySelector('[d2-countdown-days]'),
+        hours: this.containerEl.querySelector('[d2-countdown-hours]'),
+        minutes: this.containerEl.querySelector('[d2-countdown-minutes]'),
+        seconds: this.containerEl.querySelector('[d2-countdown-seconds]'),
       };
 
       _log('init → ' + this.name, { target: new Date(this._targetTime).toISOString() });
@@ -101,8 +101,8 @@
       if (this.options.containerSelector) {
         return document.querySelector(this.options.containerSelector);
       }
-      return document.querySelector('[data-d2-countdown="' + this.options.targetDate + '"]')
-        || document.querySelector('[data-d2-countdown]');
+      return document.querySelector('[d2-countdown="' + this.options.targetDate + '"]')
+        || document.querySelector('[d2-countdown]');
     }
 
     _tick() {

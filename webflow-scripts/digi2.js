@@ -567,12 +567,12 @@
     },
   };
 
-  // Global delegated listener for data-d2-show-popup="popupName"
+  // Global delegated listener for d2-show-popup="popupName"
   document.addEventListener('click', function (e) {
-    var trigger = e.target.closest('[data-d2-show-popup]');
+    var trigger = e.target.closest('[d2-show-popup]');
     if (!trigger) return;
 
-    var name = trigger.getAttribute('data-d2-show-popup');
+    var name = trigger.getAttribute('d2-show-popup');
     var instance = registry[name];
     if (instance && instance.options.dataTagTrigger) {
       e.preventDefault();

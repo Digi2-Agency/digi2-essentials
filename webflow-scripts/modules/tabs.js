@@ -6,11 +6,11 @@
  * Uses same animation presets as popups module.
  *
  * Webflow setup:
- *   <div data-d2-tab-group="faq">
- *     <button data-d2-tab="item-1">Tab 1</button>
- *     <button data-d2-tab="item-2">Tab 2</button>
- *     <div data-d2-tab-content="item-1">Content 1</div>
- *     <div data-d2-tab-content="item-2">Content 2</div>
+ *   <div d2-tab-group="faq">
+ *     <button d2-tab="item-1">Tab 1</button>
+ *     <button d2-tab="item-2">Tab 2</button>
+ *     <div d2-tab-content="item-1">Content 1</div>
+ *     <div d2-tab-content="item-2">Content 2</div>
  *   </div>
  *
  * API:
@@ -86,7 +86,7 @@
       this.name = name;
 
       this.options = {
-        groupSelector: null,          // CSS selector override (alternative to data-d2-tab-group)
+        groupSelector: null,          // CSS selector override (alternative to d2-tab-group)
         mode: 'tabs',                 // 'tabs' | 'accordion'
         allowMultiple: false,         // accordion only: allow multiple panels open
         animation: 'fade',            // none | fade | slide-up | slide-down | zoom
@@ -117,8 +117,8 @@
         return;
       }
 
-      this.triggers = Array.from(this.groupEl.querySelectorAll('[data-d2-tab]'));
-      this.panels = Array.from(this.groupEl.querySelectorAll('[data-d2-tab-content]'));
+      this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab]'));
+      this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-content]'));
 
       _log('init → ' + this.name, {
         mode: this.options.mode,
@@ -159,7 +159,7 @@
       if (this.options.groupSelector) {
         return document.querySelector(this.options.groupSelector);
       }
-      return document.querySelector('[data-d2-tab-group="' + this.name + '"]');
+      return document.querySelector('[d2-tab-group="' + this.name + '"]');
     }
 
     // ---- Listeners ----------------------------------------------------------
@@ -169,7 +169,7 @@
       this.triggers.forEach(function (trigger) {
         trigger.addEventListener('click', function (e) {
           e.preventDefault();
-          var tabId = trigger.getAttribute('data-d2-tab');
+          var tabId = trigger.getAttribute('d2-tab');
           if (self.options.mode === 'accordion') {
             self.toggle(tabId);
           } else {
@@ -265,13 +265,13 @@
 
     _getPanel(tabId) {
       return this.panels.find(function (p) {
-        return p.getAttribute('data-d2-tab-content') === tabId;
+        return p.getAttribute('d2-tab-content') === tabId;
       });
     }
 
     _getTrigger(tabId) {
       return this.triggers.find(function (t) {
-        return t.getAttribute('data-d2-tab') === tabId;
+        return t.getAttribute('d2-tab') === tabId;
       });
     }
 
@@ -339,7 +339,7 @@
       var activeTabs = this._activeTabs;
 
       this.triggers.forEach(function (trigger) {
-        var tabId = trigger.getAttribute('data-d2-tab');
+        var tabId = trigger.getAttribute('d2-tab');
         if (activeTabs.has(tabId)) {
           trigger.classList.add(activeClass);
           trigger.setAttribute('aria-selected', 'true');
@@ -362,7 +362,7 @@
         }
       } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
         // Auto-open first tab
-        this.open(this.triggers[0].getAttribute('data-d2-tab'));
+        this.open(this.triggers[0].getAttribute('d2-tab'));
       }
       // Accordion: nothing open by default unless specified
     }

@@ -5,9 +5,9 @@
  * Smooth scroll to anchors, scroll spy for nav highlights, scroll-to-top button.
  *
  * Webflow setup:
- *   <a data-d2-scroll="#features">Features</a>
- *   <a data-d2-scroll="#pricing">Pricing</a>
- *   <button data-d2-scroll-top>↑</button>
+ *   <a d2-scroll="#features">Features</a>
+ *   <a d2-scroll="#pricing">Pricing</a>
+ *   <button d2-scroll-top>↑</button>
  *
  * API:
  *   digi2.scroll.init(options)
@@ -37,8 +37,8 @@
   var _ticking = false;
 
   var DEFAULTS = {
-    selector: '[data-d2-scroll]',
-    scrollTopSelector: '[data-d2-scroll-top]',
+    selector: '[d2-scroll]',
+    scrollTopSelector: '[d2-scroll-top]',
     offset: 80,                       // px offset from top (for fixed headers)
     speed: 800,                       // ms scroll duration
     easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
@@ -87,7 +87,7 @@
     var seen = {};
 
     _links.forEach(function (link) {
-      var target = link.getAttribute('data-d2-scroll');
+      var target = link.getAttribute('d2-scroll');
       if (target && target.charAt(0) === '#' && !seen[target]) {
         var section = document.querySelector(target);
         if (section) {
@@ -108,7 +108,7 @@
       var link = e.target.closest(_options.selector);
       if (!link) return;
 
-      var target = link.getAttribute('data-d2-scroll');
+      var target = link.getAttribute('d2-scroll');
       if (!target) return;
 
       e.preventDefault();
@@ -160,7 +160,7 @@
 
       // Update active classes on links
       _links.forEach(function (link) {
-        var target = link.getAttribute('data-d2-scroll');
+        var target = link.getAttribute('d2-scroll');
         if (target === '#' + newActive) {
           link.classList.add(_options.activeClass);
         } else {

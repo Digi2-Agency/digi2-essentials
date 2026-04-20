@@ -143,7 +143,7 @@
     // Build toast element
     var toast = document.createElement('div');
     toast.className = 'd2-toast d2-toast--' + opts.type + ' d2-toast-enter-' + opts.animation;
-    toast.setAttribute('data-d2-toast-id', id);
+    toast.setAttribute('d2-toast-id', id);
 
     var html = '';
     if (ICONS[opts.type]) {

@@ -106,7 +106,7 @@ digi2.popups.create('newsletter', {
 | `popupSelector` | `'.popup__overlay'` | CSS selector for the popup |
 | `openTriggerSelector` | `null` | CSS selector — clicks open |
 | `closeTriggerSelector` | `null` | CSS selector — clicks close |
-| `dataTagTrigger` | `true` | Listen for `data-d2-show-popup` |
+| `dataTagTrigger` | `true` | Listen for `d2-show-popup` |
 | `animation` | `'fade'` | See animations table |
 | `animationDuration` | `0.4` | Seconds |
 | `openOnLoad` | `false` | Show on page load |
@@ -134,7 +134,7 @@ digi2.popups.create('newsletter', {
 
 | Method | Code |
 |---|---|
-| Data attribute | `<button data-d2-show-popup="name">` |
+| Data attribute | `<button d2-show-popup="name">` |
 | Programmatic | `digi2.popups.show('name')` / `.close('name')` |
 | Open selector | `openTriggerSelector: '.btn'` |
 | Close selector | `closeTriggerSelector: '.close'` |
@@ -184,7 +184,7 @@ digi2.cookies.remove('theme')
 ### Setup
 
 ```html
-<div data-d2-form="contact">
+<div d2-form="contact">
   <form>
     <input type="text" name="NAME" />
     <input type="email" name="EMAIL" />
@@ -208,7 +208,7 @@ digi2.forms.create('contact', {
 
 | Option | Default | Description |
 |---|---|---|
-| `formSelector` | `null` | CSS selector (alt to data-d2-form wrapper) |
+| `formSelector` | `null` | CSS selector (alt to d2-form wrapper) |
 | `utmTracking` | `true` | Capture UTM params |
 | `clickIdTracking` | `true` | gclid, fbclid, msclkid |
 | `gaClientId` | `true` | GA4 client ID |
@@ -260,8 +260,8 @@ digi2.forms.create('contact', {
 <label>
   Email
   <input type="email" name="EMAIL" />
-  <div data-d2-form-error-required style="display:none">Email is required</div>
-  <div data-d2-form-error-email style="display:none">Enter a valid email</div>
+  <div d2-form-error-required style="display:none">Email is required</div>
+  <div d2-form-error-email style="display:none">Enter a valid email</div>
 </label>
 ```
 
@@ -285,7 +285,7 @@ digi2.forms.create('contact', {
 <label>
   Password
   <input type="password" name="password">
-  <button type="button" data-d2-password-toggle data-d2-password-show="Show" data-d2-password-hide="Hide">Show</button>
+  <button type="button" d2-password-toggle d2-password-show="Show" d2-password-hide="Hide">Show</button>
 </label>
 ```
 
@@ -317,11 +317,11 @@ form.setField('field', 'value')
 ### Tabs Mode
 
 ```html
-<div data-d2-tab-group="pricing">
-  <button data-d2-tab="monthly">Monthly</button>
-  <button data-d2-tab="yearly">Yearly</button>
-  <div data-d2-tab-content="monthly">Monthly plans...</div>
-  <div data-d2-tab-content="yearly">Yearly plans...</div>
+<div d2-tab-group="pricing">
+  <button d2-tab="monthly">Monthly</button>
+  <button d2-tab="yearly">Yearly</button>
+  <div d2-tab-content="monthly">Monthly plans...</div>
+  <div d2-tab-content="yearly">Yearly plans...</div>
 </div>
 ```
 
@@ -366,15 +366,15 @@ instance.getActive()
 ## Sliders
 
 ```html
-<div data-d2-slider="hero">
-  <div data-d2-slider-track>
-    <div data-d2-slide>Slide 1</div>
-    <div data-d2-slide>Slide 2</div>
-    <div data-d2-slide>Slide 3</div>
+<div d2-slider="hero">
+  <div d2-slider-track>
+    <div d2-slide>Slide 1</div>
+    <div d2-slide>Slide 2</div>
+    <div d2-slide>Slide 3</div>
   </div>
-  <button data-d2-slider-prev>←</button>
-  <button data-d2-slider-next>→</button>
-  <div data-d2-slider-dots></div>
+  <button d2-slider-prev>←</button>
+  <button d2-slider-next>→</button>
+  <div d2-slider-dots></div>
 </div>
 ```
 
@@ -420,15 +420,15 @@ instance.getCount()
 ## Scroll Animations
 
 ```html
-<div data-d2-animate="fade-up">Appears on scroll</div>
-<div data-d2-animate="zoom" data-d2-delay="200">Delayed</div>
-<div data-d2-animate="slide-left" data-d2-duration="0.8">Custom duration</div>
+<div d2-animate="fade-up">Appears on scroll</div>
+<div d2-animate="zoom" d2-delay="200">Delayed</div>
+<div d2-animate="slide-left" d2-duration="0.8">Custom duration</div>
 
 <!-- Stagger -->
-<div data-d2-stagger="100">
-  <div data-d2-animate="fade-up">Item 1</div>
-  <div data-d2-animate="fade-up">Item 2</div>
-  <div data-d2-animate="fade-up">Item 3</div>
+<div d2-stagger="100">
+  <div d2-animate="fade-up">Item 1</div>
+  <div d2-animate="fade-up">Item 2</div>
+  <div d2-animate="fade-up">Item 3</div>
 </div>
 ```
 
@@ -477,9 +477,9 @@ digi2.toasts.config({ position: 'bottom-center', duration: 4000 })
 ## Smooth Scroll
 
 ```html
-<a data-d2-scroll="#features">Features</a>
-<a data-d2-scroll="#pricing">Pricing</a>
-<button data-d2-scroll-top>↑ Top</button>
+<a d2-scroll="#features">Features</a>
+<a d2-scroll="#pricing">Pricing</a>
+<button d2-scroll-top>↑ Top</button>
 ```
 
 ```js
@@ -506,10 +506,10 @@ digi2.scroll.refresh()
 ## Lazy Loading
 
 ```html
-<img data-d2-lazy="real-image.jpg" src="tiny-placeholder.jpg" alt="...">
-<video data-d2-lazy="video.mp4" poster="poster.jpg"></video>
-<iframe data-d2-lazy="https://youtube.com/embed/xxx"></iframe>
-<div data-d2-lazy-bg="background.jpg">...</div>
+<img d2-lazy="real-image.jpg" src="tiny-placeholder.jpg" alt="...">
+<video d2-lazy="video.mp4" poster="poster.jpg"></video>
+<iframe d2-lazy="https://youtube.com/embed/xxx"></iframe>
+<div d2-lazy-bg="background.jpg">...</div>
 ```
 
 ```js
@@ -535,11 +535,11 @@ digi2.lazy.load(element)   // manual load
 ## Countdown
 
 ```html
-<div data-d2-countdown="2025-12-31T23:59:59">
-  <span data-d2-countdown-days>00</span>d
-  <span data-d2-countdown-hours>00</span>h
-  <span data-d2-countdown-minutes>00</span>m
-  <span data-d2-countdown-seconds>00</span>s
+<div d2-countdown="2025-12-31T23:59:59">
+  <span d2-countdown-days>00</span>d
+  <span d2-countdown-hours>00</span>h
+  <span d2-countdown-minutes>00</span>m
+  <span d2-countdown-seconds>00</span>s
 </div>
 ```
 
@@ -566,15 +566,15 @@ instance.destroy()
 ## CMS Filtering
 
 ```html
-<div data-d2-filter-group="portfolio">
-  <button data-d2-filter="all">All</button>
-  <button data-d2-filter="web">Web</button>
-  <button data-d2-filter="branding">Branding</button>
+<div d2-filter-group="portfolio">
+  <button d2-filter="all">All</button>
+  <button d2-filter="web">Web</button>
+  <button d2-filter="branding">Branding</button>
 
-  <div data-d2-filter-list>
-    <div data-d2-filter-item data-d2-filter-category="web">Project 1</div>
-    <div data-d2-filter-item data-d2-filter-category="branding">Project 2</div>
-    <div data-d2-filter-item data-d2-filter-category="web,branding">Project 3</div>
+  <div d2-filter-list>
+    <div d2-filter-item d2-filter-category="web">Project 1</div>
+    <div d2-filter-item d2-filter-category="branding">Project 2</div>
+    <div d2-filter-item d2-filter-category="web,branding">Project 3</div>
   </div>
 </div>
 ```
@@ -725,8 +725,8 @@ list.destroy()
 ## Copy to Clipboard
 
 ```html
-<button data-d2-copy="Text to copy">Copy</button>
-<button data-d2-copy data-d2-copy-target="#promo-code">Copy Code</button>
+<button d2-copy="Text to copy">Copy</button>
+<button d2-copy d2-copy-target="#promo-code">Copy Code</button>
 ```
 
 ```js
@@ -783,35 +783,35 @@ digi2.log('module', 'action', data)
 
 | Attribute | Element | Description |
 |---|---|---|
-| `data-d2-show-popup="name"` | Any | Click opens popup |
-| `data-d2-form="name"` | Div | Form enhancement wrapper |
-| `data-d2-form-error-{rule}` | Inside label | Per-rule error message |
-| `data-d2-form-summary` | Inside form | Summary error container |
-| `data-d2-password-toggle` | Button | Toggle password visibility |
-| `data-d2-tab-group="name"` | Div | Tabs/accordion wrapper |
-| `data-d2-tab="id"` | Button | Tab trigger |
-| `data-d2-tab-content="id"` | Div | Tab panel |
-| `data-d2-slider="name"` | Div | Slider container |
-| `data-d2-slide` | Div | Slide item |
-| `data-d2-slider-track` | Div | Slide track |
-| `data-d2-slider-prev/next` | Button | Arrow navigation |
-| `data-d2-slider-dots` | Div | Dot navigation |
-| `data-d2-animate="preset"` | Any | Scroll animation |
-| `data-d2-stagger="ms"` | Parent | Stagger children |
-| `data-d2-delay="ms"` | Any | Animation delay |
-| `data-d2-duration="s"` | Any | Animation duration |
-| `data-d2-scroll="#id"` | Link | Smooth scroll to |
-| `data-d2-scroll-top` | Button | Scroll to top |
-| `data-d2-lazy="url"` | img/video/iframe | Lazy load src |
-| `data-d2-lazy-bg="url"` | Div | Lazy background image |
-| `data-d2-countdown="date"` | Div | Countdown target |
-| `data-d2-countdown-days/hours/minutes/seconds` | Span | Timer display |
-| `data-d2-filter-group="name"` | Div | Filter wrapper |
-| `data-d2-filter="category"` | Button | Filter trigger |
-| `data-d2-filter-item` | Div | Filterable item |
-| `data-d2-filter-category="cat"` | Div | Item categories |
-| `data-d2-copy="text"` | Button | Copy to clipboard |
-| `data-d2-copy-target="#id"` | Button | Copy element content |
+| `d2-show-popup="name"` | Any | Click opens popup |
+| `d2-form="name"` | Div | Form enhancement wrapper |
+| `d2-form-error-{rule}` | Inside label | Per-rule error message |
+| `d2-form-summary` | Inside form | Summary error container |
+| `d2-password-toggle` | Button | Toggle password visibility |
+| `d2-tab-group="name"` | Div | Tabs/accordion wrapper |
+| `d2-tab="id"` | Button | Tab trigger |
+| `d2-tab-content="id"` | Div | Tab panel |
+| `d2-slider="name"` | Div | Slider container |
+| `d2-slide` | Div | Slide item |
+| `d2-slider-track` | Div | Slide track |
+| `d2-slider-prev/next` | Button | Arrow navigation |
+| `d2-slider-dots` | Div | Dot navigation |
+| `d2-animate="preset"` | Any | Scroll animation |
+| `d2-stagger="ms"` | Parent | Stagger children |
+| `d2-delay="ms"` | Any | Animation delay |
+| `d2-duration="s"` | Any | Animation duration |
+| `d2-scroll="#id"` | Link | Smooth scroll to |
+| `d2-scroll-top` | Button | Scroll to top |
+| `d2-lazy="url"` | img/video/iframe | Lazy load src |
+| `d2-lazy-bg="url"` | Div | Lazy background image |
+| `d2-countdown="date"` | Div | Countdown target |
+| `d2-countdown-days/hours/minutes/seconds` | Span | Timer display |
+| `d2-filter-group="name"` | Div | Filter wrapper |
+| `d2-filter="category"` | Button | Filter trigger |
+| `d2-filter-item` | Div | Filterable item |
+| `d2-filter-category="cat"` | Div | Item categories |
+| `d2-copy="text"` | Button | Copy to clipboard |
+| `d2-copy-target="#id"` | Button | Copy element content |
 | `d2-debug-mode` | Loader script | Enable debug |
 | `d2-gtm="GTM-ID"` | Loader script | GTM container ID |
 

@@ -8,7 +8,7 @@
  *   - On-blur + on-submit validation with CSS class + data-attribute error feedback
  *
  * Setup in Webflow:
- *   Wrap your form in a div with: data-d2-form="formName"
+ *   Wrap your form in a div with: d2-form="formName"
  *   The module finds the <form> inside and enhances it.
  *
  * API:
@@ -27,7 +27,7 @@
  *       phone: { required: true, phone: true },
  *     },
  *     errorClass:     'd2-error',
- *     errorAttribute: 'data-d2-error',
+ *     errorAttribute: 'd2-error',
  *     errorMessages:  { minLength: 'Too short!', required: 'Fill this in.' },  — optional custom error messages
  *     autoErrorElements: true,         — auto-create [d2-form-error-text] with <label> wrapping + position:absolute
  *     errorFontSize:  '12px',          — font-size for auto-created error text
@@ -278,7 +278,7 @@
         autoValidation: true,         // auto-detect NAME, EMAIL, PHONE, etc. and apply default rules
         validation: null,             // { fieldName: { rule: value, ... }, ... } — overrides/extends auto rules
         errorClass: 'd2-error',       // CSS class added to invalid fields
-        errorAttribute: 'data-d2-error', // attribute set on invalid fields (value = error names)
+        errorAttribute: 'd2-error', // attribute set on invalid fields (value = error names)
         errorSelector: '[d2-form-error-text]', // selector for error message element inside input's parent
         errorDisplay: 'inline',       // 'inline' = per-field errors | 'summary' = one block above submit
         errorMessages: null,          // { ruleName: 'Custom message', ... } — overrides default error messages
@@ -291,7 +291,7 @@
         errorTextStyle: null,         // CSS object for error text element (overrides default absolute styles)
         inputOnError: null,           // CSS object applied to invalid inputs, e.g. { borderColor: '#ef4444', boxShadow: '0 0 0 2px rgba(239,68,68,0.2)' }
         inputOnValid: null,           // CSS object applied when input becomes valid (resets), e.g. { borderColor: '', boxShadow: '' }
-        summarySelector: '[data-d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
+        summarySelector: '[d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
         summaryMessage: 'Please fix the following errors:', // heading text for summary
         validateOn: 'both',           // 'blur' | 'submit' | 'both'
         onValidationError: null,      // callback(fieldName, errors, inputEl)
@@ -411,7 +411,7 @@
         return document.querySelector(this.options.formSelector);
       }
 
-      var wrapper = document.querySelector('[data-d2-form="' + this.name + '"]');
+      var wrapper = document.querySelector('[d2-form="' + this.name + '"]');
       if (wrapper) {
         if (wrapper.tagName === 'FORM') return wrapper;
         return wrapper.querySelector('form');
@@ -432,7 +432,7 @@
 
       var formSel = this.formElement.id
         ? '#' + this.formElement.id
-        : '[data-d2-form="' + this.name + '"] form';
+        : '[d2-form="' + this.name + '"] form';
 
       var css =
         formSel + ' input:-webkit-autofill,' +
@@ -822,7 +822,7 @@
 
     /**
      * Find or create the summary error container.
-     * Looks for [data-d2-form-summary] inside the form.
+     * Looks for [d2-form-summary] inside the form.
      * If not found, creates one and inserts it before the submit button.
      */
     _getSummaryElement() {
@@ -833,7 +833,7 @@
 
       // Auto-create: insert before submit button
       el = document.createElement('div');
-      el.setAttribute('data-d2-form-summary', '');
+      el.setAttribute('d2-form-summary', '');
       el.style.display = 'none';
 
       var submitBtn = this.formElement.querySelector('[type="submit"], button:not([type])');
@@ -1130,16 +1130,16 @@
     },
 
     /**
-     * Auto-initialize [data-d2-form] elements on the page.
+     * Auto-initialize [d2-form] elements on the page.
      *
      * Usage:
-     *   createAll({ ...options })               — all [data-d2-form] elements
-     *   createAll('contact-form', { ...opts })  — only [data-d2-form="contact-form"]
+     *   createAll({ ...options })               — all [d2-form] elements
+     *   createAll('contact-form', { ...opts })  — only [d2-form="contact-form"]
      *
      * Multiple elements with the same name get unique registry keys:
      *   contact-form, contact-form-2, contact-form-3, etc.
      *
-     * @param {string} [nameFilter]  — only init elements with this data-d2-form value
+     * @param {string} [nameFilter]  — only init elements with this d2-form value
      * @param {object} [options]     — shared options applied to all forms
      * @returns {object[]} array of created FormManager instances
      */
@@ -1152,14 +1152,14 @@
       options = options || {};
 
       var selector = nameFilter
-        ? '[data-d2-form="' + nameFilter + '"]'
-        : '[data-d2-form]';
+        ? '[d2-form="' + nameFilter + '"]'
+        : '[d2-form]';
       var wrappers = document.querySelectorAll(selector);
       var created = [];
       var nameCount = {};
 
       wrappers.forEach(function (wrapper) {
-        var baseName = wrapper.getAttribute('data-d2-form');
+        var baseName = wrapper.getAttribute('d2-form');
         if (!baseName) return;
 
         // Generate unique registry key for duplicates
@@ -1229,31 +1229,31 @@
     },
 
     /**
-     * Initialize password toggle on all [data-d2-password-toggle] elements.
+     * Initialize password toggle on all [d2-password-toggle] elements.
      * Clicking toggles the associated input between type="password" and type="text".
      *
      * Webflow setup:
      *   <label>
      *     Password
      *     <input type="password" name="password">
-     *     <button type="button" data-d2-password-toggle>Show</button>
+     *     <button type="button" d2-password-toggle>Show</button>
      *   </label>
      *
      * Options:
-     *   data-d2-password-toggle            — toggles sibling/parent input
-     *   data-d2-password-toggle="#my-input" — toggles specific input by selector
-     *   data-d2-password-show="Show"       — text when password is hidden
-     *   data-d2-password-hide="Hide"       — text when password is visible
+     *   d2-password-toggle            — toggles sibling/parent input
+     *   d2-password-toggle="#my-input" — toggles specific input by selector
+     *   d2-password-show="Show"       — text when password is hidden
+     *   d2-password-hide="Hide"       — text when password is visible
      */
     initPasswordToggles: function () {
       document.addEventListener('click', function (e) {
-        var toggle = e.target.closest('[data-d2-password-toggle]');
+        var toggle = e.target.closest('[d2-password-toggle]');
         if (!toggle) return;
 
         e.preventDefault();
 
         // Find the target input
-        var targetSel = toggle.getAttribute('data-d2-password-toggle');
+        var targetSel = toggle.getAttribute('d2-password-toggle');
         var input = null;
 
         if (targetSel && targetSel !== '') {
@@ -1263,21 +1263,21 @@
         if (!input) {
           // Look for sibling or parent input
           var parent = toggle.parentElement;
-          if (parent) input = parent.querySelector('input[type="password"], input[type="text"][data-d2-pw]');
+          if (parent) input = parent.querySelector('input[type="password"], input[type="text"][d2-pw]');
         }
 
         if (!input) return;
 
         if (input.type === 'password') {
           input.type = 'text';
-          input.setAttribute('data-d2-pw', 'visible');
-          var hideText = toggle.getAttribute('data-d2-password-hide');
+          input.setAttribute('d2-pw', 'visible');
+          var hideText = toggle.getAttribute('d2-password-hide');
           if (hideText) toggle.textContent = hideText;
           _log('password toggle → visible');
         } else {
           input.type = 'password';
-          input.removeAttribute('data-d2-pw');
-          var showText = toggle.getAttribute('data-d2-password-show');
+          input.removeAttribute('d2-pw');
+          var showText = toggle.getAttribute('d2-password-show');
           if (showText) toggle.textContent = showText;
           _log('password toggle → hidden');
         }

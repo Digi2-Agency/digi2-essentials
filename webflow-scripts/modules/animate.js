@@ -2,23 +2,23 @@
  * digi2 — Scroll Animations Module
  * Loaded automatically by digi2-loader.js when d2-animate is present.
  *
- * Intersection Observer wrapper. Add data-d2-animate="fade-up" to any element
+ * Intersection Observer wrapper. Add d2-animate="fade-up" to any element
  * and it animates when scrolled into view. Supports stagger for lists.
  *
  * Webflow setup:
- *   <div data-d2-animate="fade-up">Animates on scroll</div>
- *   <div data-d2-animate="zoom" data-d2-delay="200">With delay</div>
- *   <div data-d2-animate="slide-left" data-d2-duration="0.6">Custom duration</div>
+ *   <div d2-animate="fade-up">Animates on scroll</div>
+ *   <div d2-animate="zoom" d2-delay="200">With delay</div>
+ *   <div d2-animate="slide-left" d2-duration="0.6">Custom duration</div>
  *
  *   Stagger (parent):
- *   <div data-d2-stagger="100">
- *     <div data-d2-animate="fade-up">Item 1</div>
- *     <div data-d2-animate="fade-up">Item 2</div>
- *     <div data-d2-animate="fade-up">Item 3</div>
+ *   <div d2-stagger="100">
+ *     <div d2-animate="fade-up">Item 1</div>
+ *     <div d2-animate="fade-up">Item 2</div>
+ *     <div d2-animate="fade-up">Item 3</div>
  *   </div>
  *
  * API:
- *   digi2.animate.init(options)        — scan and observe all [data-d2-animate] elements
+ *   digi2.animate.init(options)        — scan and observe all [d2-animate] elements
  *   digi2.animate.refresh()            — re-scan for new elements (after CMS load, AJAX, etc.)
  *   digi2.animate.reset()              — reset all animations (re-triggers on scroll)
  *   digi2.animate.trigger(element)     — manually trigger animation on an element
@@ -68,7 +68,7 @@
   var _observed = new Set();
 
   var DEFAULTS = {
-    selector: '[data-d2-animate]',
+    selector: '[d2-animate]',
     duration: 0.5,                    // seconds
     easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
     threshold: 0.15,                  // 0-1, how much element must be visible
@@ -107,22 +107,22 @@
   }
 
   function animateElement(el) {
-    var animName = el.getAttribute('data-d2-animate');
+    var animName = el.getAttribute('d2-animate');
     var preset = PRESETS[animName];
     if (!preset) {
       _log('unknown animation: ' + animName);
       return;
     }
 
-    var duration = parseFloat(el.getAttribute('data-d2-duration')) || _options.duration;
-    var delay = parseFloat(el.getAttribute('data-d2-delay') || '0') / 1000; // ms to s
+    var duration = parseFloat(el.getAttribute('d2-duration')) || _options.duration;
+    var delay = parseFloat(el.getAttribute('d2-delay') || '0') / 1000; // ms to s
     var easing = preset.easing || _options.easing;
 
     // Calculate stagger delay from parent
-    var staggerParent = el.closest('[data-d2-stagger]');
+    var staggerParent = el.closest('[d2-stagger]');
     if (staggerParent) {
-      var staggerMs = parseInt(staggerParent.getAttribute('data-d2-stagger'), 10) || 100;
-      var siblings = Array.from(staggerParent.querySelectorAll('[data-d2-animate]'));
+      var staggerMs = parseInt(staggerParent.getAttribute('d2-stagger'), 10) || 100;
+      var siblings = Array.from(staggerParent.querySelectorAll('[d2-animate]'));
       var idx = siblings.indexOf(el);
       if (idx > 0) delay += (idx * staggerMs) / 1000;
     }
@@ -130,17 +130,17 @@
     _log('animate → ' + animName, { delay: delay + 's', duration: duration + 's' });
 
     applyTo(el, preset, duration, delay, easing);
-    el.setAttribute('data-d2-animated', 'true');
+    el.setAttribute('d2-animated', 'true');
   }
 
   function resetElement(el) {
-    var animName = el.getAttribute('data-d2-animate');
+    var animName = el.getAttribute('d2-animate');
     var preset = PRESETS[animName];
     if (!preset) return;
 
     el.style.transition = 'none';
     applyFrom(el, preset);
-    el.removeAttribute('data-d2-animated');
+    el.removeAttribute('d2-animated');
   }
 
   function setupObserver() {
@@ -170,9 +170,9 @@
 
     elements.forEach(function (el) {
       if (_observed.has(el)) return; // already being watched
-      if (el.getAttribute('data-d2-animated') === 'true' && _options.once) return;
+      if (el.getAttribute('d2-animated') === 'true' && _options.once) return;
 
-      var animName = el.getAttribute('data-d2-animate');
+      var animName = el.getAttribute('d2-animate');
       var preset = PRESETS[animName];
       if (!preset) return;
 
@@ -217,7 +217,7 @@
     },
 
     /**
-     * Re-scan the DOM for new [data-d2-animate] elements.
+     * Re-scan the DOM for new [d2-animate] elements.
      * Call after dynamically adding content (CMS, AJAX, etc.).
      */
     refresh: function () {

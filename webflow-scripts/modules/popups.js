@@ -188,7 +188,7 @@
         popupSelector: '.popup__overlay',
         openTriggerSelector: null,   // CSS selector — clicks open this popup
         closeTriggerSelector: null,   // CSS selector — clicks close this popup (in addition to overlay click)
-        dataTagTrigger: true,         // listen for data-d2-show-popup="name" clicks globally
+        dataTagTrigger: true,         // listen for d2-show-popup="name" clicks globally
         cookieName: 'popup_clicked',
         cookieDurationDays: 1,
         openOnLoad: false,
@@ -576,15 +576,15 @@
   };
 
   // ---------------------------------------------------------------------------
-  // Global delegated listener for data-d2-show-popup="popupName"
+  // Global delegated listener for d2-show-popup="popupName"
   // One listener for all popups — clicks anywhere on the page are caught here.
   // Only triggers if the matching instance has dataTagTrigger: true (default).
   // ---------------------------------------------------------------------------
   document.addEventListener('click', function (e) {
-    var trigger = e.target.closest('[data-d2-show-popup]');
+    var trigger = e.target.closest('[d2-show-popup]');
     if (!trigger) return;
 
-    var name = trigger.getAttribute('data-d2-show-popup');
+    var name = trigger.getAttribute('d2-show-popup');
     var instance = registry[name];
     if (instance && instance.options.dataTagTrigger) {
       e.preventDefault();

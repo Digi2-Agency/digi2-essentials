@@ -6,13 +6,13 @@
  * Uses Intersection Observer for performance.
  *
  * Webflow setup:
- *   <img data-d2-lazy="real-image.jpg" src="tiny-placeholder.jpg" alt="...">
- *   <img data-d2-lazy="image.jpg" alt="...">
- *   <video data-d2-lazy="video.mp4" poster="poster.jpg"></video>
- *   <iframe data-d2-lazy="https://youtube.com/embed/xxx"></iframe>
+ *   <img d2-lazy="real-image.jpg" src="tiny-placeholder.jpg" alt="...">
+ *   <img d2-lazy="image.jpg" alt="...">
+ *   <video d2-lazy="video.mp4" poster="poster.jpg"></video>
+ *   <iframe d2-lazy="https://youtube.com/embed/xxx"></iframe>
  *
  *   Background images:
- *   <div data-d2-lazy-bg="image.jpg">...</div>
+ *   <div d2-lazy-bg="image.jpg">...</div>
  *
  * API:
  *   digi2.lazy.init(options)
@@ -37,7 +37,7 @@
   var _stylesInjected = false;
 
   var DEFAULTS = {
-    selector: '[data-d2-lazy], [data-d2-lazy-bg]',
+    selector: '[d2-lazy], [d2-lazy-bg]',
     rootMargin: '200px 0px',       // start loading 200px before visible
     threshold: 0,
     blur: true,                     // blur-up effect on images
@@ -58,18 +58,18 @@
     _stylesInjected = true;
 
     var css = ''
-      + '[data-d2-lazy]:not(.d2-lazy-loaded){'
+      + '[d2-lazy]:not(.d2-lazy-loaded){'
       +   'filter:blur(' + (_options.blurAmount || 15) + 'px);'
       +   'transition:filter ' + (_options.fadeDuration || 0.4) + 's ease, opacity ' + (_options.fadeDuration || 0.4) + 's ease;'
       + '}'
-      + '[data-d2-lazy].d2-lazy-loaded{'
+      + '[d2-lazy].d2-lazy-loaded{'
       +   'filter:blur(0);'
       + '}'
-      + '[data-d2-lazy-bg]:not(.d2-lazy-loaded){'
+      + '[d2-lazy-bg]:not(.d2-lazy-loaded){'
       +   'opacity:0;'
       +   'transition:opacity ' + (_options.fadeDuration || 0.4) + 's ease;'
       + '}'
-      + '[data-d2-lazy-bg].d2-lazy-loaded{'
+      + '[d2-lazy-bg].d2-lazy-loaded{'
       +   'opacity:1;'
       + '}'
     ;
@@ -84,8 +84,8 @@
   // ---------------------------------------------------------------------------
 
   function loadElement(el) {
-    var lazySrc = el.getAttribute('data-d2-lazy');
-    var lazyBg = el.getAttribute('data-d2-lazy-bg');
+    var lazySrc = el.getAttribute('d2-lazy');
+    var lazyBg = el.getAttribute('d2-lazy-bg');
 
     if (lazySrc) {
       loadMedia(el, lazySrc);
@@ -107,7 +107,7 @@
       img.src = src;
 
       // Also handle srcset
-      var srcset = el.getAttribute('data-d2-lazy-srcset');
+      var srcset = el.getAttribute('d2-lazy-srcset');
       if (srcset) {
         img.srcset = srcset;
         el.srcset = srcset;
@@ -142,8 +142,8 @@
 
   function onLoaded(el) {
     el.classList.add(_options.loadedClass);
-    el.removeAttribute('data-d2-lazy');
-    el.removeAttribute('data-d2-lazy-bg');
+    el.removeAttribute('d2-lazy');
+    el.removeAttribute('d2-lazy-bg');
     _log('loaded', el.src || el.style.backgroundImage);
 
     if (typeof _options.onLoad === 'function') {
@@ -153,7 +153,7 @@
 
   function onError(el) {
     el.classList.add(_options.errorClass);
-    _log('error loading', el.getAttribute('data-d2-lazy') || el.getAttribute('data-d2-lazy-bg'));
+    _log('error loading', el.getAttribute('d2-lazy') || el.getAttribute('d2-lazy-bg'));
 
     if (typeof _options.onError === 'function') {
       _options.onError(el);

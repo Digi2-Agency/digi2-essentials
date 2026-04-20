@@ -58,7 +58,7 @@
  *   popupSelector:        '.popup__overlay'   CSS selector for the popup element
  *   openTriggerSelector:  null                CSS selector — clicks open this popup
  *   closeTriggerSelector: null                CSS selector — clicks close this popup
- *   dataTagTrigger:       true                Listen for data-d2-show-popup="name" clicks
+ *   dataTagTrigger:       true                Listen for d2-show-popup="name" clicks
  *   animation:            'fade'              none | fade | slide-up | slide-down | slide-left | slide-right | zoom
  *   animationDuration:    0.4                 Seconds
  *   openOnLoad:           true                Show immediately on page load
@@ -95,7 +95,7 @@
  *
  * ─── Forms Options ──────────────────────────────────────────────────────────
  *
- *   formSelector:         null                CSS selector (alternative to data-d2-form wrapper)
+ *   formSelector:         null                CSS selector (alternative to d2-form wrapper)
  *   utmTracking:          true                Capture utm_source, utm_medium, utm_campaign, utm_content, utm_term
  *   clickIdTracking:      true                Capture gclid, fbclid, msclkid
  *   gaClientId:           true                Capture GA4 client ID from _ga cookie
@@ -140,8 +140,8 @@
  *
  * ─── Data Attributes (HTML) ─────────────────────────────────────────────────
  *
- *   data-d2-show-popup="name"           Click to open a popup by name
- *   data-d2-form="name"                 Wrapper for form enhancement
+ *   d2-show-popup="name"           Click to open a popup by name
+ *   d2-form="name"                 Wrapper for form enhancement
  *   d2-debug-mode                       Enable debug logging (on loader script)
  *
  * ─── How It Works ───────────────────────────────────────────────────────────

@@ -3,9 +3,9 @@
  * Loaded automatically by digi2-loader.js when d2-copy is present.
  *
  * Webflow setup:
- *   <button data-d2-copy="Text to copy">Copy</button>
- *   <button data-d2-copy="#target-element">Copy from element</button>
- *   <button data-d2-copy data-d2-copy-target="#promo-code">Copy code</button>
+ *   <button d2-copy="Text to copy">Copy</button>
+ *   <button d2-copy="#target-element">Copy from element</button>
+ *   <button d2-copy d2-copy-target="#promo-code">Copy code</button>
  *
  * API:
  *   digi2.copy.init(options)
@@ -25,7 +25,7 @@
   var _initialized = false;
 
   var DEFAULTS = {
-    selector: '[data-d2-copy]',
+    selector: '[d2-copy]',
     feedbackDuration: 2000,          // ms to show "Copied!" state
     feedbackText: 'Copied!',
     feedbackClass: 'd2-copy-success',
@@ -65,7 +65,7 @@
     var text = '';
 
     // Check for target element reference
-    var targetSel = trigger.getAttribute('data-d2-copy-target');
+    var targetSel = trigger.getAttribute('d2-copy-target');
     if (targetSel) {
       var targetEl = document.querySelector(targetSel);
       if (targetEl) text = targetEl.textContent.trim();
@@ -73,7 +73,7 @@
 
     // Fall back to attribute value
     if (!text) {
-      var attrVal = trigger.getAttribute('data-d2-copy');
+      var attrVal = trigger.getAttribute('d2-copy');
       if (attrVal && attrVal.charAt(0) === '#') {
         // Selector reference
         var refEl = document.querySelector(attrVal);
@@ -94,7 +94,7 @@
       // Visual feedback on the trigger
       var origText = trigger.textContent;
       trigger.classList.add(_options.feedbackClass);
-      trigger.setAttribute('data-d2-copy-original', origText);
+      trigger.setAttribute('d2-copy-original', origText);
       trigger.textContent = _options.feedbackText;
 
       setTimeout(function () {

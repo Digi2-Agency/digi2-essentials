@@ -5,15 +5,15 @@
  * Client-side filtering for Webflow CMS items with animated show/hide.
  *
  * Webflow setup:
- *   <div data-d2-filter-group="portfolio">
- *     <button data-d2-filter="all">All</button>
- *     <button data-d2-filter="web">Web</button>
- *     <button data-d2-filter="branding">Branding</button>
+ *   <div d2-filter-group="portfolio">
+ *     <button d2-filter="all">All</button>
+ *     <button d2-filter="web">Web</button>
+ *     <button d2-filter="branding">Branding</button>
  *
- *     <div data-d2-filter-list>
- *       <div data-d2-filter-item data-d2-filter-category="web">Project 1</div>
- *       <div data-d2-filter-item data-d2-filter-category="branding">Project 2</div>
- *       <div data-d2-filter-item data-d2-filter-category="web,branding">Project 3</div>
+ *     <div d2-filter-list>
+ *       <div d2-filter-item d2-filter-category="web">Project 1</div>
+ *       <div d2-filter-item d2-filter-category="branding">Project 2</div>
+ *       <div d2-filter-item d2-filter-category="web,branding">Project 3</div>
  *     </div>
  *   </div>
  *
@@ -73,8 +73,8 @@
         return;
       }
 
-      this.buttons = Array.from(this.groupEl.querySelectorAll('[data-d2-filter]'));
-      this.items = Array.from(this.groupEl.querySelectorAll('[data-d2-filter-item]'));
+      this.buttons = Array.from(this.groupEl.querySelectorAll('[d2-filter]'));
+      this.items = Array.from(this.groupEl.querySelectorAll('[d2-filter-item]'));
 
       _log('init → ' + this.name, { buttons: this.buttons.length, items: this.items.length });
 
@@ -86,7 +86,7 @@
       if (this.options.groupSelector) {
         return document.querySelector(this.options.groupSelector);
       }
-      return document.querySelector('[data-d2-filter-group="' + this.name + '"]');
+      return document.querySelector('[d2-filter-group="' + this.name + '"]');
     }
 
     _attachListeners() {
@@ -94,7 +94,7 @@
       this.buttons.forEach(function (btn) {
         btn.addEventListener('click', function (e) {
           e.preventDefault();
-          var filter = btn.getAttribute('data-d2-filter');
+          var filter = btn.getAttribute('d2-filter');
           self.filterBy(filter);
         });
       });
@@ -144,7 +144,7 @@
 
       // Update button states
       this.buttons.forEach(function (btn) {
-        if (btn.getAttribute('data-d2-filter') === filter) {
+        if (btn.getAttribute('d2-filter') === filter) {
           btn.classList.add(activeClass);
         } else {
           btn.classList.remove(activeClass);
@@ -153,7 +153,7 @@
 
       // Filter items
       this.items.forEach(function (item) {
-        var categories = (item.getAttribute('data-d2-filter-category') || '').split(',').map(function (c) { return c.trim(); });
+        var categories = (item.getAttribute('d2-filter-category') || '').split(',').map(function (c) { return c.trim(); });
         var show = false;
 
         if (filter === allKw) {

@@ -6,15 +6,15 @@
  * Supports horizontal and vertical directions.
  *
  * Webflow setup:
- *   <div data-d2-slider="hero">
- *     <div data-d2-slider-track>
- *       <div data-d2-slide>Slide 1</div>
- *       <div data-d2-slide>Slide 2</div>
- *       <div data-d2-slide>Slide 3</div>
+ *   <div d2-slider="hero">
+ *     <div d2-slider-track>
+ *       <div d2-slide>Slide 1</div>
+ *       <div d2-slide>Slide 2</div>
+ *       <div d2-slide>Slide 3</div>
  *     </div>
- *     <button data-d2-slider-prev>←</button>
- *     <button data-d2-slider-next>→</button>
- *     <div data-d2-slider-dots></div>
+ *     <button d2-slider-prev>←</button>
+ *     <button d2-slider-next>→</button>
+ *     <div d2-slider-dots></div>
  *   </div>
  *
  * API:
@@ -98,16 +98,16 @@
         return;
       }
 
-      this.trackEl = this.containerEl.querySelector('[data-d2-slider-track]');
+      this.trackEl = this.containerEl.querySelector('[d2-slider-track]');
       if (!this.trackEl) {
         // If no explicit track, use direct children
         this.trackEl = this.containerEl;
       }
 
-      this.slides = Array.from(this.trackEl.querySelectorAll('[data-d2-slide]'));
-      this.prevBtn = this.containerEl.querySelector('[data-d2-slider-prev]');
-      this.nextBtn = this.containerEl.querySelector('[data-d2-slider-next]');
-      this.dotsContainer = this.containerEl.querySelector('[data-d2-slider-dots]');
+      this.slides = Array.from(this.trackEl.querySelectorAll('[d2-slide]'));
+      this.prevBtn = this.containerEl.querySelector('[d2-slider-prev]');
+      this.nextBtn = this.containerEl.querySelector('[d2-slider-next]');
+      this.dotsContainer = this.containerEl.querySelector('[d2-slider-dots]');
 
       if (this.slides.length === 0) {
         console.warn('[digi2.sliders] "' + this.name + '" — no slides found.');
@@ -144,7 +144,7 @@
       if (this.options.containerSelector) {
         return document.querySelector(this.options.containerSelector);
       }
-      return document.querySelector('[data-d2-slider="' + this.name + '"]');
+      return document.querySelector('[d2-slider="' + this.name + '"]');
     }
 
     // ---- Setup --------------------------------------------------------------
@@ -190,7 +190,7 @@
 
       for (var i = 0; i < count; i++) {
         var dot = document.createElement('button');
-        dot.setAttribute('data-d2-dot', i);
+        dot.setAttribute('d2-dot', i);
         dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
         (function (idx) {
           dot.addEventListener('click', function () { self.goTo(idx); });
@@ -368,7 +368,7 @@
 
     addSlide(content, index) {
       var slide = typeof content === 'string'
-        ? (function () { var d = document.createElement('div'); d.setAttribute('data-d2-slide', ''); d.innerHTML = content; return d; })()
+        ? (function () { var d = document.createElement('div'); d.setAttribute('d2-slide', ''); d.innerHTML = content; return d; })()
         : content;
 
       if (index !== undefined && index < this.slides.length) {
@@ -377,7 +377,7 @@
         this.trackEl.appendChild(slide);
       }
 
-      this.slides = Array.from(this.trackEl.querySelectorAll('[data-d2-slide]'));
+      this.slides = Array.from(this.trackEl.querySelectorAll('[d2-slide]'));
       this._setupStyles();
       this._buildDots();
       this._updateState();
@@ -388,7 +388,7 @@
       if (index < 0 || index >= this.slides.length) return;
 
       this.trackEl.removeChild(this.slides[index]);
-      this.slides = Array.from(this.trackEl.querySelectorAll('[data-d2-slide]'));
+      this.slides = Array.from(this.trackEl.querySelectorAll('[d2-slide]'));
 
       if (this._currentIndex >= this.slides.length) {
         this._currentIndex = Math.max(0, this.slides.length - 1);
