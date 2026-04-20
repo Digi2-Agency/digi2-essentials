@@ -241,7 +241,6 @@
       this._visibleCount = this.options.perPage;
       this._setupSentinel();
       this._cacheEmptyElements();
-      this._cacheDisplayElements();
       this._render();
 
       _log('init → ' + this.name, { items: this.items.length });
@@ -424,7 +423,6 @@
     refresh() {
       this._scanItems();
       this._cacheEmptyElements();
-      this._cacheDisplayElements();
       this._render();
       _log('refresh', { items: this.items.length });
     }
@@ -655,14 +653,18 @@
      * don't wipe things like `display:flex` / `display:grid` when toggling.
      */
     _cacheEmptyElements() {
-      var selector;
       if (this.options.emptySelector) {
-        selector = this.options.emptySelector;
+        this._emptyEls = Array.prototype.slice.call(
+          document.querySelectorAll(this.options.emptySelector)
+        );
       } else {
-        selector = '[d2-cms-empty][d2-cms-target="' + this.name + '"], '
-          + '[d2-cms-list="' + this.name + '"] [d2-cms-empty]';
+        var scopedSel = '[d2-cms-empty][d2-cms-target="' + this.name + '"], '
+          + '[d2-cms-list="' + this.name + '"] [d2-cms-empty]:not([d2-cms-target])';
+        this._emptyEls = Array.prototype.slice.call(document.querySelectorAll(scopedSel));
+        if (this._isSoloList()) {
+          this._emptyEls = this._emptyEls.concat(this._orphansBySelector('[d2-cms-empty]'));
+        }
       }
-      this._emptyEls = Array.prototype.slice.call(document.querySelectorAll(selector));
 
       this._emptyEls.forEach(function (el) {
         if (el._d2CmsOrigDisplay === undefined) {
@@ -672,6 +674,36 @@
           el._d2CmsOrigDisplay = (current === 'none') ? '' : current;
         }
       });
+    }
+
+    /**
+     * Whether this is the only registered list. Used to let [d2-cms-empty],
+     * [d2-cms-display], [d2-cms-sort], [d2-cms-filter], [d2-cms-load-more]
+     * work without either a `d2-cms-target` attribute OR being nested inside
+     * a `[d2-cms-list]` element — the common single-list case.
+     *
+     * During initial construction the registry is empty (the instance is
+     * registered only AFTER new CMSList(...) returns), so "empty registry"
+     * also counts as solo.
+     */
+    _isSoloList() {
+      var keys = Object.keys(registry);
+      if (keys.length === 0) return true;
+      return keys.length === 1 && keys[0] === this.name;
+    }
+
+    /**
+     * Return elements that match `baseSelector`, have no `d2-cms-target` attr,
+     * AND are not nested inside any [d2-cms-list] element. These are "orphans"
+     * that belong to whoever is the only registered list.
+     */
+    _orphansBySelector(baseSelector) {
+      var nodes = document.querySelectorAll(baseSelector + ':not([d2-cms-target])');
+      var out = [];
+      for (var i = 0; i < nodes.length; i++) {
+        if (!nodes[i].closest('[d2-cms-list]')) out.push(nodes[i]);
+      }
+      return out;
     }
 
     _updateEmptyElement(isEmpty) {
@@ -697,17 +729,24 @@
      * Or use `d2-cms-display-format="{visible} of {matching}"` on the element
      * for a templated string; any of the tokens above work inside {…}.
      * A `d2-cms-display-format` value takes precedence over `d2-cms-display`.
+     *
+     * Scoping: element is claimed by this list if it has `d2-cms-target="<name>"`
+     * OR is nested inside `[d2-cms-list="<name>"]`. If neither is set and this
+     * is the only registered list, the orphan element is claimed automatically.
      */
-    _cacheDisplayElements() {
-      var selector = '[d2-cms-display][d2-cms-target="' + this.name + '"], '
-        + '[d2-cms-display-format][d2-cms-target="' + this.name + '"], '
-        + '[d2-cms-list="' + this.name + '"] [d2-cms-display]:not([d2-cms-target]), '
-        + '[d2-cms-list="' + this.name + '"] [d2-cms-display-format]:not([d2-cms-target])';
-      this._displayEls = Array.prototype.slice.call(document.querySelectorAll(selector));
-    }
-
     _updateDisplayElements(counts) {
-      var els = this._displayEls || [];
+      var name = this.name;
+      var scopedSel = '[d2-cms-display][d2-cms-target="' + name + '"], '
+        + '[d2-cms-display-format][d2-cms-target="' + name + '"], '
+        + '[d2-cms-list="' + name + '"] [d2-cms-display]:not([d2-cms-target]), '
+        + '[d2-cms-list="' + name + '"] [d2-cms-display-format]:not([d2-cms-target])';
+      var els = Array.prototype.slice.call(document.querySelectorAll(scopedSel));
+      if (this._isSoloList()) {
+        els = els
+          .concat(this._orphansBySelector('[d2-cms-display]'))
+          .concat(this._orphansBySelector('[d2-cms-display-format]'));
+      }
+
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
         var format = el.getAttribute('d2-cms-display-format');
@@ -768,8 +807,8 @@
      * Find buttons that target THIS list. A button targets this list when:
      *   - It has d2-cms-target="<name>"; OR
      *   - It is inside [d2-cms-list="<name>"] and has no d2-cms-target attr; OR
-     *   - It has no d2-cms-target and there is only one registered list (handled at click time).
-     * For visual-state reflection we only consider explicit matches.
+     *   - It is an orphan (no target, not inside any list) AND this is the only registered list.
+     * Used for visual-state reflection — matches the click handler's resolution.
      */
     _buttonsForName(attrSelector) {
       var name = this.name;
@@ -779,7 +818,11 @@
       var scoped = Array.prototype.slice.call(
         document.querySelectorAll('[d2-cms-list="' + name + '"] ' + attrSelector + ':not([d2-cms-target])')
       );
-      return explicit.concat(scoped);
+      var result = explicit.concat(scoped);
+      if (this._isSoloList()) {
+        result = result.concat(this._orphansBySelector(attrSelector));
+      }
+      return result;
     }
 
     // -----------------------------------------------------------------------

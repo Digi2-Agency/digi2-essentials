@@ -715,7 +715,7 @@ You can configure a list entirely from HTML — the module auto-initializes ever
 | `d2-cms-sort-type="number\|text\|date"` | button | Override auto-detection of value type |
 | `d2-cms-filter="key:value"` | button | Toggle a filter |
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
-| `d2-cms-target="name"` | sort/filter/load-more buttons | Target a specific list by name (or place button inside `[d2-cms-list]` to scope automatically) |
+| `d2-cms-target="name"` | sort/filter/load-more/display/empty elements | Target a specific list by name. Optional when the element is nested inside `[d2-cms-list]` (scoped to that list), OR when there is only one registered list (claimed automatically) |
 | `d2-cms-empty` | any element | Shown when 0 items match |
 | `d2-cms-display="visible\|matching\|total\|hidden\|remaining"` | any element | Module writes the matching count into this element's textContent |
 | `d2-cms-display-format="{visible} of {matching}"` | any element | Template with `{visible}`, `{matching}`, `{total}`, `{hidden}`, `{remaining}` placeholders — takes precedence over `d2-cms-display` |
