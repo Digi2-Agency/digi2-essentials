@@ -679,6 +679,7 @@ digi2.cms.createList('products', {
 | `d2-cms-list="name"` | list container | Marks the list and gives it a name |
 | `d2-cms-item` | each item (optional) | Explicit item marker; defaults to direct children |
 | `d2-cms-field="{name}"` | element inside item | Field value — read from this element's `.textContent` |
+| `d2-cms-field-type="number\|text\|date"` | on `[d2-cms-field]` | Optional. Forces the comparator type. Without it, type is auto-detected (numbers-as-numbers, dates-as-dates, else alphabetical) |
 | `d2-cms-sort="field"` | button | Click toggles sort by this field |
 | `d2-cms-sort-type="number\|string\|date"` | button | Override auto-detection of value type |
 | `d2-cms-sort-dir="asc\|desc"` | button | Force a fixed direction (no toggle) |

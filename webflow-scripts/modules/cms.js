@@ -16,12 +16,12 @@
  *   <div d2-cms-list="products" class="w-dyn-items">
  *     <div d2-cms-item>
  *       <h3   d2-cms-field="title">Alpha</h3>
- *       <span d2-cms-field="price">100</span>
+ *       <span d2-cms-field="price" d2-cms-field-type="number">100</span>
  *       <span d2-cms-field="category">shoes</span>
  *     </div>
  *     <div d2-cms-item>
  *       <h3   d2-cms-field="title">Beta</h3>
- *       <span d2-cms-field="price">50</span>
+ *       <span d2-cms-field="price" d2-cms-field-type="number">50</span>
  *       <span d2-cms-field="category">hats,shoes</span>
  *     </div>
  *     …
@@ -31,6 +31,12 @@
  *   `d2-cms-field` attribute names the field; its textContent is the
  *   value. Put the element anywhere inside the item; hide it with CSS
  *   if the value shouldn't be rendered.
+ *
+ *   Optional `d2-cms-field-type="number|text|date"` on the same element
+ *   forces the comparator type (useful for numbers that could be parsed
+ *   as dates, or text that happens to look numeric). Without it, the
+ *   type is auto-detected from the values — text sorts alphabetically
+ *   (locale-aware, case-insensitive, asc = A→Z).
  *
  *   <button d2-cms-target="products" d2-cms-sort="price">Price ▼</button>
  *   <button d2-cms-target="products" d2-cms-filter="category:shoes">Shoes</button>
@@ -71,21 +77,37 @@
   // Helpers
   // ---------------------------------------------------------------------------
   /**
-   * Read sortable/filterable field values from an item.
-   * Each nested [d2-cms-field="name"] element contributes one field —
-   * the field name is the attribute VALUE, the field value is the
-   * element's trimmed textContent. If multiple elements share a name,
-   * the first one wins.
+   * Read sortable/filterable field values (and optional types) from an item.
+   * Each nested [d2-cms-field="name"] element contributes one field:
+   *   - name  = the attribute VALUE
+   *   - value = the element's trimmed textContent
+   *   - type  = optional `d2-cms-field-type` attribute ("number" | "text" | "date")
+   * If multiple elements share a name, the first one wins.
+   *
+   * Returns { fields: {name: value}, types: {name: type} }.
    */
   function readItemFields(itemEl) {
     var fields = {};
+    var types = {};
     var nested = itemEl.querySelectorAll('[d2-cms-field]');
     for (var i = 0; i < nested.length; i++) {
-      var key = nested[i].getAttribute('d2-cms-field');
+      var el = nested[i];
+      var key = el.getAttribute('d2-cms-field');
       if (!key || (key in fields)) continue;
-      fields[key] = (nested[i].textContent || '').trim();
+      fields[key] = (el.textContent || '').trim();
+      var t = el.getAttribute('d2-cms-field-type');
+      if (t) types[key] = normalizeType(t);
     }
-    return fields;
+    return { fields: fields, types: types };
+  }
+
+  function normalizeType(t) {
+    if (!t) return null;
+    t = String(t).toLowerCase().trim();
+    if (t === 'text' || t === 'string' || t === 'str') return 'string';
+    if (t === 'number' || t === 'num' || t === 'int' || t === 'float') return 'number';
+    if (t === 'date' || t === 'datetime' || t === 'time') return 'date';
+    return null;
   }
 
   function detectType(values) {
@@ -443,7 +465,8 @@
 
       this._originalNodes = nodes.slice();
       this.items = nodes.map(function (el) {
-        return { el: el, fields: readItemFields(el), _match: true };
+        var parsed = readItemFields(el);
+        return { el: el, fields: parsed.fields, types: parsed.types, _match: true };
       });
     }
 
@@ -490,10 +513,13 @@
       var field = this._sort.field;
       var dir = this._sort.dir === 'desc' ? -1 : 1;
 
-      // Detect type from values (or honor explicit override on any sort button)
-      var override = this._sortTypeOverride(field);
-      var values = matching.map(function (it) { return it.fields[field]; });
-      var type = override || detectType(values);
+      // Resolve type with this priority:
+      //   1. `d2-cms-sort-type` on the sort button (explicit override)
+      //   2. `d2-cms-field-type` on any item's [d2-cms-field] element (first wins)
+      //   3. Auto-detect from the values themselves
+      var type = this._sortTypeOverride(field)
+        || this._fieldTypeFromItems(field)
+        || detectType(matching.map(function (it) { return it.fields[field]; }));
 
       // Stable sort (Array.prototype.sort is stable in modern browsers)
       matching.sort(function (a, b) {
@@ -505,8 +531,14 @@
     _sortTypeOverride(field) {
       var btn = document.querySelector('[d2-cms-sort="' + field + '"][d2-cms-sort-type]');
       if (!btn) return null;
-      var t = btn.getAttribute('d2-cms-sort-type');
-      if (t === 'number' || t === 'string' || t === 'date') return t;
+      return normalizeType(btn.getAttribute('d2-cms-sort-type'));
+    }
+
+    _fieldTypeFromItems(field) {
+      for (var i = 0; i < this.items.length; i++) {
+        var t = this.items[i].types && this.items[i].types[field];
+        if (t) return t;
+      }
       return null;
     }
 
