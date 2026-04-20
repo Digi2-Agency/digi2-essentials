@@ -237,6 +237,7 @@
       this._emptyEls = [];            // cached [d2-cms-empty] elements for this list
 
       this._sort = null;              // { field, dir }
+      this._userInitiatedSort = false; // true once the user has clicked a sort button
       this._filters = {};             // { key: Set<value> }
       this._visibleCount = 0;
 
@@ -401,13 +402,24 @@
     sort(field, dir, order) {
       if (!field) { this.clearSort(); return; }
 
-      // Toggle when same field clicked again and no explicit dir given
+      // Toggle when same field clicked again and no explicit dir given.
+      // Skip the toggle on the very first USER click for the matching
+      // default-active field — that first click should start fresh at 'asc'
+      // instead of flipping the default direction.
       if (dir === undefined && this._sort && this._sort.field === field) {
-        if (this._sort.dir === 'asc') dir = 'desc';
-        else if (this._sort.dir === 'desc') { this.clearSort(); return; }
-        else dir = 'asc';
+        if (this._userInitiatedSort) {
+          if (this._sort.dir === 'asc') dir = 'desc';
+          else if (this._sort.dir === 'desc') {
+            this.clearSort();
+            return;
+          }
+          else dir = 'asc';
+        } else {
+          dir = 'asc';
+        }
       }
       if (dir !== 'asc' && dir !== 'desc') dir = 'asc';
+      this._userInitiatedSort = true;
 
       // Resolve the custom order:
       //   - caller provided one  → use it (only if values match this field)
@@ -444,6 +456,7 @@
 
     clearSort() {
       this._sort = null;
+      this._userInitiatedSort = false;
       this._render();
       if (typeof this.options.onSort === 'function') this.options.onSort(null, null);
       _log('clearSort');
