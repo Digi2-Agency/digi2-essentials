@@ -170,6 +170,7 @@
       this._originalNodes = [];       // snapshot of original DOM order for reset
       this._sentinel = null;
       this._observer = null;
+      this._emptyEls = [];            // cached [d2-cms-empty] elements for this list
 
       this._sort = null;              // { field, dir }
       this._filters = {};             // { key: Set<value> }
@@ -218,6 +219,7 @@
 
       this._visibleCount = this.options.perPage;
       this._setupSentinel();
+      this._cacheEmptyElements();
       this._render();
 
       _log('init → ' + this.name, { items: this.items.length });
@@ -244,6 +246,15 @@
           listEl.appendChild(node);
         }
       }
+
+      // Restore empty-state elements to their original inline display
+      (this._emptyEls || []).forEach(function (el) {
+        if (el._d2CmsOrigDisplay !== undefined) {
+          el.style.display = el._d2CmsOrigDisplay;
+          delete el._d2CmsOrigDisplay;
+        }
+      });
+      this._emptyEls = [];
 
       this.listEl = null;
       this.items = [];
@@ -386,6 +397,7 @@
 
     refresh() {
       this._scanItems();
+      this._cacheEmptyElements();
       this._render();
       _log('refresh', { items: this.items.length });
     }
@@ -565,18 +577,43 @@
       }
     }
 
-    _updateEmptyElement(isEmpty) {
-      var els = [];
+    /**
+     * Finsweet-style empty-state handling:
+     *   - when 0 matches  → element is SHOWN with its original display value
+     *                       (or CSS default if the original inline style was "none",
+     *                        which is common to avoid a flash before JS runs)
+     *   - when ≥1 match   → element is HIDDEN (display:none)
+     *
+     * The element's original inline display is remembered ONCE at init so we
+     * don't wipe things like `display:flex` / `display:grid` when toggling.
+     */
+    _cacheEmptyElements() {
+      var selector;
       if (this.options.emptySelector) {
-        els = Array.prototype.slice.call(document.querySelectorAll(this.options.emptySelector));
+        selector = this.options.emptySelector;
       } else {
-        els = Array.prototype.slice.call(
-          document.querySelectorAll('[d2-cms-empty][d2-cms-target="' + this.name + '"], '
-            + '[d2-cms-list="' + this.name + '"] [d2-cms-empty]')
-        );
+        selector = '[d2-cms-empty][d2-cms-target="' + this.name + '"], '
+          + '[d2-cms-list="' + this.name + '"] [d2-cms-empty]';
       }
-      els.forEach(function (el) {
-        el.style.display = isEmpty ? '' : 'none';
+      this._emptyEls = Array.prototype.slice.call(document.querySelectorAll(selector));
+
+      this._emptyEls.forEach(function (el) {
+        if (el._d2CmsOrigDisplay === undefined) {
+          var current = el.style.display;
+          // Treat a pre-set `display:none` as "no preference" — we want the
+          // element to become visible (CSS default) when the list is empty.
+          el._d2CmsOrigDisplay = (current === 'none') ? '' : current;
+        }
+      });
+    }
+
+    _updateEmptyElement(isEmpty) {
+      (this._emptyEls || []).forEach(function (el) {
+        if (isEmpty) {
+          el.style.display = el._d2CmsOrigDisplay != null ? el._d2CmsOrigDisplay : '';
+        } else {
+          el.style.display = 'none';
+        }
       });
     }
 
