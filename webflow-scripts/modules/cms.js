@@ -449,6 +449,27 @@
       _log('clearSort');
     }
 
+    // Set the direction of the current sort. `dir` may be 'asc', 'desc', or
+    // 'toggle'. No-op when there's no active sort field.
+    setDirection(dir) {
+      if (!this._sort || !this._sort.field) return;
+      var next;
+      if (dir === 'toggle') {
+        next = this._sort.dir === 'desc' ? 'asc' : 'desc';
+      } else if (dir === 'asc' || dir === 'desc') {
+        next = dir;
+      } else {
+        return;
+      }
+      if (next === this._sort.dir) return;
+      this._sort.dir = next;
+      this._render();
+      if (typeof this.options.onSort === 'function') {
+        this.options.onSort(this._sort.field, next);
+      }
+      _log('setDirection → ' + next);
+    }
+
     // -----------------------------------------------------------------------
     // Public API — filter
     // -----------------------------------------------------------------------
@@ -1030,6 +1051,27 @@
         if (active) btn.setAttribute('d2-cms-filter-active', '');
         else btn.removeAttribute('d2-cms-filter-active');
       });
+
+      // Direction buttons — reflect the current sort dir (asc/desc). A
+      // "toggle" button simply reports whichever direction is active so CSS
+      // can still style it based on the current state.
+      var dirBtns = this._buttonsForName('[d2-cms-direction]');
+      var activeDir = self._sort ? self._sort.dir : null;
+      dirBtns.forEach(function (btn) {
+        var want = (btn.getAttribute('d2-cms-direction') || 'toggle').trim();
+        var isActive;
+        if (want === 'asc' || want === 'desc') {
+          isActive = activeDir === want;
+        } else {
+          // toggle: active whenever there IS a sort
+          isActive = !!activeDir;
+        }
+        if (isActive && activeDir) {
+          btn.setAttribute('d2-cms-direction-active', activeDir);
+        } else {
+          btn.removeAttribute('d2-cms-direction-active');
+        }
+      });
     }
 
     _reflectLoadMoreButtons(visible, totalMatching) {
@@ -1258,8 +1300,9 @@
     var sortBtn = target.closest('[d2-cms-sort]');
     var filterBtn = target.closest('[d2-cms-filter]');
     var loadBtn = target.closest('[d2-cms-load-more]');
+    var dirBtn = target.closest('[d2-cms-direction]');
 
-    var btn = sortBtn || filterBtn || loadBtn;
+    var btn = sortBtn || filterBtn || loadBtn || dirBtn;
     if (!btn) return;
 
     var name = _resolveTargetName(btn);
@@ -1280,6 +1323,9 @@
       if (parsed) instance.toggleFilter(parsed.key, parsed.value);
     } else if (loadBtn) {
       instance.loadMore();
+    } else if (dirBtn) {
+      var dirVal = (dirBtn.getAttribute('d2-cms-direction') || 'toggle').trim();
+      instance.setDirection(dirVal || 'toggle');
     }
   });
 })();
