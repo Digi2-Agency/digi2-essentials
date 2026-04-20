@@ -408,12 +408,7 @@
       // instead of flipping the default direction.
       if (dir === undefined && this._sort && this._sort.field === field) {
         if (this._userInitiatedSort) {
-          if (this._sort.dir === 'asc') dir = 'desc';
-          else if (this._sort.dir === 'desc') {
-            this.clearSort();
-            return;
-          }
-          else dir = 'asc';
+          dir = this._sort.dir === 'asc' ? 'desc' : 'asc';
         } else {
           dir = 'asc';
         }
