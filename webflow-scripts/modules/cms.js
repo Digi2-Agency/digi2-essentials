@@ -110,6 +110,41 @@
     return null;
   }
 
+  /**
+   * Loose number parse: strips currency symbols, whitespace and non-numeric
+   * decoration so values like "660 000 zł", "$1,250.50" or "€1.250,50" are
+   * still sortable as numbers. Returns NaN if no digits found.
+   */
+  function parseLooseNumber(v) {
+    if (v == null || v === '') return NaN;
+    var s = String(v).trim();
+    // Keep digits, minus, comma and dot; drop everything else (spaces, currency, letters)
+    s = s.replace(/[^\d,.\-]/g, '');
+    if (!s) return NaN;
+    // If both separators exist, assume the LAST one is the decimal and the
+    // other is a thousands separator. Otherwise just strip commas.
+    var lastDot = s.lastIndexOf('.');
+    var lastComma = s.lastIndexOf(',');
+    if (lastDot !== -1 && lastComma !== -1) {
+      if (lastDot > lastComma) {
+        s = s.replace(/,/g, '');            // "1,250.50" → "1250.50"
+      } else {
+        s = s.replace(/\./g, '').replace(',', '.'); // "1.250,50" → "1250.50"
+      }
+    } else if (lastComma !== -1) {
+      // Only comma — treat as decimal if there's exactly one and ≤2 trailing digits,
+      // else treat as thousands separator.
+      var parts = s.split(',');
+      if (parts.length === 2 && parts[1].length > 0 && parts[1].length <= 2) {
+        s = parts[0] + '.' + parts[1];
+      } else {
+        s = s.replace(/,/g, '');
+      }
+    }
+    var n = parseFloat(s);
+    return isNaN(n) ? NaN : n;
+  }
+
   function detectType(values) {
     var nonEmpty = [];
     for (var i = 0; i < values.length && nonEmpty.length < 5; i++) {
@@ -118,7 +153,7 @@
     if (!nonEmpty.length) return 'string';
 
     var allNumber = nonEmpty.every(function (v) {
-      return !isNaN(parseFloat(v)) && isFinite(v);
+      return !isNaN(parseLooseNumber(v));
     });
     if (allNumber) return 'number';
 
@@ -139,7 +174,13 @@
     if (bEmpty) return -1;
 
     if (type === 'number') {
-      return parseFloat(a) - parseFloat(b);
+      var an = parseLooseNumber(a);
+      var bn = parseLooseNumber(b);
+      // Unparseable numbers sort to the end (same rule as empty values)
+      if (isNaN(an) && isNaN(bn)) return 0;
+      if (isNaN(an)) return 1;
+      if (isNaN(bn)) return -1;
+      return an - bn;
     }
     if (type === 'date') {
       return Date.parse(a) - Date.parse(b);
@@ -246,16 +287,12 @@
       this._render();
       this._setupMutationWatcher();
 
-      _log('init → ' + this.name, { items: this.items.length });
-    }
-
-    // Watches the list container for external child injections (e.g. Finsweet
-    // CMS pagination) and auto-refreshes so sort/filter stay correct.
-    _setupMutationWatcher() {
-      if (typeof MutationObserver === 'undefined' || !this.listEl) return;
+      // Safety net: some external renderers (Webflow CMS delayed hydrate,
+      // third-party CMS plugins) inject items after initial DOM-ready. Do a
+      // deferred refresh so those late arrivals get folded into our sort.
       var self = this;
-      this._mo = new MutationObserver(function () {
-        // Skip if the mutation was caused by our own _render() reorder
+      setTimeout(function () {
+        if (!self.listEl) return;
         var expected = self.items.length + (self._sentinel ? 1 : 0);
         var actual = 0;
         var kids = self.listEl.children;
@@ -264,9 +301,21 @@
           if (k.classList && k.classList.contains('w-pagination-wrapper')) continue;
           actual++;
         }
-        if (actual === expected) return; // same count → our own reorder, ignore
+        if (actual !== expected) self.refresh();
+      }, 250);
 
-        // Debounce: external scripts may inject in multiple bursts
+      _log('init → ' + this.name, { items: this.items.length });
+    }
+
+    // Watches the list container for external child injections (e.g. Webflow
+    // CMS re-render, other scripts adding items) and auto-refreshes so
+    // sort/filter stay correct. Our own _render() disconnects this observer
+    // during its appendChild loop and reconnects after, so only foreign
+    // mutations reach the callback.
+    _setupMutationWatcher() {
+      if (typeof MutationObserver === 'undefined' || !this.listEl) return;
+      var self = this;
+      this._mo = new MutationObserver(function () {
         if (self._moTimer) clearTimeout(self._moTimer);
         self._moTimer = setTimeout(function () {
           self._moTimer = null;
@@ -629,6 +678,14 @@
 
       this._applySort(matching);
 
+      // Pause the mutation watcher so our own appendChild loop doesn't
+      // trigger a self-refresh. Reconnected after the reorder completes.
+      var moPaused = false;
+      if (this._mo) {
+        this._mo.disconnect();
+        moPaused = true;
+      }
+
       // Reorder DOM nodes (matching first, in sorted order; non-matching after)
       var listEl = this.listEl;
       var hiddenClass = this.options.hiddenClass;
@@ -687,6 +744,11 @@
       // onChange callback
       if (typeof this.options.onChange === 'function') {
         this.options.onChange(this.getState());
+      }
+
+      // Reconnect the mutation watcher now that our reorder has fully settled
+      if (moPaused && this._mo && this.listEl) {
+        this._mo.observe(this.listEl, { childList: true });
       }
     }
 
