@@ -652,6 +652,23 @@ digi2.cms.createList('products', {
 });
 ```
 
+### Attribute-only setup (no JS)
+
+You can configure a list entirely from HTML — the module auto-initializes every `[d2-cms-list]` element on DOM ready. Any option below can be set via attribute, and clicking a `d2-cms-sort` button defaults to **A→Z / 0→9** (ascending) on its first click, then toggles to descending, then clears.
+
+```html
+<div d2-cms-list="products"
+     d2-cms-per-page="8"
+     d2-cms-load-mode="scroll"
+     d2-cms-sort-by="title"             <!-- default sort field; asc by default -->
+     d2-cms-sort-dir="desc"             <!-- optional override to desc -->
+     d2-cms-filter-match="AND"
+     d2-cms-hidden-class="is-hidden"
+     d2-cms-scroll-offset="300">
+  …items…
+</div>
+```
+
 ### Options
 
 | Option | Default | Description |
@@ -676,13 +693,20 @@ digi2.cms.createList('products', {
 
 | Attribute | On | Purpose |
 |---|---|---|
-| `d2-cms-list="name"` | list container | Marks the list and gives it a name |
+| `d2-cms-list="name"` | list container | Marks the list and gives it a name (auto-inits it on DOM ready) |
+| `d2-cms-per-page="8"` | list container | Attribute-init: items per page |
+| `d2-cms-load-mode="scroll\|button\|all"` | list container | Attribute-init: reveal mode |
+| `d2-cms-sort-by="field"` | list container | Attribute-init: default sort field (asc unless `d2-cms-sort-dir="desc"`) |
+| `d2-cms-sort-dir="asc\|desc"` | list container OR sort button | List: override default sort direction. Button: force a fixed direction (no toggle) |
+| `d2-cms-filter-match="AND\|OR"` | list container | Attribute-init: filter match mode across keys |
+| `d2-cms-hidden-class="..."` | list container | Attribute-init: CSS class for hidden items |
+| `d2-cms-scroll-offset="300"` | list container | Attribute-init: px before sentinel triggers next reveal |
+| `d2-cms-hide-pagination="false"` | list container | Attribute-init: keep Webflow's native `.w-pagination-wrapper` visible |
 | `d2-cms-item` | each item (optional) | Explicit item marker; defaults to direct children |
 | `d2-cms-field="{name}"` | element inside item | Field value — read from this element's `.textContent` |
 | `d2-cms-field-type="number\|text\|date"` | on `[d2-cms-field]` | Optional. Forces the comparator type. Without it, type is auto-detected (numbers-as-numbers, dates-as-dates, else alphabetical) |
-| `d2-cms-sort="field"` | button | Click toggles sort by this field |
-| `d2-cms-sort-type="number\|string\|date"` | button | Override auto-detection of value type |
-| `d2-cms-sort-dir="asc\|desc"` | button | Force a fixed direction (no toggle) |
+| `d2-cms-sort="field"` | button | Click toggles sort by this field — first click = asc (A→Z / 0→9), then desc, then off |
+| `d2-cms-sort-type="number\|text\|date"` | button | Override auto-detection of value type |
 | `d2-cms-filter="key:value"` | button | Toggle a filter |
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
 | `d2-cms-target="name"` | sort/filter/load-more buttons | Target a specific list by name (or place button inside `[d2-cms-list]` to scope automatically) |

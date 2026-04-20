@@ -782,6 +782,74 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Attribute-only init — lets users configure lists entirely via HTML, no JS
+  // required. Scans the DOM for [d2-cms-list] elements and creates a list for
+  // each one that hasn't already been registered via digi2.cms.createList().
+  //
+  //   <div d2-cms-list="products"
+  //        d2-cms-per-page="8"
+  //        d2-cms-load-mode="scroll"
+  //        d2-cms-sort-by="price"           ← default sort field (asc by default)
+  //        d2-cms-sort-dir="desc"           ← optional override ("desc")
+  //        d2-cms-filter-match="AND"
+  //        d2-cms-hidden-class="is-hidden"
+  //        d2-cms-scroll-offset="300"> … </div>
+  //
+  // Any option not provided falls back to the constructor defaults. Sort dir
+  // defaults to 'asc' (A→Z / 0→9) — a plain `d2-cms-sort-by="title"` is enough.
+  // ---------------------------------------------------------------------------
+  function _optionsFromAttributes(el) {
+    var opts = {};
+    var v;
+
+    v = el.getAttribute('d2-cms-per-page');
+    if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n)) opts.perPage = n; }
+
+    v = el.getAttribute('d2-cms-load-mode');
+    if (v === 'scroll' || v === 'button' || v === 'all') opts.loadMode = v;
+
+    v = el.getAttribute('d2-cms-scroll-offset');
+    if (v != null && v !== '') { var so = parseInt(v, 10); if (!isNaN(so)) opts.scrollOffset = so; }
+
+    v = el.getAttribute('d2-cms-sort-by');
+    if (v) {
+      var dir = el.getAttribute('d2-cms-sort-dir');
+      opts.defaultSort = { field: v, dir: dir === 'desc' ? 'desc' : 'asc' };
+    }
+
+    v = el.getAttribute('d2-cms-filter-match');
+    if (v === 'AND' || v === 'OR') opts.filterMatchMode = v;
+
+    v = el.getAttribute('d2-cms-hidden-class');
+    if (v) opts.hiddenClass = v;
+
+    v = el.getAttribute('d2-cms-hide-pagination');
+    if (v === 'false') opts.hideNativePagination = false;
+
+    return opts;
+  }
+
+  function _autoInitFromDOM() {
+    var nodes = document.querySelectorAll('[d2-cms-list]');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      var name = el.getAttribute('d2-cms-list');
+      if (!name || registry[name]) continue;
+      // Skip elements that are inside another list (they'd be items, not lists)
+      if (el.parentElement && el.parentElement.closest('[d2-cms-list]')) continue;
+      window.digi2.cms.createList(name, _optionsFromAttributes(el));
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _autoInitFromDOM);
+  } else {
+    // Defer one tick so any synchronous digi2.cms.createList(...) user script
+    // running right after the module loads wins over auto-init.
+    setTimeout(_autoInitFromDOM, 0);
+  }
+
+  // ---------------------------------------------------------------------------
   // Global delegated click handler — handles sort, filter, load-more buttons
   // for ANY registered list without each instance attaching its own listeners.
   // ---------------------------------------------------------------------------
