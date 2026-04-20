@@ -717,6 +717,8 @@ You can configure a list entirely from HTML — the module auto-initializes ever
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
 | `d2-cms-target="name"` | sort/filter/load-more buttons | Target a specific list by name (or place button inside `[d2-cms-list]` to scope automatically) |
 | `d2-cms-empty` | any element | Shown when 0 items match |
+| `d2-cms-display="visible\|matching\|total\|hidden\|remaining"` | any element | Module writes the matching count into this element's textContent |
+| `d2-cms-display-format="{visible} of {matching}"` | any element | Template with `{visible}`, `{matching}`, `{total}`, `{hidden}`, `{remaining}` placeholders — takes precedence over `d2-cms-display` |
 | `d2-cms-sort-active="asc\|desc"` | button | (Set by module) Reflects current sort — style with `[d2-cms-sort-active="desc"]` selectors |
 | `d2-cms-filter-active` | button | (Set by module) Reflects active filter |
 | `d2-cms-load-more-done` | button | (Set by module) Set when no more items to reveal (button is also hidden) |

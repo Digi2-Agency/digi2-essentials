@@ -241,6 +241,7 @@
       this._visibleCount = this.options.perPage;
       this._setupSentinel();
       this._cacheEmptyElements();
+      this._cacheDisplayElements();
       this._render();
 
       _log('init → ' + this.name, { items: this.items.length });
@@ -423,6 +424,7 @@
     refresh() {
       this._scanItems();
       this._cacheEmptyElements();
+      this._cacheDisplayElements();
       this._render();
       _log('refresh', { items: this.items.length });
     }
@@ -618,6 +620,15 @@
       // Toggle empty element(s)
       this._updateEmptyElement(matching.length === 0);
 
+      // Update display/counter elements
+      this._updateDisplayElements({
+        visible: visibleCount,
+        matching: matching.length,
+        total: this.items.length,
+        hidden: this.items.length - matching.length,
+        remaining: Math.max(0, matching.length - visibleCount),
+      });
+
       // Update sort/filter button visual states
       this._reflectButtonStates();
 
@@ -671,6 +682,48 @@
           el.style.display = 'none';
         }
       });
+    }
+
+    /**
+     * Display/counter elements. Put `d2-cms-display="<kind>"` on any element
+     * and the module writes the matching number (or text) into it on every
+     * render. Supported kinds:
+     *   "visible"   — items currently shown on screen (after pagination)
+     *   "matching"  — items matching current filters (total visible if loadAll)
+     *   "total"     — total items in the list (ignores filters)
+     *   "hidden"    — items hidden by filters (total - matching)
+     *   "remaining" — items that would be revealed on next load (matching - visible)
+     *
+     * Or use `d2-cms-display-format="{visible} of {matching}"` on the element
+     * for a templated string; any of the tokens above work inside {…}.
+     * A `d2-cms-display-format` value takes precedence over `d2-cms-display`.
+     */
+    _cacheDisplayElements() {
+      var selector = '[d2-cms-display][d2-cms-target="' + this.name + '"], '
+        + '[d2-cms-display-format][d2-cms-target="' + this.name + '"], '
+        + '[d2-cms-list="' + this.name + '"] [d2-cms-display]:not([d2-cms-target]), '
+        + '[d2-cms-list="' + this.name + '"] [d2-cms-display-format]:not([d2-cms-target])';
+      this._displayEls = Array.prototype.slice.call(document.querySelectorAll(selector));
+    }
+
+    _updateDisplayElements(counts) {
+      var els = this._displayEls || [];
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var format = el.getAttribute('d2-cms-display-format');
+        var kind = el.getAttribute('d2-cms-display');
+        var text;
+        if (format) {
+          text = format.replace(/\{(\w+)\}/g, function (_, token) {
+            return (token in counts) ? String(counts[token]) : '{' + token + '}';
+          });
+        } else if (kind && kind in counts) {
+          text = String(counts[kind]);
+        } else {
+          continue;
+        }
+        if (el.textContent !== text) el.textContent = text;
+      }
     }
 
     _reflectButtonStates() {
