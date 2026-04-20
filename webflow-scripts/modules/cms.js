@@ -215,6 +215,8 @@
         scrollOffset: 200,            // px (rootMargin) before sentinel triggers load
         defaultSort: null,            // { field, dir }
         defaultFilters: {},           // { key: [values] }
+        groupBy: null,                // field name for persistent secondary sort (tiebreaker)
+        groupOrder: null,             // array of values defining the group order
         filterMatchMode: 'AND',       // AND across keys (always OR within a key)
         emptySelector: null,          // element shown when 0 matches
         hiddenClass: null,            // CSS class for hidden items (default: inline display:none)
@@ -612,11 +614,23 @@
     }
 
     _applySort(matching) {
-      if (!this._sort || !this._sort.field) return matching;
+      if (!this._sort || !this._sort.field) {
+        // Even with no active sort, apply the group order if configured
+        // (so the list stays grouped by status/etc. on initial render).
+        var groupOnly = this._buildGroupRanker();
+        if (groupOnly) {
+          matching.sort(function (a, b) { return groupOnly(a) - groupOnly(b); });
+        }
+        return matching;
+      }
       var field = this._sort.field;
       var dir = this._sort.dir === 'desc' ? -1 : 1;
 
-      // Custom value order overrides type-based comparison entirely.
+      // Secondary tiebreaker: group rank (always ascending — the group order
+      // is an explicit preference, not something that should flip with dir).
+      var groupRanker = this._buildGroupRanker();
+
+      // Custom value order ON THE SORT FIELD overrides type-based comparison.
       // Values listed explicitly sort by their position in the array;
       // anything not in the list goes to the end (stable, case-insensitive match).
       var order = this._sort.order;
@@ -632,7 +646,10 @@
           return key in orderMap ? orderMap[key] : UNRANKED;
         };
         matching.sort(function (a, b) {
-          return dir * (rank(a.fields[field]) - rank(b.fields[field]));
+          var primary = dir * (rank(a.fields[field]) - rank(b.fields[field]));
+          if (primary !== 0) return primary;
+          if (groupRanker) return groupRanker(a) - groupRanker(b);
+          return 0;
         });
         return matching;
       }
@@ -647,9 +664,34 @@
 
       // Stable sort (Array.prototype.sort is stable in modern browsers)
       matching.sort(function (a, b) {
-        return dir * compareValues(a.fields[field], b.fields[field], type);
+        var primary = dir * compareValues(a.fields[field], b.fields[field], type);
+        if (primary !== 0) return primary;
+        if (groupRanker) return groupRanker(a) - groupRanker(b);
+        return 0;
       });
       return matching;
+    }
+
+    // Build a ranker that maps items to a numeric position based on the
+    // configured group field + order (`options.groupBy` / `options.groupOrder`).
+    // Returns null if no group sort is configured. Values not listed get a
+    // rank past the listed ones; missing/empty values go even further back.
+    _buildGroupRanker() {
+      var gf = this.options.groupBy;
+      var go = this.options.groupOrder;
+      if (!gf || !Array.isArray(go) || !go.length) return null;
+      var map = {};
+      for (var i = 0; i < go.length; i++) {
+        map[String(go[i]).toLowerCase().trim()] = i;
+      }
+      var UNK = go.length;
+      var EMPTY = UNK + 1;
+      return function (item) {
+        var v = item.fields[gf];
+        if (v == null || v === '') return EMPTY;
+        var key = String(v).toLowerCase().trim();
+        return key in map ? map[key] : UNK;
+      };
     }
 
     _sortTypeOverride(field) {
@@ -1054,6 +1096,25 @@
         dir: dir === 'desc' ? 'desc' : 'asc',
         order: order && order.length ? order : undefined,
       };
+      // A list-level sort-by + sort-order also establishes a persistent "group"
+      // secondary sort. This way, when the user later clicks a different sort
+      // button (e.g. price), the custom status order still applies to group
+      // empty-price items / ties by status.
+      if (order && order.length) {
+        opts.groupBy = v;
+        opts.groupOrder = order.slice();
+      }
+    }
+
+    // Explicit group-sort attributes override the implicit default above.
+    var gb = el.getAttribute('d2-cms-group-by');
+    var goRaw = el.getAttribute('d2-cms-group-order');
+    if (gb && goRaw) {
+      var go = goRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (go.length) {
+        opts.groupBy = gb;
+        opts.groupOrder = go;
+      }
     }
 
     v = el.getAttribute('d2-cms-filter-match');
