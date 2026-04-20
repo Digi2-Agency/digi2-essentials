@@ -1080,6 +1080,98 @@
           btn.removeAttribute('d2-cms-direction-active');
         }
       });
+
+      // Native <select> sort controls — sync select.value to the active sort
+      this._reflectSortSelects();
+
+      // Sort-label elements (custom dropdown trigger text, standalone display)
+      this._reflectSortLabels();
+    }
+
+    // For each <select> whose options carry d2-cms-sort, find the option that
+    // matches the current _sort state and sync the select's value to it.
+    // This keeps a native select in sync when sort is changed programmatically
+    // or via a different UI element (e.g. custom dropdown item).
+    _reflectSortSelects() {
+      var self = this;
+      var selects = document.querySelectorAll('select');
+      Array.prototype.forEach.call(selects, function (sel) {
+        var sortEnabled = false;
+        for (var i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].hasAttribute('d2-cms-sort')) { sortEnabled = true; break; }
+        }
+        if (!sortEnabled) return;
+        if (_resolveTargetName(sel) !== self.name) return;
+
+        var best = null, fieldOnly = null, clearOpt = null;
+        for (var j = 0; j < sel.options.length; j++) {
+          var o = sel.options[j];
+          if (!o.hasAttribute('d2-cms-sort')) continue;
+          var f = o.getAttribute('d2-cms-sort');
+          if (!f) { if (!clearOpt) clearOpt = o; continue; }
+          if (!self._sort || f !== self._sort.field) continue;
+          var d = o.getAttribute('d2-cms-sort-dir');
+          if (d === self._sort.dir) { best = o; break; }
+          if (!d && !fieldOnly) fieldOnly = o;
+        }
+        var chosen = best || fieldOnly || (!self._sort ? clearOpt : null);
+        if (chosen && sel.value !== chosen.value) sel.value = chosen.value;
+      });
+    }
+
+    // Update any [d2-cms-sort-label] elements to the text of the option that
+    // matches the current sort. Works with both native <option> inside a
+    // <select> and custom [d2-cms-sort] items (divs / buttons). Original
+    // textContent is remembered and restored when no sort is active.
+    _reflectSortLabels() {
+      var self = this;
+      var labels = this._buttonsForName('[d2-cms-sort-label]');
+      labels.forEach(function (label) {
+        if (label._d2CmsSortLabelDefault == null) {
+          label._d2CmsSortLabelDefault = label.textContent;
+        }
+        var def = label._d2CmsSortLabelDefault;
+        if (!self._sort || !self._sort.field) {
+          if (label.textContent !== def) label.textContent = def;
+          return;
+        }
+        var text = self._findActiveSortOptionText(self._sort.field, self._sort.dir);
+        var next = (text != null && text !== '') ? text : def;
+        if (label.textContent !== next) label.textContent = next;
+      });
+    }
+
+    // Returns the text (or `d2-cms-sort-option-label` override) of whichever
+    // option element — <option> inside a targeted <select> or a targeted
+    // [d2-cms-sort] div — best matches the active sort field + direction.
+    _findActiveSortOptionText(field, dir) {
+      var self = this;
+      var candidates = [];
+
+      // <option> candidates — scope by their parent select's target
+      var opts = document.querySelectorAll('option[d2-cms-sort]');
+      for (var i = 0; i < opts.length; i++) {
+        var sel = opts[i].closest('select');
+        if (!sel) continue;
+        if (_resolveTargetName(sel) !== self.name) continue;
+        candidates.push(opts[i]);
+      }
+      // [d2-cms-sort] divs / buttons targeting this list
+      candidates = candidates.concat(this._buttonsForName('[d2-cms-sort]'));
+
+      var exact = null, fieldOnly = null;
+      for (var j = 0; j < candidates.length; j++) {
+        var c = candidates[j];
+        if (c.getAttribute('d2-cms-sort') !== field) continue;
+        var cDir = c.getAttribute('d2-cms-sort-dir');
+        if (cDir === dir) { exact = c; break; }
+        if (!cDir && !fieldOnly) fieldOnly = c;
+      }
+      var chosen = exact || fieldOnly;
+      if (!chosen) return null;
+      var explicit = chosen.getAttribute('d2-cms-sort-option-label');
+      if (explicit) return explicit;
+      return (chosen.textContent || '').trim();
     }
 
     _reflectLoadMoreButtons(visible, totalMatching) {
@@ -1335,5 +1427,50 @@
       var dirVal = (dirBtn.getAttribute('d2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Delegated 'change' handler — native <select> sort controls
+  //
+  //   <select d2-cms-target="apartments">
+  //     <option value="none">Default order</option>   <!-- clears sort -->
+  //     <option value="price-asc"  d2-cms-sort="price" d2-cms-sort-dir="asc">Price: low → high</option>
+  //     <option value="price-desc" d2-cms-sort="price" d2-cms-sort-dir="desc">Price: high → low</option>
+  //     <option value="area-desc"  d2-cms-sort="area"  d2-cms-sort-dir="desc">Biggest first</option>
+  //   </select>
+  //
+  // Selected option's attrs drive the sort. An option with no `d2-cms-sort`
+  // (or an empty value) clears the sort. Selects are explicit choices — no
+  // toggle behavior; direction defaults to 'asc' when the option omits it.
+  // ---------------------------------------------------------------------------
+  document.addEventListener('change', function (e) {
+    var target = e.target;
+    if (!target || target.tagName !== 'SELECT') return;
+
+    // Only handle selects that carry any sort-bound option
+    var sortEnabled = false;
+    for (var i = 0; i < target.options.length; i++) {
+      if (target.options[i].hasAttribute('d2-cms-sort')) { sortEnabled = true; break; }
+    }
+    if (!sortEnabled) return;
+
+    var opt = target.options[target.selectedIndex];
+    var name = _resolveTargetName(target) || (opt ? _resolveTargetName(opt) : null);
+    if (!name) return;
+    var instance = registry[name];
+    if (!instance) return;
+
+    var field = opt ? opt.getAttribute('d2-cms-sort') : null;
+    if (!field) {
+      instance.clearSort();
+      return;
+    }
+
+    var forced = opt.getAttribute('d2-cms-sort-dir');
+    var orderRaw = opt.getAttribute('d2-cms-sort-order');
+    var order = orderRaw
+      ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean)
+      : undefined;
+    instance.sort(field, forced || 'asc', order);
   });
 })();
