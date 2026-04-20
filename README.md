@@ -613,20 +613,20 @@ Operates on a Webflow CMS Collection List that's already in the DOM (Webflow ren
 - **Filter** — toggle buttons grouped by key (`category:shoes`, `tag:new`, …). AND across keys, OR within a key.
 - **Progressive reveal** — show only `perPage` items, reveal more on scroll or via a load-more button.
 
-> **Attribute prefix note:** This module uses `d2-cms-*` attributes **without** the `data-` prefix (deliberate — keeps Webflow Designer's custom-attribute fields shorter). This is the only module in the library that does this. Don't "fix" it.
-
 ```html
 <!-- The collection list (replace .w-dyn-items with whatever wraps your items) -->
 <div d2-cms-list="products" class="w-dyn-items">
-  <div d2-cms-item
-       d2-cms-field-title="Alpha Sneaker"
-       d2-cms-field-price="129"
-       d2-cms-field-category="shoes">…</div>
-  <div d2-cms-item
-       d2-cms-field-title="Beta Cap"
-       d2-cms-field-price="29"
-       d2-cms-field-category="hats">…</div>
-  <!-- … bind values from your Webflow CMS fields into these attributes in the Designer -->
+  <div d2-cms-item>
+    <strong d2-cms-field="title">Alpha Sneaker</strong>
+    <span d2-cms-field="price">129</span>
+    <span d2-cms-field="category">shoes</span>
+  </div>
+  <div d2-cms-item>
+    <strong d2-cms-field="title">Beta Cap</strong>
+    <span d2-cms-field="price">29</span>
+    <span d2-cms-field="category">hats</span>
+  </div>
+  <!-- bind Webflow CMS fields into the [d2-cms-field="…"] elements' text -->
 </div>
 
 <!-- Sort buttons (click toggles asc → desc → off) -->
@@ -650,15 +650,6 @@ digi2.cms.createList('products', {
   loadMode: 'scroll',           // 'scroll' | 'button' | 'all'
   defaultSort: { field: 'price', dir: 'asc' },
 });
-```
-
-You can also expose field values via nested elements instead of attributes:
-
-```html
-<div d2-cms-item>
-  <h3 d2-cms-field="title">Alpha Sneaker</h3>
-  <span d2-cms-field="price">129</span>
-</div>
 ```
 
 ### Options
@@ -687,8 +678,7 @@ You can also expose field values via nested elements instead of attributes:
 |---|---|---|
 | `d2-cms-list="name"` | list container | Marks the list and gives it a name |
 | `d2-cms-item` | each item (optional) | Explicit item marker; defaults to direct children |
-| `d2-cms-field-{name}="value"` | item | Sortable / filterable field value |
-| `d2-cms-field="{name}"` | element inside item | Alternative: read `.textContent` of this element |
+| `d2-cms-field="{name}"` | element inside item | Field value — read from this element's `.textContent` |
 | `d2-cms-sort="field"` | button | Click toggles sort by this field |
 | `d2-cms-sort-type="number\|string\|date"` | button | Override auto-detection of value type |
 | `d2-cms-sort-dir="asc\|desc"` | button | Force a fixed direction (no toggle) |

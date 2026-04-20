@@ -14,16 +14,23 @@
  *
  * Webflow setup:
  *   <div d2-cms-list="products" class="w-dyn-items">
- *     <div d2-cms-item
- *          d2-cms-field-title="Alpha"
- *          d2-cms-field-price="100"
- *          d2-cms-field-category="shoes">…</div>
- *     <div d2-cms-item
- *          d2-cms-field-title="Beta"
- *          d2-cms-field-price="50"
- *          d2-cms-field-category="hats,shoes">…</div>
+ *     <div d2-cms-item>
+ *       <h3   d2-cms-field="title">Alpha</h3>
+ *       <span d2-cms-field="price">100</span>
+ *       <span d2-cms-field="category">shoes</span>
+ *     </div>
+ *     <div d2-cms-item>
+ *       <h3   d2-cms-field="title">Beta</h3>
+ *       <span d2-cms-field="price">50</span>
+ *       <span d2-cms-field="category">hats,shoes</span>
+ *     </div>
  *     …
  *   </div>
+ *
+ *   Each sortable/filterable field lives on a nested element whose
+ *   `d2-cms-field` attribute names the field; its textContent is the
+ *   value. Put the element anywhere inside the item; hide it with CSS
+ *   if the value shouldn't be rendered.
  *
  *   <button d2-cms-target="products" d2-cms-sort="price">Price ▼</button>
  *   <button d2-cms-target="products" d2-cms-filter="category:shoes">Shoes</button>
@@ -63,31 +70,21 @@
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-  var FIELD_ATTR_PREFIX = 'd2-cms-field-';
-
+  /**
+   * Read sortable/filterable field values from an item.
+   * Each nested [d2-cms-field="name"] element contributes one field —
+   * the field name is the attribute VALUE, the field value is the
+   * element's trimmed textContent. If multiple elements share a name,
+   * the first one wins.
+   */
   function readItemFields(itemEl) {
     var fields = {};
-
-    // 1) Attribute form: d2-cms-field-{name}="value" on the item itself
-    var attrs = itemEl.attributes;
-    for (var i = 0; i < attrs.length; i++) {
-      var name = attrs[i].name;
-      if (name.indexOf(FIELD_ATTR_PREFIX) === 0) {
-        var key = name.substring(FIELD_ATTR_PREFIX.length);
-        if (key) fields[key] = attrs[i].value;
-      }
-    }
-
-    // 2) Nested-element form: <... d2-cms-field="name">value</...> inside the item
-    //    (skip if the same key was already set via attribute form)
     var nested = itemEl.querySelectorAll('[d2-cms-field]');
-    for (var j = 0; j < nested.length; j++) {
-      var k = nested[j].getAttribute('d2-cms-field');
-      if (k && !(k in fields)) {
-        fields[k] = (nested[j].textContent || '').trim();
-      }
+    for (var i = 0; i < nested.length; i++) {
+      var key = nested[i].getAttribute('d2-cms-field');
+      if (!key || (key in fields)) continue;
+      fields[key] = (nested[i].textContent || '').trim();
     }
-
     return fields;
   }
 
