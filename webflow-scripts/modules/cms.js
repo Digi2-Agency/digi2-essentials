@@ -189,6 +189,8 @@
       this._originalNodes = [];       // snapshot of original DOM order for reset
       this._sentinel = null;
       this._observer = null;
+      this._mo = null;                // MutationObserver watching the list for external injections
+      this._moTimer = null;           // debounce timer for mutation refreshes
       this._emptyEls = [];            // cached [d2-cms-empty] elements for this list
 
       this._sort = null;              // { field, dir }
@@ -242,14 +244,51 @@
       this._setupSentinel();
       this._cacheEmptyElements();
       this._render();
+      this._setupMutationWatcher();
 
       _log('init → ' + this.name, { items: this.items.length });
+    }
+
+    // Watches the list container for external child injections (e.g. Finsweet
+    // CMS pagination) and auto-refreshes so sort/filter stay correct.
+    _setupMutationWatcher() {
+      if (typeof MutationObserver === 'undefined' || !this.listEl) return;
+      var self = this;
+      this._mo = new MutationObserver(function () {
+        // Skip if the mutation was caused by our own _render() reorder
+        var expected = self.items.length + (self._sentinel ? 1 : 0);
+        var actual = 0;
+        var kids = self.listEl.children;
+        for (var i = 0; i < kids.length; i++) {
+          var k = kids[i];
+          if (k.classList && k.classList.contains('w-pagination-wrapper')) continue;
+          actual++;
+        }
+        if (actual === expected) return; // same count → our own reorder, ignore
+
+        // Debounce: external scripts may inject in multiple bursts
+        if (self._moTimer) clearTimeout(self._moTimer);
+        self._moTimer = setTimeout(function () {
+          self._moTimer = null;
+          if (!self.listEl) return;
+          self.refresh();
+        }, 50);
+      });
+      this._mo.observe(this.listEl, { childList: true });
     }
 
     destroy() {
       if (this._observer) {
         this._observer.disconnect();
         this._observer = null;
+      }
+      if (this._mo) {
+        this._mo.disconnect();
+        this._mo = null;
+      }
+      if (this._moTimer) {
+        clearTimeout(this._moTimer);
+        this._moTimer = null;
       }
       if (this._sentinel && this._sentinel.parentNode) {
         this._sentinel.parentNode.removeChild(this._sentinel);
