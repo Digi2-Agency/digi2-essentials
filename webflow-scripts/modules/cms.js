@@ -614,60 +614,77 @@
     }
 
     _applySort(matching) {
+      var groupRanker = this._buildGroupRanker();
+
       if (!this._sort || !this._sort.field) {
-        // Even with no active sort, apply the group order if configured
-        // (so the list stays grouped by status/etc. on initial render).
-        var groupOnly = this._buildGroupRanker();
-        if (groupOnly) {
-          matching.sort(function (a, b) { return groupOnly(a) - groupOnly(b); });
+        // No active sort — fall back to group order if configured, so the
+        // list still shows a coherent initial grouping (status asc, etc.).
+        if (groupRanker) {
+          matching.sort(function (a, b) { return groupRanker(a) - groupRanker(b); });
         }
         return matching;
       }
+
       var field = this._sort.field;
       var dir = this._sort.dir === 'desc' ? -1 : 1;
 
-      // Secondary tiebreaker: group rank (always ascending — the group order
-      // is an explicit preference, not something that should flip with dir).
-      var groupRanker = this._buildGroupRanker();
-
       // Custom value order ON THE SORT FIELD overrides type-based comparison.
-      // Values listed explicitly sort by their position in the array;
-      // anything not in the list goes to the end (stable, case-insensitive match).
       var order = this._sort.order;
       if (order && order.length) {
         var orderMap = {};
         for (var i = 0; i < order.length; i++) {
           orderMap[String(order[i]).toLowerCase().trim()] = i;
         }
-        var UNRANKED = order.length; // anything unknown lands after the known set
+        var UNRANKED = order.length;
+        var EMPTY_RANK = UNRANKED + 1;
         var rank = function (val) {
-          if (val == null || val === '') return UNRANKED + 1;
+          if (val == null || val === '') return EMPTY_RANK;
           var key = String(val).toLowerCase().trim();
           return key in orderMap ? orderMap[key] : UNRANKED;
         };
         matching.sort(function (a, b) {
-          var primary = dir * (rank(a.fields[field]) - rank(b.fields[field]));
+          var ar = rank(a.fields[field]);
+          var br = rank(b.fields[field]);
+          // Empties always go to the end regardless of direction
+          var aE = ar === EMPTY_RANK, bE = br === EMPTY_RANK;
+          if (aE && !bE) return 1;
+          if (!aE && bE) return -1;
+          if (aE && bE) return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
+          var primary = dir * (ar - br);
           if (primary !== 0) return primary;
-          if (groupRanker) return groupRanker(a) - groupRanker(b);
-          return 0;
+          return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
         });
         return matching;
       }
 
-      // Resolve type with this priority:
-      //   1. `d2-cms-sort-type` on the sort button (explicit override)
-      //   2. `d2-cms-field-type` on any item's [d2-cms-field] element (first wins)
-      //   3. Auto-detect from the values themselves
+      // Resolve sort type:
+      //   1. d2-cms-sort-type on the sort button
+      //   2. d2-cms-field-type on any item's [d2-cms-field] element
+      //   3. Auto-detect from the values
       var type = this._sortTypeOverride(field)
         || this._fieldTypeFromItems(field)
         || detectType(matching.map(function (it) { return it.fields[field]; }));
 
-      // Stable sort (Array.prototype.sort is stable in modern browsers)
+      // "Empty for sort" = null, "", or unparseable for the chosen type.
+      // Keeping this independent of `dir` is critical — otherwise descending
+      // sort would flip empties to the top.
+      var isSortEmpty = function (v) {
+        if (v == null || v === '') return true;
+        if (type === 'number') return isNaN(parseLooseNumber(v));
+        if (type === 'date') return isNaN(Date.parse(v));
+        return false;
+      };
+
       matching.sort(function (a, b) {
-        var primary = dir * compareValues(a.fields[field], b.fields[field], type);
+        var av = a.fields[field], bv = b.fields[field];
+        var aE = isSortEmpty(av), bE = isSortEmpty(bv);
+        // Empties always at the end, regardless of asc/desc
+        if (aE && !bE) return 1;
+        if (!aE && bE) return -1;
+        if (aE && bE) return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
+        var primary = dir * compareValues(av, bv, type);
         if (primary !== 0) return primary;
-        if (groupRanker) return groupRanker(a) - groupRanker(b);
-        return 0;
+        return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
       });
       return matching;
     }
