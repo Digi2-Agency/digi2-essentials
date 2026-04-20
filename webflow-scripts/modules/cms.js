@@ -1086,6 +1086,9 @@
 
       // Sort-label elements (custom dropdown trigger text, standalone display)
       this._reflectSortLabels();
+
+      // Filter-label elements (custom dropdown trigger text for filters)
+      this._reflectFilterLabels();
     }
 
     // For each <select> whose options carry d2-cms-sort, find the option that
@@ -1174,6 +1177,70 @@
       return (chosen.textContent || '').trim();
     }
 
+    // Update any [d2-cms-filter-label] elements to reflect the active filter.
+    // Works like sort labels: original textContent is remembered once and
+    // restored whenever no filter is active for the bound key.
+    //
+    //   <div d2-cms-filter-label="status">Any status</div>   ← tracks "status" key
+    //   <div d2-cms-filter-label>All filters</div>            ← tracks any key
+    //
+    // If multiple values are active for the key they're joined with ", ".
+    _reflectFilterLabels() {
+      var self = this;
+      var labels = this._buttonsForName('[d2-cms-filter-label]');
+      labels.forEach(function (label) {
+        if (label._d2CmsFilterLabelDefault == null) {
+          label._d2CmsFilterLabelDefault = label.textContent;
+        }
+        var def = label._d2CmsFilterLabelDefault;
+        var key = label.getAttribute('d2-cms-filter-label');
+
+        var activeValues = [];
+        if (key) {
+          if (self._filters[key] && self._filters[key].size) {
+            activeValues = Array.from(self._filters[key]);
+          }
+        } else {
+          // No explicit key — show values from any active filter
+          for (var k in self._filters) {
+            if (!Object.prototype.hasOwnProperty.call(self._filters, k)) continue;
+            if (!self._filters[k] || !self._filters[k].size) continue;
+            var vs = Array.from(self._filters[k]);
+            for (var i = 0; i < vs.length; i++) activeValues.push(vs[i]);
+          }
+        }
+
+        if (!activeValues.length) {
+          if (label.textContent !== def) label.textContent = def;
+          return;
+        }
+
+        var texts = activeValues.map(function (val) {
+          var t = self._findActiveFilterOptionText(key, val);
+          return (t != null && t !== '') ? t : val;
+        });
+        var next = texts.join(', ');
+        if (label.textContent !== next) label.textContent = next;
+      });
+    }
+
+    // Returns the text (or `d2-cms-filter-option-label` override) of the
+    // [d2-cms-filter] element matching the given key+value pair. When `key`
+    // is null/empty the lookup matches on value alone.
+    _findActiveFilterOptionText(key, value) {
+      var candidates = this._buttonsForName('[d2-cms-filter]');
+      for (var i = 0; i < candidates.length; i++) {
+        var parsed = parseFilterAttr(candidates[i].getAttribute('d2-cms-filter'));
+        if (!parsed) continue;
+        if (key && parsed.key !== key) continue;
+        if (parsed.value !== value) continue;
+        var explicit = candidates[i].getAttribute('d2-cms-filter-option-label');
+        if (explicit) return explicit;
+        return (candidates[i].textContent || '').trim();
+      }
+      return null;
+    }
+
     _reflectLoadMoreButtons(visible, totalMatching) {
       var btns = this._buttonsForName('[d2-cms-load-more]');
       var done = visible >= totalMatching;
@@ -1246,6 +1313,27 @@
   // Module registration
   // ---------------------------------------------------------------------------
   var registry = {};
+
+  // Close the nearest Webflow dropdown containing `el`. Webflow auto-closes
+  // when a `.w-dropdown-link` is clicked, but our custom [d2-cms-sort] /
+  // [d2-cms-filter] / [d2-cms-direction] triggers aren't dropdown-links — so
+  // the dropdown stays open after a selection. We mirror Webflow's own close
+  // path: strip `w--open` from the dropdown, toggle and list, flip aria, and
+  // blur the toggle so it visually deactivates.
+  function _closeContainingDropdown(el) {
+    if (!el || !el.closest) return;
+    var dd = el.closest('.w-dropdown');
+    if (!dd) return;
+    var toggle = dd.querySelector('.w-dropdown-toggle');
+    var list = dd.querySelector('.w-dropdown-list');
+    dd.classList.remove('w--open');
+    if (toggle) {
+      toggle.classList.remove('w--open');
+      toggle.setAttribute('aria-expanded', 'false');
+      if (typeof toggle.blur === 'function') toggle.blur();
+    }
+    if (list) list.classList.remove('w--open');
+  }
 
   function _resolveTargetName(triggerEl) {
     var explicit = triggerEl.getAttribute('d2-cms-target');
@@ -1427,6 +1515,10 @@
       var dirVal = (dirBtn.getAttribute('d2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
     }
+
+    // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
+    // trigger isn't inside a .w-dropdown (e.g. standalone buttons, load-more).
+    _closeContainingDropdown(btn);
   });
 
   // ---------------------------------------------------------------------------
