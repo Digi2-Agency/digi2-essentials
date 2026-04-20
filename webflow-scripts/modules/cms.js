@@ -958,14 +958,21 @@
     return opts;
   }
 
+  var _autoNameCounter = 0;
   function _autoInitFromDOM() {
     var nodes = document.querySelectorAll('[d2-cms-list]');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
-      var name = el.getAttribute('d2-cms-list');
-      if (!name || registry[name]) continue;
       // Skip elements that are inside another list (they'd be items, not lists)
       if (el.parentElement && el.parentElement.closest('[d2-cms-list]')) continue;
+
+      var name = el.getAttribute('d2-cms-list');
+      if (!name) {
+        // Auto-generate a name when `d2-cms-list` is present but empty
+        do { name = '_auto_' + (++_autoNameCounter); } while (registry[name]);
+        el.setAttribute('d2-cms-list', name);
+      }
+      if (registry[name]) continue;
       window.digi2.cms.createList(name, _optionsFromAttributes(el));
     }
   }
