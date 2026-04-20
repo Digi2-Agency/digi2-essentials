@@ -675,11 +675,16 @@
 
     _applySort(matching) {
       var groupRanker = this._buildGroupRanker();
+      // Group rank is PRIMARY — the collection-list group order (e.g.
+      // status: dostępne → zarezerwowane → sprzedane) takes precedence
+      // over whatever column the user clicked, so "dostępne" always leads.
+      // Exception: when the user explicitly sorts the group field itself,
+      // their direction drives the ordering and we suspend the group rank.
+      var groupActive = !!groupRanker
+        && (!this._sort || this._sort.field !== this.options.groupBy);
 
       if (!this._sort || !this._sort.field) {
-        // No active sort — fall back to group order if configured, so the
-        // list still shows a coherent initial grouping (status asc, etc.).
-        if (groupRanker) {
+        if (groupActive) {
           matching.sort(function (a, b) { return groupRanker(a) - groupRanker(b); });
         }
         return matching;
@@ -703,16 +708,18 @@
           return key in orderMap ? orderMap[key] : UNRANKED;
         };
         matching.sort(function (a, b) {
+          if (groupActive) {
+            var gr = groupRanker(a) - groupRanker(b);
+            if (gr !== 0) return gr;
+          }
           var ar = rank(a.fields[field]);
           var br = rank(b.fields[field]);
-          // Empties always go to the end regardless of direction
+          // Empties sort to the end of their group, regardless of direction
           var aE = ar === EMPTY_RANK, bE = br === EMPTY_RANK;
           if (aE && !bE) return 1;
           if (!aE && bE) return -1;
-          if (aE && bE) return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
-          var primary = dir * (ar - br);
-          if (primary !== 0) return primary;
-          return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
+          if (aE && bE) return 0;
+          return dir * (ar - br);
         });
         return matching;
       }
@@ -736,15 +743,17 @@
       };
 
       matching.sort(function (a, b) {
+        if (groupActive) {
+          var gr = groupRanker(a) - groupRanker(b);
+          if (gr !== 0) return gr;
+        }
         var av = a.fields[field], bv = b.fields[field];
         var aE = isSortEmpty(av), bE = isSortEmpty(bv);
-        // Empties always at the end, regardless of asc/desc
+        // Empties sort to the end of their group, regardless of direction
         if (aE && !bE) return 1;
         if (!aE && bE) return -1;
-        if (aE && bE) return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
-        var primary = dir * compareValues(av, bv, type);
-        if (primary !== 0) return primary;
-        return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
+        if (aE && bE) return 0;
+        return dir * compareValues(av, bv, type);
       });
       return matching;
     }
