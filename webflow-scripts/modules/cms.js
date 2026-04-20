@@ -283,6 +283,26 @@
         };
       }
 
+      // If we have a group order but no explicit group field (or the field
+      // doesn't actually contain the listed values), auto-detect which field
+      // the order values belong to. Handles the common case of writing
+      // `d2-cms-sort-by="price"` + `d2-cms-sort-order="dostępne|…"` where the
+      // order values are clearly meant for a different field.
+      if (this.options.groupOrder && this.options.groupOrder.length) {
+        if (!this.options.groupBy || !this._fieldMatchesOrder(this.options.groupBy, this.options.groupOrder)) {
+          var detected = this._detectOrderField(this.options.groupOrder);
+          if (detected) this.options.groupBy = detected;
+        }
+      }
+
+      // Same sanity check for the active sort's own `order` (from defaultSort):
+      // if the listed values don't belong to the sort field, don't use them as
+      // a primary rank — that would produce a no-op tie-sort.
+      if (this._sort && this._sort.order && this._sort.order.length
+          && !this._fieldMatchesOrder(this._sort.field, this._sort.order)) {
+        this._sort.order = null;
+      }
+
       this._visibleCount = this.options.perPage;
       this._setupSentinel();
       this._cacheEmptyElements();
@@ -390,16 +410,27 @@
       if (dir !== 'asc' && dir !== 'desc') dir = 'asc';
 
       // Resolve the custom order:
-      //   - caller provided one  → use it
-      //   - same field, no new   → keep the previous order (don't wipe the
-      //                            list-level `d2-cms-sort-order` just because
-      //                            a sort button doesn't redeclare it)
+      //   - caller provided one  → use it (only if values match this field)
+      //   - same field, no new   → keep the previous order
       //   - different field      → no order (fresh sort)
       var finalOrder = null;
       if (Array.isArray(order) && order.length) {
         finalOrder = order.slice();
       } else if (this._sort && this._sort.field === field && this._sort.order) {
         finalOrder = this._sort.order.slice();
+      }
+
+      // Drop the primary order if its values don't correspond to this field
+      // (avoids the all-tied / no-op ranking when an order list from a
+      // different field got carried in). Promote the values to the persistent
+      // group order instead, detecting the owning field automatically.
+      if (finalOrder && finalOrder.length && !this._fieldMatchesOrder(field, finalOrder)) {
+        var detected = this._detectOrderField(finalOrder);
+        if (detected) {
+          this.options.groupBy = detected;
+          this.options.groupOrder = finalOrder.slice();
+        }
+        finalOrder = null;
       }
 
       this._sort = { field: field, dir: dir, order: finalOrder };
@@ -687,6 +718,49 @@
         return groupRanker ? (groupRanker(a) - groupRanker(b)) : 0;
       });
       return matching;
+    }
+
+    // True if at least one item has a value for `field` that appears in the
+    // given `order` list (case-insensitive, trimmed). Used to detect when a
+    // supplied order actually corresponds to the field being sorted.
+    _fieldMatchesOrder(field, order) {
+      if (!field || !Array.isArray(order) || !order.length) return false;
+      var set = {};
+      for (var i = 0; i < order.length; i++) {
+        set[String(order[i]).toLowerCase().trim()] = true;
+      }
+      for (var j = 0; j < this.items.length; j++) {
+        var v = this.items[j].fields[field];
+        if (v == null || v === '') continue;
+        if (set[String(v).toLowerCase().trim()]) return true;
+      }
+      return false;
+    }
+
+    // Given a value-order list, find which item field has values matching it.
+    // Returns the field name with the most matches, or null if nothing matches.
+    _detectOrderField(order) {
+      var set = {};
+      for (var i = 0; i < order.length; i++) {
+        set[String(order[i]).toLowerCase().trim()] = true;
+      }
+      var counts = {};
+      for (var j = 0; j < this.items.length; j++) {
+        var fields = this.items[j].fields;
+        for (var k in fields) {
+          if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+          var v = fields[k];
+          if (v == null || v === '') continue;
+          if (set[String(v).toLowerCase().trim()]) {
+            counts[k] = (counts[k] || 0) + 1;
+          }
+        }
+      }
+      var best = null, bestCount = 0;
+      for (var f in counts) {
+        if (counts[f] > bestCount) { best = f; bestCount = counts[f]; }
+      }
+      return best;
     }
 
     // Build a ranker that maps items to a numeric position based on the
