@@ -305,6 +305,25 @@
               this._totalPages = parseInt(_pcMatch[2], 10);
             }
           }
+          // If the user arrived with ?<list>_page=N in the URL (e.g. via an
+          // accidental click on a Webflow pagination link before our
+          // preventDefault had a chance to run), strip that param so a later
+          // refresh doesn't pin them to a mid-pagination page. The fetch
+          // bridge will load the missing pages once a range slider or the
+          // user's load-more button asks for them.
+          if (this._currentPage && this._currentPage > 1
+              && typeof history !== 'undefined' && history.replaceState) {
+            try {
+              var _u = new URL(window.location.href);
+              var _stripped = false;
+              var _keys = [];
+              _u.searchParams.forEach(function (_v, k) {
+                if (/(^|_|-)page$/i.test(k)) _keys.push(k);
+              });
+              _keys.forEach(function (k) { _u.searchParams.delete(k); _stripped = true; });
+              if (_stripped) history.replaceState(null, '', _u.toString());
+            } catch (e) {}
+          }
           this._applyPaginationHiding();
         }
       }
@@ -745,7 +764,7 @@
 
     _ensureAllLoadedImpl() {
       var self = this;
-      if (!self._totalPages || !self._currentPage || self._currentPage >= self._totalPages) {
+      if (!self._totalPages || !self._currentPage) {
         return self._fetchNextPage().then(function () {
           if (self._nextPageUrl) return self._ensureAllLoadedImpl();
         });
@@ -757,10 +776,15 @@
           if (self._nextPageUrl) return self._ensureAllLoadedImpl();
         });
       }
+      // Fetch every page we don't already have in the DOM. If the user
+      // landed on page 4 (e.g. via a URL with ?<list>_page=4), pages 1–3
+      // are missing and must also be pulled so filters / range sliders
+      // see the complete dataset.
       var pages = [];
-      for (var p = self._currentPage + 1; p <= self._totalPages; p++) {
-        pages.push(p);
+      for (var p = 1; p <= self._totalPages; p++) {
+        if (p !== self._currentPage) pages.push(p);
       }
+      if (!pages.length) return Promise.resolve();
       return self._fetchPagesParallel(pages, urlInfo);
     }
 
@@ -785,7 +809,13 @@
         ];
         var natives = sib.querySelectorAll(nativeSelectors.join(','));
         for (var i = 0; i < natives.length; i++) {
-          natives[i].style.setProperty('display', 'none', 'important');
+          var el = natives[i];
+          // The author may have added d2-cms-load-more / d2-cms-loadcount
+          // directly to the Webflow prev/next anchor — reusing that element
+          // as the custom load button. Hiding .w-pagination-next in that
+          // case would hide the user's button itself.
+          if (el.hasAttribute && (el.hasAttribute('d2-cms-load-more') || el.hasAttribute('d2-cms-loadcount'))) continue;
+          el.style.setProperty('display', 'none', 'important');
         }
       } else {
         sib.style.setProperty('display', 'none', 'important');
