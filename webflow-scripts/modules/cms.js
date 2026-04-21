@@ -2524,7 +2524,31 @@
       // click, Home/End). Mark the slider touched so a later refresh() from
       // background page loads preserves the user's range instead of snapping
       // back to the new full extent.
+      var firstTouch = !this._userTouched;
       this._userTouched = true;
+
+      // On the first user interaction with this slider, enter "filter mode"
+      // on the target CMS:
+      //   • _ensureAllLoaded — pull every remaining server page so the range
+      //     filter applies across the full dataset (slider init usually did
+      //     this already; this is a safety net if init ran before the list
+      //     was populated).
+      //   • _loadAllRequested = true — _reflectLoadMoreButtons reads this to
+      //     hide [d2-cms-load-more] / [d2-cms-loadcount="all"] once done;
+      //     those buttons don't make sense while the author is filtering.
+      //   • _visibleCount = items.length — a paginated "show first N" mode
+      //     would otherwise clip the filtered set to the initial chunk;
+      //     expand it so every matching item is visible.
+      if (firstTouch && this.cms) {
+        var _cms = this.cms;
+        _cms._loadAllRequested = true;
+        _cms._visibleCount = _cms.items.length;
+        _cms._ensureAllLoaded().then(function () {
+          _cms._visibleCount = _cms.items.length;
+          _cms._render();
+        });
+      }
+
       var snapped = Math.round(val / this.step) * this.step;
       // Guard against float drift so labels don't show "419999.9999999"
       var decimals = (String(this.step).split('.')[1] || '').length;
