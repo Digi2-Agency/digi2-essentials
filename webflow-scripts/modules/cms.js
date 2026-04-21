@@ -1848,6 +1848,12 @@
       this.maxHandle = wrapper.querySelector('[d2-cms-range-handle="max"]');
       this.minDisplay = wrapper.querySelector('[d2-cms-range-display="min"]');
       this.maxDisplay = wrapper.querySelector('[d2-cms-range-display="max"]');
+      // Fallback: if no explicit [d2-cms-range-track], infer it from the handles'
+      // shared parent. Lets users skip the track attribute when structure is obvious.
+      if (!this.track && this.minHandle && this.maxHandle &&
+          this.minHandle.parentElement === this.maxHandle.parentElement) {
+        this.track = this.minHandle.parentElement;
+      }
       if (!this.track || !this.minHandle || !this.maxHandle) return;
 
       this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
