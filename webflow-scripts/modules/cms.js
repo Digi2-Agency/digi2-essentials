@@ -2030,6 +2030,9 @@
   // for ANY registered list without each instance attaching its own listeners.
   // ---------------------------------------------------------------------------
   document.addEventListener('click', function (e) {
+    // Capture phase (see 3rd arg on addEventListener) — we must beat
+    // Webflow's own .w-pagination-next / .w-pagination-previous handler
+    // when the author reuses those anchors as d2-cms-loadcount buttons.
     var target = e.target;
     if (!target || !target.closest) return;
 
@@ -2059,6 +2062,14 @@
     if (!instance) return;
 
     e.preventDefault();
+    // Critical when the button is Webflow's own .w-pagination-next anchor
+    // reused as our load trigger: Webflow attaches an element-level click
+    // handler that fires BEFORE document-bubble, doing AJAX page-nav and
+    // mutating the URL. We run this listener in capture phase (see the
+    // addEventListener call below), and stopImmediatePropagation here so
+    // Webflow's handler on the anchor never sees the click.
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    else e.stopPropagation();
 
     if (sortBtn) {
       var field = sortBtn.getAttribute('d2-cms-sort');
@@ -2090,7 +2101,7 @@
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
     // trigger isn't inside a .w-dropdown (e.g. standalone buttons, load-more).
     _closeContainingDropdown(btn);
-  });
+  }, true);
 
   // ---------------------------------------------------------------------------
   // Delegated 'change' handler — native <select> sort controls
