@@ -553,6 +553,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     addFilter(key, value) {
@@ -562,6 +563,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     removeFilter(key, value) {
@@ -575,6 +577,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     toggleFilter(key, value) {
@@ -591,6 +594,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     // Numeric range filter. Either bound may be null/undefined to leave
@@ -608,6 +612,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     clearRange(field) {
@@ -620,6 +625,21 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
+    }
+
+    // Whenever a filter mutates, make sure the full server-paginated dataset
+    // is loaded so filtering operates over the complete collection — not just
+    // the first Webflow page. Fires once per filter interaction; subsequent
+    // calls short-circuit when there's nothing left to fetch. Renders again
+    // after the fetch resolves so newly-appended items respect current filters.
+    _ensureAllForFilter() {
+      if (!this._nextPageUrl) return;
+      var self = this;
+      this._ensureAllLoaded().then(function () {
+        if (!self.listEl) return;
+        self._render();
+      });
     }
 
     // Internal: add/remove/toggle multiple values for one key in a single
@@ -649,6 +669,7 @@
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
+      this._ensureAllForFilter();
     }
 
     _fireFilter() {
