@@ -792,6 +792,55 @@
       }
     }
 
+    // Pull real CMS items out of a fetched collection list. Webflow's markup
+    // is `.w-dyn-list > .w-dyn-items (role=list) > [role=listitem]`. If the
+    // user put `[d2-cms-list]` on the outer `.w-dyn-list`, its direct children
+    // are just the inner `.w-dyn-items` wrapper + pagination — NOT the items
+    // themselves. Simply iterating `newList.children` would append the inner
+    // wrapper as a single "item", making matching count stay wrong and
+    // tripping the done-check that hides the load-more button.
+    //
+    // Strategy, in order of specificity:
+    //   1. If the instance was originally scanned via `[d2-cms-item]` markers,
+    //      use the same in the fetched doc.
+    //   2. Otherwise, prefer the descendants of `.w-dyn-items` (Webflow's
+    //      inner role=list wrapper) — these are the actual items.
+    //   3. Fall back to direct children filtered for pagination/empty blocks.
+    _extractItemsFromFetched(newList) {
+      // Strategy 1: explicit marker
+      if (newList.querySelector && newList.querySelector('[d2-cms-item]')) {
+        return Array.prototype.slice.call(newList.querySelectorAll('[d2-cms-item]'));
+      }
+      // Strategy 2: Webflow's inner .w-dyn-items wrapper (if newList ISN'T
+      // itself the inner wrapper).
+      if (!(newList.classList && newList.classList.contains('w-dyn-items'))) {
+        var inner = newList.querySelector(':scope > .w-dyn-items')
+          || newList.querySelector('.w-dyn-items');
+        if (inner) {
+          var innerKids = inner.children;
+          var out = [];
+          for (var i = 0; i < innerKids.length; i++) {
+            var k = innerKids[i];
+            if (!k.classList) continue;
+            if (k.classList.contains('w-dyn-empty')) continue;
+            out.push(k);
+          }
+          if (out.length) return out;
+        }
+      }
+      // Strategy 3: direct children, filtered
+      var items = [];
+      var kids = newList.children;
+      for (var j = 0; j < kids.length; j++) {
+        var c = kids[j];
+        if (!c.classList) continue;
+        if (c.classList.contains('w-pagination-wrapper')) continue;
+        if (c.classList.contains('w-dyn-empty')) continue;
+        items.push(c);
+      }
+      return items;
+    }
+
     // Parse the Webflow pagination URL and return { base, key, suffix } so we
     // can swap the page number. Returns null if no recognizable page param.
     _parsePageParam(url) {
@@ -824,16 +873,7 @@
               newList = doc.querySelector(self.options.listSelector);
             }
             if (!newList) return [];
-            var items = [];
-            var kids = newList.children;
-            for (var i = 0; i < kids.length; i++) {
-              var k = kids[i];
-              if (!k.classList) continue;
-              if (k.classList.contains('w-pagination-wrapper')) continue;
-              if (k.classList.contains('w-dyn-empty')) continue;
-              items.push(k);
-            }
-            return items;
+            return self._extractItemsFromFetched(newList);
           })
           .catch(function (err) {
             console.warn('[digi2.cms] failed to fetch page ' + pageNum + ':', err);
@@ -892,15 +932,7 @@
           if (!newList) return 0;
 
           // Collect new items, skipping pagination wrappers and empty-state blocks.
-          var newItems = [];
-          var kids = newList.children;
-          for (var i = 0; i < kids.length; i++) {
-            var k = kids[i];
-            if (!k.classList) continue;
-            if (k.classList.contains('w-pagination-wrapper')) continue;
-            if (k.classList.contains('w-dyn-empty')) continue;
-            newItems.push(k);
-          }
+          var newItems = self._extractItemsFromFetched(newList);
 
           // Pause our external-mutation watcher during the append so we don't
           // trigger a spurious refresh mid-insertion.
