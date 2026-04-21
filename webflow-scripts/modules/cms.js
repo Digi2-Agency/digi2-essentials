@@ -248,6 +248,12 @@
       this._rangeFilters = {};        // { field: { min, max } } — numeric range
       this._visibleCount = 0;
 
+      // Webflow server-side pagination bridge: when pagination is enabled on
+      // the collection list, only page 1 is in the DOM. We capture the next
+      // page URL from .w-pagination-next and fetch subsequent pages on demand.
+      this._nextPageUrl = null;
+      this._fetchInFlight = null;
+
       this._init();
     }
 
@@ -275,6 +281,14 @@
       if (this.options.hideNativePagination) {
         var sib = this.listEl.parentElement && this.listEl.parentElement.querySelector('.w-pagination-wrapper');
         if (sib) {
+          // Capture the next-page URL BEFORE hiding anything so we can paginate
+          // via fetch. Webflow's .w-pagination-next href points at ?<list>_page=N.
+          var _nextLink = sib.querySelector('.w-pagination-next');
+          var _nextHref = _nextLink && _nextLink.getAttribute('href');
+          if (_nextHref) {
+            try { this._nextPageUrl = new URL(_nextHref, window.location.href).toString(); }
+            catch (e) { this._nextPageUrl = _nextHref; }
+          }
           var hasCustomLoad = !!sib.querySelector('[d2-cms-load-more], [d2-cms-loadcount]');
           if (hasCustomLoad) {
             var nativeSelectors = [
@@ -644,23 +658,126 @@
     // Public API — load more
     // -----------------------------------------------------------------------
     loadMore(n) {
+      var self = this;
       var step = (typeof n === 'number' && n > 0) ? n : this.options.perPage;
-      var matchingTotal = this._countMatching();
-      this._visibleCount = Math.min(this._visibleCount + step, matchingTotal);
-      this._render();
-
-      if (typeof this.options.onLoadMore === 'function') {
-        this.options.onLoadMore(this._visibleCount, matchingTotal);
-      }
-      _log('loadMore', { visible: this._visibleCount, total: matchingTotal });
+      var target = this._visibleCount + step;
+      return this._ensureLoaded(target).then(function () {
+        var matchingTotal = self._countMatching();
+        self._visibleCount = Math.min(target, matchingTotal);
+        self._render();
+        if (typeof self.options.onLoadMore === 'function') {
+          self.options.onLoadMore(self._visibleCount, matchingTotal);
+        }
+        _log('loadMore', { visible: self._visibleCount, total: matchingTotal, hasMore: !!self._nextPageUrl });
+      });
     }
 
     loadAll() {
-      this._visibleCount = this._countMatching();
-      this._render();
-      if (typeof this.options.onLoadMore === 'function') {
-        this.options.onLoadMore(this._visibleCount, this._visibleCount);
+      var self = this;
+      return this._ensureAllLoaded().then(function () {
+        var total = self._countMatching();
+        self._visibleCount = total;
+        self._render();
+        if (typeof self.options.onLoadMore === 'function') {
+          self.options.onLoadMore(total, total);
+        }
+      });
+    }
+
+    // Ensure enough matching items are in the DOM to satisfy `target` visible
+    // count. Fetches more Webflow pagination pages as needed. Resolves once
+    // either the target is met or we've exhausted all server pages.
+    _ensureLoaded(target) {
+      var self = this;
+      if (self._countMatching() >= target || !self._nextPageUrl) {
+        return Promise.resolve();
       }
+      return self._fetchNextPage().then(function (added) {
+        if (added > 0 && self._countMatching() < target && self._nextPageUrl) {
+          return self._ensureLoaded(target);
+        }
+      });
+    }
+
+    _ensureAllLoaded() {
+      var self = this;
+      if (!self._nextPageUrl) return Promise.resolve();
+      return self._fetchNextPage().then(function () {
+        if (self._nextPageUrl) return self._ensureAllLoaded();
+      });
+    }
+
+    // Fetch the next Webflow pagination page, parse its items, and append them
+    // to this list. Updates `this._nextPageUrl` to the newly-fetched page's
+    // next link (or null if we're on the last page). Returns the number of
+    // items appended. Concurrent calls share the in-flight promise so two
+    // rapid button clicks don't double-fetch.
+    _fetchNextPage() {
+      if (this._fetchInFlight) return this._fetchInFlight;
+      if (!this._nextPageUrl || typeof fetch !== 'function') {
+        return Promise.resolve(0);
+      }
+      var self = this;
+      var url = this._nextPageUrl;
+      _log('fetchNextPage → ' + this.name, url);
+      this._fetchInFlight = fetch(url, { credentials: 'same-origin' })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          var doc = new DOMParser().parseFromString(html, 'text/html');
+          // Match the fetched list to ours. Prefer the d2-cms-list tag (unique
+          // per instance), fall back to the listSelector used originally.
+          var selector = '[d2-cms-list="' + self.name + '"]';
+          var newList = doc.querySelector(selector);
+          if (!newList && self.options.listSelector) {
+            newList = doc.querySelector(self.options.listSelector);
+          }
+          if (!newList) return 0;
+
+          // Collect new items, skipping pagination wrappers and empty-state blocks.
+          var newItems = [];
+          var kids = newList.children;
+          for (var i = 0; i < kids.length; i++) {
+            var k = kids[i];
+            if (!k.classList) continue;
+            if (k.classList.contains('w-pagination-wrapper')) continue;
+            if (k.classList.contains('w-dyn-empty')) continue;
+            newItems.push(k);
+          }
+
+          // Pause our external-mutation watcher during the append so we don't
+          // trigger a spurious refresh mid-insertion.
+          if (self._mo) self._mo.disconnect();
+          var before = self._sentinel || null;
+          for (var j = 0; j < newItems.length; j++) {
+            if (before) self.listEl.insertBefore(newItems[j], before);
+            else self.listEl.appendChild(newItems[j]);
+          }
+
+          // Advance the next-page cursor using the fetched page's own pagination.
+          var nextWrapper = newList.parentElement && newList.parentElement.querySelector('.w-pagination-wrapper');
+          var nextLink = nextWrapper && nextWrapper.querySelector('.w-pagination-next');
+          var newHref = nextLink && nextLink.getAttribute('href');
+          if (newHref) {
+            try { self._nextPageUrl = new URL(newHref, window.location.href).toString(); }
+            catch (e) { self._nextPageUrl = newHref; }
+          } else {
+            self._nextPageUrl = null;
+          }
+
+          self._scanItems();
+          self._cacheEmptyElements();
+          if (self._mo) self._mo.observe(self.listEl, { childList: true });
+          return newItems.length;
+        })
+        .catch(function (err) {
+          console.warn('[digi2.cms] failed to fetch next page:', err);
+          return 0;
+        })
+        .then(function (count) {
+          self._fetchInFlight = null;
+          return count;
+        });
+      return this._fetchInFlight;
     }
 
     reset() {
@@ -1411,7 +1528,11 @@
     _reflectLoadMoreButtons(visible, totalMatching) {
       var btns = this._buttonsForName('[d2-cms-load-more]')
         .concat(this._buttonsForName('[d2-cms-loadcount]'));
-      var done = visible >= totalMatching;
+      // Treat "done" as: nothing more to reveal in the DOM AND no more
+      // server-paginated pages to fetch. With Webflow pagination enabled, the
+      // DOM starts with only page 1 so totalMatching reflects just that page —
+      // the button must remain visible until the next-page cursor is null.
+      var done = visible >= totalMatching && !this._nextPageUrl;
       btns.forEach(function (btn) {
         // Auto-hide policy:
         //   • [d2-cms-load-more] (legacy) — hide when done.
@@ -1473,7 +1594,8 @@
         for (var i = 0; i < entries.length; i++) {
           if (!entries[i].isIntersecting) continue;
           var matching = self._countMatching();
-          if (self._visibleCount < matching) {
+          // Trigger when there's more to reveal OR more server pages to fetch.
+          if (self._visibleCount < matching || self._nextPageUrl) {
             self.loadMore(self.options.perPage);
           }
         }
