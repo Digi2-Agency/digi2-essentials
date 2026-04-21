@@ -1392,7 +1392,8 @@
     }
 
     _reflectLoadMoreButtons(visible, totalMatching) {
-      var btns = this._buttonsForName('[d2-cms-load-more]');
+      var btns = this._buttonsForName('[d2-cms-load-more]')
+        .concat(this._buttonsForName('[d2-cms-load-trigger]'));
       var done = visible >= totalMatching;
       btns.forEach(function (btn) {
         if (done) {
@@ -1552,7 +1553,8 @@
     if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n)) opts.perPage = n; }
 
     v = el.getAttribute('d2-cms-load-mode');
-    if (v === 'scroll' || v === 'button' || v === 'all') opts.loadMode = v;
+    if (v === 'more') opts.loadMode = 'button';   // "more" is an alias for "button"
+    else if (v === 'scroll' || v === 'button' || v === 'all') opts.loadMode = v;
 
     v = el.getAttribute('d2-cms-scroll-offset');
     if (v != null && v !== '') { var so = parseInt(v, 10); if (!isNaN(so)) opts.scrollOffset = so; }
@@ -1637,7 +1639,8 @@
 
     var sortBtn = target.closest('[d2-cms-sort]');
     var filterBtn = target.closest('[d2-cms-filter]');
-    var loadBtn = target.closest('[d2-cms-load-more]');
+    // Accept both [d2-cms-load-more] and [d2-cms-load-trigger] — same role
+    var loadBtn = target.closest('[d2-cms-load-more], [d2-cms-load-trigger]');
     var dirBtn = target.closest('[d2-cms-direction]');
 
     // Checkbox/radio inputs drive filters via the 'change' event — let the
