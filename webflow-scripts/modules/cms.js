@@ -1706,6 +1706,17 @@
      *   - It is an orphan (no target, not inside any list) AND this is the only registered list.
      * Used for visual-state reflection — matches the click handler's resolution.
      */
+    // True when at least one [d2-cms-load-more] or [d2-cms-loadcount] button
+    // resolves to this list (explicit target, scoped, or orphan-solo). Used
+    // to disable the scroll sentinel when the author provides a button —
+    // otherwise scroll-mode would reveal everything the sentinel can see and
+    // flip the button into its "done" (hidden) state on load.
+    _hasCustomLoadButton() {
+      if (this._buttonsForName('[d2-cms-load-more]').length) return true;
+      if (this._buttonsForName('[d2-cms-loadcount]').length) return true;
+      return false;
+    }
+
     _buttonsForName(attrSelector) {
       var name = this.name;
       var explicit = Array.prototype.slice.call(
@@ -1727,6 +1738,13 @@
     _setupSentinel() {
       if (this.options.loadMode !== 'scroll') return;
       if (typeof IntersectionObserver === 'undefined') return;
+      // If the author placed a custom load-more/loadcount button for this
+      // list, the button is the authoritative pager — don't also install a
+      // scroll sentinel that would progressively reveal everything on its
+      // own. Without this, after a background preload (e.g. range slider
+      // pre-fetching all server pages), the sentinel eats the whole list
+      // and the "done" state hides the button on page load.
+      if (this._hasCustomLoadButton()) return;
 
       this._sentinel = document.createElement('div');
       this._sentinel.setAttribute('d2-cms-sentinel', this.name);
