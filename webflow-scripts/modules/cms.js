@@ -1792,7 +1792,14 @@
       if (!this.track || !this.minHandle || !this.maxHandle) return;
 
       this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
-      this.format = (wrapper.getAttribute('d2-cms-range-format') || 'thousands').toLowerCase();
+      // `displayformat` is the preferred name; `format` kept as alias.
+      //   thousands (default) — "1,600,000" / "23.1" (commas, natural decimals)
+      //   float               — "420,000.00" (commas, forced N decimals from step)
+      //   integer             — "24"         (rounded, commas)
+      //   plain               — "1600000"    (raw, no formatting)
+      this.displayFormat = (wrapper.getAttribute('d2-cms-range-displayformat')
+                         || wrapper.getAttribute('d2-cms-range-format')
+                         || 'thousands').toLowerCase();
       this.prefix = wrapper.getAttribute('d2-cms-range-prefix') || '';
       this.suffix = wrapper.getAttribute('d2-cms-range-suffix') || '';
 
@@ -1800,6 +1807,13 @@
       var attrMax = parseFloat(wrapper.getAttribute('d2-cms-range-max'));
       this._attrMin = isNaN(attrMin) ? null : attrMin;
       this._attrMax = isNaN(attrMax) ? null : attrMax;
+
+      // Default/initial handle positions. If either narrows the full range,
+      // the filter is applied on init so the list loads already scoped.
+      var attrDefMin = parseFloat(wrapper.getAttribute('d2-cms-range-default-min'));
+      var attrDefMax = parseFloat(wrapper.getAttribute('d2-cms-range-default-max'));
+      this._defaultMin = isNaN(attrDefMin) ? null : attrDefMin;
+      this._defaultMax = isNaN(attrDefMax) ? null : attrDefMax;
 
       this.cms = null;
       this.min = 0;
@@ -1810,6 +1824,11 @@
       this._resolveBounds();
       this._attachEvents();
       this._render();
+      // If default positions narrow the range, apply the filter on init so
+      // the list loads already scoped to the default selection.
+      if (this.currentMin > this.min || this.currentMax < this.max) {
+        this._applyToCms();
+      }
     }
 
     _resolveBounds() {
@@ -1836,8 +1855,16 @@
 
       this.min = min;
       this.max = max;
-      this.currentMin = min;
-      this.currentMax = max;
+
+      // Start handles at the configured defaults when provided, otherwise at
+      // the full extent. Clamped into [min, max] and kept in order.
+      var startMin = (this._defaultMin != null) ? this._defaultMin : min;
+      var startMax = (this._defaultMax != null) ? this._defaultMax : max;
+      startMin = Math.max(min, Math.min(max, startMin));
+      startMax = Math.max(min, Math.min(max, startMax));
+      if (startMin > startMax) startMin = startMax;
+      this.currentMin = startMin;
+      this.currentMax = startMax;
     }
 
     // Re-detect bounds after the list has been refreshed externally. Safe to
@@ -1964,9 +1991,26 @@
 
     _fmt(val) {
       var body;
-      if (this.format === 'plain') {
+      var fmt = this.displayFormat;
+      if (fmt === 'plain') {
         body = String(val);
+      } else if (fmt === 'integer') {
+        var rounded = Math.round(val);
+        try { body = rounded.toLocaleString(); }
+        catch (e) { body = String(rounded); }
+      } else if (fmt === 'float') {
+        // Preserve exactly as many decimals as the step implies — prevents
+        // "420,000" collapsing to no decimals when the slider is at a round
+        // tick. Good for prices/areas where trailing zeros matter.
+        var decimals = (String(this.step).split('.')[1] || '').length;
+        try {
+          body = val.toLocaleString(undefined, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+          });
+        } catch (e) { body = val.toFixed(decimals); }
       } else {
+        // 'thousands' (default) — locale formatting, natural decimals
         try { body = val.toLocaleString(); }
         catch (e) { body = String(val); }
       }
