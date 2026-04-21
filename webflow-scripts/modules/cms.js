@@ -257,6 +257,7 @@
       // every remaining page in parallel rather than chaining one-at-a-time.
       this._currentPage = null;
       this._totalPages = null;
+      this._paginationWrapper = null; // cached .w-pagination-wrapper for re-hiding natives
 
       this._init();
     }
@@ -285,6 +286,7 @@
       if (this.options.hideNativePagination) {
         var sib = this.listEl.parentElement && this.listEl.parentElement.querySelector('.w-pagination-wrapper');
         if (sib) {
+          this._paginationWrapper = sib;
           // Capture the next-page URL BEFORE hiding anything so we can paginate
           // via fetch. Webflow's .w-pagination-next href points at ?<list>_page=N.
           var _nextLink = sib.querySelector('.w-pagination-next');
@@ -303,19 +305,7 @@
               this._totalPages = parseInt(_pcMatch[2], 10);
             }
           }
-          var hasCustomLoad = !!sib.querySelector('[d2-cms-load-more], [d2-cms-loadcount]');
-          if (hasCustomLoad) {
-            var nativeSelectors = [
-              '.w-pagination-previous',
-              '.w-pagination-next',
-              '.w-page-count',
-              '.w-pagination-page-indicator',
-            ];
-            var natives = sib.querySelectorAll(nativeSelectors.join(','));
-            for (var _i = 0; _i < natives.length; _i++) natives[_i].style.display = 'none';
-          } else {
-            sib.style.display = 'none';
-          }
+          this._applyPaginationHiding();
         }
       }
 
@@ -772,6 +762,34 @@
         pages.push(p);
       }
       return self._fetchPagesParallel(pages, urlInfo);
+    }
+
+    // Hide Webflow's native pagination controls (prev/next/count/dots). Kept
+    // idempotent and safe to call repeatedly: Webflow's own runtime and
+    // subsequent fetches can re-touch these elements, and calling this from
+    // every _render() ensures they stay hidden. When the wrapper contains a
+    // custom [d2-cms-load-more]/[d2-cms-loadcount] button we keep the wrapper
+    // visible (for the button) and only hide the natives; otherwise we hide
+    // the whole wrapper. `!important` beats any Webflow inline style the
+    // runtime might re-apply.
+    _applyPaginationHiding() {
+      var sib = this._paginationWrapper;
+      if (!sib) return;
+      var hasCustomLoad = !!sib.querySelector('[d2-cms-load-more], [d2-cms-loadcount]');
+      if (hasCustomLoad) {
+        var nativeSelectors = [
+          '.w-pagination-previous',
+          '.w-pagination-next',
+          '.w-page-count',
+          '.w-pagination-page-indicator',
+        ];
+        var natives = sib.querySelectorAll(nativeSelectors.join(','));
+        for (var i = 0; i < natives.length; i++) {
+          natives[i].style.setProperty('display', 'none', 'important');
+        }
+      } else {
+        sib.style.setProperty('display', 'none', 'important');
+      }
     }
 
     // Parse the Webflow pagination URL and return { base, key, suffix } so we
@@ -1288,6 +1306,10 @@
 
       // Update load-more button enabled state
       this._reflectLoadMoreButtons(visibleCount, matching.length);
+
+      // Re-assert native pagination hiding. Webflow's own runtime or subsequent
+      // fetches may un-hide .w-pagination-previous/next/etc; keep them off.
+      this._applyPaginationHiding();
 
       // Sentinel observation: only observe if there are more to reveal
       this._observeSentinel(visibleCount < matching.length);
