@@ -417,14 +417,22 @@
       this._userInitiatedSort = true;
 
       // Resolve the custom order:
-      //   - caller provided one  → use it (only if values match this field)
-      //   - same field, no new   → keep the previous order
-      //   - different field      → no order (fresh sort)
+      //   - caller provided one        → use it (only if values match this field)
+      //   - same field, no new         → keep the previous order
+      //   - field matches groupBy      → fall back to the configured groupOrder
+      //                                  so the list-level d2-cms-sort-order
+      //                                  is still honored after returning to
+      //                                  the group field from another column
+      //   - different field, no group  → no order (fresh sort)
       var finalOrder = null;
       if (Array.isArray(order) && order.length) {
         finalOrder = order.slice();
       } else if (this._sort && this._sort.field === field && this._sort.order) {
         finalOrder = this._sort.order.slice();
+      } else if (this.options.groupBy === field
+          && Array.isArray(this.options.groupOrder)
+          && this.options.groupOrder.length) {
+        finalOrder = this.options.groupOrder.slice();
       }
 
       // Drop the primary order if its values don't correspond to this field
