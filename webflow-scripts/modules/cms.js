@@ -737,19 +737,34 @@
     // loadAll-driven bulk fetch. When we know the total page count, fire every
     // remaining page in parallel and append them in order in a single DOM
     // write. Falls back to serial _fetchNextPage when page count is unknown.
+    //
+    // Reentrancy: callers (filter mutations, range-slider drags) may hit this
+    // many times a second. All of them must share the same in-flight promise
+    // — otherwise we'd fire duplicate parallel fetches and append duplicate
+    // items before the first batch resolves.
     _ensureAllLoaded() {
+      if (this._ensureAllPromise) return this._ensureAllPromise;
+      if (!this._nextPageUrl) return Promise.resolve();
       var self = this;
-      if (!self._nextPageUrl) return Promise.resolve();
+      var p = this._ensureAllLoadedImpl();
+      this._ensureAllPromise = p;
+      var clear = function () { self._ensureAllPromise = null; };
+      p.then(clear, clear);
+      return p;
+    }
+
+    _ensureAllLoadedImpl() {
+      var self = this;
       if (!self._totalPages || !self._currentPage || self._currentPage >= self._totalPages) {
         return self._fetchNextPage().then(function () {
-          if (self._nextPageUrl) return self._ensureAllLoaded();
+          if (self._nextPageUrl) return self._ensureAllLoadedImpl();
         });
       }
       var urlInfo = self._parsePageParam(self._nextPageUrl);
       if (!urlInfo) {
         // Unknown URL shape — fall back to serial.
         return self._fetchNextPage().then(function () {
-          if (self._nextPageUrl) return self._ensureAllLoaded();
+          if (self._nextPageUrl) return self._ensureAllLoadedImpl();
         });
       }
       var pages = [];
@@ -2184,6 +2199,11 @@
       this.max = 100;
       this.currentMin = 0;
       this.currentMax = 100;
+      // True once the user has dragged or keyed the slider. Until then, a
+      // background refresh (e.g. after loading more server pages) is free to
+      // snap the handles to the new full extent — nothing the user set is
+      // being overwritten.
+      this._userTouched = false;
 
       this._resolveBounds();
       this._attachEvents();
@@ -2192,6 +2212,18 @@
       // the list loads already scoped to the default selection.
       if (this.currentMin > this.min || this.currentMax < this.max) {
         this._applyToCms();
+      }
+
+      // If Webflow pagination is enabled on the target list, our _resolveBounds
+      // measured min/max from page 1 only — which caps the slider's reachable
+      // range at whatever prices happen to be on the first page. Preload every
+      // remaining server page so the slider reflects the full dataset, then
+      // refresh to re-measure bounds.
+      if (this.cms && this.cms._nextPageUrl) {
+        var _slf = this;
+        this.cms._ensureAllLoaded().then(function () {
+          if (_slf.track) _slf.refresh();
+        });
       }
     }
 
@@ -2231,13 +2263,20 @@
       this.currentMax = startMax;
     }
 
-    // Re-detect bounds after the list has been refreshed externally. Safe to
-    // call anytime — preserves the user's current selection proportionally
-    // where possible (simple clamp is fine for the common case).
+    // Re-detect bounds after the list has been refreshed externally. If the
+    // user hasn't interacted yet, snap handles to the new full extent —
+    // otherwise the old page-1 bounds would stick and prevent dragging into
+    // the newly-loaded range. After interaction, preserve the user's picks
+    // via clamping into the new [min, max].
     refresh() {
       this._resolveBounds();
-      this.currentMin = Math.max(this.min, Math.min(this.currentMin, this.max));
-      this.currentMax = Math.max(this.min, Math.min(this.currentMax, this.max));
+      if (!this._userTouched) {
+        this.currentMin = this.min;
+        this.currentMax = this.max;
+      } else {
+        this.currentMin = Math.max(this.min, Math.min(this.currentMin, this.max));
+        this.currentMax = Math.max(this.min, Math.min(this.currentMax, this.max));
+      }
       this._render();
       this._applyToCms();
     }
@@ -2305,6 +2344,11 @@
     }
 
     _setHandle(val, isMax) {
+      // Any call into _setHandle is user-initiated (drag, keyboard, track
+      // click, Home/End). Mark the slider touched so a later refresh() from
+      // background page loads preserves the user's range instead of snapping
+      // back to the new full extent.
+      this._userTouched = true;
       var snapped = Math.round(val / this.step) * this.step;
       // Guard against float drift so labels don't show "419999.9999999"
       var decimals = (String(this.step).split('.')[1] || '').length;
