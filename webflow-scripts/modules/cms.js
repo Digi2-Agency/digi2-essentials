@@ -1951,8 +1951,12 @@
 
     _attachEvents() {
       var self = this;
+      // Disable native touch gestures on the slider surface so dragging a
+      // handle doesn't scroll the page underneath.
+      if (this.track) this.track.style.touchAction = 'none';
       [this.minHandle, this.maxHandle].forEach(function (handle, idx) {
         var isMax = idx === 1;
+        handle.style.touchAction = 'none';
 
         handle.addEventListener('pointerdown', function (e) {
           e.preventDefault();
@@ -2035,11 +2039,23 @@
       var minPct = span > 0 ? ((this.currentMin - this.min) / span) * 100 : 0;
       var maxPct = span > 0 ? ((this.currentMax - this.min) / span) * 100 : 100;
 
+      // Center each handle's visual midpoint on its value position. Without
+      // this offset, `left: 0%` puts the handle's LEFT edge on the min tick
+      // (so the handle sits half past the start visually) and `left: 100%`
+      // pushes the handle entirely past the max tick. Using margin-left (not
+      // transform) avoids clobbering any transform the user set in CSS for
+      // vertical centering (e.g. `transform: translateY(-50%)`).
+      var minHalf = (this.minHandle.offsetWidth || 0) / 2;
+      var maxHalf = (this.maxHandle.offsetWidth || 0) / 2;
       this.minHandle.style.left = minPct + '%';
       this.maxHandle.style.left = maxPct + '%';
+      this.minHandle.style.marginLeft = (-minHalf) + 'px';
+      this.maxHandle.style.marginLeft = (-maxHalf) + 'px';
       if (this.fill) {
+        // Fill runs between handle CENTERS — matches the visually-centered
+        // handles above, so no gap at the extremes.
         this.fill.style.left = minPct + '%';
-        this.fill.style.width = (maxPct - minPct) + '%';
+        this.fill.style.width = Math.max(0, maxPct - minPct) + '%';
       }
       if (this.minDisplay) this.minDisplay.textContent = this._fmt(this.currentMin);
       if (this.maxDisplay) this.maxDisplay.textContent = this._fmt(this.currentMax);
