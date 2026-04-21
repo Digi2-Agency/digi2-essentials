@@ -1765,16 +1765,16 @@
       btns.forEach(function (btn) {
         // Auto-hide policy:
         //   • [d2-cms-load-more] (legacy) — hide when done.
-        //   • [d2-cms-loadcount="all"] — hide when done (clicking it loads
-        //     everything, so the button's purpose is exhausted).
-        //   • [d2-cms-loadcount="<number>"] — NEVER force-hide. By default
-        //     the button stays visible after each click; the author can
-        //     style it via the `d2-cms-load-more-done` attribute if they
-        //     want to fade/disable it once there's nothing left.
+        //   • [d2-cms-loadcount="all" | "<number>"] — NEVER force-hide.
+        //     The button often IS Webflow's .w-pagination-next anchor
+        //     reused as our load trigger, and other modules (range slider,
+        //     filters) may pre-load the whole dataset on init — flipping
+        //     the button into "done" and hiding it before the user ever
+        //     sees it. Instead, set the `d2-cms-load-more-done` attribute
+        //     so authors can fade/disable via CSS if they want.
         var countAttr = btn.getAttribute('d2-cms-loadcount');
         var hasCount = countAttr != null;
-        var isAll = hasCount && countAttr.trim().toLowerCase() === 'all';
-        var shouldForceHide = done && (!hasCount || isAll);
+        var shouldForceHide = done && !hasCount;
 
         if (done) btn.setAttribute('d2-cms-load-more-done', '');
         else btn.removeAttribute('d2-cms-load-more-done');
