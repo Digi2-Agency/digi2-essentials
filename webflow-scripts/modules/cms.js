@@ -725,6 +725,12 @@
 
     loadAll() {
       var self = this;
+      // Mark that the author has explicitly requested the full dataset via a
+      // user action. _reflectLoadMoreButtons reads this to force-hide
+      // loadcount="all" buttons — but only after a real click, so the button
+      // doesn't disappear on init just because a range slider pre-loaded
+      // everything in the background.
+      self._loadAllRequested = true;
       return this._ensureAllLoaded().then(function () {
         var total = self._countMatching();
         self._visibleCount = total;
@@ -1796,19 +1802,22 @@
       // DOM starts with only page 1 so totalMatching reflects just that page —
       // the button must remain visible until the next-page cursor is null.
       var done = visible >= totalMatching && !this._nextPageUrl;
+      var loadAllRequested = this._loadAllRequested;
       btns.forEach(function (btn) {
         // Auto-hide policy:
         //   • [d2-cms-load-more] (legacy) — hide when done.
-        //   • [d2-cms-loadcount="all" | "<number>"] — NEVER force-hide.
-        //     The button often IS Webflow's .w-pagination-next anchor
-        //     reused as our load trigger, and other modules (range slider,
-        //     filters) may pre-load the whole dataset on init — flipping
-        //     the button into "done" and hiding it before the user ever
-        //     sees it. Instead, set the `d2-cms-load-more-done` attribute
-        //     so authors can fade/disable via CSS if they want.
+        //   • [d2-cms-loadcount="all"] — hide when done AFTER the user has
+        //     explicitly clicked it (tracked via _loadAllRequested). This
+        //     avoids the button disappearing on init when some other module
+        //     (e.g. range slider) pre-loads the full dataset in the
+        //     background — there, the user never saw the button and has no
+        //     opportunity to click it.
+        //   • [d2-cms-loadcount="<number>"] — NEVER force-hide; authors can
+        //     fade/disable via CSS on [d2-cms-load-more-done].
         var countAttr = btn.getAttribute('d2-cms-loadcount');
         var hasCount = countAttr != null;
-        var shouldForceHide = done && !hasCount;
+        var isAll = hasCount && countAttr.trim().toLowerCase() === 'all';
+        var shouldForceHide = done && (!hasCount || (isAll && loadAllRequested));
 
         if (done) btn.setAttribute('d2-cms-load-more-done', '');
         else btn.removeAttribute('d2-cms-load-more-done');
