@@ -245,6 +245,7 @@
       this._sort = null;              // { field, dir }
       this._userInitiatedSort = false; // true once the user has clicked a sort button
       this._filters = {};             // { key: Set<value> }
+      this._rangeFilters = {};        // { field: { min, max } } — numeric range
       this._visibleCount = 0;
 
       this._init();
@@ -541,6 +542,36 @@
 
     clearFilters() {
       this._filters = {};
+      this._rangeFilters = {};
+      this._visibleCount = this.options.perPage;
+      this._render();
+      this._fireFilter();
+    }
+
+    // Numeric range filter. Either bound may be null/undefined to leave
+    // that side open-ended (e.g. setRange('price', 100000, null) keeps
+    // items with price ≥ 100k). Passing both as null clears the range.
+    setRange(field, min, max) {
+      if (!field) return;
+      var hasMin = min != null && !isNaN(Number(min));
+      var hasMax = max != null && !isNaN(Number(max));
+      if (!hasMin && !hasMax) { this.clearRange(field); return; }
+      this._rangeFilters[field] = {
+        min: hasMin ? Number(min) : null,
+        max: hasMax ? Number(max) : null,
+      };
+      this._visibleCount = this.options.perPage;
+      this._render();
+      this._fireFilter();
+    }
+
+    clearRange(field) {
+      if (field) {
+        if (!this._rangeFilters[field]) return;
+        delete this._rangeFilters[field];
+      } else {
+        this._rangeFilters = {};
+      }
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
@@ -630,12 +661,19 @@
     }
 
     getState() {
+      var ranges = {};
+      for (var rk in this._rangeFilters) {
+        if (Object.prototype.hasOwnProperty.call(this._rangeFilters, rk)) {
+          ranges[rk] = { min: this._rangeFilters[rk].min, max: this._rangeFilters[rk].max };
+        }
+      }
       return {
         visible: Math.min(this._visibleCount, this._countMatching()),
         totalMatching: this._countMatching(),
         total: this.items.length,
         sort: this._sort ? { field: this._sort.field, dir: this._sort.dir } : null,
         filters: this._filtersAsObject(),
+        ranges: ranges,
       };
     }
 
@@ -686,33 +724,53 @@
 
     _applyFilters() {
       var filterKeys = Object.keys(this._filters);
+      var rangeKeys = Object.keys(this._rangeFilters);
       var mode = this.options.filterMatchMode === 'OR' ? 'OR' : 'AND';
+      var hasTag = filterKeys.length > 0;
+      var hasRange = rangeKeys.length > 0;
 
-      if (!filterKeys.length) {
+      if (!hasTag && !hasRange) {
         for (var i = 0; i < this.items.length; i++) this.items[i]._match = true;
         return;
       }
 
+      var self = this;
       for (var k = 0; k < this.items.length; k++) {
         var item = this.items[k];
-        var perKey = filterKeys.map(function (key) {
-          var requested = this._filters[key]; // Set of values
-          var rawVal = item.fields[key];
-          if (rawVal == null) return false;
-          // Item value may be comma-separated (e.g. multi-reference fields)
-          var itemVals = String(rawVal).split(',').map(function (v) { return v.trim(); });
-          // OR within a key
-          for (var v of requested) {
-            if (itemVals.indexOf(String(v)) !== -1) return true;
-          }
-          return false;
-        }, this);
 
-        if (mode === 'AND') {
-          item._match = perKey.every(function (b) { return b; });
-        } else {
-          item._match = perKey.some(function (b) { return b; });
+        // Tag filters — match against Set-based _filters
+        var tagMatch = true;
+        if (hasTag) {
+          var perKey = filterKeys.map(function (key) {
+            var requested = self._filters[key]; // Set of values
+            var rawVal = item.fields[key];
+            if (rawVal == null) return false;
+            var itemVals = String(rawVal).split(',').map(function (v) { return v.trim(); });
+            for (var v of requested) {
+              if (itemVals.indexOf(String(v)) !== -1) return true;
+            }
+            return false;
+          });
+          tagMatch = mode === 'AND'
+            ? perKey.every(function (b) { return b; })
+            : perKey.some(function (b) { return b; });
         }
+
+        // Range filters — always AND'd regardless of filterMatchMode, since
+        // "price between X and Y" only makes sense as a restrictive clause.
+        var rangeMatch = true;
+        if (hasRange) {
+          for (var ri = 0; ri < rangeKeys.length; ri++) {
+            var rk = rangeKeys[ri];
+            var rf = self._rangeFilters[rk];
+            var num = parseLooseNumber(item.fields[rk]);
+            if (isNaN(num)) { rangeMatch = false; break; }
+            if (rf.min != null && num < rf.min) { rangeMatch = false; break; }
+            if (rf.max != null && num > rf.max) { rangeMatch = false; break; }
+          }
+        }
+
+        item._match = tagMatch && rangeMatch;
       }
     }
 
@@ -1691,4 +1749,267 @@
       : undefined;
     instance.sort(field, forced || 'asc', order);
   });
+
+  // ---------------------------------------------------------------------------
+  // Dual-handle range slider — numeric range filter UI
+  //
+  // Markup (all attributes go on the elements shown; styling is yours):
+  //
+  //   <div d2-cms-range
+  //        d2-cms-range-field="price"          <!-- item field to filter -->
+  //        d2-cms-range-min="100000"           <!-- optional: auto-detected -->
+  //        d2-cms-range-max="2000000"          <!-- optional: auto-detected -->
+  //        d2-cms-range-step="10000"           <!-- optional: default 1 -->
+  //        d2-cms-range-format="thousands"     <!-- thousands | plain -->
+  //        d2-cms-range-prefix=""              <!-- optional text before -->
+  //        d2-cms-range-suffix=" PLN"          <!-- optional text after -->
+  //        d2-cms-target="apartments">         <!-- optional scoping -->
+  //     <div d2-cms-range-display="min">0</div>
+  //     <div d2-cms-range-track>
+  //       <div d2-cms-range-fill></div>
+  //       <div d2-cms-range-handle="min" tabindex="0"></div>
+  //       <div d2-cms-range-handle="max" tabindex="0"></div>
+  //     </div>
+  //     <div d2-cms-range-display="max">0</div>
+  //   </div>
+  //
+  // Drag with pointer, keyboard arrows for ±step (shift = ×10), Home/End jump
+  // to bounds. Releasing a handle at the full extent clears the range filter
+  // instead of keeping a redundant "match everything" clause.
+  // ---------------------------------------------------------------------------
+  class D2RangeSlider {
+    constructor(wrapper) {
+      this.wrapper = wrapper;
+      this.field = wrapper.getAttribute('d2-cms-range-field');
+      if (!this.field) return;
+
+      this.track = wrapper.querySelector('[d2-cms-range-track]');
+      this.fill = wrapper.querySelector('[d2-cms-range-fill]');
+      this.minHandle = wrapper.querySelector('[d2-cms-range-handle="min"]');
+      this.maxHandle = wrapper.querySelector('[d2-cms-range-handle="max"]');
+      this.minDisplay = wrapper.querySelector('[d2-cms-range-display="min"]');
+      this.maxDisplay = wrapper.querySelector('[d2-cms-range-display="max"]');
+      if (!this.track || !this.minHandle || !this.maxHandle) return;
+
+      this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
+      this.format = (wrapper.getAttribute('d2-cms-range-format') || 'thousands').toLowerCase();
+      this.prefix = wrapper.getAttribute('d2-cms-range-prefix') || '';
+      this.suffix = wrapper.getAttribute('d2-cms-range-suffix') || '';
+
+      var attrMin = parseFloat(wrapper.getAttribute('d2-cms-range-min'));
+      var attrMax = parseFloat(wrapper.getAttribute('d2-cms-range-max'));
+      this._attrMin = isNaN(attrMin) ? null : attrMin;
+      this._attrMax = isNaN(attrMax) ? null : attrMax;
+
+      this.cms = null;
+      this.min = 0;
+      this.max = 100;
+      this.currentMin = 0;
+      this.currentMax = 100;
+
+      this._resolveBounds();
+      this._attachEvents();
+      this._render();
+    }
+
+    _resolveBounds() {
+      var name = _resolveTargetName(this.wrapper);
+      this.cms = name ? registry[name] : null;
+
+      var min = this._attrMin, max = this._attrMax;
+      if ((min == null || max == null) && this.cms && this.cms.items.length) {
+        var lo = Infinity, hi = -Infinity;
+        for (var i = 0; i < this.cms.items.length; i++) {
+          var v = parseLooseNumber(this.cms.items[i].fields[this.field]);
+          if (isNaN(v)) continue;
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        if (isFinite(lo) && isFinite(hi)) {
+          if (min == null) min = lo;
+          if (max == null) max = hi;
+        }
+      }
+      if (min == null) min = 0;
+      if (max == null) max = 100;
+      if (max < min) max = min;
+
+      this.min = min;
+      this.max = max;
+      this.currentMin = min;
+      this.currentMax = max;
+    }
+
+    // Re-detect bounds after the list has been refreshed externally. Safe to
+    // call anytime — preserves the user's current selection proportionally
+    // where possible (simple clamp is fine for the common case).
+    refresh() {
+      this._resolveBounds();
+      this.currentMin = Math.max(this.min, Math.min(this.currentMin, this.max));
+      this.currentMax = Math.max(this.min, Math.min(this.currentMax, this.max));
+      this._render();
+      this._applyToCms();
+    }
+
+    _attachEvents() {
+      var self = this;
+      [this.minHandle, this.maxHandle].forEach(function (handle, idx) {
+        var isMax = idx === 1;
+
+        handle.addEventListener('pointerdown', function (e) {
+          e.preventDefault();
+          if (handle.setPointerCapture) {
+            try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          handle.setAttribute('d2-cms-range-dragging', '');
+
+          var onMove = function (ev) { self._dragTo(ev.clientX, isMax); };
+          var onUp = function () {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            handle.removeAttribute('d2-cms-range-dragging');
+          };
+          document.addEventListener('pointermove', onMove);
+          document.addEventListener('pointerup', onUp);
+          document.addEventListener('pointercancel', onUp);
+        });
+
+        handle.addEventListener('keydown', function (e) {
+          var k = e.key;
+          var mult = e.shiftKey ? 10 : 1;
+          var delta = 0;
+          if (k === 'ArrowRight' || k === 'ArrowUp') delta = self.step * mult;
+          else if (k === 'ArrowLeft' || k === 'ArrowDown') delta = -self.step * mult;
+          else if (k === 'Home') { self._setHandle(isMax ? self.currentMin + self.step : self.min, isMax); e.preventDefault(); return; }
+          else if (k === 'End') { self._setHandle(isMax ? self.max : self.currentMax - self.step, isMax); e.preventDefault(); return; }
+          else return;
+          self._setHandle((isMax ? self.currentMax : self.currentMin) + delta, isMax);
+          e.preventDefault();
+        });
+      });
+
+      // Click on the track jumps the nearest handle to the click position.
+      this.track.addEventListener('pointerdown', function (e) {
+        if (e.target !== self.track && e.target !== self.fill) return;
+        var val = self._pointerValue(e.clientX);
+        var midpoint = (self.currentMin + self.currentMax) / 2;
+        self._setHandle(val, val > midpoint);
+      });
+    }
+
+    _dragTo(clientX, isMax) {
+      this._setHandle(this._pointerValue(clientX), isMax);
+    }
+
+    _pointerValue(clientX) {
+      var rect = this.track.getBoundingClientRect();
+      if (!rect.width) return this.min;
+      var ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      return this.min + ratio * (this.max - this.min);
+    }
+
+    _setHandle(val, isMax) {
+      var snapped = Math.round(val / this.step) * this.step;
+      // Guard against float drift so labels don't show "419999.9999999"
+      var decimals = (String(this.step).split('.')[1] || '').length;
+      if (decimals) snapped = parseFloat(snapped.toFixed(decimals));
+
+      if (isMax) {
+        var minFloor = this.currentMin + this.step;
+        if (snapped < minFloor) snapped = minFloor;
+        if (snapped > this.max) snapped = this.max;
+        if (snapped === this.currentMax) return;
+        this.currentMax = snapped;
+      } else {
+        var maxCeil = this.currentMax - this.step;
+        if (snapped > maxCeil) snapped = maxCeil;
+        if (snapped < this.min) snapped = this.min;
+        if (snapped === this.currentMin) return;
+        this.currentMin = snapped;
+      }
+      this._render();
+      this._applyToCms();
+    }
+
+    _render() {
+      var span = this.max - this.min;
+      var minPct = span > 0 ? ((this.currentMin - this.min) / span) * 100 : 0;
+      var maxPct = span > 0 ? ((this.currentMax - this.min) / span) * 100 : 100;
+
+      this.minHandle.style.left = minPct + '%';
+      this.maxHandle.style.left = maxPct + '%';
+      if (this.fill) {
+        this.fill.style.left = minPct + '%';
+        this.fill.style.width = (maxPct - minPct) + '%';
+      }
+      if (this.minDisplay) this.minDisplay.textContent = this._fmt(this.currentMin);
+      if (this.maxDisplay) this.maxDisplay.textContent = this._fmt(this.currentMax);
+
+      this.minHandle.setAttribute('aria-valuenow', String(this.currentMin));
+      this.minHandle.setAttribute('aria-valuemin', String(this.min));
+      this.minHandle.setAttribute('aria-valuemax', String(this.currentMax));
+      this.maxHandle.setAttribute('aria-valuenow', String(this.currentMax));
+      this.maxHandle.setAttribute('aria-valuemin', String(this.currentMin));
+      this.maxHandle.setAttribute('aria-valuemax', String(this.max));
+
+      // Active-state flag on the wrapper when the range is narrowed. Purely
+      // for CSS hooks — the filter is applied via _applyToCms regardless.
+      if (this.currentMin > this.min || this.currentMax < this.max) {
+        this.wrapper.setAttribute('d2-cms-range-active', '');
+      } else {
+        this.wrapper.removeAttribute('d2-cms-range-active');
+      }
+    }
+
+    _fmt(val) {
+      var body;
+      if (this.format === 'plain') {
+        body = String(val);
+      } else {
+        try { body = val.toLocaleString(); }
+        catch (e) { body = String(val); }
+      }
+      return this.prefix + body + this.suffix;
+    }
+
+    _applyToCms() {
+      if (!this.cms) return;
+      if (this.currentMin <= this.min && this.currentMax >= this.max) {
+        this.cms.clearRange(this.field);
+      } else {
+        this.cms.setRange(this.field, this.currentMin, this.currentMax);
+      }
+    }
+  }
+
+  var _rangeRegistry = [];
+
+  function _autoInitRangeSliders() {
+    var wrappers = document.querySelectorAll('[d2-cms-range]');
+    for (var i = 0; i < wrappers.length; i++) {
+      var w = wrappers[i];
+      if (w._d2RangeInit) continue;
+      w._d2RangeInit = true;
+      var s = new D2RangeSlider(w);
+      if (s && s.field) _rangeRegistry.push(s);
+    }
+  }
+
+  // Range sliders rely on the CMS list being initialized first (for
+  // auto-detecting min/max from item values), so run AFTER the list init.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      setTimeout(_autoInitRangeSliders, 0);
+    });
+  } else {
+    setTimeout(_autoInitRangeSliders, 0);
+  }
+
+  // Expose manual refresh so callers can re-detect bounds after dynamic
+  // content changes (e.g. adding items via another script).
+  window.digi2.cms.refreshRanges = function () {
+    _rangeRegistry.forEach(function (s) { s.refresh(); });
+    _autoInitRangeSliders();
+  };
 })();
