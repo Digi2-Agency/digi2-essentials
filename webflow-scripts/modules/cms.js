@@ -268,10 +268,27 @@
 
       this._scanItems();
 
-      // Hide Webflow's native pagination when we're managing the list
+      // Hide Webflow's native pagination when we're managing the list.
+      // If the wrapper contains our custom load-more buttons, keep the wrapper
+      // visible and only hide the native controls (prev/next/page count/dots);
+      // otherwise hide the whole wrapper.
       if (this.options.hideNativePagination) {
         var sib = this.listEl.parentElement && this.listEl.parentElement.querySelector('.w-pagination-wrapper');
-        if (sib) sib.style.display = 'none';
+        if (sib) {
+          var hasCustomLoad = !!sib.querySelector('[d2-cms-load-more], [d2-cms-loadcount]');
+          if (hasCustomLoad) {
+            var nativeSelectors = [
+              '.w-pagination-previous',
+              '.w-pagination-next',
+              '.w-page-count',
+              '.w-pagination-page-indicator',
+            ];
+            var natives = sib.querySelectorAll(nativeSelectors.join(','));
+            for (var _i = 0; _i < natives.length; _i++) natives[_i].style.display = 'none';
+          } else {
+            sib.style.display = 'none';
+          }
+        }
       }
 
       // Apply defaults
