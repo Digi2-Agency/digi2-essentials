@@ -839,6 +839,11 @@
         self._scanItems();
         self._cacheEmptyElements();
         if (self._mo) self._mo.observe(self.listEl, { childList: true });
+        // Critical: newly-appended nodes enter the DOM with no hidden state,
+        // so without this render they'd bypass _visibleCount and any active
+        // filters. Callers such as loadMore/loadAll will re-render after
+        // adjusting visibleCount; that's idempotent (cheap).
+        self._render();
       });
     }
 
@@ -903,6 +908,10 @@
           self._scanItems();
           self._cacheEmptyElements();
           if (self._mo) self._mo.observe(self.listEl, { childList: true });
+          // Appended nodes arrive without any hidden state, so render now to
+          // apply _visibleCount and active filters. Callers re-render after
+          // adjusting state; that second pass is idempotent.
+          self._render();
           return newItems.length;
         })
         .catch(function (err) {
