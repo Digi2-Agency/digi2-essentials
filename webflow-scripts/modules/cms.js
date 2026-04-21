@@ -1393,7 +1393,7 @@
 
     _reflectLoadMoreButtons(visible, totalMatching) {
       var btns = this._buttonsForName('[d2-cms-load-more]')
-        .concat(this._buttonsForName('[d2-cms-load-trigger]'));
+        .concat(this._buttonsForName('[d2-cms-loadcount]'));
       var done = visible >= totalMatching;
       btns.forEach(function (btn) {
         if (done) {
@@ -1639,8 +1639,12 @@
 
     var sortBtn = target.closest('[d2-cms-sort]');
     var filterBtn = target.closest('[d2-cms-filter]');
-    // Accept both [d2-cms-load-more] and [d2-cms-load-trigger] — same role
-    var loadBtn = target.closest('[d2-cms-load-more], [d2-cms-load-trigger]');
+    // [d2-cms-load-more] = reveal perPage more (back-compat).
+    // [d2-cms-loadcount="all|<n>"] = explicit chunk size:
+    //   "all" → reveal everything remaining,
+    //   "<n>" (e.g. "10") → reveal N more,
+    //   empty/missing → falls back to perPage.
+    var loadBtn = target.closest('[d2-cms-load-more], [d2-cms-loadcount]');
     var dirBtn = target.closest('[d2-cms-direction]');
 
     // Checkbox/radio inputs drive filters via the 'change' event — let the
@@ -1670,7 +1674,18 @@
       var parsed = parseFilterAttr(filterBtn.getAttribute('d2-cms-filter'));
       if (parsed) instance._batchFilter(parsed.key, parsed.values, 'toggle');
     } else if (loadBtn) {
-      instance.loadMore();
+      var countAttr = loadBtn.getAttribute('d2-cms-loadcount');
+      if (countAttr != null) {
+        var trimmed = countAttr.trim().toLowerCase();
+        if (trimmed === 'all') {
+          instance.loadAll();
+        } else {
+          var nParsed = parseInt(trimmed, 10);
+          instance.loadMore(!isNaN(nParsed) && nParsed > 0 ? nParsed : undefined);
+        }
+      } else {
+        instance.loadMore();
+      }
     } else if (dirBtn) {
       var dirVal = (dirBtn.getAttribute('d2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
