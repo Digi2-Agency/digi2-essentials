@@ -273,9 +273,15 @@
       }
 
       // Tag list with its name so global click handler can resolve targets
-      if (!this.listEl.getAttribute('d2-cms-list')) {
+      // Record whether the author left d2-cms-list empty (auto-init assigned
+      // the name). The live element gets its attr filled in below so in-page
+      // selectors work, but *fetched* HTML from ?<list>_page=N still has the
+      // attribute empty. `_wasAutoNamed` lets the fetch bridge match that.
+      var _attrWasEmpty = !this.listEl.getAttribute('d2-cms-list');
+      if (_attrWasEmpty) {
         this.listEl.setAttribute('d2-cms-list', this.name);
       }
+      this._wasAutoNamed = _attrWasEmpty;
 
       this._scanItems();
 
@@ -899,6 +905,11 @@
             var doc = new DOMParser().parseFromString(html, 'text/html');
             var selector = '[d2-cms-list="' + self.name + '"]';
             var newList = doc.querySelector(selector);
+            if (!newList && self._wasAutoNamed) {
+              // Auto-named lists have an empty d2-cms-list attr in the
+              // server HTML; our generated name only exists on the live DOM.
+              newList = doc.querySelector('[d2-cms-list=""]');
+            }
             if (!newList && self.options.listSelector) {
               newList = doc.querySelector(self.options.listSelector);
             }
@@ -913,6 +924,18 @@
 
       _log('loadAll fetchParallel → ' + self.name, { pages: pages });
       return Promise.all(pages.map(fetchOne)).then(function (batches) {
+        var total = 0;
+        for (var k = 0; k < batches.length; k++) total += batches[k].length;
+        if (!total) {
+          // Every fetch matched no items — almost always a selector mismatch
+          // against the server HTML. Don't clobber _currentPage/_nextPageUrl:
+          // leaving them intact means a subsequent retry (or future code
+          // change) still has a cursor to work from, instead of silently
+          // locking the instance into a fake "done" state.
+          console.warn('[digi2.cms] fetch bridge returned zero items for pages '
+            + pages.join(',') + ' — list selector may not match server HTML.');
+          return;
+        }
         if (self._mo) self._mo.disconnect();
         var before = self._sentinel || null;
         for (var i = 0; i < batches.length; i++) {
@@ -953,9 +976,13 @@
         .then(function (html) {
           var doc = new DOMParser().parseFromString(html, 'text/html');
           // Match the fetched list to ours. Prefer the d2-cms-list tag (unique
-          // per instance), fall back to the listSelector used originally.
+          // per instance), fall back to listSelector. For auto-named lists the
+          // server HTML still has d2-cms-list="" (empty) — match by empty attr.
           var selector = '[d2-cms-list="' + self.name + '"]';
           var newList = doc.querySelector(selector);
+          if (!newList && self._wasAutoNamed) {
+            newList = doc.querySelector('[d2-cms-list=""]');
+          }
           if (!newList && self.options.listSelector) {
             newList = doc.querySelector(self.options.listSelector);
           }
@@ -963,6 +990,12 @@
 
           // Collect new items, skipping pagination wrappers and empty-state blocks.
           var newItems = self._extractItemsFromFetched(newList);
+          if (!newItems.length) {
+            // Matched the list element but extracted no items — don't advance
+            // the cursor; let a later retry pick up where we left off.
+            console.warn('[digi2.cms] fetch bridge matched list but extracted 0 items for ' + url);
+            return 0;
+          }
 
           // Pause our external-mutation watcher during the append so we don't
           // trigger a spurious refresh mid-insertion.
