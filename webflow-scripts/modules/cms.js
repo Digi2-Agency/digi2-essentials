@@ -1777,6 +1777,37 @@
   // to bounds. Releasing a handle at the full extent clears the range filter
   // instead of keeping a redundant "match everything" clause.
   // ---------------------------------------------------------------------------
+  // Parse a display-format pattern like "0,000.00 PLN" into its parts.
+  // Returns null when the string contains no digit placeholder (in which
+  // case the caller falls back to the keyword format modes).
+  //
+  //   "0,000.00 PLN"  → { prefix:'',  suffix:' PLN', decimals:2, useThousands:true }
+  //   "$0,000"        → { prefix:'$', suffix:'',     decimals:0, useThousands:true }
+  //   "00.000"        → { prefix:'',  suffix:'',     decimals:3, useThousands:false }
+  //   "0.00 m²"       → { prefix:'',  suffix:' m²',  decimals:2, useThousands:false }
+  function parseRangePattern(pattern) {
+    if (!pattern) return null;
+    var match = pattern.match(/[0.,]+/);
+    if (!match || match[0].indexOf('0') === -1) return null;
+    var placeholder = match[0];
+    var idx = match.index;
+    var lastDot = placeholder.lastIndexOf('.');
+    var intPart, decimals;
+    if (lastDot !== -1) {
+      intPart = placeholder.substring(0, lastDot);
+      decimals = placeholder.length - lastDot - 1;
+    } else {
+      intPart = placeholder;
+      decimals = 0;
+    }
+    return {
+      prefix: pattern.substring(0, idx),
+      suffix: pattern.substring(idx + placeholder.length),
+      decimals: decimals,
+      useThousands: intPart.indexOf(',') !== -1,
+    };
+  }
+
   class D2RangeSlider {
     constructor(wrapper) {
       this.wrapper = wrapper;
@@ -1793,13 +1824,35 @@
 
       this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
       // `displayformat` is the preferred name; `format` kept as alias.
-      //   thousands (default) — "1,600,000" / "23.1" (commas, natural decimals)
-      //   float               — "420,000.00" (commas, forced N decimals from step)
-      //   integer             — "24"         (rounded, commas)
-      //   plain               — "1600000"    (raw, no formatting)
-      this.displayFormat = (wrapper.getAttribute('d2-cms-range-displayformat')
-                         || wrapper.getAttribute('d2-cms-range-format')
-                         || 'thousands').toLowerCase();
+      // Keyword modes:
+      //   thousands (default) — "1,600,000" / "23.1" (locale, natural decimals)
+      //   float               — "420,000.00"         (locale, forced N decimals from step)
+      //   integer             — "24"                 (rounded, locale)
+      //   plain               — "1600000"            (raw, no formatting)
+      // Pattern mode — any value containing at least one '0' is a template:
+      //   "0,000.00 PLN"  →  locale thousands + 2 decimals, " PLN" appended
+      //   "$0,000"        →  "$" prefix + locale thousands, no decimals
+      //   "0.00 m²"       →  2 decimals + " m²"
+      //   "00.000"        →  3 decimals, no thousands
+      // Rules in patterns: ',' means thousands separator (locale-rendered),
+      // '.' is the decimal point, '0' is a digit placeholder. When a pattern
+      // is used, d2-cms-range-prefix / -suffix are ignored — everything goes
+      // in the template itself.
+      var rawFormat = wrapper.getAttribute('d2-cms-range-displayformat')
+                   || wrapper.getAttribute('d2-cms-range-format')
+                   || 'thousands';
+      var known = { thousands: 1, float: 1, integer: 1, plain: 1 };
+      var lowered = rawFormat.toLowerCase();
+      if (known[lowered]) {
+        this.displayFormat = lowered;
+        this._pattern = null;
+      } else {
+        this._pattern = parseRangePattern(rawFormat);
+        this.displayFormat = this._pattern ? 'pattern' : 'thousands';
+      }
+
+      // Only used when no pattern — pattern templates embed their own
+      // prefix/suffix so these attrs become redundant.
       this.prefix = wrapper.getAttribute('d2-cms-range-prefix') || '';
       this.suffix = wrapper.getAttribute('d2-cms-range-suffix') || '';
 
@@ -1992,6 +2045,20 @@
     _fmt(val) {
       var body;
       var fmt = this.displayFormat;
+      if (fmt === 'pattern' && this._pattern) {
+        var p = this._pattern;
+        if (p.useThousands) {
+          try {
+            body = val.toLocaleString(undefined, {
+              minimumFractionDigits: p.decimals,
+              maximumFractionDigits: p.decimals,
+            });
+          } catch (e) { body = val.toFixed(p.decimals); }
+        } else {
+          body = val.toFixed(p.decimals);
+        }
+        return p.prefix + body + p.suffix;
+      }
       if (fmt === 'plain') {
         body = String(val);
       } else if (fmt === 'integer') {
