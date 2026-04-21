@@ -273,15 +273,16 @@
       }
 
       // Tag list with its name so global click handler can resolve targets
-      // Record whether the author left d2-cms-list empty (auto-init assigned
-      // the name). The live element gets its attr filled in below so in-page
-      // selectors work, but *fetched* HTML from ?<list>_page=N still has the
-      // attribute empty. `_wasAutoNamed` lets the fetch bridge match that.
-      var _attrWasEmpty = !this.listEl.getAttribute('d2-cms-list');
-      if (_attrWasEmpty) {
+      // Detect auto-named lists via the generated name pattern. _init can't
+      // check "was the attr empty?" directly because _autoInitFromDOM already
+      // wrote the generated name onto the element before calling createList.
+      // The live element keeps the generated name (so in-page selectors work),
+      // but *fetched* HTML from ?<list>_page=N still has the attr empty —
+      // `_wasAutoNamed` lets the fetch bridge match via [d2-cms-list=""].
+      this._wasAutoNamed = /^_auto_/.test(this.name);
+      if (!this.listEl.getAttribute('d2-cms-list')) {
         this.listEl.setAttribute('d2-cms-list', this.name);
       }
-      this._wasAutoNamed = _attrWasEmpty;
 
       this._scanItems();
 
