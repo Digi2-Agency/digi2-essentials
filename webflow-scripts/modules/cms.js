@@ -1059,14 +1059,23 @@
         }
       });
 
-      // Filter buttons
+      // Filter buttons (and <input type="checkbox|radio"> carrying d2-cms-filter)
       var filterBtns = this._buttonsForName('[d2-cms-filter]');
       filterBtns.forEach(function (btn) {
         var parsed = parseFilterAttr(btn.getAttribute('d2-cms-filter'));
         if (!parsed) return;
-        var active = self._filters[parsed.key] && self._filters[parsed.key].has(parsed.value);
+        var active = !!(self._filters[parsed.key] && self._filters[parsed.key].has(parsed.value));
         if (active) btn.setAttribute('d2-cms-filter-active', '');
         else btn.removeAttribute('d2-cms-filter-active');
+
+        // Sync native checkbox/radio checked state with the filter. Matters
+        // when filters are changed programmatically or from another trigger.
+        if (btn.tagName === 'INPUT') {
+          var t = btn.type;
+          if ((t === 'checkbox' || t === 'radio') && btn.checked !== active) {
+            btn.checked = active;
+          }
+        }
       });
 
       // Direction buttons — reflect the current sort dir (asc/desc). A
@@ -1527,6 +1536,13 @@
     var loadBtn = target.closest('[d2-cms-load-more]');
     var dirBtn = target.closest('[d2-cms-direction]');
 
+    // Checkbox/radio inputs drive filters via the 'change' event — let the
+    // browser toggle `checked` natively and skip the click path here.
+    if (filterBtn && filterBtn.tagName === 'INPUT'
+        && (filterBtn.type === 'checkbox' || filterBtn.type === 'radio')) {
+      filterBtn = null;
+    }
+
     var btn = sortBtn || filterBtn || loadBtn || dirBtn;
     if (!btn) return;
 
@@ -1574,7 +1590,35 @@
   // ---------------------------------------------------------------------------
   document.addEventListener('change', function (e) {
     var target = e.target;
-    if (!target || target.tagName !== 'SELECT') return;
+    if (!target) return;
+
+    // ---- <input type="checkbox|radio" d2-cms-filter="key:value"> ----
+    // Checkbox → toggle the value for its key (multi-select semantics).
+    // Radio    → replace whatever is active for the key with this value
+    //            (single-select semantics; unchecking another radio of the
+    //            same group is handled by the browser, which doesn't fire
+    //            a `change` event for the deselected one — so we clear the
+    //            key before adding to keep state clean).
+    if (target.tagName === 'INPUT' && target.hasAttribute('d2-cms-filter')
+        && (target.type === 'checkbox' || target.type === 'radio')) {
+      var fparsed = parseFilterAttr(target.getAttribute('d2-cms-filter'));
+      if (!fparsed) return;
+      var fname = _resolveTargetName(target);
+      if (!fname) return;
+      var finstance = registry[fname];
+      if (!finstance) return;
+
+      if (target.type === 'radio') {
+        finstance.removeFilter(fparsed.key);
+        if (target.checked) finstance.addFilter(fparsed.key, fparsed.value);
+      } else {
+        if (target.checked) finstance.addFilter(fparsed.key, fparsed.value);
+        else finstance.removeFilter(fparsed.key, fparsed.value);
+      }
+      return;
+    }
+
+    if (target.tagName !== 'SELECT') return;
 
     // Only handle selects that carry any sort-bound option
     var sortEnabled = false;
