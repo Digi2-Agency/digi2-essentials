@@ -386,6 +386,58 @@
     }
   }
 
+  // ---- d2-static-width — lock element width to its natural max ------------
+  // Any element with [d2-static-width] has its rendered width measured and
+  // applied as min-width, so dynamic content swaps don't cause layout shift.
+  // The lock tracks the max observed width — if content later needs more
+  // space, min-width is bumped up; it never shrinks.
+  //
+  // API:
+  //   digi2.staticWidth.apply(el)   re-measure + lock a single element
+  //   digi2.staticWidth.refresh()   scan the DOM + (re)apply to all marked elements
+  function _applyStaticWidth(el) {
+    if (!el) return;
+    var current = parseFloat(el.style.minWidth) || 0;
+    el.style.minWidth = '';
+    var natural = el.getBoundingClientRect().width;
+    var next = Math.max(current, natural);
+    if (next > 0) el.style.minWidth = next + 'px';
+  }
+
+  function _initStaticWidth() {
+    var els = document.querySelectorAll('[d2-static-width]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (el._d2StaticWidth) {
+        _applyStaticWidth(el);
+        continue;
+      }
+      el._d2StaticWidth = true;
+      _applyStaticWidth(el);
+      if (typeof MutationObserver !== 'undefined') {
+        (function (target) {
+          var mo = new MutationObserver(function () { _applyStaticWidth(target); });
+          mo.observe(target, { childList: true, characterData: true, subtree: true });
+        })(el);
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _initStaticWidth);
+  } else {
+    _initStaticWidth();
+  }
+  // Re-measure once web fonts finish loading (text metrics can shift)
+  if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+    document.fonts.ready.then(_initStaticWidth);
+  }
+
+  window.digi2.staticWidth = {
+    apply: _applyStaticWidth,
+    refresh: _initStaticWidth,
+  };
+
   // ---- Discover requested modules from d2-* attributes --------------------
   var modules = [];
   var attrs = loaderScript.attributes;
