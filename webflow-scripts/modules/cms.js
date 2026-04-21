@@ -1396,13 +1396,23 @@
         .concat(this._buttonsForName('[d2-cms-loadcount]'));
       var done = visible >= totalMatching;
       btns.forEach(function (btn) {
-        if (done) {
-          btn.setAttribute('d2-cms-load-more-done', '');
-          btn.style.display = 'none';
-        } else {
-          btn.removeAttribute('d2-cms-load-more-done');
-          btn.style.display = '';
-        }
+        // Auto-hide policy:
+        //   • [d2-cms-load-more] (legacy) — hide when done.
+        //   • [d2-cms-loadcount="all"] — hide when done (clicking it loads
+        //     everything, so the button's purpose is exhausted).
+        //   • [d2-cms-loadcount="<number>"] — NEVER force-hide. By default
+        //     the button stays visible after each click; the author can
+        //     style it via the `d2-cms-load-more-done` attribute if they
+        //     want to fade/disable it once there's nothing left.
+        var countAttr = btn.getAttribute('d2-cms-loadcount');
+        var hasCount = countAttr != null;
+        var isAll = hasCount && countAttr.trim().toLowerCase() === 'all';
+        var shouldForceHide = done && (!hasCount || isAll);
+
+        if (done) btn.setAttribute('d2-cms-load-more-done', '');
+        else btn.removeAttribute('d2-cms-load-more-done');
+
+        btn.style.display = shouldForceHide ? 'none' : '';
       });
     }
 
