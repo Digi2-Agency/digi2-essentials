@@ -253,6 +253,10 @@
       // page URL from .w-pagination-next and fetch subsequent pages on demand.
       this._nextPageUrl = null;
       this._fetchInFlight = null;
+      // Populated from .w-page-count ("1 / 5"). When known, loadAll() fires
+      // every remaining page in parallel rather than chaining one-at-a-time.
+      this._currentPage = null;
+      this._totalPages = null;
 
       this._init();
     }
@@ -288,6 +292,16 @@
           if (_nextHref) {
             try { this._nextPageUrl = new URL(_nextHref, window.location.href).toString(); }
             catch (e) { this._nextPageUrl = _nextHref; }
+          }
+          // Also capture total page count ("1 / 5") for parallel loadAll().
+          var _pageCount = sib.querySelector('.w-page-count');
+          if (_pageCount) {
+            var _pcText = (_pageCount.textContent || '').replace(/\s+/g, ' ').trim();
+            var _pcMatch = _pcText.match(/(\d+)\s*\/\s*(\d+)/);
+            if (_pcMatch) {
+              this._currentPage = parseInt(_pcMatch[1], 10);
+              this._totalPages = parseInt(_pcMatch[2], 10);
+            }
           }
           var hasCustomLoad = !!sib.querySelector('[d2-cms-load-more], [d2-cms-loadcount]');
           if (hasCustomLoad) {
@@ -699,11 +713,96 @@
       });
     }
 
+    // loadAll-driven bulk fetch. When we know the total page count, fire every
+    // remaining page in parallel and append them in order in a single DOM
+    // write. Falls back to serial _fetchNextPage when page count is unknown.
     _ensureAllLoaded() {
       var self = this;
       if (!self._nextPageUrl) return Promise.resolve();
-      return self._fetchNextPage().then(function () {
-        if (self._nextPageUrl) return self._ensureAllLoaded();
+      if (!self._totalPages || !self._currentPage || self._currentPage >= self._totalPages) {
+        return self._fetchNextPage().then(function () {
+          if (self._nextPageUrl) return self._ensureAllLoaded();
+        });
+      }
+      var urlInfo = self._parsePageParam(self._nextPageUrl);
+      if (!urlInfo) {
+        // Unknown URL shape — fall back to serial.
+        return self._fetchNextPage().then(function () {
+          if (self._nextPageUrl) return self._ensureAllLoaded();
+        });
+      }
+      var pages = [];
+      for (var p = self._currentPage + 1; p <= self._totalPages; p++) {
+        pages.push(p);
+      }
+      return self._fetchPagesParallel(pages, urlInfo);
+    }
+
+    // Parse the Webflow pagination URL and return { base, key, suffix } so we
+    // can swap the page number. Returns null if no recognizable page param.
+    _parsePageParam(url) {
+      try {
+        var u = new URL(url, window.location.href);
+        var pageKey = null;
+        u.searchParams.forEach(function (_v, k) {
+          if (/(^|_|-)page$/i.test(k)) pageKey = k;
+        });
+        if (!pageKey) return null;
+        return { urlObj: u, key: pageKey };
+      } catch (e) { return null; }
+    }
+
+    // Fetch an explicit list of page numbers in parallel, then append all items
+    // sequentially (preserving source order) in one batch. Suppresses the
+    // mutation observer for the whole batch and re-scans once at the end.
+    _fetchPagesParallel(pages, urlInfo) {
+      var self = this;
+      var fetchOne = function (pageNum) {
+        urlInfo.urlObj.searchParams.set(urlInfo.key, String(pageNum));
+        var url = urlInfo.urlObj.toString();
+        return fetch(url, { credentials: 'same-origin' })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var selector = '[d2-cms-list="' + self.name + '"]';
+            var newList = doc.querySelector(selector);
+            if (!newList && self.options.listSelector) {
+              newList = doc.querySelector(self.options.listSelector);
+            }
+            if (!newList) return [];
+            var items = [];
+            var kids = newList.children;
+            for (var i = 0; i < kids.length; i++) {
+              var k = kids[i];
+              if (!k.classList) continue;
+              if (k.classList.contains('w-pagination-wrapper')) continue;
+              if (k.classList.contains('w-dyn-empty')) continue;
+              items.push(k);
+            }
+            return items;
+          })
+          .catch(function (err) {
+            console.warn('[digi2.cms] failed to fetch page ' + pageNum + ':', err);
+            return [];
+          });
+      };
+
+      _log('loadAll fetchParallel → ' + self.name, { pages: pages });
+      return Promise.all(pages.map(fetchOne)).then(function (batches) {
+        if (self._mo) self._mo.disconnect();
+        var before = self._sentinel || null;
+        for (var i = 0; i < batches.length; i++) {
+          var items = batches[i];
+          for (var j = 0; j < items.length; j++) {
+            if (before) self.listEl.insertBefore(items[j], before);
+            else self.listEl.appendChild(items[j]);
+          }
+        }
+        self._currentPage = self._totalPages;
+        self._nextPageUrl = null;
+        self._scanItems();
+        self._cacheEmptyElements();
+        if (self._mo) self._mo.observe(self.listEl, { childList: true });
       });
     }
 
@@ -763,6 +862,7 @@
           } else {
             self._nextPageUrl = null;
           }
+          if (typeof self._currentPage === 'number') self._currentPage += 1;
 
           self._scanItems();
           self._cacheEmptyElements();
