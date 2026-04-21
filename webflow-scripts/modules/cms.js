@@ -2434,13 +2434,24 @@
     // the newly-loaded range. After interaction, preserve the user's picks
     // via clamping into the new [min, max].
     refresh() {
+      // Capture BEFORE _resolveBounds — it destructively resets
+      // this.currentMin/Max to the (clamped) defaults, so the else branch
+      // below would otherwise operate on already-overwritten values and the
+      // user's drag selection could never be preserved across a refresh.
+      var prevMin = this.currentMin;
+      var prevMax = this.currentMax;
+      var touched = this._userTouched;
       this._resolveBounds();
-      if (!this._userTouched) {
+      if (!touched) {
+        // Untouched slider: snap to the new full extent. This is the init
+        // path where page-1 bounds get replaced by the full dataset bounds
+        // after _ensureAllLoaded completes — handles must follow so the
+        // narrow page-1 range doesn't stick and filter out newly-loaded rows.
         this.currentMin = this.min;
         this.currentMax = this.max;
       } else {
-        this.currentMin = Math.max(this.min, Math.min(this.currentMin, this.max));
-        this.currentMax = Math.max(this.min, Math.min(this.currentMax, this.max));
+        this.currentMin = Math.max(this.min, Math.min(prevMin, this.max));
+        this.currentMax = Math.max(this.min, Math.min(prevMax, this.max));
       }
       this._render();
       this._applyToCms();
