@@ -189,15 +189,21 @@
   }
 
   function parseFilterAttr(raw) {
-    // "category:shoes" → { key: 'category', value: 'shoes' }
-    // "shoes"          → { key: '_default', value: 'shoes' }
+    // "category:shoes"              → { key: 'category', values: ['shoes'] }
+    // "status:Dostępne|Promocyjne"  → { key: 'status',   values: ['Dostępne','Promocyjne'] }
+    // "shoes"                       → { key: '_default', values: ['shoes'] }
+    // A trigger carrying multiple `|`-separated values acts as a single
+    // control: clicking/checking it adds ALL values under the key, clicking
+    // again (or unchecking) removes ALL of them. Useful when several taxonomy
+    // slugs should behave as one composite filter.
     if (!raw) return null;
+    var key, rawVal;
     var idx = raw.indexOf(':');
-    if (idx === -1) return { key: '_default', value: raw.trim() };
-    return {
-      key: raw.substring(0, idx).trim(),
-      value: raw.substring(idx + 1).trim(),
-    };
+    if (idx === -1) { key = '_default'; rawVal = raw; }
+    else { key = raw.substring(0, idx).trim(); rawVal = raw.substring(idx + 1); }
+    var values = rawVal.split('|').map(function (v) { return v.trim(); }).filter(Boolean);
+    if (!values.length) return null;
+    return { key: key, values: values, value: values[0] };
   }
 
   // ---------------------------------------------------------------------------
@@ -535,6 +541,35 @@
 
     clearFilters() {
       this._filters = {};
+      this._visibleCount = this.options.perPage;
+      this._render();
+      this._fireFilter();
+    }
+
+    // Internal: add/remove/toggle multiple values for one key in a single
+    // batch so a composite trigger ("status:Dostępne|Promocyjne") triggers
+    // only one render + one onFilter callback, not N of them.
+    //   mode: 'add' | 'remove' | 'toggle' | 'replace'
+    _batchFilter(key, values, mode) {
+      if (!key || !Array.isArray(values) || !values.length) return;
+      if (mode === 'replace') {
+        delete this._filters[key];
+      }
+      if (!this._filters[key]) this._filters[key] = new Set();
+      var set = this._filters[key];
+
+      if (mode === 'toggle') {
+        var allActive = values.every(function (v) { return set.has(String(v)); });
+        mode = allActive ? 'remove' : 'add';
+      }
+
+      for (var i = 0; i < values.length; i++) {
+        var v = String(values[i]);
+        if (mode === 'remove') set.delete(v);
+        else set.add(v);
+      }
+      if (set.size === 0) delete this._filters[key];
+
       this._visibleCount = this.options.perPage;
       this._render();
       this._fireFilter();
@@ -1072,7 +1107,9 @@
       filterBtns.forEach(function (btn) {
         var parsed = parseFilterAttr(btn.getAttribute('d2-cms-filter'));
         if (!parsed) return;
-        var active = !!(self._filters[parsed.key] && self._filters[parsed.key].has(parsed.value));
+        // Multi-value trigger is "active" only when ALL its values are applied
+        var set = self._filters[parsed.key];
+        var active = !!set && parsed.values.every(function (v) { return set.has(String(v)); });
         if (active) btn.setAttribute('d2-cms-filter-active', '');
         else btn.removeAttribute('d2-cms-filter-active');
 
@@ -1287,7 +1324,8 @@
         var parsed = parseFilterAttr(candidates[i].getAttribute('d2-cms-filter'));
         if (!parsed) continue;
         if (key && parsed.key !== key) continue;
-        if (parsed.value !== value) continue;
+        // Multi-value triggers match if ANY of their values equals the lookup
+        if (parsed.values.indexOf(value) === -1) continue;
         var explicit = candidates[i].getAttribute('d2-cms-filter-option-label');
         if (explicit) return explicit;
         return (candidates[i].textContent || '').trim();
@@ -1569,7 +1607,7 @@
       instance.sort(field, forced || undefined, order);
     } else if (filterBtn) {
       var parsed = parseFilterAttr(filterBtn.getAttribute('d2-cms-filter'));
-      if (parsed) instance.toggleFilter(parsed.key, parsed.value);
+      if (parsed) instance._batchFilter(parsed.key, parsed.values, 'toggle');
     } else if (loadBtn) {
       instance.loadMore();
     } else if (dirBtn) {
@@ -1617,11 +1655,10 @@
       if (!finstance) return;
 
       if (target.type === 'radio') {
-        finstance.removeFilter(fparsed.key);
-        if (target.checked) finstance.addFilter(fparsed.key, fparsed.value);
+        if (target.checked) finstance._batchFilter(fparsed.key, fparsed.values, 'replace');
+        else finstance.removeFilter(fparsed.key);
       } else {
-        if (target.checked) finstance.addFilter(fparsed.key, fparsed.value);
-        else finstance.removeFilter(fparsed.key, fparsed.value);
+        finstance._batchFilter(fparsed.key, fparsed.values, target.checked ? 'add' : 'remove');
       }
       return;
     }
