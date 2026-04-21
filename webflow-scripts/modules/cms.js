@@ -1876,10 +1876,15 @@
       this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
       // `displayformat` is the preferred name; `format` kept as alias.
       // Keyword modes:
-      //   thousands (default) — "1,600,000" / "23.1" (locale, natural decimals)
-      //   float               — "420,000.00"         (locale, forced N decimals from step)
-      //   integer             — "24"                 (rounded, locale)
-      //   plain               — "1600000"            (raw, no formatting)
+      //   thousands (default) — "1,600,000" / "23.1"   (locale, natural decimals)
+      //   float               — "420,000.00"           (locale, forced N decimals from step)
+      //   integer             — "24"                   (rounded, locale)
+      //   plain               — "1600000"              (raw, no formatting)
+      //   pln / pl            — "1 600 000" / "23,10"  (pl-PL: space thousands, comma decimal)
+      //   eur / de            — "1.600.000" / "23,10"  (de-DE: dot thousands, comma decimal)
+      //   usd / en            — "1,600,000" / "23.10"  (en-US: comma thousands, dot decimal)
+      //   Currency keywords are format-only — no currency symbol is appended.
+      //   Pair with d2-cms-range-suffix=" PLN" if you want a unit.
       // Pattern mode — any value containing at least one '0' is a template:
       //   "0,000.00 PLN"  →  locale thousands + 2 decimals, " PLN" appended
       //   "$0,000"        →  "$" prefix + locale thousands, no decimals
@@ -1893,13 +1898,25 @@
                    || wrapper.getAttribute('d2-cms-range-format')
                    || 'thousands';
       var known = { thousands: 1, float: 1, integer: 1, plain: 1 };
+      // Locale aliases → BCP-47 tags for toLocaleString
+      var localeAliases = {
+        pln: 'pl-PL', pl: 'pl-PL',
+        eur: 'de-DE', de: 'de-DE',
+        usd: 'en-US', en: 'en-US',
+      };
       var lowered = rawFormat.toLowerCase();
       if (known[lowered]) {
         this.displayFormat = lowered;
         this._pattern = null;
+        this._locale = null;
+      } else if (localeAliases[lowered]) {
+        this.displayFormat = 'locale';
+        this._locale = localeAliases[lowered];
+        this._pattern = null;
       } else {
         this._pattern = parseRangePattern(rawFormat);
         this.displayFormat = this._pattern ? 'pattern' : 'thousands';
+        this._locale = null;
       }
 
       // Only used when no pattern — pattern templates embed their own
@@ -2128,6 +2145,17 @@
       }
       if (fmt === 'plain') {
         body = String(val);
+      } else if (fmt === 'locale') {
+        // Locale aliases (pln, eur, usd…): use the mapped BCP-47 tag.
+        // Decimals follow the step's precision (like 'float' mode) so
+        // "0.01" step → always 2 decimals, integer step → 0.
+        var ldec = (String(this.step).split('.')[1] || '').length;
+        try {
+          body = val.toLocaleString(this._locale, {
+            minimumFractionDigits: ldec,
+            maximumFractionDigits: ldec,
+          });
+        } catch (e) { body = val.toFixed(ldec); }
       } else if (fmt === 'integer') {
         var rounded = Math.round(val);
         try { body = rounded.toLocaleString(); }
