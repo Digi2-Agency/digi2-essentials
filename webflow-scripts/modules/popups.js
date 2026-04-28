@@ -688,6 +688,18 @@
 
       let interacted = false;
       let selected = false;
+      let mouseInside = true;
+
+      const tryFire = () => {
+        if (!interacted || selected) return;
+        if (mouseInside) return;
+        // If anything inside the form is still focused (typically the select
+        // while its native dropdown is open) we wait — blur will re-fire this.
+        if (form.contains(document.activeElement)) return;
+        if (!this._canTrigger()) return;
+        _log('select-abandon triggered → ' + this.name);
+        this.show();
+      };
 
       const onFocus = () => { interacted = true; };
       const onChange = (e) => {
@@ -695,29 +707,27 @@
         const initial = initialValues.get(s);
         if (s.value !== '' && s.value !== initial) selected = true;
       };
-      const onMouseLeave = () => {
-        if (!interacted || selected) return;
-        // If a select is still the active element, the native dropdown is open
-        // and mouseleave fired because the OS overlay extends outside the form.
-        // Don't treat that as abandonment.
-        if (form.contains(document.activeElement)) return;
-        if (!this._canTrigger()) return;
-        _log('select-abandon triggered → ' + this.name);
-        this.show();
-      };
+      // setTimeout 0 lets document.activeElement settle before we read it.
+      const onBlur = () => setTimeout(tryFire, 0);
+      const onEnter = () => { mouseInside = true; };
+      const onLeave = () => { mouseInside = false; tryFire(); };
 
       selects.forEach((s) => {
         s.addEventListener('focus', onFocus);
         s.addEventListener('change', onChange);
+        s.addEventListener('blur', onBlur);
       });
-      form.addEventListener('mouseleave', onMouseLeave);
+      form.addEventListener('mouseenter', onEnter);
+      form.addEventListener('mouseleave', onLeave);
 
       this._cleanupFns.push(() => {
         selects.forEach((s) => {
           s.removeEventListener('focus', onFocus);
           s.removeEventListener('change', onChange);
+          s.removeEventListener('blur', onBlur);
         });
-        form.removeEventListener('mouseleave', onMouseLeave);
+        form.removeEventListener('mouseenter', onEnter);
+        form.removeEventListener('mouseleave', onLeave);
       });
     }
 
