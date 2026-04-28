@@ -201,6 +201,18 @@
         openAfterPageViews: null,
         sessionStorageKey: 'popupPageViews',
         lockScrollOnShow: true,       // lock body scroll when popup is visible
+        // ---- New triggers --------------------------------------------------
+        openOnOutsideClick: null,         // CSS selector — clicks anywhere outside this element open popup
+        openOnElementMouseLeave: null,    // CSS selector — mouse leaving this element opens popup
+        openOnElementHover: null,         // CSS selector — mouse entering this element opens popup
+        openOnTabBlur: false,             // boolean — open when user switches away from the tab
+        openAfterScrollPercent: null,     // number 0-100 — open after scrolling this % of the page
+        openAfterScrollPastElement: null, // CSS selector — open when this element enters viewport
+        openAfterIdle: null,              // number (seconds) — open after this many seconds of no user activity
+        openOnRageClick: null,            // boolean | number — open on N rapid clicks (default 3) within 1s
+        rageClickWindow: 1000,            // ms window for rage-click detection
+        openOnSelectAbandon: null,        // CSS selector for a form/container — open if user focuses a <select> inside, doesn't change it to a non-default value, and then mouses out of the container
+        // ---- Callbacks -----------------------------------------------------
         onOpen: null,
         onClose: null,
         ...options,
@@ -223,6 +235,12 @@
       this._boundOpenHandler = null;
       this._boundCloseHandler = null;
       this._delayTimerId = null;
+
+      // Cleanup registry for new triggers — each entry is a fn that detaches its trigger
+      this._cleanupFns = [];
+      this._idleTimerId = null;
+      this._rageClicks = [];
+      this._intersectionObserver = null;
 
       this._init();
     }
@@ -261,6 +279,21 @@
       } else if (this.options.openOnLoad) {
         this.show();
       }
+
+      // New triggers — additive, each guards via _canTrigger() so they can combine safely
+      if (this.options.openOnOutsideClick) this._setupOutsideClickTrigger();
+      if (this.options.openOnElementMouseLeave) this._setupElementMouseLeaveTrigger();
+      if (this.options.openOnElementHover) this._setupElementHoverTrigger();
+      if (this.options.openOnTabBlur) this._setupTabBlurTrigger();
+      if (this.options.openAfterScrollPercent !== null) this._setupScrollPercentTrigger();
+      if (this.options.openAfterScrollPastElement) this._setupScrollPastElementTrigger();
+      if (this.options.openAfterIdle !== null) this._setupIdleTrigger();
+      if (this.options.openOnRageClick) this._setupRageClickTrigger();
+      if (this.options.openOnSelectAbandon) this._setupSelectAbandonTrigger();
+    }
+
+    _canTrigger() {
+      return !this._isCookieSet() && !this.isVisible && !this._animating;
     }
 
     destroy() {
@@ -279,6 +312,16 @@
       }
       if (this._delayTimerId) {
         clearTimeout(this._delayTimerId);
+      }
+      if (this._idleTimerId) {
+        clearTimeout(this._idleTimerId);
+      }
+      if (this._intersectionObserver) {
+        this._intersectionObserver.disconnect();
+        this._intersectionObserver = null;
+      }
+      while (this._cleanupFns.length) {
+        try { this._cleanupFns.pop()(); } catch (e) { /* swallow — cleanup must not throw */ }
       }
       this.popupElement = null;
     }
@@ -464,6 +507,216 @@
           this.show();
         }
       }
+    }
+
+    // ---- Outside-click trigger ---------------------------------------------
+    // Opens popup when the user clicks anywhere outside the configured element
+    // (and outside the popup itself, to avoid loops once it's open).
+    _setupOutsideClickTrigger() {
+      const sel = this.options.openOnOutsideClick;
+      const handler = (e) => {
+        if (!this._canTrigger()) return;
+        const inside = e.target.closest(sel);
+        if (inside) return;
+        if (this.popupElement && this.popupElement.contains(e.target)) return;
+        _log('outside-click triggered → ' + this.name, sel);
+        this.show();
+      };
+      document.addEventListener('click', handler, true);
+      this._cleanupFns.push(() => document.removeEventListener('click', handler, true));
+    }
+
+    // ---- Element mouseleave trigger ----------------------------------------
+    _setupElementMouseLeaveTrigger() {
+      const els = document.querySelectorAll(this.options.openOnElementMouseLeave);
+      if (!els.length) {
+        console.warn(`[digi2.popups] "${this.name}" — openOnElementMouseLeave: no elements match ${this.options.openOnElementMouseLeave}`);
+        return;
+      }
+      const handler = () => {
+        if (!this._canTrigger()) return;
+        _log('element-mouseleave triggered → ' + this.name);
+        this.show();
+      };
+      els.forEach((el) => el.addEventListener('mouseleave', handler));
+      this._cleanupFns.push(() => els.forEach((el) => el.removeEventListener('mouseleave', handler)));
+    }
+
+    // ---- Element hover trigger ---------------------------------------------
+    _setupElementHoverTrigger() {
+      const els = document.querySelectorAll(this.options.openOnElementHover);
+      if (!els.length) {
+        console.warn(`[digi2.popups] "${this.name}" — openOnElementHover: no elements match ${this.options.openOnElementHover}`);
+        return;
+      }
+      const handler = () => {
+        if (!this._canTrigger()) return;
+        _log('element-hover triggered → ' + this.name);
+        this.show();
+      };
+      els.forEach((el) => el.addEventListener('mouseenter', handler));
+      this._cleanupFns.push(() => els.forEach((el) => el.removeEventListener('mouseenter', handler)));
+    }
+
+    // ---- Tab-blur trigger --------------------------------------------------
+    // Fires once when the document becomes hidden (tab switch / window minimize).
+    _setupTabBlurTrigger() {
+      const handler = () => {
+        if (document.visibilityState !== 'hidden') return;
+        if (!this._canTrigger()) return;
+        _log('tab-blur triggered → ' + this.name);
+        this.show();
+      };
+      document.addEventListener('visibilitychange', handler);
+      this._cleanupFns.push(() => document.removeEventListener('visibilitychange', handler));
+    }
+
+    // ---- Scroll-percent trigger --------------------------------------------
+    _setupScrollPercentTrigger() {
+      const target = Math.max(0, Math.min(100, this.options.openAfterScrollPercent));
+      let throttle = null;
+      const check = () => {
+        const doc = document.documentElement;
+        const scrollable = (doc.scrollHeight - doc.clientHeight) || 1;
+        const pct = (window.scrollY / scrollable) * 100;
+        if (pct < target) return;
+        if (!this._canTrigger()) return;
+        _log('scroll-percent triggered → ' + this.name, { pct: pct.toFixed(1), target });
+        this.show();
+      };
+      const handler = () => {
+        if (throttle) return;
+        throttle = setTimeout(() => { check(); throttle = null; }, 100);
+      };
+      document.addEventListener('scroll', handler, { passive: true });
+      this._cleanupFns.push(() => {
+        document.removeEventListener('scroll', handler);
+        if (throttle) clearTimeout(throttle);
+      });
+      check(); // initial check in case page loads already past the threshold
+    }
+
+    // ---- Scroll-past-element trigger ---------------------------------------
+    _setupScrollPastElementTrigger() {
+      const el = document.querySelector(this.options.openAfterScrollPastElement);
+      if (!el) {
+        console.warn(`[digi2.popups] "${this.name}" — openAfterScrollPastElement: no element matches ${this.options.openAfterScrollPastElement}`);
+        return;
+      }
+      this._intersectionObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (!this._canTrigger()) return;
+          _log('scroll-past-element triggered → ' + this.name);
+          this.show();
+          this._intersectionObserver.disconnect();
+          this._intersectionObserver = null;
+          return;
+        }
+      });
+      this._intersectionObserver.observe(el);
+    }
+
+    // ---- Idle trigger ------------------------------------------------------
+    // Opens popup after N seconds with no mouse, scroll, keyboard, or touch input.
+    _setupIdleTrigger() {
+      const ms = this.options.openAfterIdle * 1000;
+      const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+      const fire = () => {
+        if (!this._canTrigger()) return;
+        _log('idle triggered → ' + this.name);
+        this.show();
+      };
+      const reset = () => {
+        if (this._idleTimerId) clearTimeout(this._idleTimerId);
+        this._idleTimerId = setTimeout(fire, ms);
+      };
+      events.forEach((ev) => document.addEventListener(ev, reset, { passive: true }));
+      this._cleanupFns.push(() => events.forEach((ev) => document.removeEventListener(ev, reset)));
+      reset(); // start the timer
+    }
+
+    // ---- Rage-click trigger ------------------------------------------------
+    // Opens popup when N rapid clicks happen within rageClickWindow ms.
+    _setupRageClickTrigger() {
+      const threshold = typeof this.options.openOnRageClick === 'number'
+        ? this.options.openOnRageClick
+        : 3;
+      const windowMs = this.options.rageClickWindow;
+      const handler = () => {
+        const now = Date.now();
+        this._rageClicks.push(now);
+        // keep only clicks inside the rolling window
+        this._rageClicks = this._rageClicks.filter((t) => now - t <= windowMs);
+        if (this._rageClicks.length < threshold) return;
+        if (!this._canTrigger()) {
+          this._rageClicks = [];
+          return;
+        }
+        _log('rage-click triggered → ' + this.name, { clicks: this._rageClicks.length });
+        this._rageClicks = [];
+        this.show();
+      };
+      document.addEventListener('click', handler);
+      this._cleanupFns.push(() => document.removeEventListener('click', handler));
+    }
+
+    // ---- Select-abandon trigger --------------------------------------------
+    // Fires when the user focuses a <select> inside the configured form/container,
+    // does NOT change its value to a non-default selection, and then mouses out
+    // of the container. If any select inside the container is changed to a
+    // non-default value, the popup is suppressed for the lifetime of the form.
+    _setupSelectAbandonTrigger() {
+      const sel = this.options.openOnSelectAbandon;
+      const form = document.querySelector(sel);
+      if (!form) {
+        console.warn(`[digi2.popups] "${this.name}" — openOnSelectAbandon: no element matches ${sel}`);
+        return;
+      }
+      const selects = form.querySelectorAll('select');
+      if (!selects.length) {
+        console.warn(`[digi2.popups] "${this.name}" — openOnSelectAbandon: no <select> elements inside ${sel}`);
+        return;
+      }
+
+      // Snapshot the initial value of each select so we can tell whether the
+      // user actually changed it (vs. reverting back to the page-load value).
+      const initialValues = new Map();
+      selects.forEach((s) => initialValues.set(s, s.value));
+
+      let interacted = false;
+      let selected = false;
+
+      const onFocus = () => { interacted = true; };
+      const onChange = (e) => {
+        const s = e.target;
+        const initial = initialValues.get(s);
+        if (s.value !== '' && s.value !== initial) selected = true;
+      };
+      const onMouseLeave = () => {
+        if (!interacted || selected) return;
+        // If a select is still the active element, the native dropdown is open
+        // and mouseleave fired because the OS overlay extends outside the form.
+        // Don't treat that as abandonment.
+        if (form.contains(document.activeElement)) return;
+        if (!this._canTrigger()) return;
+        _log('select-abandon triggered → ' + this.name);
+        this.show();
+      };
+
+      selects.forEach((s) => {
+        s.addEventListener('focus', onFocus);
+        s.addEventListener('change', onChange);
+      });
+      form.addEventListener('mouseleave', onMouseLeave);
+
+      this._cleanupFns.push(() => {
+        selects.forEach((s) => {
+          s.removeEventListener('focus', onFocus);
+          s.removeEventListener('change', onChange);
+        });
+        form.removeEventListener('mouseleave', onMouseLeave);
+      });
     }
 
     // ---- Cookie helpers -----------------------------------------------------

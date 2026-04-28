@@ -113,6 +113,16 @@ digi2.popups.create('newsletter', {
 | `openAfterDelay` | `null` | Seconds |
 | `openOnExitIntent` | `false` | Mouse leave / mobile scroll |
 | `openAfterPageViews` | `null` | Show after N views |
+| `openOnOutsideClick` | `null` | Selector — click outside opens |
+| `openOnElementMouseLeave` | `null` | Selector — mouseleave opens |
+| `openOnElementHover` | `null` | Selector — mouseenter opens |
+| `openOnTabBlur` | `false` | Open on tab switch |
+| `openAfterScrollPercent` | `null` | Open at N% scroll depth |
+| `openAfterScrollPastElement` | `null` | Selector — open when in viewport |
+| `openAfterIdle` | `null` | Seconds of inactivity |
+| `openOnRageClick` | `null` | `true` or N — N rapid clicks |
+| `rageClickWindow` | `1000` | ms window for rage-click |
+| `openOnSelectAbandon` | `null` | Form selector — fires on `<select>` interaction without change + mouseleave |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `excludeUrls` | `[]` | URL patterns to skip |
@@ -142,6 +152,15 @@ digi2.popups.create('newsletter', {
 | After delay | `openAfterDelay: 5` |
 | Exit intent | `openOnExitIntent: true` |
 | Page views | `openAfterPageViews: 3` |
+| Outside click | `openOnOutsideClick: '.card'` |
+| Element mouseleave | `openOnElementMouseLeave: '#form'` |
+| Element hover | `openOnElementHover: '.target'` |
+| Tab blur | `openOnTabBlur: true` |
+| Scroll % | `openAfterScrollPercent: 50` |
+| Scroll past element | `openAfterScrollPastElement: '#footer'` |
+| Idle | `openAfterIdle: 30` |
+| Rage click | `openOnRageClick: 4` |
+| Select abandon | `openOnSelectAbandon: '#my-form'` |
 
 ### API
 

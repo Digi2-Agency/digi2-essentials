@@ -817,6 +817,16 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>openAfterDelay</code></td><td><code>null</code></td><td>Show after N seconds</td></tr>
       <tr><td><code>openOnExitIntent</code></td><td><code>false</code></td><td>Mouse leave / mobile scroll up</td></tr>
       <tr><td><code>openAfterPageViews</code></td><td><code>null</code></td><td>Show after N page views</td></tr>
+      <tr><td><code>openOnOutsideClick</code></td><td><code>null</code></td><td>CSS selector — click outside element opens popup</td></tr>
+      <tr><td><code>openOnElementMouseLeave</code></td><td><code>null</code></td><td>CSS selector — mouse leaving element opens popup</td></tr>
+      <tr><td><code>openOnElementHover</code></td><td><code>null</code></td><td>CSS selector — mouse entering element opens popup</td></tr>
+      <tr><td><code>openOnTabBlur</code></td><td><code>false</code></td><td>Open when user switches away from tab</td></tr>
+      <tr><td><code>openAfterScrollPercent</code></td><td><code>null</code></td><td>Open after scrolling N% of the page</td></tr>
+      <tr><td><code>openAfterScrollPastElement</code></td><td><code>null</code></td><td>CSS selector — open when element enters viewport</td></tr>
+      <tr><td><code>openAfterIdle</code></td><td><code>null</code></td><td>Open after N seconds of no user activity</td></tr>
+      <tr><td><code>openOnRageClick</code></td><td><code>null</code></td><td>Open on N rapid clicks (true = 3, or pass a number)</td></tr>
+      <tr><td><code>rageClickWindow</code></td><td><code>1000</code></td><td>ms window for rage-click detection</td></tr>
+      <tr><td><code>openOnSelectAbandon</code></td><td><code>null</code></td><td>CSS selector for a form/container — fires if user focuses a <code>&lt;select&gt;</code> inside, doesn't change it, then mouses out</td></tr>
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
     </table>
@@ -864,6 +874,15 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td>After delay</td><td><code>openAfterDelay: 5</code></td></tr>
       <tr><td>Exit intent</td><td><code>openOnExitIntent: true</code></td></tr>
       <tr><td>Page views</td><td><code>openAfterPageViews: 3</code></td></tr>
+      <tr><td>Outside click</td><td><code>openOnOutsideClick: '.card'</code></td></tr>
+      <tr><td>Element mouseleave</td><td><code>openOnElementMouseLeave: '#form'</code></td></tr>
+      <tr><td>Element hover</td><td><code>openOnElementHover: '.tooltip-target'</code></td></tr>
+      <tr><td>Tab blur</td><td><code>openOnTabBlur: true</code></td></tr>
+      <tr><td>Scroll %</td><td><code>openAfterScrollPercent: 50</code></td></tr>
+      <tr><td>Scroll past element</td><td><code>openAfterScrollPastElement: '#footer'</code></td></tr>
+      <tr><td>Idle</td><td><code>openAfterIdle: 30</code></td></tr>
+      <tr><td>Rage click</td><td><code>openOnRageClick: 4</code> (or <code>true</code> for default 3)</td></tr>
+      <tr><td>Select abandon</td><td><code>openOnSelectAbandon: '#my-form'</code></td></tr>
     </table>
     <pre><code><span class="comment">// API methods</span>
 digi2.popups.<span class="fn">show</span>(<span class="string">'name'</span>)
