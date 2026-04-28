@@ -827,6 +827,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>openOnRageClick</code></td><td><code>null</code></td><td>Open on N rapid clicks (true = 3, or pass a number)</td></tr>
       <tr><td><code>rageClickWindow</code></td><td><code>1000</code></td><td>ms window for rage-click detection</td></tr>
       <tr><td><code>openOnSelectAbandon</code></td><td><code>null</code></td><td>CSS selector for a form/container — fires if user focuses a <code>&lt;select&gt;</code> inside, doesn't change it, then mouses out</td></tr>
+      <tr><td><code>openOnScrollSpeed</code></td><td><code>null</code></td><td>Number (px/sec) or <code>{ speed, direction: 'up'|'down'|'any' }</code> — open on fast scroll</td></tr>
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
     </table>
@@ -883,6 +884,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td>Idle</td><td><code>openAfterIdle: 30</code></td></tr>
       <tr><td>Rage click</td><td><code>openOnRageClick: 4</code> (or <code>true</code> for default 3)</td></tr>
       <tr><td>Select abandon</td><td><code>openOnSelectAbandon: '#my-form'</code></td></tr>
+      <tr><td>Fast scroll</td><td><code>openOnScrollSpeed: 2500</code> or <code>{ speed: 2500, direction: 'up' }</code></td></tr>
     </table>
     <pre><code><span class="comment">// API methods</span>
 digi2.popups.<span class="fn">show</span>(<span class="string">'name'</span>)

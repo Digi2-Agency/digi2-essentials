@@ -123,6 +123,7 @@ digi2.popups.create('newsletter', {
 | `openOnRageClick` | `null` | `true` or N — N rapid clicks |
 | `rageClickWindow` | `1000` | ms window for rage-click |
 | `openOnSelectAbandon` | `null` | Form selector — fires on `<select>` interaction without change + mouseleave |
+| `openOnScrollSpeed` | `null` | px/sec or `{ speed, direction }` — fast-scroll trigger |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `excludeUrls` | `[]` | URL patterns to skip |
@@ -161,6 +162,7 @@ digi2.popups.create('newsletter', {
 | Idle | `openAfterIdle: 30` |
 | Rage click | `openOnRageClick: 4` |
 | Select abandon | `openOnSelectAbandon: '#my-form'` |
+| Fast scroll | `openOnScrollSpeed: 2500` or `{ speed: 2500, direction: 'up' }` |
 
 ### API
 

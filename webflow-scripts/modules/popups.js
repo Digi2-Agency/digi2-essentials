@@ -212,6 +212,7 @@
         openOnRageClick: null,            // boolean | number — open on N rapid clicks (default 3) within 1s
         rageClickWindow: 1000,            // ms window for rage-click detection
         openOnSelectAbandon: null,        // CSS selector for a form/container — open if user focuses a <select> inside, doesn't change it to a non-default value, and then mouses out of the container
+        openOnScrollSpeed: null,          // number (px/sec) or { speed, direction: 'up'|'down'|'any' } — open when scroll velocity exceeds threshold
         // ---- Callbacks -----------------------------------------------------
         onOpen: null,
         onClose: null,
@@ -290,6 +291,7 @@
       if (this.options.openAfterIdle !== null) this._setupIdleTrigger();
       if (this.options.openOnRageClick) this._setupRageClickTrigger();
       if (this.options.openOnSelectAbandon) this._setupSelectAbandonTrigger();
+      if (this.options.openOnScrollSpeed) this._setupScrollSpeedTrigger();
     }
 
     _canTrigger() {
@@ -717,6 +719,46 @@
         });
         form.removeEventListener('mouseleave', onMouseLeave);
       });
+    }
+
+    // ---- Scroll-speed trigger ----------------------------------------------
+    // Fires when the user scrolls faster than `speed` px/sec. Accepts either a
+    // bare number (any direction) or { speed, direction: 'up' | 'down' | 'any' }.
+    // Velocity is computed per scroll event; samples shorter than 10 ms or longer
+    // than 200 ms are skipped to avoid noise from coalesced/stale events.
+    _setupScrollSpeedTrigger() {
+      const opt = this.options.openOnScrollSpeed;
+      const cfg = typeof opt === 'number'
+        ? { speed: opt, direction: 'any' }
+        : { speed: opt.speed || 2500, direction: opt.direction || 'any' };
+
+      let lastY = window.scrollY;
+      let lastT = performance.now();
+
+      const handler = () => {
+        const now = performance.now();
+        const y = window.scrollY;
+        const dt = now - lastT;
+        const dy = y - lastY;
+        lastY = y;
+        lastT = now;
+
+        if (dt < 10 || dt > 200) return;
+        if (dy === 0) return;
+
+        const speed = Math.abs(dy) / dt * 1000; // px/sec
+        const direction = dy < 0 ? 'up' : 'down';
+
+        if (speed < cfg.speed) return;
+        if (cfg.direction !== 'any' && cfg.direction !== direction) return;
+        if (!this._canTrigger()) return;
+
+        _log('scroll-speed triggered → ' + this.name, { speed: Math.round(speed), direction });
+        this.show();
+      };
+
+      document.addEventListener('scroll', handler, { passive: true });
+      this._cleanupFns.push(() => document.removeEventListener('scroll', handler));
     }
 
     // ---- Cookie helpers -----------------------------------------------------
