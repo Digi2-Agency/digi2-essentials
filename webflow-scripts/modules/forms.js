@@ -304,6 +304,7 @@
       this._injectedInputs = [];
       this._autoCreatedElements = [];
       this._autoCreatedWrappers = [];
+      this._inputFilters = [];
       this._boundBlurHandler = null;
       this._boundSubmitHandler = null;
 
@@ -341,6 +342,9 @@
         this._createAutoErrorElements();
 
         this._setupValidation();
+
+        // 4c. Attach realtime input filters (e.g. phone fields strip letters)
+        this._setupInputFilters();
 
         // Remove native `required` attributes on fields that digi2 validates.
         // Browser validation fires before JS submit handlers, blocking digi2
@@ -395,6 +399,11 @@
       if (this.formElement && this._boundSubmitHandler) {
         this.formElement.removeEventListener('submit', this._boundSubmitHandler);
       }
+
+      this._inputFilters.forEach(function (entry) {
+        entry.input.removeEventListener('input', entry.handler);
+      });
+      this._inputFilters = [];
 
       this.formElement = null;
     }
@@ -674,6 +683,51 @@
         };
         this.formElement.addEventListener('submit', this._boundSubmitHandler, true);
       }
+    }
+
+    // ---- Realtime input filters --------------------------------------------
+
+    /**
+     * Attach realtime `input`-event filters that strip disallowed characters
+     * from fields based on their validation rules.
+     *
+     * Currently:
+     *   - phone: true  → allow only digits, '+', and '-'
+     */
+    _setupInputFilters() {
+      if (!this.formElement || !this._resolvedValidation) return;
+
+      for (var fieldName in this._resolvedValidation) {
+        if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
+        var rules = this._resolvedValidation[fieldName];
+
+        if (rules.phone === true) {
+          var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+          if (!input || input.type === 'hidden') continue;
+          this._attachInputFilter(input, /[^\d+\-]/g, 'phone');
+        }
+      }
+    }
+
+    /**
+     * Attach a character-stripping listener to an input. Preserves caret
+     * position when characters are removed so typing feels natural.
+     */
+    _attachInputFilter(inputEl, disallowedRegex, label) {
+      var handler = function () {
+        var val = inputEl.value;
+        var filtered = val.replace(disallowedRegex, '');
+        if (val === filtered) return;
+        var pos = inputEl.selectionStart;
+        var diff = val.length - filtered.length;
+        inputEl.value = filtered;
+        try {
+          inputEl.setSelectionRange(pos - diff, pos - diff);
+        } catch (e) { /* unsupported on some input types */ }
+      };
+      inputEl.addEventListener('input', handler);
+      this._inputFilters.push({ input: inputEl, handler: handler });
+      _log('input filter attached → ' + (label || 'custom') + ' [' + inputEl.name + ']');
     }
 
     /**
