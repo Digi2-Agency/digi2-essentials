@@ -779,11 +779,13 @@
     // ---- Cookie helpers -----------------------------------------------------
 
     _isCookieSet() {
+      if (this._dismissed) return true;
       if (!this.options.cookieName) return false;
       return this._getCookie() === 'true';
     }
 
     _setCookie() {
+      this._dismissed = true;
       if (!this.options.cookieName) return;
       const date = new Date();
       date.setTime(date.getTime() + this.options.cookieDurationDays * 24 * 60 * 60 * 1000);
