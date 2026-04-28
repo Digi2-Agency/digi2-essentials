@@ -828,6 +828,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>rageClickWindow</code></td><td><code>1000</code></td><td>ms window for rage-click detection</td></tr>
       <tr><td><code>openOnSelectAbandon</code></td><td><code>null</code></td><td>CSS selector for a form/container — fires if user focuses a <code>&lt;select&gt;</code> inside, doesn't change it, then mouses out</td></tr>
       <tr><td><code>openOnScrollSpeed</code></td><td><code>null</code></td><td>Number (px/sec) or <code>{ speed, direction: 'up'|'down'|'any' }</code> — open on fast scroll</td></tr>
+      <tr><td><code>interceptLinks</code></td><td><code>false</code></td><td><code>true</code> or CSS selector — intercept link clicks, show popup first, navigate on close (skips <code>target=_blank</code>, modifier-clicks, <code>#hash</code>, <code>mailto:</code>/<code>tel:</code>)</td></tr>
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie. Set to <code>null</code> to disable — popup re-shows every page load</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
     </table>
@@ -885,6 +886,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td>Rage click</td><td><code>openOnRageClick: 4</code> (or <code>true</code> for default 3)</td></tr>
       <tr><td>Select abandon</td><td><code>openOnSelectAbandon: '#my-form'</code></td></tr>
       <tr><td>Fast scroll</td><td><code>openOnScrollSpeed: 2500</code> or <code>{ speed: 2500, direction: 'up' }</code></td></tr>
+      <tr><td>Link intercept</td><td><code>interceptLinks: true</code> — opens popup before navigation, navigates on close</td></tr>
     </table>
     <pre><code><span class="comment">// API methods</span>
 digi2.popups.<span class="fn">show</span>(<span class="string">'name'</span>)

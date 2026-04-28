@@ -213,6 +213,7 @@
         rageClickWindow: 1000,            // ms window for rage-click detection
         openOnSelectAbandon: null,        // CSS selector for a form/container — open if user focuses a <select> inside, doesn't change it to a non-default value, and then mouses out of the container
         openOnScrollSpeed: null,          // number (px/sec) or { speed, direction: 'up'|'down'|'any' } — open when scroll velocity exceeds threshold
+        interceptLinks: false,            // boolean | CSS selector — intercept link clicks, show popup first, navigate on close. true = all <a href> (skips #hash, mailto:, tel:, javascript:, target=_blank, modifier-key clicks)
         // ---- Callbacks -----------------------------------------------------
         onOpen: null,
         onClose: null,
@@ -292,6 +293,7 @@
       if (this.options.openOnRageClick) this._setupRageClickTrigger();
       if (this.options.openOnSelectAbandon) this._setupSelectAbandonTrigger();
       if (this.options.openOnScrollSpeed) this._setupScrollSpeedTrigger();
+      if (this.options.interceptLinks) this._setupLinkInterceptTrigger();
     }
 
     _canTrigger() {
@@ -379,6 +381,12 @@
         }
 
         if (typeof this.options.onClose === 'function') this.options.onClose(this);
+
+        if (this._pendingNavigation) {
+          const target = this._pendingNavigation;
+          this._pendingNavigation = null;
+          window.location.href = target;
+        }
       };
 
       if (anim === ANIMATIONS.none) {
@@ -774,6 +782,43 @@
 
       document.addEventListener('scroll', handler, { passive: true });
       this._cleanupFns.push(() => document.removeEventListener('scroll', handler));
+    }
+
+    // ---- Link-intercept trigger --------------------------------------------
+    // Catches <a> clicks, shows the popup, and navigates after the popup closes.
+    // Skips: target=_blank, modifier-key clicks (cmd/ctrl/shift/alt/middle),
+    // hash-only links, mailto:/tel:/javascript: protocols, and links inside the
+    // popup itself. If the dismissal cookie/flag is already set we never
+    // intercept — user has seen it once, let them navigate freely.
+    _setupLinkInterceptTrigger() {
+      const opt = this.options.interceptLinks;
+      const filter = typeof opt === 'string' ? opt : 'a[href]';
+
+      const handler = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        if (this._isCookieSet() || this.isVisible || this._animating) return;
+
+        const link = e.target.closest(filter);
+        if (!link) return;
+        if (this.popupElement && this.popupElement.contains(link)) return;
+
+        const target = link.getAttribute('target');
+        if (target === '_blank' || target === '_new') return;
+
+        const href = link.getAttribute('href');
+        if (!href) return;
+        if (href.startsWith('#')) return;
+        if (/^(javascript:|mailto:|tel:|sms:)/i.test(href)) return;
+
+        e.preventDefault();
+        this._pendingNavigation = link.href;
+        _log('link-intercept triggered → ' + this.name, link.href);
+        this.show();
+      };
+
+      document.addEventListener('click', handler);
+      this._cleanupFns.push(() => document.removeEventListener('click', handler));
     }
 
     // ---- Cookie helpers -----------------------------------------------------
