@@ -124,7 +124,7 @@ digi2.popups.create('newsletter', {
 | `rageClickWindow` | `1000` | ms window for rage-click |
 | `openOnSelectAbandon` | `null` | Form selector — fires on `<select>` interaction without change + mouseleave |
 | `openOnScrollSpeed` | `null` | px/sec or `{ speed, direction }` — fast-scroll trigger |
-| `interceptLinks` | `false` | `true` or selector — intercept link clicks, navigate on close |
+| `interceptLinks` | `false` | `true` · selector · `{ device, selector }` — intercept link clicks, navigate on close |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `excludeUrls` | `[]` | URL patterns to skip |
@@ -164,7 +164,7 @@ digi2.popups.create('newsletter', {
 | Rage click | `openOnRageClick: 4` |
 | Select abandon | `openOnSelectAbandon: '#my-form'` |
 | Fast scroll | `openOnScrollSpeed: 2500` or `{ speed: 2500, direction: 'up' }` |
-| Link intercept | `interceptLinks: true` (navigates after close) |
+| Link intercept | `interceptLinks: true` or `{ device: 'mobile' }` (navigates after close) |
 
 ### API
 

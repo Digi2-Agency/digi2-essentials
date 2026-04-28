@@ -213,7 +213,7 @@
         rageClickWindow: 1000,            // ms window for rage-click detection
         openOnSelectAbandon: null,        // CSS selector for a form/container — open if user focuses a <select> inside, doesn't change it to a non-default value, and then mouses out of the container
         openOnScrollSpeed: null,          // number (px/sec) or { speed, direction: 'up'|'down'|'any' } — open when scroll velocity exceeds threshold
-        interceptLinks: false,            // boolean | CSS selector — intercept link clicks, show popup first, navigate on close. true = all <a href> (skips #hash, mailto:, tel:, javascript:, target=_blank, modifier-key clicks)
+        interceptLinks: false,            // boolean | CSS selector | { device: 'mobile'|'desktop'|'both', selector } — intercept link clicks, show popup first, navigate on close (skips #hash, mailto:, tel:, javascript:, target=_blank, modifier-key clicks)
         // ---- Callbacks -----------------------------------------------------
         onOpen: null,
         onClose: null,
@@ -792,7 +792,16 @@
     // intercept — user has seen it once, let them navigate freely.
     _setupLinkInterceptTrigger() {
       const opt = this.options.interceptLinks;
-      const filter = typeof opt === 'string' ? opt : 'a[href]';
+      let filter = 'a[href]';
+      let device = 'both';
+      if (typeof opt === 'string') {
+        filter = opt;
+      } else if (opt && typeof opt === 'object') {
+        if (opt.selector) filter = opt.selector;
+        if (opt.device) device = opt.device;
+      }
+      if (device === 'mobile' && !this.isMobile) return;
+      if (device === 'desktop' && this.isMobile) return;
 
       const handler = (e) => {
         if (e.button !== undefined && e.button !== 0) return;
