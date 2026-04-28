@@ -124,7 +124,7 @@ digi2.popups.create('newsletter', {
 | `rageClickWindow` | `1000` | ms window for rage-click |
 | `openOnSelectAbandon` | `null` | Form selector — fires on `<select>` interaction without change + mouseleave |
 | `openOnScrollSpeed` | `null` | px/sec or `{ speed, direction }` — fast-scroll trigger |
-| `cookieName` | `'popup_clicked'` | Dismissal cookie |
+| `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `excludeUrls` | `[]` | URL patterns to skip |
 | `containsUrls` | `['/']` | URL patterns required |

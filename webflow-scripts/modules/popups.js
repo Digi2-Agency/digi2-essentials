@@ -764,16 +764,19 @@
     // ---- Cookie helpers -----------------------------------------------------
 
     _isCookieSet() {
+      if (!this.options.cookieName) return false;
       return this._getCookie() === 'true';
     }
 
     _setCookie() {
+      if (!this.options.cookieName) return;
       const date = new Date();
       date.setTime(date.getTime() + this.options.cookieDurationDays * 24 * 60 * 60 * 1000);
       document.cookie = `${this.options.cookieName}=true;expires=${date.toUTCString()};path=/`;
     }
 
     _getCookie() {
+      if (!this.options.cookieName) return '';
       const name = this.options.cookieName + '=';
       const decoded = decodeURIComponent(document.cookie);
       const parts = decoded.split(';');
