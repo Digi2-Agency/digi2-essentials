@@ -685,6 +685,7 @@
       // user actually changed it (vs. reverting back to the page-load value).
       const initialValues = new Map();
       selects.forEach((s) => initialValues.set(s, s.value));
+      const selectsArr = Array.from(selects);
 
       let interacted = false;
       let selected = false;
@@ -693,9 +694,13 @@
       const tryFire = () => {
         if (!interacted || selected) return;
         if (mouseInside) return;
-        // If anything inside the form is still focused (typically the select
-        // while its native dropdown is open) we wait — blur will re-fire this.
-        if (form.contains(document.activeElement)) return;
+        // Only guard when a *non-select* field in the form is focused — that
+        // means the user is engaged elsewhere. If the select itself is still
+        // focused while the mouse is outside the form, the dropdown was
+        // already dismissed (the OS suspends mouse events while it's open,
+        // so we wouldn't have gotten mouseleave otherwise).
+        const ae = document.activeElement;
+        if (ae && form.contains(ae) && !selectsArr.includes(ae)) return;
         if (!this._canTrigger()) return;
         _log('select-abandon triggered → ' + this.name);
         this.show();
