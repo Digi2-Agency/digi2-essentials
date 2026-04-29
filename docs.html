@@ -729,6 +729,7 @@
   <span class="prop">d2-popups</span>
   <span class="prop">d2-cookies</span>
   <span class="prop">d2-forms</span>
+  <span class="prop">d2-interactions</span>
 &gt;&lt;/script&gt;</code></pre>
 
     <table>
@@ -737,6 +738,7 @@
       <tr><td><code>d2-popups</code></td><td>Popup / modal manager</td><td>8.4 KB</td></tr>
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
       <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM</td><td>12.1 KB</td></tr>
+      <tr><td><code>d2-interactions</code></td><td>Side-dock + sliding panels</td><td>5.3 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
   </section>
@@ -1429,6 +1431,81 @@ digi2.copy.<span class="fn">text</span>(<span class="string">'Hello'</span>)
 digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'</span>)</code></pre>
   </section>
 
+  <!-- ── INTERACTIONS ── -->
+  <section id="interactions">
+    <h2>Interactions — Dock</h2>
+    <p>Vertical floating column of triggers wired to mutually-exclusive sliding panels. The kids-co.pl right-side dock pattern.</p>
+
+    <h3>Markup</h3>
+    <pre><code>&lt;div <span class="prop">d2-dock</span>=<span class="string">"main"</span>&gt;
+  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"social"</span>&gt;Social&lt;/button&gt;
+  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"contact"</span>&gt;Kontakt&lt;/button&gt;
+  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"enroll"</span>&gt;Zapisy&lt;/button&gt;
+&lt;/div&gt;
+
+&lt;div <span class="prop">d2-dock-panel</span>=<span class="string">"social"</span>&gt;
+  &lt;button <span class="prop">d2-dock-close</span>&gt;&times;&lt;/button&gt;
+  &lt;h4&gt;Obserwuj nas&lt;/h4&gt;...
+&lt;/div&gt;
+&lt;div <span class="prop">d2-dock-panel</span>=<span class="string">"contact"</span>&gt;
+  &lt;button <span class="prop">d2-dock-close</span>&gt;&times;&lt;/button&gt;...
+&lt;/div&gt;</code></pre>
+    <p>Auto-inits on DOM ready. Add <code>d2-dock-manual</code> to opt out and configure via JS.</p>
+
+    <h3>Behavior</h3>
+    <table>
+      <tr><th>Action</th><th>Effect</th></tr>
+      <tr><td>Click trigger A</td><td>Open panel A</td></tr>
+      <tr><td>Click A again</td><td>Close A, mark A <code>.d2-previously-active</code></td></tr>
+      <tr><td>Click B while A open</td><td>Close A, open B</td></tr>
+      <tr><td>Hover any trigger</td><td>Clear <code>.d2-previously-active</code> from all triggers</td></tr>
+      <tr><td>Click <code>[d2-dock-close]</code></td><td>Close active panel</td></tr>
+      <tr><td>Click outside dock + panel</td><td>Close active panel</td></tr>
+      <tr><td>Press <kbd>Escape</kbd></td><td>Close active panel</td></tr>
+    </table>
+
+    <h3>State Classes</h3>
+    <table>
+      <tr><th>Class</th><th>Applied to</th><th>When</th></tr>
+      <tr><td><code>.d2-active</code></td><td>trigger + panel</td><td>Panel open</td></tr>
+      <tr><td><code>.d2-previously-active</code></td><td>trigger</td><td>After re-click close (use to suppress tooltip until next hover)</td></tr>
+    </table>
+    <pre><code><span class="comment">/* Tooltip suppression pattern */</span>
+.dock-button:not(.d2-active):not(.d2-previously-active):hover .tooltip {
+  opacity: <span class="string">1</span>;
+}</code></pre>
+
+    <h3>Options</h3>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>triggerAttr</code></td><td><code>'d2-dock-trigger'</code></td><td>Attribute on trigger buttons</td></tr>
+      <tr><td><code>panelAttr</code></td><td><code>'d2-dock-panel'</code></td><td>Attribute on panels</td></tr>
+      <tr><td><code>closeAttr</code></td><td><code>'d2-dock-close'</code></td><td>Attribute on close buttons inside panels</td></tr>
+      <tr><td><code>activeClass</code></td><td><code>'d2-active'</code></td><td>Class on active trigger + panel</td></tr>
+      <tr><td><code>prevActiveClass</code></td><td><code>'d2-previously-active'</code></td><td>Class on trigger after re-click close</td></tr>
+      <tr><td><code>closeOnOutside</code></td><td><code>true</code></td><td>Outside click closes</td></tr>
+      <tr><td><code>closeOnEscape</code></td><td><code>true</code></td><td>Escape key closes</td></tr>
+      <tr><td><code>injectStyles</code></td><td><code>true</code></td><td>Inject minimal slide CSS</td></tr>
+      <tr><td><code>slideDuration</code></td><td><code>'0.3s'</code></td><td>Slide transition duration</td></tr>
+      <tr><td><code>onOpen</code></td><td><code>null</code></td><td><code>(panel, trigger, name) =&gt; {}</code></td></tr>
+      <tr><td><code>onClose</code></td><td><code>null</code></td><td><code>(panel, trigger, name) =&gt; {}</code></td></tr>
+    </table>
+    <p>Default injected CSS: panels slide in from <code>right: -400px</code> → <code>right: 88px</code> on desktop, and from <code>bottom: -400px</code> → <code>bottom: 106px</code> on <code>≤767px</code>. Disable <code>injectStyles</code> to style fully in Webflow.</p>
+
+    <h3>API</h3>
+    <pre><code><span class="keyword">const</span> dock = digi2.interactions.<span class="fn">dock</span>(<span class="string">'main'</span>, { <span class="prop">onOpen</span>: ..., <span class="prop">onClose</span>: ... })
+digi2.interactions.<span class="fn">dockAll</span>(options)        <span class="comment">// init every [d2-dock] with shared options</span>
+digi2.interactions.<span class="fn">get</span>(<span class="string">'dock'</span>, <span class="string">'main'</span>)
+digi2.interactions.<span class="fn">destroy</span>(<span class="string">'dock'</span>, <span class="string">'main'</span>)
+digi2.interactions.<span class="fn">list</span>()                  <span class="comment">// ['dock:main', ...]</span>
+
+dock.<span class="fn">open</span>(<span class="string">'social'</span>)      <span class="comment">// open by trigger name</span>
+dock.<span class="fn">close</span>()             <span class="comment">// close whichever is open</span>
+dock.<span class="fn">toggle</span>(<span class="string">'contact'</span>)
+dock.<span class="fn">isOpen</span>()            <span class="comment">// any open?</span>
+dock.<span class="fn">isOpen</span>(<span class="string">'contact'</span>)   <span class="comment">// is this one open?</span></code></pre>
+  </section>
+
   <!-- ── EVENTS ── -->
   <section id="events">
     <h2>Events</h2>
@@ -1463,6 +1540,11 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><td><code>d2-form="name"</code></td><td>Div wrapping form</td><td>Marks form for enhancement</td></tr>
       <tr><td><code>d2-form-error-text</code></td><td>Inside label</td><td>Error message element (text set from errorMessages)</td></tr>
       <tr><td><code>d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>
+      <tr><td><code>d2-dock="name"</code></td><td>Div</td><td>Dock host (auto-init)</td></tr>
+      <tr><td><code>d2-dock-trigger="key"</code></td><td>Button inside dock</td><td>Opens panel matched by <code>key</code></td></tr>
+      <tr><td><code>d2-dock-panel="key"</code></td><td>Div</td><td>Sliding panel matched by <code>key</code></td></tr>
+      <tr><td><code>d2-dock-close</code></td><td>Button inside panel</td><td>Closes the active panel</td></tr>
+      <tr><td><code>d2-dock-manual</code></td><td>Dock div</td><td>Skip auto-init (configure via JS)</td></tr>
       <tr><td><code>d2-debug-mode</code></td><td>Loader script</td><td>Enable debug logging</td></tr>
       <tr><td><code>d2-gtm="GTM-XXX"</code></td><td>Loader script</td><td>GTM ID — auto-loads google module</td></tr>
     </table>
