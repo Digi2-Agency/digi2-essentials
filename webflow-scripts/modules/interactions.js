@@ -39,6 +39,14 @@
  *   d2-interaction-outside-close    On click triggers — outside click closes
  *   d2-interaction-escape-close     Esc key closes
  *
+ *   The trigger gets a `d2-active` flag attribute while its target is
+ *   visible — style with `[d2-active]` (no value needed):
+ *
+ *     .dock-btn[d2-active] { background: #111; color: #fff; }
+ *
+ *   The target itself carries `data-d2-visible="true|false"` for the same
+ *   purpose; the two work together for trigger ↔ target styling pairs.
+ *
  *   Animation/group attributes can be on the trigger OR target.
  *   Target wins when both are present.
  *
@@ -319,7 +327,10 @@
       // Skip if another Interaction already set initial state on this target
       if (this.target.hasAttribute('data-d2-visible')) {
         this._visible = this.target.getAttribute('data-d2-visible') === 'true';
-        if (this._visible) this._registerVisible();
+        if (this._visible) {
+          this._registerVisible();
+          this._markTriggerActive(true);
+        }
         return;
       }
       var prev = this.target.style.transition;
@@ -329,6 +340,7 @@
         this.target.setAttribute('data-d2-visible', 'true');
         this._visible = true;
         this._registerVisible();
+        this._markTriggerActive(true);
       } else {
         applyStyles(this.target, buildHiddenStyles(this.options));
         this.target.setAttribute('data-d2-visible', 'false');
@@ -336,6 +348,14 @@
       }
       void this.target.offsetHeight;
       this.target.style.transition = prev;
+    }
+
+    // Reflect "target is currently visible" onto the trigger so users can
+    // style the active button: `.dock-btn[d2-active] { ... }`.
+    _markTriggerActive(active) {
+      if (!this.trigger) return;
+      if (active) this.trigger.setAttribute('d2-active', '');
+      else this.trigger.removeAttribute('d2-active');
     }
 
     _bind() {
@@ -435,6 +455,7 @@
       setTargetVisible(this.target, this.options);
       this._visible = true;
       this._registerVisible();
+      this._markTriggerActive(true);
       _log('show → ' + this.name);
       if (typeof this.options.onShow === 'function') {
         this.options.onShow(this.target, this);
@@ -448,6 +469,7 @@
       setTargetHidden(this.target, this.options);
       this._visible = false;
       this._unregisterVisible();
+      this._markTriggerActive(false);
       _log('hide → ' + this.name);
       if (typeof this.options.onHide === 'function') {
         this.options.onHide(this.target, this);
@@ -485,6 +507,7 @@
       var set = TARGET_INTERACTIONS.get(this.target);
       if (set) set.delete(this);
       this._unregisterVisible();
+      this._markTriggerActive(false);
     }
   }
 

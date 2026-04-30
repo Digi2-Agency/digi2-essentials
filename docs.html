@@ -1364,6 +1364,14 @@ digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
       <tr><td><code>d2-interaction-toggle="ns:id"</code></td><td>One-attribute shorthand for trigger=<code>click</code> + target. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor.</td></tr>
       <tr><td><code>d2-interaction-close="ns:id"</code></td><td>Click this element to close instance <code>ns:id</code>. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor (X buttons inside cards just need the bare attribute).</td></tr>
     </table>
+    <p style="margin-top:16px;"><strong>Style hooks (set automatically):</strong></p>
+    <table>
+      <tr><th>Where</th><th>Attribute</th><th>When</th></tr>
+      <tr><td>Trigger</td><td><code>d2-active</code></td><td>Present while its target is visible — style with <code>[d2-active]</code></td></tr>
+      <tr><td>Target</td><td><code>data-d2-visible</code></td><td><code>"true"</code> while open, <code>"false"</code> while closed</td></tr>
+    </table>
+    <pre><code><span class="comment">/* Active dock button */</span>
+.dock-btn<span class="prop">[d2-active]</span> { <span class="prop">background</span>: <span class="string">#111</span>; <span class="prop">color</span>: <span class="string">#fff</span>; }</code></pre>
     <p style="margin-top:16px;"><strong>Responsive values:</strong> any value-bearing <code>d2-*</code> attribute supports per-breakpoint overrides — see the <a href="#responsive">Responsive Attributes</a> section.</p>
     <p style="margin-top:16px;"><strong>JS API:</strong></p>
     <pre><code>digi2.interactions.<span class="fn">create</span>(<span class="string">'name'</span>, { trigger, target, on, animation, ... })
