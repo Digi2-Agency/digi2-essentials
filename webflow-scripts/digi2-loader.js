@@ -13,11 +13,10 @@
  *
  * ─── Available Modules ──────────────────────────────────────────────────────
  *
- *   d2-gtm="ID"      →  modules/google.js        Consent Mode V2 + GTM + consent manager (auto-loaded)
- *   d2-popups        →  modules/popups.js        Popup/modal manager with animations
- *   d2-cookies       →  modules/cookies.js       Cookie get/set/remove helpers
- *   d2-forms         →  modules/forms.js         Form enhancement with UTM, IP, GA tracking
- *   d2-interactions  →  modules/interactions.js  Dock + sliding panels (mutually-exclusive)
+ *   d2-gtm="ID" →  modules/google.js    Consent Mode V2 + GTM + consent manager (auto-loaded)
+ *   d2-popups   →  modules/popups.js    Popup/modal manager with animations
+ *   d2-cookies  →  modules/cookies.js   Cookie get/set/remove helpers
+ *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
@@ -42,12 +41,6 @@
  *   digi2.forms.get('name')                Get instance
  *   digi2.forms.destroy('name')            Remove injected fields & cleanup
  *   digi2.forms.list()                     List registered names
- *
- *   digi2.interactions.dock('name', options)   Side-dock with sliding panels
- *   digi2.interactions.dockAll(options)        Init all [d2-dock] elements
- *   digi2.interactions.get('dock', 'name')     Get instance
- *   digi2.interactions.destroy('dock', 'name') Remove instance & cleanup
- *   digi2.interactions.list()                  List registered components
  *
  *   digi2.google.consent.get()             Get current consent state
  *   digi2.google.consent.grant('category') Grant a single category

@@ -2,84 +2,65 @@
  * digi2 — Interactions Module
  * Loaded automatically by digi2-loader.js when d2-interactions is present.
  *
- * Components:
- *   - dock        Side-dock with mutually-exclusive sliding panels
- *                 (vertical floating column + slide-in panels, mobile-friendly)
+ * Declarative show/hide interactions with animations, plus a JS API.
  *
- * ─── Dock ──────────────────────────────────────────────────────────────────
+ * ─── Concepts ────────────────────────────────────────────────────────────────
  *
- * State machine:
- *   - Click trigger A   → if A active   → close A,  mark A previously_active
- *                       → if B active   → close B,  mark B previously_active, open A
- *                       → else          → open A
- *   - Hover any trigger → clear previously_active on all triggers
- *   - Click close-btn   → close active panel
- *   - Click outside     → close active panel
- *   - Press Escape      → close active panel
+ *   d2-instance="ns:foo"            Addressable name for any element.
+ *                                    Triggers reference targets by instance ID.
  *
- * Webflow / HTML setup (auto-init):
+ *   d2-interaction-trigger="hover"  Marks the element as a trigger.
+ *                                    Values: hover | click | focus | mouseenter
+ *                                            mouseleave | manual
  *
- *   <div d2-dock="main">                              <!-- the dock host -->
- *     <button d2-dock-trigger="social">Social</button>
- *     <button d2-dock-trigger="contact">Contact</button>
+ *   d2-interaction-target="ns:foo"  Instance ID of the element to show/hide.
+ *
+ *   d2-animation="fade"             none | fade | slide | zoom | flip
+ *   d2-animation-direction="up"     up | down | left | right (slide / flip)
+ *   d2-animation-duration="0.3"     seconds
+ *   d2-animation-easing="ease-out"  CSS easing
+ *   d2-animation-distance="12px"    slide offset
+ *
+ *   d2-interaction-group="dock"     Mutually-exclusive group: showing one
+ *                                    target in this group hides the others.
+ *
+ *   d2-interaction-delay="200"      ms — show after delay
+ *   d2-interaction-leave-delay="80" ms — hide after delay (default 80 for hover)
+ *   d2-interaction-initial="visible"  start visible (default: hidden)
+ *   d2-interaction-close="ns:foo"   Click this element to hide instance "ns:foo"
+ *   d2-interaction-outside-close    On click triggers — outside click closes
+ *   d2-interaction-escape-close     Esc key closes
+ *
+ *   Animation/group attributes can be on the trigger OR target.
+ *   Target wins when both are present.
+ *
+ * ─── Floating dock with tooltips ─────────────────────────────────────────────
+ *
+ *   <div class="dock">
+ *     <button d2-instance="dock:btn:home"
+ *             d2-interaction-trigger="hover"
+ *             d2-interaction-target="dock:tip:home">Home</button>
+ *     <button d2-instance="dock:btn:about"
+ *             d2-interaction-trigger="hover"
+ *             d2-interaction-target="dock:tip:about">About</button>
  *   </div>
  *
- *   <div d2-dock-panel="social">                      <!-- the panel -->
- *     <button d2-dock-close>×</button>
- *     ...content...
- *   </div>
- *   <div d2-dock-panel="contact">
- *     <button d2-dock-close>×</button>
- *     ...content...
- *   </div>
+ *   <div d2-instance="dock:tip:home"
+ *        d2-animation="slide" d2-animation-direction="up"
+ *        d2-interaction-group="dock-tooltips">Home page</div>
+ *   <div d2-instance="dock:tip:about"
+ *        d2-animation="slide" d2-animation-direction="up"
+ *        d2-interaction-group="dock-tooltips">About us</div>
  *
- * State classes (added/removed by the module):
- *   - .d2-active                 → trigger button while its panel is open
- *   - .d2-active                 → panel while it is open
- *   - .d2-previously-active      → trigger after closing-by-re-click
- *                                  (use this to hide the tooltip until next hover)
+ * ─── JS API ──────────────────────────────────────────────────────────────────
  *
- * JS API:
- *   digi2.interactions.dock('main', { ...options })
- *   digi2.interactions.dockAll({ ...options })   — init every [d2-dock] on the page
- *   digi2.interactions.get('dock', 'main')
- *   digi2.interactions.destroy('dock', 'main')
- *   digi2.interactions.list()
- *
- * Programmatic control:
- *   const dock = digi2.interactions.dock('main');
- *   dock.open('social');     — open a specific panel by trigger value
- *   dock.close();            — close whichever panel is open
- *   dock.toggle('contact');  — toggle a specific panel
- *
- * Options:
- *   triggerAttr:     'd2-dock-trigger'        — attribute on trigger buttons
- *   panelAttr:       'd2-dock-panel'          — attribute on panels
- *   closeAttr:       'd2-dock-close'          — attribute on close buttons inside panels
- *   activeClass:     'd2-active'              — class added to active trigger + panel
- *   prevActiveClass: 'd2-previously-active'   — class added to a trigger after re-click close
- *   closeOnOutside:  true                     — outside-click closes the active panel
- *   closeOnEscape:   true                     — Escape key closes the active panel
- *   injectStyles:    true                     — inject minimal slide animation CSS
- *   slideDuration:   '0.3s'                   — transition duration when injectStyles is on
- *   onOpen:          null                     — callback(panel, trigger, name)
- *   onClose:         null                     — callback(panel, trigger, name)
- *
- * Reference CSS (when injectStyles is off — style your own dock in Webflow):
- *
- *   [d2-dock-panel] {
- *     position: fixed; top: 50%; right: -400px;
- *     transform: translateY(-50%);
- *     transition: right 0.3s;
- *   }
- *   [d2-dock-panel].d2-active { right: 88px; }
- *
- *   @media (max-width: 767px) {
- *     [d2-dock-panel] { top: auto; right: auto; left: 6px;
- *       bottom: -400px; transform: none;
- *       transition: bottom 0.3s; }
- *     [d2-dock-panel].d2-active { bottom: 106px; }
- *   }
+ *   digi2.interactions.create('name', { trigger, target, on, animation, ... })
+ *   digi2.interactions.show('name')       digi2.interactions.hide('name')
+ *   digi2.interactions.toggle('name')     digi2.interactions.get('name')
+ *   digi2.interactions.destroy('name')    digi2.interactions.list()
+ *   digi2.interactions.showInstance('dock:tip:home')
+ *   digi2.interactions.hideInstance('dock:tip:home')
+ *   digi2.interactions.refresh()           — re-scan DOM (for late content)
  */
 (function () {
   'use strict';
@@ -91,365 +72,553 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Style injection — minimum CSS for slide-in animation.
-  // Idempotent: only injects once per page, no matter how many docks exist.
+  // Defaults
   // ---------------------------------------------------------------------------
-  var _stylesInjected = false;
+  var DEFAULTS = {
+    on: 'hover',
+    animation: 'fade',
+    direction: 'up',
+    duration: 0.3,
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    distance: '12px',
+    enterDelay: 0,
+    leaveDelay: 80,
+    group: null,
+    bridgedHover: true,        // hover stays open while cursor is over target
+    closeOnOutsideClick: true, // click triggers — outside click hides target
+    closeOnEscape: false,
+    initial: 'hidden',
+    onShow: null,
+    onHide: null,
+  };
 
-  function _injectBaseStyles(slideDuration) {
-    if (_stylesInjected) return;
-    _stylesInjected = true;
+  // ---------------------------------------------------------------------------
+  // Registries
+  // ---------------------------------------------------------------------------
+  var INSTANCE_REGISTRY = new Map();   // instance ID  → element
+  var GROUP_VISIBLE = new Map();       // group name   → Set of visible target els
+  var TARGET_INTERACTIONS = new WeakMap(); // target el → Set of Interaction
 
-    var dur = slideDuration || '0.3s';
-    var css =
-      '[d2-dock-panel]{' +
-        'position:fixed;top:50%;right:-400px;' +
-        'transform:translateY(-50%);' +
-        'transition:right ' + dur + ';' +
-        'z-index:1002;' +
-      '}' +
-      '[d2-dock-panel].d2-active{right:88px;}' +
-      '@media (max-width:767px){' +
-        '[d2-dock-panel]{' +
-          'top:auto;right:auto;left:6px;' +
-          'bottom:-400px;transform:none;' +
-          'transition:bottom ' + dur + ';' +
-        '}' +
-        '[d2-dock-panel].d2-active{bottom:106px;right:auto;}' +
-      '}';
+  function rebuildInstanceRegistry() {
+    INSTANCE_REGISTRY.clear();
+    var els = document.querySelectorAll('[d2-instance]');
+    for (var i = 0; i < els.length; i++) {
+      INSTANCE_REGISTRY.set(els[i].getAttribute('d2-instance'), els[i]);
+    }
+    _log('instance registry → ' + INSTANCE_REGISTRY.size);
+  }
 
-    var style = document.createElement('style');
-    style.setAttribute('data-digi2-interactions', '');
-    style.textContent = css;
-    document.head.appendChild(style);
-    _log('base styles injected');
+  function getInstanceElement(id) {
+    if (!id) return null;
+    if (INSTANCE_REGISTRY.has(id)) {
+      var cached = INSTANCE_REGISTRY.get(id);
+      if (cached && cached.isConnected) return cached;
+      INSTANCE_REGISTRY.delete(id);
+    }
+    var el = null;
+    try {
+      el = document.querySelector('[d2-instance="' + id.replace(/"/g, '\\"') + '"]');
+    } catch (_e) { /* invalid selector */ }
+    if (el) INSTANCE_REGISTRY.set(id, el);
+    return el;
   }
 
   // ---------------------------------------------------------------------------
-  // Dock — mutually-exclusive panel switcher
+  // Animation engine — uses standalone translate/scale/rotate properties so
+  // user CSS that sets `transform` (e.g. for centering) keeps working.
   // ---------------------------------------------------------------------------
-  class Dock {
+  function directionalTranslate(dir, distance) {
+    var d = distance || '12px';
+    switch (dir) {
+      case 'down':  return '0 -' + d;
+      case 'left':  return d + ' 0';
+      case 'right': return '-' + d + ' 0';
+      case 'up':
+      default:      return '0 ' + d;
+    }
+  }
+
+  function buildHiddenStyles(opts) {
+    if (opts.animation === 'none') {
+      return { display: 'none' };
+    }
+    var base = { opacity: '0', visibility: 'hidden', pointerEvents: 'none' };
+    switch (opts.animation) {
+      case 'slide':
+        base.translate = directionalTranslate(opts.direction, opts.distance);
+        break;
+      case 'zoom':
+        base.scale = '0.92';
+        break;
+      case 'flip':
+        base.rotate = (opts.direction === 'left' || opts.direction === 'right')
+          ? 'y -15deg'
+          : 'x -15deg';
+        break;
+      // 'fade' → opacity only
+    }
+    return base;
+  }
+
+  function buildVisibleStyles(opts) {
+    if (opts.animation === 'none') {
+      return { display: '' };
+    }
+    return {
+      opacity: '1',
+      visibility: 'visible',
+      pointerEvents: 'auto',
+      translate: '',
+      scale: '',
+      rotate: '',
+    };
+  }
+
+  function buildTransition(opts, isShowing) {
+    if (opts.animation === 'none') return '';
+    var d = opts.duration + 's';
+    var e = opts.easing;
+    var parts = ['opacity ' + d + ' ' + e, 'translate ' + d + ' ' + e,
+                 'scale ' + d + ' ' + e, 'rotate ' + d + ' ' + e];
+    // visibility snaps; delay it when hiding so element stays visible during fade-out
+    parts.push('visibility 0s ' + (isShowing ? '0s' : d));
+    return parts.join(', ');
+  }
+
+  function applyStyles(el, styles) {
+    for (var k in styles) {
+      if (styles.hasOwnProperty(k)) el.style[k] = styles[k];
+    }
+  }
+
+  function setTargetVisible(targetEl, opts) {
+    targetEl.style.transition = buildTransition(opts, true);
+    void targetEl.offsetHeight;  // flush so transition picks up
+    applyStyles(targetEl, buildVisibleStyles(opts));
+    targetEl.setAttribute('data-d2-visible', 'true');
+  }
+
+  function setTargetHidden(targetEl, opts) {
+    targetEl.style.transition = buildTransition(opts, false);
+    applyStyles(targetEl, buildHiddenStyles(opts));
+    targetEl.setAttribute('data-d2-visible', 'false');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Group exclusivity
+  // ---------------------------------------------------------------------------
+  function hideOthersInGroup(groupName, exceptTargetEl) {
+    if (!groupName) return;
+    var visible = GROUP_VISIBLE.get(groupName);
+    if (!visible || visible.size === 0) return;
+    visible.forEach(function (targetEl) {
+      if (targetEl === exceptTargetEl) return;
+      var set = TARGET_INTERACTIONS.get(targetEl);
+      if (!set) return;
+      set.forEach(function (i) { i._silentHide(); });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Element resolver — accepts instance ID, CSS selector, or Element
+  // ---------------------------------------------------------------------------
+  function resolveElement(input) {
+    if (!input) return null;
+    if (input instanceof Element) return input;
+    if (typeof input !== 'string') return null;
+    // Instance ID first
+    var byInstance = getInstanceElement(input);
+    if (byInstance) return byInstance;
+    // Fall back to CSS selector
+    try { return document.querySelector(input); } catch (_e) { return null; }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Interaction class
+  // ---------------------------------------------------------------------------
+  class Interaction {
     constructor(name, options) {
       this.name = name;
+      this.options = Object.assign({}, DEFAULTS, options || {});
 
-      this.options = Object.assign({
-        dockSelector:    null,
-        triggerAttr:     'd2-dock-trigger',
-        panelAttr:       'd2-dock-panel',
-        closeAttr:       'd2-dock-close',
-        activeClass:     'd2-active',
-        prevActiveClass: 'd2-previously-active',
-        closeOnOutside:  true,
-        closeOnEscape:   true,
-        injectStyles:    true,
-        slideDuration:   '0.3s',
-        onOpen:          null,
-        onClose:         null,
-      }, options || {});
+      this.trigger = resolveElement(this.options.trigger);
+      this.target = resolveElement(this.options.target);
 
-      this._dock = null;
-      this._triggers = [];
-      this._panels = {};
-      this._activePanel = null;
-      this._activeTrigger = null;
-
-      this._listeners = []; // { el, type, handler }
-
-      this._init();
-    }
-
-    _init() {
-      var sel = this.options.dockSelector || '[d2-dock="' + this.name + '"]';
-      this._dock = this.options._dockElement || document.querySelector(sel);
-      if (!this._dock) {
-        console.warn('[digi2.interactions] dock not found → ' + this.name);
+      if (!this.target) {
+        console.warn('[digi2.interactions] "' + name + '" — target not found:', this.options.target);
         return;
       }
 
-      if (this.options.injectStyles) {
-        _injectBaseStyles(this.options.slideDuration);
+      if (!TARGET_INTERACTIONS.has(this.target)) {
+        TARGET_INTERACTIONS.set(this.target, new Set());
+      }
+      TARGET_INTERACTIONS.get(this.target).add(this);
+
+      this._visible = false;
+      this._enterTimer = null;
+      this._leaveTimer = null;
+      this._listeners = [];
+
+      this._applyInitial();
+      this._bind();
+
+      _log('create → ' + name, {
+        on: this.options.on,
+        animation: this.options.animation,
+        direction: this.options.direction,
+        group: this.options.group,
+      });
+    }
+
+    _applyInitial() {
+      // Skip if another Interaction already set initial state on this target
+      if (this.target.hasAttribute('data-d2-visible')) {
+        this._visible = this.target.getAttribute('data-d2-visible') === 'true';
+        if (this._visible) this._registerVisible();
+        return;
+      }
+      var prev = this.target.style.transition;
+      this.target.style.transition = 'none';
+      if (this.options.initial === 'visible') {
+        applyStyles(this.target, buildVisibleStyles(this.options));
+        this.target.setAttribute('data-d2-visible', 'true');
+        this._visible = true;
+        this._registerVisible();
+      } else {
+        applyStyles(this.target, buildHiddenStyles(this.options));
+        this.target.setAttribute('data-d2-visible', 'false');
+        this._visible = false;
+      }
+      void this.target.offsetHeight;
+      this.target.style.transition = prev;
+    }
+
+    _bind() {
+      var self = this;
+      var on = this.options.on;
+
+      if (!this.trigger) {
+        if (on !== 'manual') {
+          console.warn('[digi2.interactions] "' + this.name + '" — trigger not found.');
+        }
+        return;
       }
 
-      this._triggers = Array.prototype.slice.call(
-        this._dock.querySelectorAll('[' + this.options.triggerAttr + ']')
-      );
-
-      // Panels are matched globally by attribute value — they don't need to live
-      // inside the dock, since they're typically positioned independently.
-      var self = this;
-      var panelEls = document.querySelectorAll('[' + this.options.panelAttr + ']');
-      panelEls.forEach(function (p) {
-        var key = p.getAttribute(self.options.panelAttr);
-        // Don't clobber: if multiple docks share panel keys, first one wins.
-        // Most setups use one dock per page.
-        if (key && !self._panels[key]) {
-          self._panels[key] = p;
-        }
-      });
-
-      this._wireTriggers();
-      this._wireCloseButtons();
-      if (this.options.closeOnOutside) this._wireOutsideClick();
-      if (this.options.closeOnEscape)  this._wireEscape();
-
-      _log('dock init → ' + this.name, {
-        triggers: this._triggers.length,
-        panels:   Object.keys(this._panels).length,
-      });
-    }
-
-    _addListener(el, type, handler) {
-      el.addEventListener(type, handler);
-      this._listeners.push({ el: el, type: type, handler: handler });
-    }
-
-    _wireTriggers() {
-      var self = this;
-      var triggerAttr     = this.options.triggerAttr;
-      var activeClass     = this.options.activeClass;
-      var prevActiveClass = this.options.prevActiveClass;
-
-      this._triggers.forEach(function (btn) {
-        var clickHandler = function (e) {
-          e.stopPropagation();
-          var key = btn.getAttribute(triggerAttr);
-          var panel = self._panels[key];
-          if (!panel) {
-            console.warn('[digi2.interactions] no panel for trigger → ' + key);
-            return;
+      switch (on) {
+        case 'hover':
+          this._listen(this.trigger, 'mouseenter', function () { self._scheduleShow(); });
+          this._listen(this.trigger, 'mouseleave', function () { self._scheduleHide(); });
+          if (this.options.bridgedHover) {
+            this._listen(this.target, 'mouseenter', function () { self._cancelHide(); });
+            this._listen(this.target, 'mouseleave', function () { self._scheduleHide(); });
           }
-
-          // Re-click on already-active trigger → close + mark previously_active
-          if (self._activePanel === panel) {
-            self._closeActive();
-            btn.classList.add(prevActiveClass);
-            return;
+          break;
+        case 'click':
+          this._listen(this.trigger, 'click', function (e) {
+            e.preventDefault();
+            self.toggle();
+          });
+          if (this.options.closeOnOutsideClick) {
+            this._listen(document, 'click', function (e) {
+              if (!self._visible) return;
+              if (self.target.contains(e.target)) return;
+              if (self.trigger && self.trigger.contains(e.target)) return;
+              self.hide();
+            });
           }
+          break;
+        case 'focus':
+          this._listen(this.trigger, 'focus', function () { self._scheduleShow(); });
+          this._listen(this.trigger, 'blur', function () { self._scheduleHide(); });
+          break;
+        case 'mouseenter':
+          this._listen(this.trigger, 'mouseenter', function () { self._scheduleShow(); });
+          break;
+        case 'mouseleave':
+          this._listen(this.trigger, 'mouseleave', function () { self._scheduleShow(); });
+          break;
+        case 'manual':
+          break;
+        default:
+          console.warn('[digi2.interactions] unknown trigger: ' + on);
+      }
 
-          // Switching from another panel → close it first, mark its trigger prev-active
-          if (self._activePanel) {
-            var prevPanel = self._activePanel;
-            var prevTrigger = self._activeTrigger;
-            prevPanel.classList.remove(activeClass);
-            if (prevTrigger) {
-              prevTrigger.classList.remove(activeClass);
-              prevTrigger.classList.add(prevActiveClass);
-            }
-            if (typeof self.options.onClose === 'function') {
-              self.options.onClose(prevPanel, prevTrigger, prevTrigger ? prevTrigger.getAttribute(triggerAttr) : null);
-            }
-            self._activePanel = null;
-            self._activeTrigger = null;
-          }
-
-          // Opening this panel — clear prev-active from all triggers (the tooltip
-          // for the freshly-opened trigger should not re-appear, but tooltips on
-          // siblings that the user moves to should).
-          self._triggers.forEach(function (b) { b.classList.remove(prevActiveClass); });
-
-          panel.classList.add(activeClass);
-          btn.classList.add(activeClass);
-          self._activePanel = panel;
-          self._activeTrigger = btn;
-
-          if (typeof self.options.onOpen === 'function') {
-            self.options.onOpen(panel, btn, key);
-          }
-          _log('open → ' + key);
-        };
-
-        var enterHandler = function () {
-          // Once the pointer enters any trigger, prev-active flag is no longer
-          // needed — tooltip suppression should only last while the pointer
-          // hovers the trigger right after the close.
-          self._triggers.forEach(function (b) { b.classList.remove(prevActiveClass); });
-        };
-
-        self._addListener(btn, 'click', clickHandler);
-        self._addListener(btn, 'mouseenter', enterHandler);
-      });
-    }
-
-    _wireCloseButtons() {
-      var self = this;
-      var closeAttr = this.options.closeAttr;
-
-      Object.keys(this._panels).forEach(function (key) {
-        var panel = self._panels[key];
-        var closers = panel.querySelectorAll('[' + closeAttr + ']');
-        closers.forEach(function (cb) {
-          var handler = function (e) {
-            e.stopPropagation();
-            self._closeActive();
-          };
-          self._addListener(cb, 'click', handler);
+      if (this.options.closeOnEscape) {
+        this._listen(document, 'keydown', function (e) {
+          if (e.key === 'Escape' && self._visible) self.hide();
         });
-      });
-    }
-
-    _wireOutsideClick() {
-      var self = this;
-      var handler = function (e) {
-        if (!self._activePanel) return;
-        if (self._activePanel.contains(e.target)) return;
-        if (self._dock && self._dock.contains(e.target)) return;
-        // Close without marking prev-active — the user clicked away, not on a trigger.
-        self._closeActive();
-      };
-      this._addListener(document, 'click', handler);
-    }
-
-    _wireEscape() {
-      var self = this;
-      var handler = function (e) {
-        if (e.key === 'Escape' && self._activePanel) {
-          self._closeActive();
-        }
-      };
-      this._addListener(document, 'keydown', handler);
-    }
-
-    /** Close whichever panel is currently active. */
-    _closeActive() {
-      if (!this._activePanel) return;
-      var panel = this._activePanel;
-      var trigger = this._activeTrigger;
-      var triggerAttr = this.options.triggerAttr;
-      var activeClass = this.options.activeClass;
-      var key = trigger ? trigger.getAttribute(triggerAttr) : null;
-
-      panel.classList.remove(activeClass);
-      if (trigger) trigger.classList.remove(activeClass);
-
-      this._activePanel = null;
-      this._activeTrigger = null;
-
-      if (typeof this.options.onClose === 'function') {
-        this.options.onClose(panel, trigger, key);
       }
-      _log('close → ' + key);
     }
 
-    // ---- Public methods ----------------------------------------------------
+    _listen(el, type, fn) {
+      el.addEventListener(type, fn);
+      this._listeners.push({ el: el, type: type, fn: fn });
+    }
 
-    open(name) {
+    _scheduleShow() {
+      this._cancelHide();
       var self = this;
-      var btn = this._triggers.find(function (b) {
-        return b.getAttribute(self.options.triggerAttr) === name;
-      });
-      if (btn) btn.click();
+      if (this.options.enterDelay > 0) {
+        this._enterTimer = setTimeout(function () { self.show(); }, this.options.enterDelay);
+      } else {
+        this.show();
+      }
     }
 
-    close() {
-      this._closeActive();
-    }
-
-    toggle(name) {
+    _scheduleHide() {
+      this._cancelShow();
       var self = this;
-      var btn = this._triggers.find(function (b) {
-        return b.getAttribute(self.options.triggerAttr) === name;
-      });
-      if (btn) btn.click();
+      if (this.options.leaveDelay > 0) {
+        this._leaveTimer = setTimeout(function () { self.hide(); }, this.options.leaveDelay);
+      } else {
+        this.hide();
+      }
     }
 
-    isOpen(name) {
-      if (!name) return !!this._activePanel;
-      var panel = this._panels[name];
-      return !!panel && panel === this._activePanel;
+    _cancelShow() {
+      if (this._enterTimer) { clearTimeout(this._enterTimer); this._enterTimer = null; }
+    }
+    _cancelHide() {
+      if (this._leaveTimer) { clearTimeout(this._leaveTimer); this._leaveTimer = null; }
+    }
+
+    show() {
+      this._cancelShow();
+      if (this._visible) return;
+      hideOthersInGroup(this.options.group, this.target);
+      setTargetVisible(this.target, this.options);
+      this._visible = true;
+      this._registerVisible();
+      _log('show → ' + this.name);
+      if (typeof this.options.onShow === 'function') {
+        this.options.onShow(this.target, this);
+      }
+    }
+
+    hide() {
+      this._cancelHide();
+      if (!this._visible) return;
+      setTargetHidden(this.target, this.options);
+      this._visible = false;
+      this._unregisterVisible();
+      _log('hide → ' + this.name);
+      if (typeof this.options.onHide === 'function') {
+        this.options.onHide(this.target, this);
+      }
+    }
+
+    // Used by group exclusivity — same as hide() but no recursion concerns.
+    _silentHide() { this.hide(); }
+
+    toggle() { this._visible ? this.hide() : this.show(); }
+
+    isVisible() { return !!this._visible; }
+
+    _registerVisible() {
+      if (!this.options.group) return;
+      if (!GROUP_VISIBLE.has(this.options.group)) {
+        GROUP_VISIBLE.set(this.options.group, new Set());
+      }
+      GROUP_VISIBLE.get(this.options.group).add(this.target);
+    }
+
+    _unregisterVisible() {
+      if (!this.options.group) return;
+      var set = GROUP_VISIBLE.get(this.options.group);
+      if (set) set.delete(this.target);
     }
 
     destroy() {
+      this._cancelShow();
+      this._cancelHide();
       this._listeners.forEach(function (l) {
-        l.el.removeEventListener(l.type, l.handler);
+        l.el.removeEventListener(l.type, l.fn);
       });
       this._listeners = [];
-      this._triggers = [];
-      this._panels = {};
-      this._dock = null;
-      this._activePanel = null;
-      this._activeTrigger = null;
+      var set = TARGET_INTERACTIONS.get(this.target);
+      if (set) set.delete(this);
+      this._unregisterVisible();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // FOUC preloader — inject CSS that hides target instances before module
+  // ready. Only hides instances that are referenced by some trigger.
+  // ---------------------------------------------------------------------------
+  function injectPreloadCSS() {
+    var ids = new Set();
+    document.querySelectorAll('[d2-interaction-target]').forEach(function (el) {
+      ids.add(el.getAttribute('d2-interaction-target'));
+    });
+    if (ids.size === 0) return;
+    var sels = [];
+    ids.forEach(function (id) {
+      sels.push('[d2-instance="' + id.replace(/"/g, '\\"') + '"]:not([data-d2-visible])');
+    });
+    var css = sels.join(',') + '{opacity:0!important;visibility:hidden!important;pointer-events:none!important}';
+    var style = document.createElement('style');
+    style.setAttribute('data-d2-interactions', '');
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auto-init from DOM attributes
+  // ---------------------------------------------------------------------------
+  var registry = {};
+  var nameCounter = 0;
+
+  function attr(el, name) { return el ? el.getAttribute(name) : null; }
+
+  function autoInit() {
+    rebuildInstanceRegistry();
+    injectPreloadCSS();
+
+    var triggers = document.querySelectorAll('[d2-interaction-trigger]');
+    var created = 0;
+
+    triggers.forEach(function (triggerEl) {
+      if (triggerEl._d2Interaction) return;
+
+      var on = triggerEl.getAttribute('d2-interaction-trigger') || 'hover';
+      var targetId = triggerEl.getAttribute('d2-interaction-target');
+      if (!targetId) {
+        _log('trigger has no d2-interaction-target', triggerEl);
+        return;
+      }
+      var targetEl = getInstanceElement(targetId);
+      if (!targetEl) {
+        _log('target not found → ' + targetId);
+        return;
+      }
+
+      // Target attrs win over trigger attrs
+      var animation = attr(targetEl, 'd2-animation') || attr(triggerEl, 'd2-animation') || DEFAULTS.animation;
+      var direction = attr(targetEl, 'd2-animation-direction') || attr(triggerEl, 'd2-animation-direction') || DEFAULTS.direction;
+      var duration = parseFloat(attr(targetEl, 'd2-animation-duration') || attr(triggerEl, 'd2-animation-duration')) || DEFAULTS.duration;
+      var easing = attr(targetEl, 'd2-animation-easing') || attr(triggerEl, 'd2-animation-easing') || DEFAULTS.easing;
+      var distance = attr(targetEl, 'd2-animation-distance') || attr(triggerEl, 'd2-animation-distance') || DEFAULTS.distance;
+      var group = attr(targetEl, 'd2-interaction-group') || attr(triggerEl, 'd2-interaction-group') || null;
+      var initial = attr(targetEl, 'd2-interaction-initial') || DEFAULTS.initial;
+
+      var enterDelay = parseInt(attr(triggerEl, 'd2-interaction-delay'), 10);
+      if (isNaN(enterDelay)) enterDelay = DEFAULTS.enterDelay;
+      var leaveDelay = parseInt(attr(triggerEl, 'd2-interaction-leave-delay'), 10);
+      if (isNaN(leaveDelay)) leaveDelay = (on === 'hover') ? DEFAULTS.leaveDelay : 0;
+
+      var closeOnOutsideClick = triggerEl.hasAttribute('d2-interaction-outside-close')
+        ? true
+        : (on === 'click' ? DEFAULTS.closeOnOutsideClick : false);
+      var closeOnEscape = triggerEl.hasAttribute('d2-interaction-escape-close');
+
+      var triggerInstance = attr(triggerEl, 'd2-instance');
+      var name = (triggerInstance || 'auto-' + (++nameCounter)) + '→' + targetId;
+      while (registry[name]) name = name + '#' + (++nameCounter);
+
+      var interaction = new Interaction(name, {
+        trigger: triggerEl,
+        target: targetEl,
+        on: on,
+        animation: animation,
+        direction: direction,
+        duration: duration,
+        easing: easing,
+        distance: distance,
+        group: group,
+        initial: initial,
+        enterDelay: enterDelay,
+        leaveDelay: leaveDelay,
+        closeOnOutsideClick: closeOnOutsideClick,
+        closeOnEscape: closeOnEscape,
+      });
+
+      triggerEl._d2Interaction = interaction;
+      registry[name] = interaction;
+      created++;
+    });
+
+    // [d2-interaction-close="instanceId"] — click to close that target
+    var closers = document.querySelectorAll('[d2-interaction-close]');
+    closers.forEach(function (closer) {
+      if (closer._d2Closer) return;
+      var targetId = closer.getAttribute('d2-interaction-close');
+      var fn = function (e) {
+        e.preventDefault();
+        api.hideInstance(targetId);
+      };
+      closer.addEventListener('click', fn);
+      closer._d2Closer = fn;
+    });
+
+    _log('autoInit → ' + created + ' interactions');
   }
 
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
-  var registry = {};
-
-  function _register(type, name, instance) {
-    registry[type + ':' + name] = instance;
-    return instance;
-  }
-
-  window.digi2.interactions = {
-    /**
-     * Create a single dock by name.
-     *   digi2.interactions.dock('main', { ...options })
-     */
-    dock: function (name, options) {
-      var key = 'dock:' + name;
-      if (registry[key]) {
-        console.warn('[digi2.interactions] dock "' + name + '" already exists. Destroy it first.');
-        return registry[key];
+  var api = {
+    create: function (name, options) {
+      if (registry[name]) {
+        console.warn('[digi2.interactions] "' + name + '" already exists.');
+        return registry[name];
       }
-      return _register('dock', name, new Dock(name, options));
+      var i = new Interaction(name, options);
+      registry[name] = i;
+      return i;
     },
 
-    /**
-     * Auto-initialize every [d2-dock] on the page with shared options.
-     */
-    dockAll: function (options) {
-      var els = document.querySelectorAll('[d2-dock]');
-      var created = [];
-      els.forEach(function (el) {
-        var name = el.getAttribute('d2-dock');
-        if (!name || registry['dock:' + name]) return;
-        var opts = Object.assign({}, options || {}, { _dockElement: el });
-        created.push(_register('dock', name, new Dock(name, opts)));
-      });
-      _log('dockAll → ' + created.length + ' dock(s)');
-      return created;
-    },
+    get: function (name) { return registry[name]; },
+    list: function () { return Object.keys(registry); },
 
-    get: function (type, name) {
-      return registry[type + ':' + name];
-    },
+    show: function (name) { var i = registry[name]; if (i) i.show(); },
+    hide: function (name) { var i = registry[name]; if (i) i.hide(); },
+    toggle: function (name) { var i = registry[name]; if (i) i.toggle(); },
 
-    destroy: function (type, name) {
-      var key = type + ':' + name;
-      var instance = registry[key];
-      if (instance && typeof instance.destroy === 'function') {
-        instance.destroy();
-        delete registry[key];
+    showInstance: function (instanceId) {
+      var el = getInstanceElement(instanceId);
+      if (!el) return;
+      var set = TARGET_INTERACTIONS.get(el);
+      if (set && set.size > 0) {
+        set.values().next().value.show();
       }
     },
 
-    list: function () {
-      return Object.keys(registry);
+    hideInstance: function (instanceId) {
+      var el = getInstanceElement(instanceId);
+      if (!el) return;
+      var set = TARGET_INTERACTIONS.get(el);
+      if (set) set.forEach(function (i) { i.hide(); });
     },
+
+    toggleInstance: function (instanceId) {
+      var el = getInstanceElement(instanceId);
+      if (!el) return;
+      var set = TARGET_INTERACTIONS.get(el);
+      if (set && set.size > 0) {
+        set.values().next().value.toggle();
+      }
+    },
+
+    destroy: function (name) {
+      var i = registry[name];
+      if (!i) return;
+      i.destroy();
+      delete registry[name];
+    },
+
+    refresh: autoInit,
+
+    // Lower-level utility — useful for custom integrations.
+    Interaction: Interaction,
   };
 
-  // ---------------------------------------------------------------------------
-  // Auto-init: any [d2-dock] on the page gets a default Dock instance.
-  // Skip this if the user has set d2-dock-manual on the element (they want JS
-  // control with custom options).
-  // ---------------------------------------------------------------------------
-  function _autoInit() {
-    var els = document.querySelectorAll('[d2-dock]:not([d2-dock-manual])');
-    var count = 0;
-    els.forEach(function (el) {
-      var name = el.getAttribute('d2-dock');
-      if (!name || registry['dock:' + name]) return;
-      var opts = { _dockElement: el };
-      _register('dock', name, new Dock(name, opts));
-      count++;
-    });
-    if (count > 0) _log('auto-init → ' + count + ' dock(s)');
-  }
+  window.digi2.interactions = api;
 
+  // Run early for FOUC prevention; re-run on DOM ready to catch late content.
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _autoInit);
+    injectPreloadCSS();  // run preload now if possible
+    document.addEventListener('DOMContentLoaded', autoInit);
   } else {
-    _autoInit();
+    autoInit();
   }
 })();
