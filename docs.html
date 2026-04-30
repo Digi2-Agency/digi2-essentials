@@ -663,6 +663,19 @@
 
   <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Interactions
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#interactions">Overview</a>
+      <a href="#interactions-dock">Dock + Tooltips</a>
+      <a href="#interactions-click">Click Toggle</a>
+      <a href="#interactions-attrs">Attributes</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group is-collapsed">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Sliders
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -729,7 +742,6 @@
   <span class="prop">d2-popups</span>
   <span class="prop">d2-cookies</span>
   <span class="prop">d2-forms</span>
-  <span class="prop">d2-interactions</span>
 &gt;&lt;/script&gt;</code></pre>
 
     <table>
@@ -738,7 +750,7 @@
       <tr><td><code>d2-popups</code></td><td>Popup / modal manager</td><td>8.4 KB</td></tr>
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
       <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM</td><td>12.1 KB</td></tr>
-      <tr><td><code>d2-interactions</code></td><td>Side-dock + sliding panels</td><td>5.3 KB</td></tr>
+      <tr><td><code>d2-interactions</code></td><td>Hover/click show-hide + animations</td><td>9.1 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
   </section>
@@ -1196,6 +1208,151 @@ digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
     </table>
   </section>
 
+  <!-- ── INTERACTIONS ── -->
+  <section id="interactions">
+    <h2>Interactions</h2>
+    <p>Declarative show/hide with animations. Wire triggers to targets via instance IDs, mix in groups for mutually-exclusive panels (dock tooltips, tabs, dropdown menus).</p>
+    <pre><code><span class="comment">&lt;!-- Trigger --&gt;</span>
+&lt;button <span class="prop">d2-interaction-trigger</span>=<span class="string">"hover"</span>
+        <span class="prop">d2-interaction-target</span>=<span class="string">"dock:tip:home"</span>&gt;Home&lt;/button&gt;
+
+<span class="comment">&lt;!-- Target — addressable by d2-instance --&gt;</span>
+&lt;div <span class="prop">d2-instance</span>=<span class="string">"dock:tip:home"</span>
+     <span class="prop">d2-animation</span>=<span class="string">"slide"</span>
+     <span class="prop">d2-animation-direction</span>=<span class="string">"up"</span>
+     <span class="prop">d2-interaction-group</span>=<span class="string">"dock-tooltips"</span>&gt;
+  Home page
+&lt;/div&gt;</code></pre>
+    <pre><code>digi2.interactions.<span class="fn">create</span>(<span class="string">'menu'</span>, {
+  <span class="prop">trigger</span>: <span class="string">'#menu-btn'</span>,
+  <span class="prop">target</span>: <span class="string">'#menu'</span>,
+  <span class="prop">on</span>: <span class="string">'click'</span>,
+  <span class="prop">animation</span>: <span class="string">'zoom'</span>,
+  <span class="prop">closeOnEscape</span>: <span class="keyword">true</span>,
+})</code></pre>
+  </section>
+
+  <section id="interactions-dock">
+    <h3 style="margin-top:32px;">Live Demo — Dock with Grouped Tooltips</h3>
+    <p>Hover any button. Tooltips share group <code>dock-tooltips</code>, so moving between buttons cross-fades them — old slides out as the new one slides in.</p>
+    <div class="demo-box" style="display:flex; align-items:flex-start; justify-content:center; padding:80px 24px 24px;">
+      <div style="position:relative; display:flex; gap:8px; padding:8px; background:var(--surface-2); border-radius:14px; border:1px solid var(--border);">
+
+        <button class="btn btn--sm btn--outline" style="font-size:18px;"
+                d2-instance="dock:btn:home"
+                d2-interaction-trigger="hover"
+                d2-interaction-target="dock:tip:home">🏠</button>
+
+        <button class="btn btn--sm btn--outline" style="font-size:18px;"
+                d2-instance="dock:btn:search"
+                d2-interaction-trigger="hover"
+                d2-interaction-target="dock:tip:search">🔍</button>
+
+        <button class="btn btn--sm btn--outline" style="font-size:18px;"
+                d2-instance="dock:btn:mail"
+                d2-interaction-trigger="hover"
+                d2-interaction-target="dock:tip:mail">✉️</button>
+
+        <button class="btn btn--sm btn--outline" style="font-size:18px;"
+                d2-instance="dock:btn:settings"
+                d2-interaction-trigger="hover"
+                d2-interaction-target="dock:tip:settings">⚙️</button>
+
+        <!-- Tooltips. Position: absolute above the dock; group makes them exclusive. -->
+        <div d2-instance="dock:tip:home"
+             d2-animation="slide" d2-animation-direction="up" d2-animation-distance="10px"
+             d2-interaction-group="dock-tooltips"
+             style="position:absolute; bottom:calc(100% + 12px); left:8px; padding:6px 12px; background:var(--accent); color:#fff; font-size:12px; border-radius:6px; white-space:nowrap;">Home</div>
+
+        <div d2-instance="dock:tip:search"
+             d2-animation="slide" d2-animation-direction="up" d2-animation-distance="10px"
+             d2-interaction-group="dock-tooltips"
+             style="position:absolute; bottom:calc(100% + 12px); left:60px; padding:6px 12px; background:var(--accent); color:#fff; font-size:12px; border-radius:6px; white-space:nowrap;">Search</div>
+
+        <div d2-instance="dock:tip:mail"
+             d2-animation="slide" d2-animation-direction="up" d2-animation-distance="10px"
+             d2-interaction-group="dock-tooltips"
+             style="position:absolute; bottom:calc(100% + 12px); left:112px; padding:6px 12px; background:var(--accent); color:#fff; font-size:12px; border-radius:6px; white-space:nowrap;">Mail</div>
+
+        <div d2-instance="dock:tip:settings"
+             d2-animation="slide" d2-animation-direction="up" d2-animation-distance="10px"
+             d2-interaction-group="dock-tooltips"
+             style="position:absolute; bottom:calc(100% + 12px); left:164px; padding:6px 12px; background:var(--accent); color:#fff; font-size:12px; border-radius:6px; white-space:nowrap;">Settings</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="interactions-click">
+    <h3 style="margin-top:32px;">Live Demo — Click Toggle + Group</h3>
+    <p>Click each button to open its panel. Group <code>info-panels</code> closes the previous one. Outside click also closes.</p>
+    <div class="demo-box" style="position:relative;">
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <button class="btn btn--sm" d2-interaction-trigger="click" d2-interaction-target="info:a">Panel A</button>
+        <button class="btn btn--sm" d2-interaction-trigger="click" d2-interaction-target="info:b">Panel B</button>
+        <button class="btn btn--sm" d2-interaction-trigger="click" d2-interaction-target="info:c">Panel C</button>
+      </div>
+
+      <div d2-instance="info:a"
+           d2-animation="slide" d2-animation-direction="down"
+           d2-interaction-group="info-panels"
+           style="padding:14px; background:var(--accent-dim); border:1px solid var(--accent); border-radius:8px; margin-top:8px;">
+        <strong>Panel A</strong> — opening Panel B or C will close this with a slide-out.
+      </div>
+
+      <div d2-instance="info:b"
+           d2-animation="slide" d2-animation-direction="down"
+           d2-interaction-group="info-panels"
+           style="padding:14px; background:rgba(34,197,94,0.15); border:1px solid var(--green); border-radius:8px; margin-top:8px;">
+        <strong>Panel B</strong> — group exclusivity means only one panel is open at a time.
+      </div>
+
+      <div d2-instance="info:c"
+           d2-animation="slide" d2-animation-direction="down"
+           d2-interaction-group="info-panels"
+           style="padding:14px; background:rgba(59,130,246,0.15); border:1px solid var(--blue); border-radius:8px; margin-top:8px;">
+        <strong>Panel C</strong> — clicking outside any panel also closes the active one.
+      </div>
+    </div>
+  </section>
+
+  <section id="interactions-attrs">
+    <h3 style="margin-top:32px;">Attribute Reference</h3>
+    <p><strong>On triggers:</strong></p>
+    <table>
+      <tr><th>Attribute</th><th>Values</th></tr>
+      <tr><td><code>d2-interaction-trigger</code></td><td><code>hover</code> · <code>click</code> · <code>focus</code> · <code>mouseenter</code> · <code>mouseleave</code> · <code>manual</code></td></tr>
+      <tr><td><code>d2-interaction-target</code></td><td>Instance ID of the element to show/hide</td></tr>
+      <tr><td><code>d2-interaction-delay</code></td><td>ms — show after delay</td></tr>
+      <tr><td><code>d2-interaction-leave-delay</code></td><td>ms — hide after delay (default <code>80</code> for hover)</td></tr>
+      <tr><td><code>d2-interaction-outside-close</code></td><td>Boolean — outside click closes (click triggers)</td></tr>
+      <tr><td><code>d2-interaction-escape-close</code></td><td>Boolean — Esc key closes</td></tr>
+    </table>
+    <p style="margin-top:16px;"><strong>On targets</strong> (or triggers — target wins):</p>
+    <table>
+      <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>d2-instance</code></td><td>—</td><td>Unique addressable name, e.g. <code>dock:tip:home</code></td></tr>
+      <tr><td><code>d2-animation</code></td><td><code>fade</code></td><td><code>none</code> · <code>fade</code> · <code>slide</code> · <code>zoom</code> · <code>flip</code></td></tr>
+      <tr><td><code>d2-animation-direction</code></td><td><code>up</code></td><td><code>up</code> · <code>down</code> · <code>left</code> · <code>right</code></td></tr>
+      <tr><td><code>d2-animation-duration</code></td><td><code>0.3</code></td><td>Seconds</td></tr>
+      <tr><td><code>d2-animation-easing</code></td><td><code>cubic-bezier(.16,1,.3,1)</code></td><td>Any CSS easing</td></tr>
+      <tr><td><code>d2-animation-distance</code></td><td><code>12px</code></td><td>Slide offset</td></tr>
+      <tr><td><code>d2-interaction-group</code></td><td>—</td><td>Mutually exclusive — showing one hides the others</td></tr>
+      <tr><td><code>d2-interaction-initial</code></td><td><code>hidden</code></td><td><code>hidden</code> · <code>visible</code></td></tr>
+    </table>
+    <p style="margin-top:16px;"><strong>Anywhere:</strong></p>
+    <table>
+      <tr><th>Attribute</th><th>Behavior</th></tr>
+      <tr><td><code>d2-interaction-close="ns:id"</code></td><td>Click this element to close instance <code>ns:id</code></td></tr>
+    </table>
+    <p style="margin-top:16px;"><strong>JS API:</strong></p>
+    <pre><code>digi2.interactions.<span class="fn">create</span>(<span class="string">'name'</span>, { trigger, target, on, animation, ... })
+digi2.interactions.<span class="fn">show</span>(<span class="string">'name'</span>)        digi2.interactions.<span class="fn">hide</span>(<span class="string">'name'</span>)
+digi2.interactions.<span class="fn">toggle</span>(<span class="string">'name'</span>)      digi2.interactions.<span class="fn">destroy</span>(<span class="string">'name'</span>)
+digi2.interactions.<span class="fn">showInstance</span>(<span class="string">'dock:tip:home'</span>)
+digi2.interactions.<span class="fn">hideInstance</span>(<span class="string">'dock:tip:home'</span>)
+digi2.interactions.<span class="fn">refresh</span>()    <span class="comment">// re-scan DOM after dynamic content</span></code></pre>
+  </section>
+
   <!-- ── SLIDERS ── -->
   <section id="sliders">
     <h2>Sliders</h2>
@@ -1431,81 +1588,6 @@ digi2.copy.<span class="fn">text</span>(<span class="string">'Hello'</span>)
 digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'</span>)</code></pre>
   </section>
 
-  <!-- ── INTERACTIONS ── -->
-  <section id="interactions">
-    <h2>Interactions — Dock</h2>
-    <p>Vertical floating column of triggers wired to mutually-exclusive sliding panels. The kids-co.pl right-side dock pattern.</p>
-
-    <h3>Markup</h3>
-    <pre><code>&lt;div <span class="prop">d2-dock</span>=<span class="string">"main"</span>&gt;
-  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"social"</span>&gt;Social&lt;/button&gt;
-  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"contact"</span>&gt;Kontakt&lt;/button&gt;
-  &lt;button <span class="prop">d2-dock-trigger</span>=<span class="string">"enroll"</span>&gt;Zapisy&lt;/button&gt;
-&lt;/div&gt;
-
-&lt;div <span class="prop">d2-dock-panel</span>=<span class="string">"social"</span>&gt;
-  &lt;button <span class="prop">d2-dock-close</span>&gt;&times;&lt;/button&gt;
-  &lt;h4&gt;Obserwuj nas&lt;/h4&gt;...
-&lt;/div&gt;
-&lt;div <span class="prop">d2-dock-panel</span>=<span class="string">"contact"</span>&gt;
-  &lt;button <span class="prop">d2-dock-close</span>&gt;&times;&lt;/button&gt;...
-&lt;/div&gt;</code></pre>
-    <p>Auto-inits on DOM ready. Add <code>d2-dock-manual</code> to opt out and configure via JS.</p>
-
-    <h3>Behavior</h3>
-    <table>
-      <tr><th>Action</th><th>Effect</th></tr>
-      <tr><td>Click trigger A</td><td>Open panel A</td></tr>
-      <tr><td>Click A again</td><td>Close A, mark A <code>.d2-previously-active</code></td></tr>
-      <tr><td>Click B while A open</td><td>Close A, open B</td></tr>
-      <tr><td>Hover any trigger</td><td>Clear <code>.d2-previously-active</code> from all triggers</td></tr>
-      <tr><td>Click <code>[d2-dock-close]</code></td><td>Close active panel</td></tr>
-      <tr><td>Click outside dock + panel</td><td>Close active panel</td></tr>
-      <tr><td>Press <kbd>Escape</kbd></td><td>Close active panel</td></tr>
-    </table>
-
-    <h3>State Classes</h3>
-    <table>
-      <tr><th>Class</th><th>Applied to</th><th>When</th></tr>
-      <tr><td><code>.d2-active</code></td><td>trigger + panel</td><td>Panel open</td></tr>
-      <tr><td><code>.d2-previously-active</code></td><td>trigger</td><td>After re-click close (use to suppress tooltip until next hover)</td></tr>
-    </table>
-    <pre><code><span class="comment">/* Tooltip suppression pattern */</span>
-.dock-button:not(.d2-active):not(.d2-previously-active):hover .tooltip {
-  opacity: <span class="string">1</span>;
-}</code></pre>
-
-    <h3>Options</h3>
-    <table>
-      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
-      <tr><td><code>triggerAttr</code></td><td><code>'d2-dock-trigger'</code></td><td>Attribute on trigger buttons</td></tr>
-      <tr><td><code>panelAttr</code></td><td><code>'d2-dock-panel'</code></td><td>Attribute on panels</td></tr>
-      <tr><td><code>closeAttr</code></td><td><code>'d2-dock-close'</code></td><td>Attribute on close buttons inside panels</td></tr>
-      <tr><td><code>activeClass</code></td><td><code>'d2-active'</code></td><td>Class on active trigger + panel</td></tr>
-      <tr><td><code>prevActiveClass</code></td><td><code>'d2-previously-active'</code></td><td>Class on trigger after re-click close</td></tr>
-      <tr><td><code>closeOnOutside</code></td><td><code>true</code></td><td>Outside click closes</td></tr>
-      <tr><td><code>closeOnEscape</code></td><td><code>true</code></td><td>Escape key closes</td></tr>
-      <tr><td><code>injectStyles</code></td><td><code>true</code></td><td>Inject minimal slide CSS</td></tr>
-      <tr><td><code>slideDuration</code></td><td><code>'0.3s'</code></td><td>Slide transition duration</td></tr>
-      <tr><td><code>onOpen</code></td><td><code>null</code></td><td><code>(panel, trigger, name) =&gt; {}</code></td></tr>
-      <tr><td><code>onClose</code></td><td><code>null</code></td><td><code>(panel, trigger, name) =&gt; {}</code></td></tr>
-    </table>
-    <p>Default injected CSS: panels slide in from <code>right: -400px</code> → <code>right: 88px</code> on desktop, and from <code>bottom: -400px</code> → <code>bottom: 106px</code> on <code>≤767px</code>. Disable <code>injectStyles</code> to style fully in Webflow.</p>
-
-    <h3>API</h3>
-    <pre><code><span class="keyword">const</span> dock = digi2.interactions.<span class="fn">dock</span>(<span class="string">'main'</span>, { <span class="prop">onOpen</span>: ..., <span class="prop">onClose</span>: ... })
-digi2.interactions.<span class="fn">dockAll</span>(options)        <span class="comment">// init every [d2-dock] with shared options</span>
-digi2.interactions.<span class="fn">get</span>(<span class="string">'dock'</span>, <span class="string">'main'</span>)
-digi2.interactions.<span class="fn">destroy</span>(<span class="string">'dock'</span>, <span class="string">'main'</span>)
-digi2.interactions.<span class="fn">list</span>()                  <span class="comment">// ['dock:main', ...]</span>
-
-dock.<span class="fn">open</span>(<span class="string">'social'</span>)      <span class="comment">// open by trigger name</span>
-dock.<span class="fn">close</span>()             <span class="comment">// close whichever is open</span>
-dock.<span class="fn">toggle</span>(<span class="string">'contact'</span>)
-dock.<span class="fn">isOpen</span>()            <span class="comment">// any open?</span>
-dock.<span class="fn">isOpen</span>(<span class="string">'contact'</span>)   <span class="comment">// is this one open?</span></code></pre>
-  </section>
-
   <!-- ── EVENTS ── -->
   <section id="events">
     <h2>Events</h2>
@@ -1540,11 +1622,6 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><td><code>d2-form="name"</code></td><td>Div wrapping form</td><td>Marks form for enhancement</td></tr>
       <tr><td><code>d2-form-error-text</code></td><td>Inside label</td><td>Error message element (text set from errorMessages)</td></tr>
       <tr><td><code>d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>
-      <tr><td><code>d2-dock="name"</code></td><td>Div</td><td>Dock host (auto-init)</td></tr>
-      <tr><td><code>d2-dock-trigger="key"</code></td><td>Button inside dock</td><td>Opens panel matched by <code>key</code></td></tr>
-      <tr><td><code>d2-dock-panel="key"</code></td><td>Div</td><td>Sliding panel matched by <code>key</code></td></tr>
-      <tr><td><code>d2-dock-close</code></td><td>Button inside panel</td><td>Closes the active panel</td></tr>
-      <tr><td><code>d2-dock-manual</code></td><td>Dock div</td><td>Skip auto-init (configure via JS)</td></tr>
       <tr><td><code>d2-debug-mode</code></td><td>Loader script</td><td>Enable debug logging</td></tr>
       <tr><td><code>d2-gtm="GTM-XXX"</code></td><td>Loader script</td><td>GTM ID — auto-loads google module</td></tr>
     </table>
@@ -1622,6 +1699,7 @@ digi2.modules.<span class="fn">list</span>()                              <span 
   d2-filter
   d2-cms
   d2-copy
+  d2-interactions
   d2-gtm="GTM-TEST123"
   d2-debug-mode
 ></script>
