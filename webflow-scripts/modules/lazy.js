@@ -24,6 +24,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('lazy', action, data);
   }
@@ -84,8 +94,8 @@
   // ---------------------------------------------------------------------------
 
   function loadElement(el) {
-    var lazySrc = el.getAttribute('d2-lazy');
-    var lazyBg = el.getAttribute('d2-lazy-bg');
+    var lazySrc = attr(el, 'd2-lazy');
+    var lazyBg = attr(el, 'd2-lazy-bg');
 
     if (lazySrc) {
       loadMedia(el, lazySrc);
@@ -107,7 +117,7 @@
       img.src = src;
 
       // Also handle srcset
-      var srcset = el.getAttribute('d2-lazy-srcset');
+      var srcset = attr(el, 'd2-lazy-srcset');
       if (srcset) {
         img.srcset = srcset;
         el.srcset = srcset;
@@ -153,7 +163,7 @@
 
   function onError(el) {
     el.classList.add(_options.errorClass);
-    _log('error loading', el.getAttribute('d2-lazy') || el.getAttribute('d2-lazy-bg'));
+    _log('error loading', attr(el, 'd2-lazy') || attr(el, 'd2-lazy-bg'));
 
     if (typeof _options.onError === 'function') {
       _options.onError(el);

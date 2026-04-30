@@ -22,6 +22,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('scroll', action, data);
   }
@@ -87,7 +97,7 @@
     var seen = {};
 
     _links.forEach(function (link) {
-      var target = link.getAttribute('d2-scroll');
+      var target = attr(link, 'd2-scroll');
       if (target && target.charAt(0) === '#' && !seen[target]) {
         var section = document.querySelector(target);
         if (section) {
@@ -108,7 +118,7 @@
       var link = e.target.closest(_options.selector);
       if (!link) return;
 
-      var target = link.getAttribute('d2-scroll');
+      var target = attr(link, 'd2-scroll');
       if (!target) return;
 
       e.preventDefault();
@@ -160,7 +170,7 @@
 
       // Update active classes on links
       _links.forEach(function (link) {
-        var target = link.getAttribute('d2-scroll');
+        var target = attr(link, 'd2-scroll');
         if (target === '#' + newActive) {
           link.classList.add(_options.activeClass);
         } else {

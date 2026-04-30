@@ -177,6 +177,31 @@
     if (window.digi2.log) window.digi2.log('popups', action, data);
   }
 
+  // Responsive-value resolver. If `raw` is a string with the responsive
+  // syntax ("value;value@maxWidth"), pick the bucket that matches the current
+  // viewport. Non-strings (numbers, null, etc.) pass through untouched so
+  // existing JS-API options keep working.
+  function resolveResponsiveValue(raw) {
+    if (typeof raw !== 'string') return raw;
+    if (window.digi2 && typeof window.digi2.parseResponsive === 'function') {
+      var parsed = window.digi2.parseResponsive(raw);
+      if (parsed.bps.length === 0) return raw; // not a responsive string
+      var v = window.digi2.resolveResponsive(parsed);
+      return v === '' ? raw : v;
+    }
+    return raw;
+  }
+
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   // ---------------------------------------------------------------------------
   // PopupManager (internal)
   // ---------------------------------------------------------------------------
@@ -243,6 +268,10 @@
       this._idleTimerId = null;
       this._rageClicks = [];
       this._intersectionObserver = null;
+
+      // Seed the active animation/duration from current options so any
+      // pre-show inspection sees a sensible value.
+      this._refreshResponsiveOpts();
 
       this._init();
     }
@@ -335,7 +364,11 @@
     show() {
       if (!this.popupElement || this.isVisible || this._animating) return;
 
-      _log('show → ' + this.name, { animation: this.options.animation });
+      // Resolve responsive option strings (e.g. animation: 'fade;slide-up@911')
+      // at show time so breakpoint changes take effect without re-create.
+      this._refreshResponsiveOpts();
+
+      _log('show → ' + this.name, { animation: this._activeAnimation });
       this.isVisible = true;
 
       if (this.options.lockScrollOnShow) {
@@ -343,7 +376,7 @@
         document.body.style.overflow = 'hidden';
       }
       const anim = this._getAnimation();
-      const dur = this.options.animationDuration;
+      const dur = this._activeAnimationDuration;
 
       if (anim === ANIMATIONS.none) {
         this.popupElement.style.display = 'flex';
@@ -366,10 +399,13 @@
     hide() {
       if (!this.popupElement || !this.isVisible || this._animating) return;
 
+      // Re-resolve in case the breakpoint flipped while the popup was open.
+      this._refreshResponsiveOpts();
+
       _log('hide → ' + this.name);
       this.isVisible = false;
       const anim = this._getAnimation();
-      const dur = this.options.animationDuration;
+      const dur = this._activeAnimationDuration;
 
       const afterHide = () => {
         this.popupElement.style.display = 'none';
@@ -402,7 +438,22 @@
     // ---- Animation helper ---------------------------------------------------
 
     _getAnimation() {
-      return ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
+      var key = this._activeAnimation || this.options.animation;
+      return ANIMATIONS[key] || ANIMATIONS.fade;
+    }
+
+    // Resolve any option strings that support the responsive `value;v@max`
+    // syntax. Cached on the instance as `_active*` so show()/hide() share a
+    // consistent resolution across the open→close transition.
+    _refreshResponsiveOpts() {
+      this._activeAnimation = resolveResponsiveValue(this.options.animation);
+      var dur = resolveResponsiveValue(this.options.animationDuration);
+      // Allow numeric strings ("0.4") in the responsive syntax.
+      if (typeof dur === 'string') {
+        var n = parseFloat(dur);
+        dur = isNaN(n) ? this.options.animationDuration : n;
+      }
+      this._activeAnimationDuration = dur;
     }
 
     // ---- Triggers -----------------------------------------------------------
@@ -948,12 +999,16 @@
   // Global delegated listener for d2-show-popup="popupName"
   // One listener for all popups — clicks anywhere on the page are caught here.
   // Only triggers if the matching instance has dataTagTrigger: true (default).
+  // The attribute itself supports the responsive `name;name@max` syntax via
+  // attr(), so different popups can be wired to the same trigger element per
+  // breakpoint.
   // ---------------------------------------------------------------------------
   document.addEventListener('click', function (e) {
     var trigger = e.target.closest('[d2-show-popup]');
     if (!trigger) return;
 
-    var name = trigger.getAttribute('d2-show-popup');
+    var name = attr(trigger, 'd2-show-popup');
+    if (!name) return;
     var instance = registry[name];
     if (instance && instance.options.dataTagTrigger) {
       e.preventDefault();
@@ -961,4 +1016,24 @@
       instance.show();
     }
   });
+
+  // When the active responsive bucket changes, refresh resolved option
+  // strings on every popup. If one is currently visible, re-apply the `in`
+  // styles so its resting transition target picks up the new bucket's values
+  // (so the next hide animates correctly).
+  if (window.digi2 && typeof window.digi2.on === 'function') {
+    window.digi2.on('responsive:change', function () {
+      Object.keys(registry).forEach(function (k) {
+        var inst = registry[k];
+        if (!inst || !inst.popupElement) return;
+        inst._refreshResponsiveOpts();
+        if (inst.isVisible && !inst._animating) {
+          var anim = inst._getAnimation();
+          if (anim !== ANIMATIONS.none) {
+            applyStyles(inst.popupElement, anim.in());
+          }
+        }
+      });
+    });
+  }
 })();

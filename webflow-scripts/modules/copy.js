@@ -17,6 +17,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('copy', action, data);
   }
@@ -65,7 +75,7 @@
     var text = '';
 
     // Check for target element reference
-    var targetSel = trigger.getAttribute('d2-copy-target');
+    var targetSel = attr(trigger, 'd2-copy-target');
     if (targetSel) {
       var targetEl = document.querySelector(targetSel);
       if (targetEl) text = targetEl.textContent.trim();
@@ -73,7 +83,7 @@
 
     // Fall back to attribute value
     if (!text) {
-      var attrVal = trigger.getAttribute('d2-copy');
+      var attrVal = attr(trigger, 'd2-copy');
       if (attrVal && attrVal.charAt(0) === '#') {
         // Selector reference
         var refEl = document.querySelector(attrVal);

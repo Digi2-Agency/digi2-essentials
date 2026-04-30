@@ -34,6 +34,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('filter', action, data);
   }
@@ -94,7 +104,7 @@
       this.buttons.forEach(function (btn) {
         btn.addEventListener('click', function (e) {
           e.preventDefault();
-          var filter = btn.getAttribute('d2-filter');
+          var filter = attr(btn, 'd2-filter');
           self.filterBy(filter);
         });
       });
@@ -144,7 +154,7 @@
 
       // Update button states
       this.buttons.forEach(function (btn) {
-        if (btn.getAttribute('d2-filter') === filter) {
+        if (attr(btn, 'd2-filter') === filter) {
           btn.classList.add(activeClass);
         } else {
           btn.classList.remove(activeClass);
@@ -153,7 +163,7 @@
 
       // Filter items
       this.items.forEach(function (item) {
-        var categories = (item.getAttribute('d2-filter-category') || '').split(',').map(function (c) { return c.trim(); });
+        var categories = (attr(item, 'd2-filter-category') || '').split(',').map(function (c) { return c.trim(); });
         var show = false;
 
         if (filter === allKw) {

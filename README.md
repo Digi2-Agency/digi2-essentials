@@ -22,7 +22,6 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
   d2-countdown
   d2-filter
   d2-copy
-  d2-interactions
 ></script>
 ```
 
@@ -48,9 +47,34 @@ Only the modules you declare get loaded. Loader: **3.7 KB**.
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
 | `d2-cms` | cms | 10.8 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 1.9 KB | Clipboard copy with toast feedback |
-| `d2-interactions` | interactions | 5.3 KB | Side-dock with mutually-exclusive sliding panels |
 
-Total (all modules): **90.2 KB min** / ~32 KB gzipped.
+Total (all modules): **84.9 KB min** / ~30 KB gzipped.
+
+---
+
+## Responsive attributes
+
+Any value-bearing `d2-*` attribute supports per-breakpoint overrides:
+
+```html
+<!-- "left" by default; "up" once viewport is <= 911px -->
+<div d2-animation-direction="left;up@911"></div>
+
+<!-- 12px default; 24px <=1200; 40px <=600 -->
+<div d2-animation-distance="12px;24px@1200;40px@600"></div>
+```
+
+Format: entries separated by `;`. An entry without `@` is the default; `value@<maxWidthPx>` activates when `window.innerWidth <= maxWidthPx`. The smallest matching breakpoint wins.
+
+The loader fires `digi2.on('responsive:change', fn)` only when the active bucket flips (not every resize pixel) — modules like `interactions` re-apply their visible state automatically.
+
+JS API for module authors:
+
+```js
+digi2.parseResponsive(raw)         // → { default, bps: [{ max, value }] }
+digi2.resolveResponsive(parsed, w) // → string  (uses innerWidth if w omitted)
+digi2.attr(el, name, fallback)     // → resolved string for that el+attr
+```
 
 ---
 
@@ -787,94 +811,6 @@ Auto-shows "Copied!" feedback on the button + toast notification (if toasts modu
 
 ---
 
-## Interactions
-
-Reusable interaction primitives. First component: **dock** — a vertical floating column of triggers wired to mutually-exclusive sliding panels (the kids-co.pl right-side dock pattern).
-
-### Setup
-
-```html
-<div d2-dock="main">
-  <button d2-dock-trigger="social">Social</button>
-  <button d2-dock-trigger="contact">Kontakt</button>
-  <button d2-dock-trigger="enroll">Zapisy</button>
-</div>
-
-<div d2-dock-panel="social">
-  <button d2-dock-close>×</button>
-  <h4>Obserwuj nas</h4>...
-</div>
-<div d2-dock-panel="contact">
-  <button d2-dock-close>×</button>...
-</div>
-<div d2-dock-panel="enroll">
-  <button d2-dock-close>×</button>...
-</div>
-```
-
-Auto-inits on DOM ready. Add `d2-dock-manual` to the dock element to opt out and configure via JS.
-
-### Behavior
-
-| Action | Effect |
-|---|---|
-| Click trigger A | Open panel A |
-| Click A again | Close A, mark A `.d2-previously-active` |
-| Click B while A open | Close A, open B |
-| Hover any trigger | Clear `.d2-previously-active` from all triggers |
-| Click `[d2-dock-close]` | Close active panel |
-| Click outside dock + panel | Close active panel |
-| Press Escape | Close active panel |
-
-### State Classes
-
-| Class | Applied to | When |
-|---|---|---|
-| `.d2-active` | trigger + panel | Panel open |
-| `.d2-previously-active` | trigger | After re-click close (use to suppress tooltip) |
-
-Suggested tooltip CSS:
-
-```css
-.dock-button:not(.d2-active):not(.d2-previously-active):hover .tooltip { opacity: 1 }
-```
-
-### Options
-
-| Option | Default | Description |
-|---|---|---|
-| `triggerAttr` | `'d2-dock-trigger'` | Attribute on trigger buttons |
-| `panelAttr` | `'d2-dock-panel'` | Attribute on panels |
-| `closeAttr` | `'d2-dock-close'` | Attribute on close buttons inside panels |
-| `activeClass` | `'d2-active'` | Class on active trigger + panel |
-| `prevActiveClass` | `'d2-previously-active'` | Class on trigger after re-click close |
-| `closeOnOutside` | `true` | Outside click closes |
-| `closeOnEscape` | `true` | Escape key closes |
-| `injectStyles` | `true` | Inject minimal slide CSS (right→left desktop, bottom→top mobile) |
-| `slideDuration` | `'0.3s'` | Slide transition duration |
-| `onOpen` | `null` | `(panel, trigger, name) => {}` |
-| `onClose` | `null` | `(panel, trigger, name) => {}` |
-
-Default injected CSS (desktop): `[d2-dock-panel] { position: fixed; top: 50%; right: -400px; transform: translateY(-50%); transition: right 0.3s }` → `.d2-active { right: 88px }`. On `≤767px` it flips to bottom-anchored: `bottom: -400px` → `bottom: 106px`. Set `injectStyles: false` to style fully in Webflow.
-
-### API
-
-```js
-const dock = digi2.interactions.dock('main', { onOpen: ..., onClose: ... })
-digi2.interactions.dockAll(options)        // init every [d2-dock] with shared options
-digi2.interactions.get('dock', 'main')
-digi2.interactions.destroy('dock', 'main')
-digi2.interactions.list()                  // ['dock:main', ...]
-
-dock.open('social')      // open by trigger name
-dock.close()             // close whichever is open
-dock.toggle('contact')   // toggle one
-dock.isOpen()            // any open?
-dock.isOpen('contact')   // is this one open?
-```
-
----
-
 ## Events
 
 ```js
@@ -948,11 +884,6 @@ digi2.log('module', 'action', data)
 | `d2-filter-category="cat"` | Div | Item categories |
 | `d2-copy="text"` | Button | Copy to clipboard |
 | `d2-copy-target="#id"` | Button | Copy element content |
-| `d2-dock="name"` | Div | Dock host (auto-init) |
-| `d2-dock-trigger="key"` | Button | Trigger inside dock; `key` matches a panel |
-| `d2-dock-panel="key"` | Div | Panel matched by `key` |
-| `d2-dock-close` | Button | Close button inside a panel |
-| `d2-dock-manual` | Dock div | Skip auto-init (configure via JS) |
 | `d2-debug-mode` | Loader script | Enable debug |
 | `d2-gtm="GTM-ID"` | Loader script | GTM container ID |
 
@@ -977,8 +908,7 @@ webflow-scripts/              ← source files
   modules/
     google.js, popups.js, cookies.js, forms.js,
     tabs.js, sliders.js, animate.js, toasts.js,
-    scroll.js, lazy.js, countdown.js, filter.js, copy.js,
-    cms.js, interactions.js
+    scroll.js, lazy.js, countdown.js, filter.js, copy.js
 
 dist/                         ← production (minified only)
   digi2-loader.min.js

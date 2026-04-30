@@ -32,6 +32,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('tabs', action, data);
   }
@@ -169,7 +179,7 @@
       this.triggers.forEach(function (trigger) {
         trigger.addEventListener('click', function (e) {
           e.preventDefault();
-          var tabId = trigger.getAttribute('d2-tab');
+          var tabId = attr(trigger, 'd2-tab');
           if (self.options.mode === 'accordion') {
             self.toggle(tabId);
           } else {
@@ -265,13 +275,13 @@
 
     _getPanel(tabId) {
       return this.panels.find(function (p) {
-        return p.getAttribute('d2-tab-content') === tabId;
+        return attr(p, 'd2-tab-content') === tabId;
       });
     }
 
     _getTrigger(tabId) {
       return this.triggers.find(function (t) {
-        return t.getAttribute('d2-tab') === tabId;
+        return attr(t, 'd2-tab') === tabId;
       });
     }
 
@@ -339,7 +349,7 @@
       var activeTabs = this._activeTabs;
 
       this.triggers.forEach(function (trigger) {
-        var tabId = trigger.getAttribute('d2-tab');
+        var tabId = attr(trigger, 'd2-tab');
         if (activeTabs.has(tabId)) {
           trigger.classList.add(activeClass);
           trigger.setAttribute('aria-selected', 'true');
@@ -362,7 +372,7 @@
         }
       } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
         // Auto-open first tab
-        this.open(this.triggers[0].getAttribute('d2-tab'));
+        this.open(attr(this.triggers[0], 'd2-tab'));
       }
       // Accordion: nothing open by default unless specified
     }

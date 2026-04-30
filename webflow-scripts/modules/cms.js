@@ -69,6 +69,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('cms', action, data);
   }
@@ -92,10 +102,10 @@
     var nested = itemEl.querySelectorAll('[d2-cms-field]');
     for (var i = 0; i < nested.length; i++) {
       var el = nested[i];
-      var key = el.getAttribute('d2-cms-field');
+      var key = attr(el, 'd2-cms-field');
       if (!key || (key in fields)) continue;
       fields[key] = (el.textContent || '').trim();
-      var t = el.getAttribute('d2-cms-field-type');
+      var t = attr(el, 'd2-cms-field-type');
       if (t) types[key] = normalizeType(t);
     }
     return { fields: fields, types: types };
@@ -1326,7 +1336,7 @@
     _sortTypeOverride(field) {
       var btn = document.querySelector('[d2-cms-sort="' + field + '"][d2-cms-sort-type]');
       if (!btn) return null;
-      return normalizeType(btn.getAttribute('d2-cms-sort-type'));
+      return normalizeType(attr(btn, 'd2-cms-sort-type'));
     }
 
     _fieldTypeFromItems(field) {
@@ -1534,8 +1544,8 @@
 
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
-        var format = el.getAttribute('d2-cms-display-format');
-        var kind = el.getAttribute('d2-cms-display');
+        var format = attr(el, 'd2-cms-display-format');
+        var kind = attr(el, 'd2-cms-display');
         var text;
         if (format) {
           text = format.replace(/\{(\w+)\}/g, function (_, token) {
@@ -1555,7 +1565,7 @@
       var sortBtns = this._buttonsForName('[d2-cms-sort]');
       var self = this;
       sortBtns.forEach(function (btn) {
-        var field = btn.getAttribute('d2-cms-sort');
+        var field = attr(btn, 'd2-cms-sort');
         if (self._sort && self._sort.field === field) {
           btn.setAttribute('d2-cms-sort-active', self._sort.dir);
         } else {
@@ -1566,7 +1576,7 @@
       // Filter buttons (and <input type="checkbox|radio"> carrying d2-cms-filter)
       var filterBtns = this._buttonsForName('[d2-cms-filter]');
       filterBtns.forEach(function (btn) {
-        var parsed = parseFilterAttr(btn.getAttribute('d2-cms-filter'));
+        var parsed = parseFilterAttr(attr(btn, 'd2-cms-filter'));
         if (!parsed) return;
         // Multi-value trigger is "active" only when ALL its values are applied
         var set = self._filters[parsed.key];
@@ -1590,7 +1600,7 @@
       var dirBtns = this._buttonsForName('[d2-cms-direction]');
       var activeDir = self._sort ? self._sort.dir : null;
       dirBtns.forEach(function (btn) {
-        var want = (btn.getAttribute('d2-cms-direction') || 'toggle').trim();
+        var want = (attr(btn, 'd2-cms-direction') || 'toggle').trim();
         var isActive;
         if (want === 'asc' || want === 'desc') {
           isActive = activeDir === want;
@@ -1634,10 +1644,10 @@
         for (var j = 0; j < sel.options.length; j++) {
           var o = sel.options[j];
           if (!o.hasAttribute('d2-cms-sort')) continue;
-          var f = o.getAttribute('d2-cms-sort');
+          var f = attr(o, 'd2-cms-sort');
           if (!f) { if (!clearOpt) clearOpt = o; continue; }
           if (!self._sort || f !== self._sort.field) continue;
-          var d = o.getAttribute('d2-cms-sort-dir');
+          var d = attr(o, 'd2-cms-sort-dir');
           if (d === self._sort.dir) { best = o; break; }
           if (!d && !fieldOnly) fieldOnly = o;
         }
@@ -1701,14 +1711,14 @@
       var exact = null, fieldOnly = null;
       for (var j = 0; j < candidates.length; j++) {
         var c = candidates[j];
-        if (c.getAttribute('d2-cms-sort') !== field) continue;
-        var cDir = c.getAttribute('d2-cms-sort-dir');
+        if (attr(c, 'd2-cms-sort') !== field) continue;
+        var cDir = attr(c, 'd2-cms-sort-dir');
         if (cDir === dir) { exact = c; break; }
         if (!cDir && !fieldOnly) fieldOnly = c;
       }
       var chosen = exact || fieldOnly;
       if (!chosen) return null;
-      var explicit = chosen.getAttribute('d2-cms-sort-option-label');
+      var explicit = attr(chosen, 'd2-cms-sort-option-label');
       if (explicit) return explicit;
       return (chosen.textContent || '').trim();
     }
@@ -1729,7 +1739,7 @@
           label._d2CmsFilterLabelDefault = label.textContent;
         }
         var def = label._d2CmsFilterLabelDefault;
-        var key = label.getAttribute('d2-cms-filter-label');
+        var key = attr(label, 'd2-cms-filter-label');
         // Only options inside the same dropdown/scope as the label can drive
         // its text — keeps unrelated filter triggers outside this dropdown
         // from overwriting the label.
@@ -1782,12 +1792,12 @@
       var candidates = this._buttonsForName('[d2-cms-filter]');
       for (var i = 0; i < candidates.length; i++) {
         if (scope && !scope.contains(candidates[i])) continue;
-        var parsed = parseFilterAttr(candidates[i].getAttribute('d2-cms-filter'));
+        var parsed = parseFilterAttr(attr(candidates[i], 'd2-cms-filter'));
         if (!parsed) continue;
         if (key && parsed.key !== key) continue;
         // Multi-value triggers match if ANY of their values equals the lookup
         if (parsed.values.indexOf(value) === -1) continue;
-        var explicit = candidates[i].getAttribute('d2-cms-filter-option-label');
+        var explicit = attr(candidates[i], 'd2-cms-filter-option-label');
         if (explicit) return explicit;
         return (candidates[i].textContent || '').trim();
       }
@@ -1814,7 +1824,7 @@
         //     opportunity to click it.
         //   • [d2-cms-loadcount="<number>"] — NEVER force-hide; authors can
         //     fade/disable via CSS on [d2-cms-load-more-done].
-        var countAttr = btn.getAttribute('d2-cms-loadcount');
+        var countAttr = attr(btn, 'd2-cms-loadcount');
         var hasCount = countAttr != null;
         var isAll = hasCount && countAttr.trim().toLowerCase() === 'all';
         var shouldForceHide = done && (!hasCount || (isAll && loadAllRequested));
@@ -1926,10 +1936,10 @@
   }
 
   function _resolveTargetName(triggerEl) {
-    var explicit = triggerEl.getAttribute('d2-cms-target');
+    var explicit = attr(triggerEl, 'd2-cms-target');
     if (explicit) return explicit;
     var ancestor = triggerEl.closest('[d2-cms-list]');
-    if (ancestor) return ancestor.getAttribute('d2-cms-list');
+    if (ancestor) return attr(ancestor, 'd2-cms-list');
     var keys = Object.keys(registry);
     if (keys.length === 1) return keys[0];
     return null;
@@ -1988,20 +1998,20 @@
     var opts = {};
     var v;
 
-    v = el.getAttribute('d2-cms-per-page');
+    v = attr(el, 'd2-cms-per-page');
     if (v != null && v !== '') { var n = parseInt(v, 10); if (!isNaN(n)) opts.perPage = n; }
 
-    v = el.getAttribute('d2-cms-load-mode');
+    v = attr(el, 'd2-cms-load-mode');
     if (v === 'more') opts.loadMode = 'button';   // "more" is an alias for "button"
     else if (v === 'scroll' || v === 'button' || v === 'all') opts.loadMode = v;
 
-    v = el.getAttribute('d2-cms-scroll-offset');
+    v = attr(el, 'd2-cms-scroll-offset');
     if (v != null && v !== '') { var so = parseInt(v, 10); if (!isNaN(so)) opts.scrollOffset = so; }
 
-    v = el.getAttribute('d2-cms-sort-by');
+    v = attr(el, 'd2-cms-sort-by');
     if (v) {
-      var dir = el.getAttribute('d2-cms-sort-dir');
-      var orderRaw = el.getAttribute('d2-cms-sort-order');
+      var dir = attr(el, 'd2-cms-sort-dir');
+      var orderRaw = attr(el, 'd2-cms-sort-order');
       var order = orderRaw ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : null;
       opts.defaultSort = {
         field: v,
@@ -2019,8 +2029,8 @@
     }
 
     // Explicit group-sort attributes override the implicit default above.
-    var gb = el.getAttribute('d2-cms-group-by');
-    var goRaw = el.getAttribute('d2-cms-group-order');
+    var gb = attr(el, 'd2-cms-group-by');
+    var goRaw = attr(el, 'd2-cms-group-order');
     if (gb && goRaw) {
       var go = goRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
       if (go.length) {
@@ -2029,13 +2039,13 @@
       }
     }
 
-    v = el.getAttribute('d2-cms-filter-match');
+    v = attr(el, 'd2-cms-filter-match');
     if (v === 'AND' || v === 'OR') opts.filterMatchMode = v;
 
-    v = el.getAttribute('d2-cms-hidden-class');
+    v = attr(el, 'd2-cms-hidden-class');
     if (v) opts.hiddenClass = v;
 
-    v = el.getAttribute('d2-cms-hide-pagination');
+    v = attr(el, 'd2-cms-hide-pagination');
     if (v === 'false') opts.hideNativePagination = false;
 
     return opts;
@@ -2049,7 +2059,7 @@
       // Skip elements that are inside another list (they'd be items, not lists)
       if (el.parentElement && el.parentElement.closest('[d2-cms-list]')) continue;
 
-      var name = el.getAttribute('d2-cms-list');
+      var name = attr(el, 'd2-cms-list');
       if (!name) {
         // Auto-generate a name when `d2-cms-list` is present but empty
         do { name = '_auto_' + (++_autoNameCounter); } while (registry[name]);
@@ -2115,16 +2125,16 @@
     else e.stopPropagation();
 
     if (sortBtn) {
-      var field = sortBtn.getAttribute('d2-cms-sort');
-      var forced = sortBtn.getAttribute('d2-cms-sort-dir');
-      var orderRaw = sortBtn.getAttribute('d2-cms-sort-order');
+      var field = attr(sortBtn, 'd2-cms-sort');
+      var forced = attr(sortBtn, 'd2-cms-sort-dir');
+      var orderRaw = attr(sortBtn, 'd2-cms-sort-order');
       var order = orderRaw ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : undefined;
       instance.sort(field, forced || undefined, order);
     } else if (filterBtn) {
-      var parsed = parseFilterAttr(filterBtn.getAttribute('d2-cms-filter'));
+      var parsed = parseFilterAttr(attr(filterBtn, 'd2-cms-filter'));
       if (parsed) instance._batchFilter(parsed.key, parsed.values, 'toggle');
     } else if (loadBtn) {
-      var countAttr = loadBtn.getAttribute('d2-cms-loadcount');
+      var countAttr = attr(loadBtn, 'd2-cms-loadcount');
       if (countAttr != null) {
         var trimmed = countAttr.trim().toLowerCase();
         if (trimmed === 'all') {
@@ -2137,7 +2147,7 @@
         instance.loadMore();
       }
     } else if (dirBtn) {
-      var dirVal = (dirBtn.getAttribute('d2-cms-direction') || 'toggle').trim();
+      var dirVal = (attr(dirBtn, 'd2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
     }
 
@@ -2173,7 +2183,7 @@
     //            key before adding to keep state clean).
     if (target.tagName === 'INPUT' && target.hasAttribute('d2-cms-filter')
         && (target.type === 'checkbox' || target.type === 'radio')) {
-      var fparsed = parseFilterAttr(target.getAttribute('d2-cms-filter'));
+      var fparsed = parseFilterAttr(attr(target, 'd2-cms-filter'));
       if (!fparsed) return;
       var fname = _resolveTargetName(target);
       if (!fname) return;
@@ -2204,14 +2214,14 @@
     var instance = registry[name];
     if (!instance) return;
 
-    var field = opt ? opt.getAttribute('d2-cms-sort') : null;
+    var field = opt ? attr(opt, 'd2-cms-sort') : null;
     if (!field) {
       instance.clearSort();
       return;
     }
 
-    var forced = opt.getAttribute('d2-cms-sort-dir');
-    var orderRaw = opt.getAttribute('d2-cms-sort-order');
+    var forced = attr(opt, 'd2-cms-sort-dir');
+    var orderRaw = attr(opt, 'd2-cms-sort-order');
     var order = orderRaw
       ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean)
       : undefined;
@@ -2279,7 +2289,7 @@
   class D2RangeSlider {
     constructor(wrapper) {
       this.wrapper = wrapper;
-      this.field = wrapper.getAttribute('d2-cms-range-field');
+      this.field = attr(wrapper, 'd2-cms-range-field');
       if (!this.field) return;
 
       this.track = wrapper.querySelector('[d2-cms-range-track]');
@@ -2296,7 +2306,7 @@
       }
       if (!this.track || !this.minHandle || !this.maxHandle) return;
 
-      this.step = parseFloat(wrapper.getAttribute('d2-cms-range-step')) || 1;
+      this.step = parseFloat(attr(wrapper, 'd2-cms-range-step')) || 1;
       // `displayformat` is the preferred name; `format` kept as alias.
       // Keyword modes:
       //   thousands (default) — "1,600,000" / "23.1"   (locale, natural decimals)
@@ -2317,8 +2327,8 @@
       // '.' is the decimal point, '0' is a digit placeholder. When a pattern
       // is used, d2-cms-range-prefix / -suffix are ignored — everything goes
       // in the template itself.
-      var rawFormat = wrapper.getAttribute('d2-cms-range-displayformat')
-                   || wrapper.getAttribute('d2-cms-range-format')
+      var rawFormat = attr(wrapper, 'd2-cms-range-displayformat')
+                   || attr(wrapper, 'd2-cms-range-format')
                    || 'thousands';
       var known = { thousands: 1, float: 1, integer: 1, plain: 1 };
       // Locale aliases → BCP-47 tags for toLocaleString
@@ -2344,18 +2354,18 @@
 
       // Only used when no pattern — pattern templates embed their own
       // prefix/suffix so these attrs become redundant.
-      this.prefix = wrapper.getAttribute('d2-cms-range-prefix') || '';
-      this.suffix = wrapper.getAttribute('d2-cms-range-suffix') || '';
+      this.prefix = attr(wrapper, 'd2-cms-range-prefix') || '';
+      this.suffix = attr(wrapper, 'd2-cms-range-suffix') || '';
 
-      var attrMin = parseFloat(wrapper.getAttribute('d2-cms-range-min'));
-      var attrMax = parseFloat(wrapper.getAttribute('d2-cms-range-max'));
+      var attrMin = parseFloat(attr(wrapper, 'd2-cms-range-min'));
+      var attrMax = parseFloat(attr(wrapper, 'd2-cms-range-max'));
       this._attrMin = isNaN(attrMin) ? null : attrMin;
       this._attrMax = isNaN(attrMax) ? null : attrMax;
 
       // Default/initial handle positions. If either narrows the full range,
       // the filter is applied on init so the list loads already scoped.
-      var attrDefMin = parseFloat(wrapper.getAttribute('d2-cms-range-default-min'));
-      var attrDefMax = parseFloat(wrapper.getAttribute('d2-cms-range-default-max'));
+      var attrDefMin = parseFloat(attr(wrapper, 'd2-cms-range-default-min'));
+      var attrDefMax = parseFloat(attr(wrapper, 'd2-cms-range-default-max'));
       this._defaultMin = isNaN(attrDefMin) ? null : attrDefMin;
       this._defaultMax = isNaN(attrDefMax) ? null : attrDefMax;
 

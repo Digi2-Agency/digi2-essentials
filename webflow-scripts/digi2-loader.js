@@ -122,6 +122,21 @@
  *   digi2.emit('custom', data)          Emit custom event
  *   digi2.onReady(fn)                   Alias for digi2.on('loaded', fn)
  *
+ * ─── Responsive Attributes ──────────────────────────────────────────────────
+ *
+ *   Any value-bearing d2-* attribute supports per-breakpoint overrides:
+ *
+ *     <div d2-animation-direction="left;up@911">           default left, up <=911px
+ *     <div d2-animation-distance="12px;24px@1200;40px@600">
+ *
+ *   Format: entries separated by `;`. Plain "value" is the default; "value@<px>"
+ *   applies when innerWidth <= <px>. Smallest matching breakpoint wins.
+ *
+ *   digi2.parseResponsive(raw)         { default, bps: [{ max, value }] }
+ *   digi2.resolveResponsive(p, w?)     string at width w (or innerWidth)
+ *   digi2.attr(el, name, fallback?)    resolved string for el+attr
+ *   digi2.on('responsive:change', fn)  fires when active bucket flips
+ *
  * ─── Module Management ──────────────────────────────────────────────────────
  *
  *   digi2.modules.check('cookies')                   true if loaded
@@ -212,6 +227,107 @@
   window.digi2.onReady = function (fn) {
     window.digi2.on('loaded', fn);
   };
+
+  // ---- Responsive attribute parser -----------------------------------------
+  // Any d2-* attribute that takes a value can carry per-breakpoint overrides:
+  //
+  //   d2-animation-direction="left;up@911"
+  //     → "left" by default, "up" when innerWidth <= 911
+  //   d2-animation-distance="12px;24px@1200;40px@600"
+  //     → 12px default; 24px <=1200; 40px <=600
+  //
+  // Format: entries separated by `;`. Each entry is either a plain value
+  // (the default) or `value@<maxWidthPx>`. The smallest matching breakpoint
+  // wins; if none match, the default is used. If no default is given and no
+  // breakpoint matches, the fallback passed to digi2.attr() is returned.
+  //
+  // API:
+  //   digi2.parseResponsive(raw)         → { default, bps: [{max, value}] }
+  //   digi2.resolveResponsive(p, w?)     → string  (uses innerWidth if w omitted)
+  //   digi2.attr(el, name, fallback?)    → resolved string for that el+attr
+  //   digi2.on('responsive:change', fn)  → fn(width) when active bucket changes
+  var _parseCache = (typeof Map !== 'undefined') ? new Map() : null;
+  var _bpKeys = []; // sorted unique breakpoint widths from all parsed values
+
+  function parseResponsive(raw) {
+    if (raw == null) return { default: '', bps: [] };
+    raw = String(raw);
+    if (_parseCache && _parseCache.has(raw)) return _parseCache.get(raw);
+    var parts = raw.split(';');
+    var defaultValue = '';
+    var bps = [];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].trim();
+      if (!p) continue;
+      var at = p.indexOf('@');
+      if (at < 0) {
+        defaultValue = p;
+      } else {
+        var v = p.slice(0, at).trim();
+        var n = parseInt(p.slice(at + 1).trim(), 10);
+        if (!isNaN(n)) {
+          bps.push({ max: n, value: v });
+          if (_bpKeys.indexOf(n) === -1) {
+            _bpKeys.push(n);
+            _bpKeys.sort(function (a, b) { return a - b; });
+          }
+        }
+      }
+    }
+    bps.sort(function (a, b) { return a.max - b.max; });
+    var parsed = { default: defaultValue, bps: bps };
+    if (_parseCache) _parseCache.set(raw, parsed);
+    return parsed;
+  }
+
+  function resolveResponsive(parsed, width) {
+    if (!parsed) return '';
+    if (typeof width === 'undefined') width = window.innerWidth;
+    for (var i = 0; i < parsed.bps.length; i++) {
+      if (width <= parsed.bps[i].max) return parsed.bps[i].value;
+    }
+    return parsed.default;
+  }
+
+  function digi2Attr(el, name, fallback) {
+    if (!el || typeof el.getAttribute !== 'function') {
+      return fallback === undefined ? null : fallback;
+    }
+    var raw = el.getAttribute(name);
+    if (raw === null) return fallback === undefined ? null : fallback;
+    var v = resolveResponsive(parseResponsive(raw));
+    if (v === '' && fallback !== undefined) return fallback;
+    return v;
+  }
+
+  window.digi2.parseResponsive = parseResponsive;
+  window.digi2.resolveResponsive = resolveResponsive;
+  window.digi2.attr = digi2Attr;
+
+  // Emit `responsive:change` only when the active breakpoint *bucket* changes
+  // — not on every resize pixel. The bucket is the smallest registered
+  // breakpoint >= innerWidth, or Infinity if none. This lets modules cheaply
+  // re-render only on meaningful viewport transitions.
+  function _activeBucket(w) {
+    for (var i = 0; i < _bpKeys.length; i++) {
+      if (w <= _bpKeys[i]) return _bpKeys[i];
+    }
+    return Infinity;
+  }
+  var _lastBucket = _activeBucket(window.innerWidth);
+  var _resizeRaf = null;
+  window.addEventListener('resize', function () {
+    if (_resizeRaf) return;
+    _resizeRaf = (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
+      _resizeRaf = null;
+      var w = window.innerWidth;
+      var b = _activeBucket(w);
+      if (b !== _lastBucket) {
+        _lastBucket = b;
+        window.digi2.emit('responsive:change', w);
+      }
+    });
+  });
 
   // ---- Detect own script tag & base URL ------------------------------------
   var loaderScript = document.currentScript;

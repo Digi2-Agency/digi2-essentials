@@ -32,6 +32,20 @@
     if (window.digi2.log) window.digi2.log('toasts', action, data);
   }
 
+  // Resolve a possibly-responsive option value ("top-right;top-center@911").
+  // Non-strings pass through, and strings without breakpoint clauses are
+  // returned untouched — keeping plain JS-API usage zero-overhead.
+  function resolveResponsiveValue(raw) {
+    if (typeof raw !== 'string') return raw;
+    if (window.digi2 && typeof window.digi2.parseResponsive === 'function') {
+      var parsed = window.digi2.parseResponsive(raw);
+      if (parsed.bps.length === 0) return raw;
+      var v = window.digi2.resolveResponsive(parsed);
+      return v === '' ? raw : v;
+    }
+    return raw;
+  }
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -136,6 +150,22 @@
   function showToast(message, opts) {
     injectStyles();
     opts = Object.assign({}, _defaults, opts || {});
+
+    // Resolve responsive option strings against the current viewport. Toasts
+    // are fire-and-forget — once visible they persist until duration elapses,
+    // so we only resolve once at show time (no need to listen for
+    // responsive:change). Numeric `duration` passes through; string
+    // durations like "3000;1500@911" are coerced back to a number below.
+    opts.position = resolveResponsiveValue(opts.position);
+    opts.animation = resolveResponsiveValue(opts.animation);
+    opts.type = resolveResponsiveValue(opts.type);
+    var dur = resolveResponsiveValue(opts.duration);
+    if (typeof dur === 'string') {
+      var dn = parseInt(dur, 10);
+      opts.duration = isNaN(dn) ? _defaults.duration : dn;
+    } else {
+      opts.duration = dur;
+    }
 
     var id = ++_idCounter;
     var container = getContainer(opts.position);

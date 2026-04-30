@@ -27,12 +27,27 @@
  *   d2-interaction-delay="200"      ms — show after delay
  *   d2-interaction-leave-delay="80" ms — hide after delay (default 80 for hover)
  *   d2-interaction-initial="visible"  start visible (default: hidden)
- *   d2-interaction-close="ns:foo"   Click this element to hide instance "ns:foo"
+ *   d2-interaction-close="ns:foo"   Click this element to hide instance "ns:foo".
+ *                                    If the attribute has no value, auto-resolves
+ *                                    to the nearest [d2-instance] ancestor — so
+ *                                    an X button inside a card just needs the bare
+ *                                    `d2-interaction-close` attribute.
+ *   d2-interaction-toggle="ns:foo"  Click this element to toggle instance "ns:foo".
+ *                                    Empty value → auto-resolves to nearest
+ *                                    [d2-instance] ancestor. One-attribute
+ *                                    shorthand for trigger="click" + target="...".
  *   d2-interaction-outside-close    On click triggers — outside click closes
  *   d2-interaction-escape-close     Esc key closes
  *
  *   Animation/group attributes can be on the trigger OR target.
  *   Target wins when both are present.
+ *
+ *   Any value-bearing attribute supports per-breakpoint overrides:
+ *     d2-animation-direction="left;up@911"
+ *       → "left" by default, "up" when innerWidth <= 911
+ *     d2-animation-distance="12px;24px@1200;40px@600"
+ *       → 12px default, 24px <=1200, 40px <=600
+ *   See the loader's digi2.attr() / digi2.parseResponsive() for details.
  *
  * ─── Floating dock with tooltips ─────────────────────────────────────────────
  *
@@ -259,6 +274,10 @@
       this._leaveTimer = null;
       this._listeners = [];
 
+      // Pull responsive animation params from DOM at the current breakpoint.
+      // Re-read on each show/hide so resize-driven breakpoint changes take
+      // effect without re-init.
+      this._refreshAnimOpts();
       this._applyInitial();
       this._bind();
 
@@ -268,6 +287,32 @@
         direction: this.options.direction,
         group: this.options.group,
       });
+    }
+
+    // Re-read animation params from the trigger/target DOM. Target attrs win
+    // over trigger attrs (matches autoInit precedence). Called from show()
+    // and hide() so each transition uses the current breakpoint's values.
+    _refreshAnimOpts() {
+      // JS-API instances pass options literally — they don't have DOM attrs
+      // to refresh from. Skip the refresh when there's no trigger/target el.
+      if (!this.target) return;
+      var t = this.target, g = this.trigger;
+      var read = function (name) {
+        return (t && attr(t, name)) || (g && attr(g, name)) || null;
+      };
+      var anim = read('d2-animation');
+      var dir = read('d2-animation-direction');
+      var dur = read('d2-animation-duration');
+      var ease = read('d2-animation-easing');
+      var dist = read('d2-animation-distance');
+      if (anim) this.options.animation = anim;
+      if (dir) this.options.direction = dir;
+      if (dur) {
+        var n = parseFloat(dur);
+        if (!isNaN(n)) this.options.duration = n;
+      }
+      if (ease) this.options.easing = ease;
+      if (dist) this.options.distance = dist;
     }
 
     _applyInitial() {
@@ -385,6 +430,7 @@
     show() {
       this._cancelShow();
       if (this._visible) return;
+      this._refreshAnimOpts();
       hideOthersInGroup(this.options.group, this.target);
       setTargetVisible(this.target, this.options);
       this._visible = true;
@@ -398,6 +444,7 @@
     hide() {
       this._cancelHide();
       if (!this._visible) return;
+      this._refreshAnimOpts();
       setTargetHidden(this.target, this.options);
       this._visible = false;
       this._unregisterVisible();
@@ -468,7 +515,15 @@
   var registry = {};
   var nameCounter = 0;
 
-  function attr(el, name) { return el ? el.getAttribute(name) : null; }
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
 
   function autoInit() {
     rebuildInstanceRegistry();
@@ -537,11 +592,21 @@
       created++;
     });
 
-    // [d2-interaction-close="instanceId"] — click to close that target
+    // [d2-interaction-close="instanceId"] — click to close that target.
+    // Empty value → auto-resolves to the nearest [d2-instance] ancestor (or self),
+    // so an X button inside a card just needs the bare attribute.
     var closers = document.querySelectorAll('[d2-interaction-close]');
     closers.forEach(function (closer) {
       if (closer._d2Closer) return;
       var targetId = closer.getAttribute('d2-interaction-close');
+      if (!targetId) {
+        var host = closer.closest('[d2-instance]');
+        if (host) targetId = host.getAttribute('d2-instance');
+      }
+      if (!targetId) {
+        _log('close button has no resolvable target', closer);
+        return;
+      }
       var fn = function (e) {
         e.preventDefault();
         api.hideInstance(targetId);
@@ -550,7 +615,93 @@
       closer._d2Closer = fn;
     });
 
+    // [d2-interaction-toggle="instanceId"] — click to toggle that target.
+    // Empty value → auto-resolves to nearest [d2-instance] ancestor (or self).
+    // One-attribute shorthand for d2-interaction-trigger="click" + target.
+    // Builds a full Interaction so animations, group exclusivity, and
+    // outside-close all work the same as a regular trigger.
+    var togglers = document.querySelectorAll('[d2-interaction-toggle]');
+    togglers.forEach(function (toggler) {
+      if (toggler._d2Interaction) return;
+      var targetId = toggler.getAttribute('d2-interaction-toggle');
+      if (!targetId) {
+        var host = toggler.closest('[d2-instance]');
+        if (host) targetId = host.getAttribute('d2-instance');
+      }
+      if (!targetId) {
+        _log('toggle button has no resolvable target', toggler);
+        return;
+      }
+      var targetEl = getInstanceElement(targetId);
+      if (!targetEl) {
+        _log('toggle target not found → ' + targetId);
+        return;
+      }
+      var animation = attr(targetEl, 'd2-animation') || attr(toggler, 'd2-animation') || DEFAULTS.animation;
+      var direction = attr(targetEl, 'd2-animation-direction') || attr(toggler, 'd2-animation-direction') || DEFAULTS.direction;
+      var duration = parseFloat(attr(targetEl, 'd2-animation-duration') || attr(toggler, 'd2-animation-duration')) || DEFAULTS.duration;
+      var easing = attr(targetEl, 'd2-animation-easing') || attr(toggler, 'd2-animation-easing') || DEFAULTS.easing;
+      var distance = attr(targetEl, 'd2-animation-distance') || attr(toggler, 'd2-animation-distance') || DEFAULTS.distance;
+      var group = attr(targetEl, 'd2-interaction-group') || attr(toggler, 'd2-interaction-group') || null;
+      var initial = attr(targetEl, 'd2-interaction-initial') || DEFAULTS.initial;
+      var closeOnOutsideClick = toggler.hasAttribute('d2-interaction-outside-close')
+        ? true : DEFAULTS.closeOnOutsideClick;
+      var closeOnEscape = toggler.hasAttribute('d2-interaction-escape-close');
+
+      var togglerInstance = attr(toggler, 'd2-instance');
+      var name = (togglerInstance || 'auto-' + (++nameCounter)) + '↔' + targetId;
+      while (registry[name]) name = name + '#' + (++nameCounter);
+
+      var interaction = new Interaction(name, {
+        trigger: toggler,
+        target: targetEl,
+        on: 'click',
+        animation: animation,
+        direction: direction,
+        duration: duration,
+        easing: easing,
+        distance: distance,
+        group: group,
+        initial: initial,
+        closeOnOutsideClick: closeOnOutsideClick,
+        closeOnEscape: closeOnEscape,
+      });
+
+      toggler._d2Interaction = interaction;
+      registry[name] = interaction;
+      created++;
+    });
+
     _log('autoInit → ' + created + ' interactions');
+  }
+
+  // When the active responsive bucket changes, re-apply the current visible
+  // state on every open interaction so its translate/distance/direction snap
+  // to the new breakpoint's values. Subscribed once.
+  var _responsiveSubscribed = false;
+  function subscribeResponsive() {
+    if (_responsiveSubscribed) return;
+    if (!window.digi2 || typeof window.digi2.on !== 'function') return;
+    _responsiveSubscribed = true;
+    window.digi2.on('responsive:change', function () {
+      Object.keys(registry).forEach(function (k) {
+        var i = registry[k];
+        if (!i || !i.target) return;
+        i._refreshAnimOpts();
+        if (i._visible) {
+          // Re-paint visible state — keeps element in place but updates the
+          // resting transition target so the next hide animates correctly.
+          setTargetVisible(i.target, i.options);
+        } else {
+          // Update hidden translate so the next show enters from the right side.
+          var prev = i.target.style.transition;
+          i.target.style.transition = 'none';
+          applyStyles(i.target, buildHiddenStyles(i.options));
+          void i.target.offsetHeight;
+          i.target.style.transition = prev;
+        }
+      });
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -617,8 +768,12 @@
   // Run early for FOUC prevention; re-run on DOM ready to catch late content.
   if (document.readyState === 'loading') {
     injectPreloadCSS();  // run preload now if possible
-    document.addEventListener('DOMContentLoaded', autoInit);
+    document.addEventListener('DOMContentLoaded', function () {
+      autoInit();
+      subscribeResponsive();
+    });
   } else {
     autoInit();
+    subscribeResponsive();
   }
 })();

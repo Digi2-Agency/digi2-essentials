@@ -602,6 +602,7 @@
     </button>
     <div class="sidebar-group-items">
       <a href="#setup">Installation</a>
+      <a href="#responsive">Responsive Attributes</a>
       <a href="#debug">Debug Mode</a>
     </div>
   </div>
@@ -753,6 +754,24 @@
       <tr><td><code>d2-interactions</code></td><td>Hover/click show-hide + animations</td><td>9.1 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
+  </section>
+
+  <!-- ── RESPONSIVE ── -->
+  <section id="responsive">
+    <h2>Responsive Attributes</h2>
+    <p>Any value-bearing <code>d2-*</code> attribute supports per-breakpoint overrides:</p>
+    <pre><code>&lt;div <span class="prop">d2-animation-direction</span>=<span class="string">"left;up@911"</span>&gt;&lt;/div&gt;
+<span class="comment">// "left" by default; "up" once innerWidth ≤ 911</span>
+
+&lt;div <span class="prop">d2-animation-distance</span>=<span class="string">"12px;24px@1200;40px@600"</span>&gt;&lt;/div&gt;
+<span class="comment">// 12px default; 24px ≤1200; 40px ≤600</span></code></pre>
+    <p><strong>Format:</strong> entries separated by <code>;</code>. An entry with no <code>@</code> is the default; <code>value@&lt;maxWidthPx&gt;</code> activates when <code>window.innerWidth &lt;= maxWidthPx</code>. The smallest matching breakpoint wins.</p>
+    <p>Modules that need to react mid-resize (<code>interactions</code>, <code>animate</code>, <code>popups</code>) automatically re-apply state when the active bucket flips. Lower-traffic modules pick up the new value on the next event tick.</p>
+    <p style="margin-top:16px;"><strong>JS API for module authors / power users:</strong></p>
+    <pre><code>digi2.<span class="fn">parseResponsive</span>(raw)         <span class="comment">// → { default, bps: [{ max, value }] }</span>
+digi2.<span class="fn">resolveResponsive</span>(parsed, w)  <span class="comment">// → string at width (innerWidth if w omitted)</span>
+digi2.<span class="fn">attr</span>(el, name, fallback)     <span class="comment">// → resolved string for that el+attr</span>
+digi2.on(<span class="string">'responsive:change'</span>, fn)   <span class="comment">// fires when active bucket flips</span></code></pre>
   </section>
 
   <!-- ── DEBUG ── -->
@@ -1342,8 +1361,10 @@ digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
     <p style="margin-top:16px;"><strong>Anywhere:</strong></p>
     <table>
       <tr><th>Attribute</th><th>Behavior</th></tr>
-      <tr><td><code>d2-interaction-close="ns:id"</code></td><td>Click this element to close instance <code>ns:id</code></td></tr>
+      <tr><td><code>d2-interaction-toggle="ns:id"</code></td><td>One-attribute shorthand for trigger=<code>click</code> + target. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor.</td></tr>
+      <tr><td><code>d2-interaction-close="ns:id"</code></td><td>Click this element to close instance <code>ns:id</code>. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor (X buttons inside cards just need the bare attribute).</td></tr>
     </table>
+    <p style="margin-top:16px;"><strong>Responsive values:</strong> any value-bearing <code>d2-*</code> attribute supports per-breakpoint overrides — see the <a href="#responsive">Responsive Attributes</a> section.</p>
     <p style="margin-top:16px;"><strong>JS API:</strong></p>
     <pre><code>digi2.interactions.<span class="fn">create</span>(<span class="string">'name'</span>, { trigger, target, on, animation, ... })
 digi2.interactions.<span class="fn">show</span>(<span class="string">'name'</span>)        digi2.interactions.<span class="fn">hide</span>(<span class="string">'name'</span>)

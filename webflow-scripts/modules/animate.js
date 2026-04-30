@@ -81,6 +81,16 @@
   // Core
   // ---------------------------------------------------------------------------
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function applyFrom(el, preset) {
     for (var key in preset.from) {
       if (preset.from.hasOwnProperty(key)) el.style[key] = preset.from[key];
@@ -107,21 +117,21 @@
   }
 
   function animateElement(el) {
-    var animName = el.getAttribute('d2-animate');
+    var animName = attr(el, 'd2-animate');
     var preset = PRESETS[animName];
     if (!preset) {
       _log('unknown animation: ' + animName);
       return;
     }
 
-    var duration = parseFloat(el.getAttribute('d2-duration')) || _options.duration;
-    var delay = parseFloat(el.getAttribute('d2-delay') || '0') / 1000; // ms to s
+    var duration = parseFloat(attr(el, 'd2-duration')) || _options.duration;
+    var delay = parseFloat(attr(el, 'd2-delay') || '0') / 1000; // ms to s
     var easing = preset.easing || _options.easing;
 
     // Calculate stagger delay from parent
     var staggerParent = el.closest('[d2-stagger]');
     if (staggerParent) {
-      var staggerMs = parseInt(staggerParent.getAttribute('d2-stagger'), 10) || 100;
+      var staggerMs = parseInt(attr(staggerParent, 'd2-stagger'), 10) || 100;
       var siblings = Array.from(staggerParent.querySelectorAll('[d2-animate]'));
       var idx = siblings.indexOf(el);
       if (idx > 0) delay += (idx * staggerMs) / 1000;
@@ -134,7 +144,7 @@
   }
 
   function resetElement(el) {
-    var animName = el.getAttribute('d2-animate');
+    var animName = attr(el, 'd2-animate');
     var preset = PRESETS[animName];
     if (!preset) return;
 
@@ -172,7 +182,7 @@
       if (_observed.has(el)) return; // already being watched
       if (el.getAttribute('d2-animated') === 'true' && _options.once) return;
 
-      var animName = el.getAttribute('d2-animate');
+      var animName = attr(el, 'd2-animate');
       var preset = PRESETS[animName];
       if (!preset) return;
 
@@ -187,6 +197,27 @@
     });
 
     _log('scanned', { found: elements.length, newObserved: count, total: _observed.size });
+  }
+
+  // When the active responsive bucket changes, refresh the resting "from"
+  // state of any element that hasn't animated in yet so its hidden offset
+  // matches the new breakpoint when it eventually enters the viewport.
+  var _responsiveSubscribed = false;
+  function subscribeResponsive() {
+    if (_responsiveSubscribed) return;
+    if (!window.digi2 || typeof window.digi2.on !== 'function') return;
+    _responsiveSubscribed = true;
+    window.digi2.on('responsive:change', function () {
+      _observed.forEach(function (el) {
+        if (el.getAttribute('d2-animated') === 'true') return;
+        var animName = attr(el, 'd2-animate');
+        var preset = PRESETS[animName];
+        if (!preset) return;
+        el.style.transition = 'none';
+        applyFrom(el, preset);
+        if (preset.from.transformOrigin) el.style.transformOrigin = preset.from.transformOrigin;
+      });
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -214,6 +245,7 @@
       _log('init', _options);
       setupObserver();
       scanAndObserve();
+      subscribeResponsive();
     },
 
     /**

@@ -58,6 +58,16 @@
 
   window.digi2 = window.digi2 || {};
 
+  // Responsive-aware getAttribute. Falls back to raw read when the loader
+  // hasn't installed digi2.attr yet (older builds, standalone usage).
+  function attr(el, name) {
+    if (!el) return null;
+    if (window.digi2 && typeof window.digi2.attr === 'function') {
+      return window.digi2.attr(el, name, null);
+    }
+    return el.getAttribute(name);
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('forms', action, data);
   }
@@ -1213,7 +1223,7 @@
       var nameCount = {};
 
       wrappers.forEach(function (wrapper) {
-        var baseName = wrapper.getAttribute('d2-form');
+        var baseName = attr(wrapper, 'd2-form');
         if (!baseName) return;
 
         // Generate unique registry key for duplicates
@@ -1307,7 +1317,7 @@
         e.preventDefault();
 
         // Find the target input
-        var targetSel = toggle.getAttribute('d2-password-toggle');
+        var targetSel = attr(toggle, 'd2-password-toggle');
         var input = null;
 
         if (targetSel && targetSel !== '') {
@@ -1325,13 +1335,13 @@
         if (input.type === 'password') {
           input.type = 'text';
           input.setAttribute('d2-pw', 'visible');
-          var hideText = toggle.getAttribute('d2-password-hide');
+          var hideText = attr(toggle, 'd2-password-hide');
           if (hideText) toggle.textContent = hideText;
           _log('password toggle → visible');
         } else {
           input.type = 'password';
           input.removeAttribute('d2-pw');
-          var showText = toggle.getAttribute('d2-password-show');
+          var showText = attr(toggle, 'd2-password-show');
           if (showText) toggle.textContent = showText;
           _log('password toggle → hidden');
         }
