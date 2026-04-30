@@ -39,6 +39,14 @@
  *   d2-interaction-outside-close    On click triggers — outside click closes
  *   d2-interaction-escape-close     Esc key closes
  *
+ *   d2-interaction-backdrop                  Bare or "on" → enable a blurred
+ *                                              + darkened scrim behind the
+ *                                              open target. "off" disables.
+ *                                              Responsive: "off;on@900".
+ *   d2-interaction-backdrop-blur="8px"        Override blur radius
+ *   d2-interaction-backdrop-color="rgba(...)" Override scrim color
+ *   Click on the backdrop closes every backdrop-using target that's open.
+ *
  *   The trigger gets a `d2-active` flag attribute while its target is
  *   visible — style with `[d2-active]` (no value needed):
  *
@@ -243,6 +251,92 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Backdrop — single shared scrim that blurs+darkens behind any open target
+  // tagged with d2-interaction-backdrop. Lazy-created on first use.
+  // ---------------------------------------------------------------------------
+  var BACKDROP_EL = null;
+  var BACKDROP_VISIBLE = new Set();      // Set<Interaction>
+  var BACKDROP_DEFAULT_BLUR = '8px';
+  var BACKDROP_DEFAULT_COLOR = 'rgba(0,0,0,0.3)';
+  var BACKDROP_Z = 9998;
+  var ELEVATED_Z = '9999';
+
+  function isStackingContext(el) {
+    var cs = getComputedStyle(el);
+    if (cs.position === 'fixed' || cs.position === 'sticky') return true;
+    if (cs.position !== 'static' && cs.zIndex !== 'auto') return true;
+    if (cs.transform && cs.transform !== 'none') return true;
+    if (parseFloat(cs.opacity) < 1) return true;
+    if (cs.isolation === 'isolate') return true;
+    if (cs.filter && cs.filter !== 'none') return true;
+    return false;
+  }
+
+  // Bump z-index on whichever element actually controls the target's global
+  // stacking — the closest stacking-context ancestor if present (so children
+  // ride along), otherwise the target itself (modal-style at body level).
+  // Already-high elements (z >= ELEVATED_Z) are left alone.
+  function _tryBump(el) {
+    var cs = getComputedStyle(el);
+    var z = parseInt(cs.zIndex, 10);
+    if (!isNaN(z) && z >= parseInt(ELEVATED_Z, 10)) return null;
+    if (el.dataset.d2BackdropZ === undefined) {
+      el.dataset.d2BackdropZ = el.style.zIndex || '';
+    }
+    el.style.zIndex = ELEVATED_Z;
+    return el;
+  }
+
+  function bumpAncestor(target) {
+    var el = target.parentElement;
+    while (el && el !== document.body) {
+      if (isStackingContext(el)) return _tryBump(el);
+      el = el.parentElement;
+    }
+    // No SC ancestor — bump the target itself so it paints above the backdrop.
+    return _tryBump(target);
+  }
+
+  function unbumpAncestor(el) {
+    if (!el || el.dataset.d2BackdropZ === undefined) return;
+    el.style.zIndex = el.dataset.d2BackdropZ;
+    delete el.dataset.d2BackdropZ;
+  }
+
+  function ensureBackdrop() {
+    if (BACKDROP_EL) return BACKDROP_EL;
+    var el = document.createElement('div');
+    el.setAttribute('data-d2-backdrop', '');
+    var s = el.style;
+    s.position = 'fixed';
+    s.top = '0'; s.left = '0'; s.right = '0'; s.bottom = '0';
+    s.zIndex = String(BACKDROP_Z);
+    s.opacity = '0';
+    s.visibility = 'hidden';
+    s.pointerEvents = 'none';
+    s.backgroundColor = BACKDROP_DEFAULT_COLOR;
+    s.backdropFilter = 'blur(' + BACKDROP_DEFAULT_BLUR + ')';
+    s.webkitBackdropFilter = 'blur(' + BACKDROP_DEFAULT_BLUR + ')';
+    s.transition = 'opacity .3s ease, visibility .3s ease';
+    el.addEventListener('click', function () {
+      Array.from(BACKDROP_VISIBLE).forEach(function (i) { i.hide(); });
+    });
+    BACKDROP_EL = el;
+    if (document.body) document.body.appendChild(el);
+    return el;
+  }
+
+  function applyBackdropStyle(opts, duration) {
+    var el = ensureBackdrop();
+    el.style.backgroundColor = opts.color || BACKDROP_DEFAULT_COLOR;
+    var blur = 'blur(' + (opts.blur || BACKDROP_DEFAULT_BLUR) + ')';
+    el.style.backdropFilter = blur;
+    el.style.webkitBackdropFilter = blur;
+    var d = (duration || 0.3) + 's';
+    el.style.transition = 'opacity ' + d + ' ease, visibility ' + d + ' ease';
+  }
+
+  // ---------------------------------------------------------------------------
   // Element resolver — accepts instance ID, CSS selector, or Element
   // ---------------------------------------------------------------------------
   function resolveElement(input) {
@@ -358,6 +452,63 @@
       else this.trigger.removeAttribute('d2-active');
     }
 
+    // Read d2-interaction-backdrop (and the optional blur/color sub-attrs) at
+    // the current breakpoint. Returns null when backdrop is off.
+    _resolveBackdropOpts() {
+      if (!this.target) return null;
+      var bd = attr(this.target, 'd2-interaction-backdrop');
+      if (bd === null && this.trigger) bd = attr(this.trigger, 'd2-interaction-backdrop');
+      if (bd === null) return null;
+      var on = (bd === '' || bd === 'on' || bd === 'true');
+      if (!on) return null;
+      var blur = attr(this.target, 'd2-interaction-backdrop-blur');
+      if (!blur && this.trigger) blur = attr(this.trigger, 'd2-interaction-backdrop-blur');
+      var color = attr(this.target, 'd2-interaction-backdrop-color');
+      if (!color && this.trigger) color = attr(this.trigger, 'd2-interaction-backdrop-color');
+      return { blur: blur || BACKDROP_DEFAULT_BLUR, color: color || BACKDROP_DEFAULT_COLOR };
+    }
+
+    _showBackdrop() {
+      var opts = this._resolveBackdropOpts();
+      if (!opts) return;
+      var el = ensureBackdrop();
+      applyBackdropStyle(opts, this.options.duration);
+      BACKDROP_VISIBLE.add(this);
+      this._backdropAncestor = bumpAncestor(this.target);
+      el.style.opacity = '1';
+      el.style.visibility = 'visible';
+      el.style.pointerEvents = 'auto';
+      this._backdropOn = true;
+    }
+
+    _hideBackdrop() {
+      if (!this._backdropOn) return;
+      BACKDROP_VISIBLE.delete(this);
+      unbumpAncestor(this._backdropAncestor);
+      this._backdropAncestor = null;
+      if (BACKDROP_VISIBLE.size === 0 && BACKDROP_EL) {
+        BACKDROP_EL.style.opacity = '0';
+        BACKDROP_EL.style.visibility = 'hidden';
+        BACKDROP_EL.style.pointerEvents = 'none';
+      }
+      this._backdropOn = false;
+    }
+
+    // Reconcile backdrop state with the current breakpoint — called from the
+    // resize handler so a card visible across a breakpoint flip gains/loses
+    // its scrim correctly.
+    _refreshBackdrop() {
+      if (!this._visible) return;
+      var opts = this._resolveBackdropOpts();
+      if (opts && !this._backdropOn) {
+        this._showBackdrop();
+      } else if (!opts && this._backdropOn) {
+        this._hideBackdrop();
+      } else if (opts && this._backdropOn) {
+        applyBackdropStyle(opts, this.options.duration);
+      }
+    }
+
     _bind() {
       var self = this;
       var on = this.options.on;
@@ -456,6 +607,7 @@
       this._visible = true;
       this._registerVisible();
       this._markTriggerActive(true);
+      this._showBackdrop();
       _log('show → ' + this.name);
       if (typeof this.options.onShow === 'function') {
         this.options.onShow(this.target, this);
@@ -470,6 +622,7 @@
       this._visible = false;
       this._unregisterVisible();
       this._markTriggerActive(false);
+      this._hideBackdrop();
       _log('hide → ' + this.name);
       if (typeof this.options.onHide === 'function') {
         this.options.onHide(this.target, this);
@@ -508,6 +661,7 @@
       if (set) set.delete(this);
       this._unregisterVisible();
       this._markTriggerActive(false);
+      this._hideBackdrop();
     }
   }
 
@@ -540,10 +694,13 @@
 
   // Responsive-aware getAttribute. Falls back to raw read when the loader
   // hasn't installed digi2.attr yet (older builds, standalone usage).
+  // No fallback passed so digi2.attr distinguishes "missing" (returns null)
+  // from "present but empty" (returns '') — the latter matters for bare
+  // boolean-like attributes such as d2-interaction-backdrop.
   function attr(el, name) {
     if (!el) return null;
     if (window.digi2 && typeof window.digi2.attr === 'function') {
-      return window.digi2.attr(el, name, null);
+      return window.digi2.attr(el, name);
     }
     return el.getAttribute(name);
   }
@@ -715,6 +872,7 @@
           // Re-paint visible state — keeps element in place but updates the
           // resting transition target so the next hide animates correctly.
           setTargetVisible(i.target, i.options);
+          i._refreshBackdrop();
         } else {
           // Update hidden translate so the next show enters from the right side.
           var prev = i.target.style.transition;

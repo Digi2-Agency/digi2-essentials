@@ -1364,6 +1364,21 @@ digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
       <tr><td><code>d2-interaction-toggle="ns:id"</code></td><td>One-attribute shorthand for trigger=<code>click</code> + target. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor.</td></tr>
       <tr><td><code>d2-interaction-close="ns:id"</code></td><td>Click this element to close instance <code>ns:id</code>. Empty value auto-resolves to nearest <code>[d2-instance]</code> ancestor (X buttons inside cards just need the bare attribute).</td></tr>
     </table>
+    <p style="margin-top:16px;"><strong>Backdrop scrim</strong> (place on target — bare for default, or use a value):</p>
+    <table>
+      <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>d2-interaction-backdrop</code></td><td>—</td><td>Bare or <code>"on"</code> → blur+darken behind the open target. <code>"off"</code> disables. Responsive: <code>"off;on@900"</code>. Click on backdrop closes the open targets.</td></tr>
+      <tr><td><code>d2-interaction-backdrop-blur</code></td><td><code>8px</code></td><td>Override blur radius — also responsive</td></tr>
+      <tr><td><code>d2-interaction-backdrop-color</code></td><td><code>rgba(0,0,0,0.3)</code></td><td>Override scrim color — also responsive</td></tr>
+    </table>
+    <pre><code><span class="comment">&lt;!-- Always-on backdrop --&gt;</span>
+&lt;div <span class="prop">d2-instance</span>=<span class="string">"modal:welcome"</span> <span class="prop">d2-interaction-backdrop</span>&gt;...&lt;/div&gt;
+
+<span class="comment">&lt;!-- Mobile-only with stronger scrim --&gt;</span>
+&lt;div <span class="prop">d2-instance</span>=<span class="string">"dock:card:contact"</span>
+     <span class="prop">d2-interaction-backdrop</span>=<span class="string">"off;on@900"</span>
+     <span class="prop">d2-interaction-backdrop-blur</span>=<span class="string">"4px;12px@900"</span>
+     <span class="prop">d2-interaction-backdrop-color</span>=<span class="string">"rgba(0,0,0,0.5)"</span>&gt;...&lt;/div&gt;</code></pre>
     <p style="margin-top:16px;"><strong>Style hooks (set automatically):</strong></p>
     <table>
       <tr><th>Where</th><th>Attribute</th><th>When</th></tr>
