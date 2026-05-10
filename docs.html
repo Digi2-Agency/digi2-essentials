@@ -654,6 +654,16 @@
 
   <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      A/B Testing
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#ab-testing">Overview</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group is-collapsed">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Tabs & Accordions
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -748,6 +758,7 @@
     <table>
       <tr><th>Attribute</th><th>Module</th><th>Size (min)</th></tr>
       <tr><td><code>d2-gtm="ID"</code></td><td>Consent Mode V2 + GTM</td><td>2.5 KB</td></tr>
+      <tr><td><code>d2-ab-tests="configName"</code></td><td>A/B redirects + link rewriting</td><td>6.3 KB</td></tr>
       <tr><td><code>d2-popups</code></td><td>Popup / modal manager</td><td>8.4 KB</td></tr>
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
       <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM</td><td>12.1 KB</td></tr>
@@ -1183,6 +1194,101 @@ digi2.google.consent.<span class="fn">reset</span>()
 digi2.google.consent.<span class="fn">categories</span>()
 digi2.google.<span class="fn">dataLayerPush</span>({ <span class="prop">event</span>: <span class="string">'custom'</span> })
 digi2.google.<span class="fn">getGtmId</span>()</code></pre>
+  </section>
+
+  <!-- ── A/B TESTING ── -->
+  <section id="ab-testing">
+    <h2>A/B Testing</h2>
+    <p>Runtime module for <code>d2-ab-tests="configName"</code>. The value points to a global object on <code>window</code>; that object is the test map directly.</p>
+
+    <h3>Import</h3>
+    <pre><code>&lt;script&gt;
+window.sitemap = {
+  pricing: {
+    base: <span class="string">'/pricing'</span>,
+    variants: {
+      A: <span class="string">'/pricing'</span>,
+      B: <span class="string">'/pricing-b'</span>
+    }
+  }
+}
+&lt;/script&gt;
+
+&lt;script
+  src=<span class="string">"https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"</span>
+  <span class="prop">d2-gtm</span>=<span class="string">"GTM-XXXXXXX"</span>
+  <span class="prop">d2-ab-tests</span>=<span class="string">"sitemap"</span>
+&gt;&lt;/script&gt;</code></pre>
+
+    <h3>Assignment</h3>
+    <ul>
+      <li>Each visitor gets one stable variant per test.</li>
+      <li>The selected variant is stored as <code>localStorage["d2ab:&lt;testName&gt;"]</code>.</li>
+      <li>No <code>weights</code> means an even split across all variants.</li>
+      <li><code>weights</code> only affects new visitors without a stored variant.</li>
+      <li>If the stored variant no longer exists, the module assigns a new valid variant.</li>
+    </ul>
+
+    <pre><code>window.sitemap = {
+  pricing: {
+    base: <span class="string">'/pricing'</span>,
+    variants: {
+      A: <span class="string">'/pricing'</span>,
+      B: <span class="string">'/pricing-b'</span>,
+      C: <span class="string">'/pricing-c'</span>
+    },
+    weights: {
+      A: <span class="string">50</span>,
+      B: <span class="string">30</span>,
+      C: <span class="string">20</span>
+    }
+  }
+}</code></pre>
+
+    <h3>Redirects</h3>
+    <p>When the visitor lands on a test base URL or a different variant URL, the module redirects them to their assigned variant URL.</p>
+    <pre><code><span class="comment">// Stored assignment:</span>
+localStorage[<span class="string">'d2ab:pricing'</span>] = <span class="string">'B'</span>
+
+<span class="comment">// Visiting /pricing redirects to /pricing-b</span></code></pre>
+
+    <h3>Link Rewriting</h3>
+    <p>On every page where the module is loaded, matching links are rewritten to the visitor's assigned variant. A first scan runs on init, then a <code>MutationObserver</code> watches <code>document.body</code> for added nodes and changes to <code>href</code>, <code>d2-ab-link</code>, or <code>d2-ab-ignore</code>.</p>
+    <pre><code><span class="comment">&lt;!-- User assigned to B sees href rewritten to /pricing-b --&gt;</span>
+&lt;a href=<span class="string">"/pricing"</span>&gt;Pricing&lt;/a&gt;
+
+<span class="comment">&lt;!-- Skip rewriting --&gt;</span>
+&lt;a href=<span class="string">"/pricing"</span> <span class="prop">d2-ab-ignore</span>&gt;Original pricing&lt;/a&gt;
+
+<span class="comment">&lt;!-- Force this link to a specific test --&gt;</span>
+&lt;a href=<span class="string">"/pricing"</span> <span class="prop">d2-ab-link</span>=<span class="string">"pricing"</span>&gt;Pricing&lt;/a&gt;</code></pre>
+
+    <h3>GTM Events</h3>
+    <p>If the Google module is available, events are pushed through <code>digi2.google.dataLayerPush</code>. Otherwise the module falls back to <code>window.dataLayer.push</code>.</p>
+    <pre><code>{
+  event: <span class="string">'digi2_ab_assigned'</span>,
+  ab_test: <span class="string">'pricing'</span>,
+  ab_variant: <span class="string">'B'</span>
+}
+
+{
+  event: <span class="string">'digi2_ab_viewed'</span>,
+  ab_test: <span class="string">'pricing'</span>,
+  ab_variant: <span class="string">'B'</span>,
+  ab_url: <span class="string">'/pricing-b'</span>
+}
+
+{
+  event: <span class="string">'digi2_ab_click'</span>,
+  ab_test: <span class="string">'pricing'</span>,
+  ab_variant: <span class="string">'B'</span>,
+  ab_target_url: <span class="string">'/pricing-b'</span>
+}</code></pre>
+
+    <h3>API</h3>
+    <pre><code>digi2.abTests.<span class="fn">get</span>(<span class="string">'pricing'</span>)
+digi2.abTests.<span class="fn">rewriteLinks</span>()
+digi2.abTests.<span class="fn">destroy</span>()</code></pre>
   </section>
 
   <!-- ── TABS ── -->
@@ -1668,6 +1774,9 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><td><code>d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>
       <tr><td><code>d2-debug-mode</code></td><td>Loader script</td><td>Enable debug logging</td></tr>
       <tr><td><code>d2-gtm="GTM-XXX"</code></td><td>Loader script</td><td>GTM ID — auto-loads google module</td></tr>
+      <tr><td><code>d2-ab-tests="configName"</code></td><td>Loader script</td><td>A/B test map on <code>window</code></td></tr>
+      <tr><td><code>d2-ab-link="testName"</code></td><td>Link</td><td>Force link rewriting for a specific A/B test</td></tr>
+      <tr><td><code>d2-ab-ignore</code></td><td>Link</td><td>Skip A/B link rewriting</td></tr>
     </table>
   </section>
 

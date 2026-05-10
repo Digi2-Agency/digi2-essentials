@@ -17,10 +17,12 @@
  *   d2-popups   →  modules/popups.js    Popup/modal manager with animations
  *   d2-cookies  →  modules/cookies.js   Cookie get/set/remove helpers
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
+ *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
  *   d2-gtm="GTM-XXXXXXX"               GTM container ID — auto-loads google module
+ *   d2-ab-tests="configName"           A/B test map on window[configName]
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
@@ -52,6 +54,11 @@
  *   digi2.google.consent.categories()      List category names
  *   digi2.google.dataLayerPush(data)       Push to dataLayer
  *   digi2.google.getGtmId()               Get configured GTM ID
+ *
+ *   digi2.abTests.get('pricing')           Current assignment for one test
+ *   digi2.abTests.assign('pricing')        Assign or return existing variant
+ *   digi2.abTests.rewriteLinks()           Re-apply link rewriting
+ *   digi2.abTests.list()                   List active test names
  *
  * ─── Popups Options ─────────────────────────────────────────────────────────
  *
@@ -447,6 +454,7 @@
     copy: 'copy',
     cms: 'cms',
     interactions: 'interactions',
+    abTests: 'ab-tests',
   };
 
   function createProxy(namespace, moduleName) {
@@ -480,7 +488,7 @@
       // Basic fallback — cover the most common methods
       var fallback = {};
       ['create', 'get', 'destroy', 'list', 'show', 'close', 'set', 'remove', 'has', 'getAll',
-       'validate', 'addRule', 'consent', 'dataLayerPush', 'getGtmId'].forEach(function (method) {
+       'validate', 'addRule', 'consent', 'dataLayerPush', 'getGtmId', 'init', 'assign', 'rewriteLinks'].forEach(function (method) {
         fallback[method] = function () {
           var args = Array.prototype.slice.call(arguments);
           window.digi2.log('loader', 'auto-require "' + moduleName + '" for ' + namespace + '.' + method + '()');
@@ -564,6 +572,12 @@
   if (gtmAttr) {
     window.digi2._gtmId = gtmAttr;
     window.digi2.log('loader', 'd2-gtm detected → ' + gtmAttr);
+  }
+
+  var abTestsAttr = loaderScript.getAttribute('d2-ab-tests');
+  if (abTestsAttr) {
+    window.digi2._abTestsConfigName = abTestsAttr;
+    window.digi2.log('loader', 'd2-ab-tests detected → ' + abTestsAttr);
   }
 
   for (var i = 0; i < attrs.length; i++) {

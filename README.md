@@ -25,7 +25,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 ></script>
 ```
 
-Only the modules you declare get loaded. Loader: **3.7 KB**.
+Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzipped.
 
 ---
 
@@ -34,21 +34,23 @@ Only the modules you declare get loaded. Loader: **3.7 KB**.
 | Attribute | Module | Min Size | Description |
 |---|---|---|---|
 | `d2-gtm="ID"` | google | 2.4 KB | Consent Mode V2 + GTM + consent manager |
-| `d2-popups` | popups | 14.3 KB | 22 animations, triggers, exit intent |
+| `d2-ab-tests="configName"` | ab-tests | 6.3 KB | A/B redirects and link rewriting from a sitemap config |
+| `d2-popups` | popups | 23.3 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
-| `d2-forms` | forms | 12.8 KB | UTM tracking + validation + password toggle |
+| `d2-forms` | forms | 17.6 KB | UTM tracking + validation + password toggle |
 | `d2-tabs` | tabs | 5.8 KB | Tabs & accordions with animations |
-| `d2-sliders` | sliders | 7.6 KB | Carousel with touch/drag, autoplay |
-| `d2-animate` | animate | 4.8 KB | 22 scroll animation presets + stagger |
-| `d2-toasts` | toasts | 4.3 KB | 5 types, 6 positions, auto-dismiss |
-| `d2-scroll` | scroll | 2.3 KB | Smooth scroll + scroll spy |
+| `d2-sliders` | sliders | 7.5 KB | Carousel with touch/drag, autoplay |
+| `d2-animate` | animate | 5.2 KB | 22 scroll animation presets + stagger |
+| `d2-toasts` | toasts | 4.7 KB | 5 types, 6 positions, auto-dismiss |
+| `d2-scroll` | scroll | 2.4 KB | Smooth scroll + scroll spy |
 | `d2-lazy` | lazy | 2.5 KB | Lazy images/video/iframes + blur-up |
-| `d2-countdown` | countdown | 3.3 KB | Timer with pause/resume/reset |
+| `d2-countdown` | countdown | 3.4 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
-| `d2-cms` | cms | 10.8 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
-| `d2-copy` | copy | 1.9 KB | Clipboard copy with toast feedback |
+| `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
+| `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
+| `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **84.9 KB min** / ~30 KB gzipped.
+Total (all modules): **140.7 KB min** / **42.3 KB** gzipped.
 
 ---
 
@@ -109,6 +111,206 @@ digi2.google.consent.reset()
 digi2.google.consent.categories()
 digi2.google.dataLayerPush({ event: 'custom' })
 digi2.google.getGtmId()
+```
+
+---
+
+## A/B Tests
+
+Runtime module for `d2-ab-tests="configName"` on the loader tag. The value points to a global object on `window` that is the test map.
+
+Use this when Webflow Optimize is too expensive or too limited, and you want a lightweight A/B runtime that keeps each visitor on one stable variant.
+
+### Setup
+
+```html
+<script>
+window.sitemap = {
+  pricing: {
+    base: '/pricing',
+    variants: {
+      A: '/pricing-a',
+      B: '/pricing-b'
+    }
+  }
+}
+</script>
+
+<script
+  src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"
+  d2-gtm="GTM-XXXXXXX"
+  d2-ab-tests="sitemap"
+></script>
+```
+
+### Behavior
+
+For each test, the module:
+
+1. Reads the config object from `window[configName]`.
+2. Uses that object as the test map.
+3. Checks whether the current URL matches a test `base` URL or one of its variant URLs.
+4. Assigns a visitor to one variant once.
+5. Saves the assignment in `localStorage` as `d2ab:<testName>`.
+6. Redirects from the base URL to the assigned variant URL.
+7. Rewrites links on the page that point to the base URL or variant URLs so they keep the visitor on the assigned variant.
+8. Watches later DOM changes with `MutationObserver` and rewrites newly added or changed links too.
+
+Example storage entry:
+
+```js
+localStorage['d2ab:pricing'] = 'B'
+```
+
+The stored variant is stable. Weight changes do not affect visitors who already have an assignment. To reset an experiment, use a new test name, for example `pricing_v2`.
+
+If the stored variant no longer exists in the config, the module assigns a new valid variant.
+
+### Weights
+
+`weights` is optional. If it is missing, variants are split evenly.
+
+```js
+window.sitemap = {
+  pricing: {
+    base: '/pricing',
+    variants: {
+      A: '/pricing-a',
+      B: '/pricing-b'
+    },
+    // no weights => A 50%, B 50%
+  }
+}
+```
+
+For more than two variants, the split is also even:
+
+```js
+variants: {
+  A: '/pricing-a',
+  B: '/pricing-b',
+  C: '/pricing-c'
+}
+// no weights => A/B/C split evenly
+```
+
+To override the split:
+
+```js
+window.sitemap = {
+  pricing: {
+    base: '/pricing',
+    variants: {
+      A: '/pricing-a',
+      B: '/pricing-b'
+    },
+    weights: {
+      A: 80,
+      B: 20
+    }
+  }
+}
+```
+
+Weights are used only when assigning a new visitor.
+
+### Link Rewriting
+
+By default, the module automatically rewrites all matching links:
+
+```html
+<a href="/pricing">See pricing</a>
+<a href="/pricing-a">Pricing A</a>
+<a href="/pricing-b">Pricing B</a>
+```
+
+If the visitor is assigned to `B`, all matching links become:
+
+```html
+<a href="/pricing-b">See pricing</a>
+```
+
+The first scan runs on module init. After that, a `MutationObserver` watches `document.body` for added nodes and changes to `href`, `d2-ab-link`, or `d2-ab-ignore`, so Webflow-rendered CMS lists, nav changes, or delayed embeds are handled automatically.
+
+Use `d2-ab-ignore` to opt out:
+
+```html
+<a href="/pricing" d2-ab-ignore>Open base pricing page</a>
+```
+
+Use `d2-ab-link="<testName>"` when a link should be explicitly tied to a test:
+
+```html
+<a href="/pricing" d2-ab-link="pricing">See pricing</a>
+```
+
+### Redirect Rules
+
+The default redirect rule is:
+
+- when the visitor opens the base URL, redirect to the assigned variant URL;
+- when the visitor opens an assigned variant URL directly, keep them there;
+- when the visitor opens a different variant URL directly, do not force a redirect unless future config explicitly enables that behavior.
+
+This keeps shared QA links and direct variant previews usable.
+
+### Google Tag Manager
+
+When `d2-gtm="GTM-XXXXXXX"` is present, the A/B module pushes events through the existing Google module:
+
+```js
+digi2.google.dataLayerPush({
+  event: 'digi2_ab_assigned',
+  ab_test: 'pricing',
+  ab_variant: 'B'
+})
+```
+
+If the Google module is not available, it falls back to:
+
+```js
+window.dataLayer = window.dataLayer || []
+window.dataLayer.push(...)
+```
+
+Recommended GTM events:
+
+```js
+{
+  event: 'digi2_ab_assigned',
+  ab_test: 'pricing',
+  ab_variant: 'B'
+}
+```
+
+```js
+{
+  event: 'digi2_ab_viewed',
+  ab_test: 'pricing',
+  ab_variant: 'B',
+  ab_url: '/pricing-b'
+}
+```
+
+```js
+{
+  event: 'digi2_ab_click',
+  ab_test: 'pricing',
+  ab_variant: 'B',
+  ab_target_url: '/pricing-b'
+}
+```
+
+For redirects, the module does not rely only on a GTM push immediately before navigation. It stores a pending event in `sessionStorage`, redirects, and pushes the event after the variant page loads.
+
+### API
+
+```js
+digi2.abTests.get('pricing')       // current assignment for one test
+digi2.abTests.assign('pricing')    // assign or return existing variant
+digi2.abTests.rewriteLinks()       // re-apply link rewriting after DOM changes
+digi2.abTests.list()               // known tests from the active config
+digi2.abTests.destroy()            // disconnect the MutationObserver
 ```
 
 ---
