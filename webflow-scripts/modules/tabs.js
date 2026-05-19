@@ -353,6 +353,17 @@
       return this._resolveTriggerValue(trigger, attr(trigger, 'd2-tab-trigger'), false);
     }
 
+    _getInitialActiveTrigger() {
+      var configuredActiveClass = this.options.activeClass;
+      return this.triggers.concat(this.externalTriggers).find(function (trigger) {
+        if (!trigger.classList) return false;
+        return (
+          trigger.classList.contains(configuredActiveClass) ||
+          trigger.classList.contains('d2-tab-active')
+        );
+      });
+    }
+
     _showPanel(tabId) {
       var panel = this._getPanel(tabId);
       if (!panel) return;
@@ -439,9 +450,15 @@
         } else {
           this.open(def);
         }
-      } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
-        // Auto-open first tab
-        this.open(this._getTriggerTabId(this.triggers[0]));
+      } else {
+        var activeTrigger = this._getInitialActiveTrigger();
+        var activeTabId = activeTrigger ? this._getTriggerTabId(activeTrigger) || this._getExternalTriggerTabId(activeTrigger) : null;
+        if (activeTabId) {
+          this.open(activeTabId);
+        } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
+          // Auto-open first tab
+          this.open(this._getTriggerTabId(this.triggers[0]));
+        }
       }
       // Accordion: nothing open by default unless specified
     }

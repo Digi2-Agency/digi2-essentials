@@ -164,3 +164,19 @@ test('external tab trigger opens tab and receives active class', () => {
   assert.equal(env.yearlyTrigger.classList.contains('is-active'), true);
   assert.equal(env.externalTrigger.classList.contains('is-active'), true);
 });
+
+test('trigger with d2-tab-active class is used as default tab', () => {
+  const env = createEnvironment();
+  env.yearlyTrigger.classList.add('d2-tab-active');
+
+  loadTabsModule(env);
+
+  env.window.digi2.tabs.create('pricing', {
+    animation: 'none',
+  });
+
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.display, '');
+  assert.equal(env.monthlyTrigger.classList.contains('d2-tab-active'), false);
+  assert.equal(env.yearlyTrigger.classList.contains('d2-tab-active'), true);
+});

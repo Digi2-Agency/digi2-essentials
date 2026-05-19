@@ -569,6 +569,12 @@ form.setField('field', 'value')
 digi2.tabs.create('pricing', { animation: 'fade' })
 ```
 
+If one trigger already has `d2-tab-active` in the HTML, that tab opens first:
+
+```html
+<button d2-tab-trigger="yearly" class="d2-tab-active">Yearly</button>
+```
+
 ### External Triggers
 
 Use `group:tab` when a button outside the tab group should open a tab and receive the active class.
