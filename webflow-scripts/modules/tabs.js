@@ -88,6 +88,24 @@
     }
   }
 
+  function showElement(el) {
+    if (!el || !el.style) return;
+    if (typeof el.style.removeProperty === 'function') {
+      el.style.removeProperty('display');
+    } else {
+      el.style.display = '';
+    }
+  }
+
+  function hideElement(el) {
+    if (!el || !el.style) return;
+    if (typeof el.style.setProperty === 'function') {
+      el.style.setProperty('display', 'none', 'important');
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // TabManager (internal)
   // ---------------------------------------------------------------------------
@@ -141,7 +159,7 @@
 
       // Hide all panels initially
       this.panels.forEach(function (panel) {
-        panel.style.display = 'none';
+        hideElement(panel);
       });
 
       // Attach click listeners
@@ -372,13 +390,13 @@
       var dur = this.options.animationDuration;
 
       if (anim === ANIMATIONS.none) {
-        panel.style.display = '';
+        showElement(panel);
         return;
       }
 
       this._animating = true;
       applyStyles(panel, anim.setup(dur));
-      panel.style.display = '';
+      showElement(panel);
       void panel.offsetHeight; // reflow
       applyStyles(panel, anim.in());
 
@@ -400,7 +418,7 @@
       var dur = this.options.animationDuration;
 
       if (anim === ANIMATIONS.none) {
-        panel.style.display = 'none';
+        hideElement(panel);
         applyStyles(panel, anim.reset());
         return;
       }
@@ -409,7 +427,7 @@
 
       var self = this;
       panel.addEventListener('transitionend', function handler() {
-        panel.style.display = 'none';
+        hideElement(panel);
         applyStyles(panel, anim.reset());
         panel.removeEventListener('transitionend', handler);
       }, { once: true });
@@ -417,7 +435,7 @@
       // Fallback
       setTimeout(function () {
         if (panel.style.display !== 'none') {
-          panel.style.display = 'none';
+          hideElement(panel);
           applyStyles(panel, anim.reset());
         }
       }, dur * 1000 + 50);

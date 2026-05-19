@@ -13,7 +13,20 @@ function createElement(tagName, attrs) {
     attributes: Object.assign({}, attrs || {}),
     children: [],
     parentNode: null,
-    style: {},
+    style: {
+      _priorities: {},
+      setProperty(name, value, priority) {
+        this[name] = value;
+        this._priorities[name] = priority || '';
+      },
+      removeProperty(name) {
+        this[name] = '';
+        delete this._priorities[name];
+      },
+      getPropertyPriority(name) {
+        return this._priorities[name] || '';
+      },
+    },
     _listeners: {},
     offsetHeight: 0,
     classList: {
@@ -179,4 +192,23 @@ test('trigger with d2-tab-active class is used as default tab', () => {
   assert.equal(env.yearlyPanel.style.display, '');
   assert.equal(env.monthlyTrigger.classList.contains('d2-tab-active'), false);
   assert.equal(env.yearlyTrigger.classList.contains('d2-tab-active'), true);
+});
+
+test('hidden tab instances use display none important', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  env.window.digi2.tabs.create('pricing', {
+    animation: 'none',
+  });
+
+  assert.equal(env.monthlyPanel.style.display, '');
+  assert.equal(env.yearlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.getPropertyPriority('display'), 'important');
+
+  env.yearlyTrigger.click();
+
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.monthlyPanel.style.getPropertyPriority('display'), 'important');
+  assert.equal(env.yearlyPanel.style.display, '');
 });
