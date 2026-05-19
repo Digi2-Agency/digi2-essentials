@@ -7,10 +7,10 @@
  *
  * Webflow setup:
  *   <div d2-tab-group="faq">
- *     <button d2-tab="item-1">Tab 1</button>
- *     <button d2-tab="item-2">Tab 2</button>
- *     <div d2-tab-content="item-1">Content 1</div>
- *     <div d2-tab-content="item-2">Content 2</div>
+ *     <button d2-tab-trigger="item-1">Tab 1</button>
+ *     <button d2-tab-trigger="item-2">Tab 2</button>
+ *     <div d2-tab-instance="item-1">Content 1</div>
+ *     <div d2-tab-instance="item-2">Content 2</div>
  *   </div>
  *
  * API:
@@ -110,6 +110,7 @@
 
       this.groupEl = null;
       this.triggers = [];
+      this.externalTriggers = [];
       this.panels = [];
       this._activeTabs = new Set();
       this._animating = false;
@@ -127,12 +128,14 @@
         return;
       }
 
-      this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab]'));
-      this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-content]'));
+      this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab-trigger], [d2-tab]'));
+      this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-instance], [d2-tab-content]'));
+      this.externalTriggers = this._findExternalTriggers();
 
       _log('init → ' + this.name, {
         mode: this.options.mode,
         triggers: this.triggers.length,
+        externalTriggers: this.externalTriggers.length,
         panels: this.panels.length,
       });
 
@@ -157,6 +160,7 @@
 
     destroy() {
       this.triggers = [];
+      this.externalTriggers = [];
       this.panels = [];
       this._activeTabs.clear();
       this.groupEl = null;
@@ -177,15 +181,29 @@
     _attachListeners() {
       var self = this;
       this.triggers.forEach(function (trigger) {
-        trigger.addEventListener('click', function (e) {
-          e.preventDefault();
-          var tabId = attr(trigger, 'd2-tab');
-          if (self.options.mode === 'accordion') {
-            self.toggle(tabId);
-          } else {
-            self.open(tabId);
-          }
+        self._attachTrigger(trigger, function () {
+          return self._getTriggerTabId(trigger);
         });
+      });
+
+      this.externalTriggers.forEach(function (trigger) {
+        self._attachTrigger(trigger, function () {
+          return self._getExternalTriggerTabId(trigger);
+        });
+      });
+    }
+
+    _attachTrigger(trigger, getTabId) {
+      var self = this;
+      trigger.addEventListener('click', function (e) {
+        e.preventDefault();
+        var tabId = getTabId();
+        if (!tabId) return;
+        if (self.options.mode === 'accordion') {
+          self.toggle(tabId);
+        } else {
+          self.open(tabId);
+        }
       });
     }
 
@@ -209,7 +227,10 @@
       if (this.options.mode === 'tabs') {
         var self = this;
         this._activeTabs.forEach(function (activeId) {
-          if (activeId !== tabId) self._hidePanel(activeId);
+          if (activeId !== tabId) {
+            self._hidePanel(activeId);
+            self._activeTabs.delete(activeId);
+          }
         });
       }
 
@@ -217,7 +238,10 @@
       if (this.options.mode === 'accordion' && !this.options.allowMultiple) {
         var self2 = this;
         this._activeTabs.forEach(function (activeId) {
-          if (activeId !== tabId) self2._hidePanel(activeId);
+          if (activeId !== tabId) {
+            self2._hidePanel(activeId);
+            self2._activeTabs.delete(activeId);
+          }
         });
       }
 
@@ -275,14 +299,58 @@
 
     _getPanel(tabId) {
       return this.panels.find(function (p) {
-        return attr(p, 'd2-tab-content') === tabId;
+        return (attr(p, 'd2-tab-instance') || attr(p, 'd2-tab-content')) === tabId;
       });
     }
 
     _getTrigger(tabId) {
+      var self = this;
       return this.triggers.find(function (t) {
-        return attr(t, 'd2-tab') === tabId;
+        return self._getTriggerTabId(t) === tabId;
       });
+    }
+
+    _findExternalTriggers() {
+      if (!document.querySelectorAll) return [];
+
+      var self = this;
+      return Array.from(document.querySelectorAll('[d2-tab-trigger]')).filter(function (trigger) {
+        if (self.groupEl && self.groupEl.contains && self.groupEl.contains(trigger)) return false;
+        var tabId = self._getExternalTriggerTabId(trigger);
+        return !!(tabId && self._getPanel(tabId));
+      });
+    }
+
+    _getTriggerTabId(trigger) {
+      var value = attr(trigger, 'd2-tab-trigger');
+      if (value) return this._resolveTriggerValue(trigger, value, true);
+      return attr(trigger, 'd2-tab');
+    }
+
+    _resolveTriggerValue(trigger, value, allowLocal) {
+      if (!value) return null;
+
+      var separator = value.indexOf(':');
+      if (separator > -1) {
+        var groupName = value.slice(0, separator).trim();
+        var tabId = value.slice(separator + 1).trim();
+        return groupName === this.name ? tabId || null : null;
+      }
+
+      var targetGroup = attr(trigger, 'd2-tab-target') || attr(trigger, 'd2-tab-group-trigger');
+      if (targetGroup) {
+        return targetGroup === this.name ? value : null;
+      }
+
+      if (allowLocal && this.groupEl && this.groupEl.contains && this.groupEl.contains(trigger)) {
+        return value;
+      }
+
+      return null;
+    }
+
+    _getExternalTriggerTabId(trigger) {
+      return this._resolveTriggerValue(trigger, attr(trigger, 'd2-tab-trigger'), false);
     }
 
     _showPanel(tabId) {
@@ -347,9 +415,10 @@
     _updateTriggers() {
       var activeClass = this.options.activeClass;
       var activeTabs = this._activeTabs;
+      var self = this;
 
-      this.triggers.forEach(function (trigger) {
-        var tabId = attr(trigger, 'd2-tab');
+      this.triggers.concat(this.externalTriggers).forEach(function (trigger) {
+        var tabId = self._getTriggerTabId(trigger) || self._getExternalTriggerTabId(trigger);
         if (activeTabs.has(tabId)) {
           trigger.classList.add(activeClass);
           trigger.setAttribute('aria-selected', 'true');
@@ -372,7 +441,7 @@
         }
       } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
         // Auto-open first tab
-        this.open(attr(this.triggers[0], 'd2-tab'));
+        this.open(this._getTriggerTabId(this.triggers[0]));
       }
       // Accordion: nothing open by default unless specified
     }

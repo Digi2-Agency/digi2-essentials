@@ -256,7 +256,7 @@ This keeps shared QA links and direct variant previews usable.
 
 ### Google Tag Manager
 
-When `d2-gtm="GTM-XXXXXXX"` is present, the A/B module pushes events through the existing Google module:
+When `d2-gtm="GTM-XXXXXXX"` is present, the A/B module pushes assignment and click events through the existing Google module:
 
 ```js
 digi2.google.dataLayerPush({
@@ -285,23 +285,12 @@ Recommended GTM events:
 
 ```js
 {
-  event: 'digi2_ab_viewed',
-  ab_test: 'pricing',
-  ab_variant: 'B',
-  ab_url: '/pricing-b'
-}
-```
-
-```js
-{
   event: 'digi2_ab_click',
   ab_test: 'pricing',
   ab_variant: 'B',
   ab_target_url: '/pricing-b'
 }
 ```
-
-For redirects, the module does not rely only on a GTM push immediately before navigation. It stores a pending event in `sessionStorage`, redirects, and pushes the event after the variant page loads.
 
 ### API
 
@@ -569,15 +558,29 @@ form.setField('field', 'value')
 
 ```html
 <div d2-tab-group="pricing">
-  <button d2-tab="monthly">Monthly</button>
-  <button d2-tab="yearly">Yearly</button>
-  <div d2-tab-content="monthly">Monthly plans...</div>
-  <div d2-tab-content="yearly">Yearly plans...</div>
+  <button d2-tab-trigger="monthly">Monthly</button>
+  <button d2-tab-trigger="yearly">Yearly</button>
+  <div d2-tab-instance="monthly">Monthly plans...</div>
+  <div d2-tab-instance="yearly">Yearly plans...</div>
 </div>
 ```
 
 ```js
 digi2.tabs.create('pricing', { animation: 'fade' })
+```
+
+### External Triggers
+
+Use `group:tab` when a button outside the tab group should open a tab and receive the active class.
+
+```html
+<button d2-tab-trigger="pricing:yearly">Show yearly pricing</button>
+```
+
+For triggers inside the same `d2-tab-group`, the short form also works:
+
+```html
+<button d2-tab-trigger="yearly">Show yearly pricing</button>
 ```
 
 ### Accordion Mode
@@ -1063,8 +1066,9 @@ digi2.log('module', 'action', data)
 | `d2-form-summary` | Inside form | Summary error container |
 | `d2-password-toggle` | Button | Toggle password visibility |
 | `d2-tab-group="name"` | Div | Tabs/accordion wrapper |
-| `d2-tab="id"` | Button | Tab trigger |
-| `d2-tab-content="id"` | Div | Tab panel |
+| `d2-tab-trigger="id"` | Button | Tab trigger |
+| `d2-tab-trigger="group:id"` | Any | External tab trigger |
+| `d2-tab-instance="id"` | Div | Tab panel |
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |
 | `d2-slider-track` | Div | Slide track |

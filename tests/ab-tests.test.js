@@ -145,9 +145,11 @@ function createEnvironment() {
       clearTimeout,
       URL,
     }),
+    window,
     body,
     localStorage,
     observers,
+    events,
   };
 }
 
@@ -175,4 +177,65 @@ test('MutationObserver rewrites matching links added after init', () => {
   env.observers[0].callback([{ type: 'childList', addedNodes: [link] }]);
 
   assert.equal(link.getAttribute('href'), '/pricing-b');
+});
+
+test('assign pushes assignment through GTM when Google module is available', () => {
+  const env = createEnvironment();
+  const googlePushes = [];
+
+  env.window.digi2._loaded = { google: true };
+  env.window.digi2.google = {
+    dataLayerPush(data) {
+      googlePushes.push(data);
+    },
+  };
+
+  loadAbTestsModule(env);
+
+  const variant = env.window.digi2.abTests.assign('pricing');
+
+  assert.ok(['A', 'B'].includes(variant));
+  assert.deepEqual(JSON.parse(JSON.stringify(googlePushes)), [
+    {
+      event: 'digi2_ab_assigned',
+      ab_test: 'pricing',
+      ab_variant: variant,
+    },
+  ]);
+  assert.deepEqual(env.window.dataLayer, []);
+  assert.deepEqual(JSON.parse(JSON.stringify(env.events)), [
+    {
+      event: 'ab:assigned',
+      data: {
+        event: 'digi2_ab_assigned',
+        ab_test: 'pricing',
+        ab_variant: variant,
+      },
+    },
+  ]);
+});
+
+test('base redirect queues assignment without digi2_ab_viewed event', () => {
+  const env = createEnvironment();
+
+  env.window.location.href = 'https://example.com/pricing';
+  env.window.location.pathname = '/pricing';
+  env.window.sitemap.pricing.weights = { A: 0, B: 1 };
+
+  loadAbTestsModule(env);
+
+  const pending = JSON.parse(env.localStorage.getItem('d2ab:pendingEvents'));
+
+  assert.equal(env.window.location.href, '/pricing-b');
+  assert.deepEqual(pending, [
+    {
+      event: 'digi2_ab_assigned',
+      ab_test: 'pricing',
+      ab_variant: 'B',
+    },
+  ]);
+  assert.equal(
+    JSON.parse(JSON.stringify(env.events)).some((entry) => entry.data && entry.data.event === 'digi2_ab_viewed'),
+    false
+  );
 });

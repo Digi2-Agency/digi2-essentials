@@ -272,23 +272,6 @@
     _emit('ab:assigned', payload);
   }
 
-  function _trackViewed(testName, variant, url, defer) {
-    var payload = {
-      event: 'digi2_ab_viewed',
-      ab_test: testName,
-      ab_variant: variant,
-      ab_url: url,
-    };
-
-    if (defer) {
-      _queuePendingEvent(payload);
-    } else {
-      _pushDataLayer(payload);
-    }
-
-    _emit('ab:viewed', payload);
-  }
-
   function _trackClick(testName, variant, targetUrl) {
     var payload = {
       event: 'digi2_ab_click',
@@ -445,21 +428,7 @@
     });
   }
 
-  function _viewAlreadyFlushed(events, testName, variant) {
-    for (var i = 0; i < events.length; i++) {
-      if (
-        events[i] &&
-        events[i].event === 'digi2_ab_viewed' &&
-        events[i].ab_test === testName &&
-        events[i].ab_variant === variant
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function _handleCurrentPage(flushedEvents) {
+  function _handleCurrentPage() {
     var currentPath = _normalizePath(window.location.href);
     if (!currentPath) return;
 
@@ -472,20 +441,13 @@
       var targetPath = target ? _normalizePath(target) : null;
 
       if (target && targetPath && targetPath !== currentPath) {
-        _trackViewed(match.testName, variant, target, true);
         window.location.href = target;
-      } else if (variant && !_viewAlreadyFlushed(flushedEvents, match.testName, variant)) {
-        _trackViewed(match.testName, variant, window.location.href);
       }
       return;
     }
 
     var stored = _getStoredVariant(match.testName);
-    var activeVariant = stored || _setAssignment(match.testName, match.variant);
-
-    if (activeVariant && !_viewAlreadyFlushed(flushedEvents, match.testName, activeVariant)) {
-      _trackViewed(match.testName, activeVariant, window.location.href);
-    }
+    if (!stored) _setAssignment(match.testName, match.variant);
   }
 
   function _findClosestLink(target) {
@@ -539,8 +501,8 @@
     _tests = _buildTests(config);
     _initialized = true;
 
-    var flushedEvents = _flushPendingEvents();
-    _handleCurrentPage(flushedEvents);
+    _flushPendingEvents();
+    _handleCurrentPage();
     _rewriteLinks(document);
     _startObserver();
     _bindClickTracking();

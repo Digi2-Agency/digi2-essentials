@@ -1264,18 +1264,11 @@ localStorage[<span class="string">'d2ab:pricing'</span>] = <span class="string">
 &lt;a href=<span class="string">"/pricing"</span> <span class="prop">d2-ab-link</span>=<span class="string">"pricing"</span>&gt;Pricing&lt;/a&gt;</code></pre>
 
     <h3>GTM Events</h3>
-    <p>If the Google module is available, events are pushed through <code>digi2.google.dataLayerPush</code>. Otherwise the module falls back to <code>window.dataLayer.push</code>.</p>
+    <p>If the Google module is available, assignment and click events are pushed through <code>digi2.google.dataLayerPush</code>. Otherwise the module falls back to <code>window.dataLayer.push</code>.</p>
     <pre><code>{
   event: <span class="string">'digi2_ab_assigned'</span>,
   ab_test: <span class="string">'pricing'</span>,
   ab_variant: <span class="string">'B'</span>
-}
-
-{
-  event: <span class="string">'digi2_ab_viewed'</span>,
-  ab_test: <span class="string">'pricing'</span>,
-  ab_variant: <span class="string">'B'</span>,
-  ab_url: <span class="string">'/pricing-b'</span>
 }
 
 {
@@ -1303,25 +1296,31 @@ digi2.tabs.<span class="fn">create</span>(<span class="string">'faq'</span>, {
   <span class="prop">allowMultiple</span>: <span class="keyword">true</span>,
   <span class="prop">animation</span>: <span class="string">'slide-down'</span>,
 })</code></pre>
+    <h3>External Triggers</h3>
+    <pre><code><span class="comment">&lt;!-- Outside the group: group:tab --&gt;</span>
+&lt;button <span class="prop">d2-tab-trigger</span>=<span class="string">"pricing:yearly"</span>&gt;Show yearly pricing&lt;/button&gt;
+
+<span class="comment">&lt;!-- Inside the same d2-tab-group: tab only --&gt;</span>
+&lt;button <span class="prop">d2-tab-trigger</span>=<span class="string">"yearly"</span>&gt;Show yearly pricing&lt;/button&gt;</code></pre>
     <h3>Live Demo — Tabs</h3>
     <div class="demo-box" d2-tab-group="demo-tabs">
       <div style="display:flex; gap:8px; margin-bottom:16px;">
-        <button class="btn btn--sm" d2-tab="tab-1">Tab 1</button>
-        <button class="btn btn--sm btn--outline" d2-tab="tab-2">Tab 2</button>
-        <button class="btn btn--sm btn--outline" d2-tab="tab-3">Tab 3</button>
+        <button class="btn btn--sm" d2-tab-trigger="tab-1">Tab 1</button>
+        <button class="btn btn--sm btn--outline" d2-tab-trigger="tab-2">Tab 2</button>
+        <button class="btn btn--sm btn--outline" d2-tab-trigger="tab-3">Tab 3</button>
       </div>
-      <div d2-tab-content="tab-1"><p>Content for Tab 1. This is the default open tab.</p></div>
-      <div d2-tab-content="tab-2"><p>Content for Tab 2. Switches with fade animation.</p></div>
-      <div d2-tab-content="tab-3"><p>Content for Tab 3. Try clicking between tabs.</p></div>
+      <div d2-tab-instance="tab-1"><p>Content for Tab 1. This is the default open tab.</p></div>
+      <div d2-tab-instance="tab-2"><p>Content for Tab 2. Switches with fade animation.</p></div>
+      <div d2-tab-instance="tab-3"><p>Content for Tab 3. Try clicking between tabs.</p></div>
     </div>
     <h3>Live Demo — Accordion</h3>
     <div class="demo-box" d2-tab-group="demo-accordion">
-      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab="acc-1" style="width:100%; text-align:left;">Question 1</button></div>
-      <div d2-tab-content="acc-1"><p style="padding:8px 0 16px;">Answer to question 1. Multiple panels can be open at once.</p></div>
-      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab="acc-2" style="width:100%; text-align:left;">Question 2</button></div>
-      <div d2-tab-content="acc-2"><p style="padding:8px 0 16px;">Answer to question 2.</p></div>
-      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab="acc-3" style="width:100%; text-align:left;">Question 3</button></div>
-      <div d2-tab-content="acc-3"><p style="padding:8px 0 16px;">Answer to question 3.</p></div>
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab-trigger="acc-1" style="width:100%; text-align:left;">Question 1</button></div>
+      <div d2-tab-instance="acc-1"><p style="padding:8px 0 16px;">Answer to question 1. Multiple panels can be open at once.</p></div>
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab-trigger="acc-2" style="width:100%; text-align:left;">Question 2</button></div>
+      <div d2-tab-instance="acc-2"><p style="padding:8px 0 16px;">Answer to question 2.</p></div>
+      <div style="margin-bottom:8px;"><button class="btn btn--sm btn--outline" d2-tab-trigger="acc-3" style="width:100%; text-align:left;">Question 3</button></div>
+      <div d2-tab-instance="acc-3"><p style="padding:8px 0 16px;">Answer to question 3.</p></div>
     </div>
     <table>
       <tr><th>Option</th><th>Default</th><th>Description</th></tr>
@@ -1777,6 +1776,10 @@ digi2.modules.<span class="fn">list</span>()                              <span 
       <tr><td><code>d2-ab-tests="configName"</code></td><td>Loader script</td><td>A/B test map on <code>window</code></td></tr>
       <tr><td><code>d2-ab-link="testName"</code></td><td>Link</td><td>Force link rewriting for a specific A/B test</td></tr>
       <tr><td><code>d2-ab-ignore</code></td><td>Link</td><td>Skip A/B link rewriting</td></tr>
+      <tr><td><code>d2-tab-group="name"</code></td><td>Div</td><td>Tabs/accordion wrapper</td></tr>
+      <tr><td><code>d2-tab-trigger="id"</code></td><td>Button</td><td>Tab trigger</td></tr>
+      <tr><td><code>d2-tab-trigger="group:id"</code></td><td>Any</td><td>External tab trigger</td></tr>
+      <tr><td><code>d2-tab-instance="id"</code></td><td>Div</td><td>Tab panel</td></tr>
     </table>
   </section>
 
