@@ -565,6 +565,8 @@ form.setField('field', 'value')
 </div>
 ```
 
+Groups with `d2-tab-group` auto-initialize when `d2-tabs` loads. Call `create` only when you need custom options:
+
 ```js
 digi2.tabs.create('pricing', { animation: 'fade' })
 ```

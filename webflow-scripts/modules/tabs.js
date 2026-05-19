@@ -14,8 +14,10 @@
  *   </div>
  *
  * API:
+ *   // d2-tab-group elements auto-initialize on load.
  *   digi2.tabs.create('faq', { mode: 'tabs', animation: 'fade' })
  *   digi2.tabs.create('faq', { mode: 'accordion', allowMultiple: true })
+ *   digi2.tabs.init()
  *   digi2.tabs.get('faq')
  *   digi2.tabs.destroy('faq')
  *   digi2.tabs.list()
@@ -132,6 +134,8 @@
       this.panels = [];
       this._activeTabs = new Set();
       this._animating = false;
+      this._initializing = false;
+      this._initialActiveTabId = null;
 
       this._init();
     }
@@ -149,6 +153,8 @@
       this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab-trigger], [d2-tab]'));
       this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-instance], [d2-tab-content]'));
       this.externalTriggers = this._findExternalTriggers();
+      var initialActiveTrigger = this._getInitialActiveTrigger();
+      this._initialActiveTabId = initialActiveTrigger ? this._getTriggerTabId(initialActiveTrigger) || this._getExternalTriggerTabId(initialActiveTrigger) : null;
 
       _log('init → ' + this.name, {
         mode: this.options.mode,
@@ -166,7 +172,9 @@
       this._attachListeners();
 
       // Open default
+      this._initializing = true;
       this._openDefault();
+      this._initializing = false;
 
       // Hash sync
       if (this.options.hashSync) {
@@ -183,6 +191,35 @@
       this._activeTabs.clear();
       this.groupEl = null;
       _log('destroy → ' + this.name);
+    }
+
+    updateOptions(options) {
+      options = options || {};
+
+      var previousActiveClass = this.options.activeClass;
+      this.options = {
+        ...this.options,
+        ...options,
+      };
+
+      this._animating = false;
+      this.panels.forEach(function (panel) {
+        hideElement(panel);
+      });
+      this._activeTabs.clear();
+      this._initializing = true;
+      this._openDefault();
+      this._initializing = false;
+
+      if (previousActiveClass !== this.options.activeClass) {
+        this.triggers.concat(this.externalTriggers).forEach(function (trigger) {
+          if (!trigger.classList) return;
+          trigger.classList.remove(previousActiveClass);
+        });
+        this._updateTriggers();
+      }
+
+      return this;
     }
 
     // ---- Find group ---------------------------------------------------------
@@ -389,7 +426,7 @@
       var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
       var dur = this.options.animationDuration;
 
-      if (anim === ANIMATIONS.none) {
+      if (this._initializing || anim === ANIMATIONS.none) {
         showElement(panel);
         return;
       }
@@ -469,8 +506,7 @@
           this.open(def);
         }
       } else {
-        var activeTrigger = this._getInitialActiveTrigger();
-        var activeTabId = activeTrigger ? this._getTriggerTabId(activeTrigger) || this._getExternalTriggerTabId(activeTrigger) : null;
+        var activeTabId = this._initialActiveTabId;
         if (activeTabId) {
           this.open(activeTabId);
         } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
@@ -495,9 +531,27 @@
   // ---------------------------------------------------------------------------
   var registry = {};
 
+  function autoInit() {
+    if (!document.querySelectorAll) return [];
+
+    var initialized = [];
+    var groups = Array.from(document.querySelectorAll('[d2-tab-group]'));
+
+    groups.forEach(function (group) {
+      var name = attr(group, 'd2-tab-group');
+      if (!name || registry[name]) return;
+
+      registry[name] = new TabManager(name, { animation: 'none' });
+      initialized.push(name);
+    });
+
+    return initialized;
+  }
+
   window.digi2.tabs = {
     create: function (name, options) {
       if (registry[name]) {
+        if (options) return registry[name].updateOptions(options);
         console.warn('[digi2.tabs] "' + name + '" already exists.');
         return registry[name];
       }
@@ -521,5 +575,17 @@
     list: function () {
       return Object.keys(registry);
     },
+
+    init: autoInit,
   };
+
+  function boot() {
+    autoInit();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })();

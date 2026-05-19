@@ -75,6 +75,7 @@ function createElement(tagName, attrs) {
       function matchesOne(node, sel) {
         if (sel === '[d2-tab]') return node.hasAttribute('d2-tab');
         if (sel === '[d2-tab-content]') return node.hasAttribute('d2-tab-content');
+        if (sel === '[d2-tab-group]') return node.hasAttribute('d2-tab-group');
         if (sel === '[d2-tab-trigger]') return node.hasAttribute('d2-tab-trigger');
         if (sel === '[d2-tab-instance]') return node.hasAttribute('d2-tab-instance');
         return false;
@@ -117,6 +118,8 @@ function createEnvironment() {
 
   const document = {
     body,
+    readyState: 'complete',
+    addEventListener() {},
     querySelector(selector) {
       if (selector === '[d2-tab-group="pricing"]') return group;
       return null;
@@ -178,6 +181,21 @@ test('external tab trigger opens tab and receives active class', () => {
   assert.equal(env.externalTrigger.classList.contains('is-active'), true);
 });
 
+test('module auto initializes declarative tab groups', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  assert.equal(env.monthlyPanel.style.display, '');
+  assert.equal(env.yearlyPanel.style.display, 'none');
+
+  env.yearlyTrigger.click();
+
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.display, '');
+  assert.equal(env.monthlyTrigger.classList.contains('d2-tab-active'), false);
+  assert.equal(env.yearlyTrigger.classList.contains('d2-tab-active'), true);
+});
+
 test('trigger with d2-tab-active class is used as default tab', () => {
   const env = createEnvironment();
   env.yearlyTrigger.classList.add('d2-tab-active');
@@ -192,6 +210,24 @@ test('trigger with d2-tab-active class is used as default tab', () => {
   assert.equal(env.yearlyPanel.style.display, '');
   assert.equal(env.monthlyTrigger.classList.contains('d2-tab-active'), false);
   assert.equal(env.yearlyTrigger.classList.contains('d2-tab-active'), true);
+});
+
+test('auto initialized group can be reconfigured as accordion without inheriting generated active tab', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  env.window.digi2.tabs.create('pricing', {
+    mode: 'accordion',
+    animation: 'none',
+  });
+
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.display, 'none');
+
+  env.yearlyTrigger.click();
+
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.display, '');
 });
 
 test('hidden tab instances use display none important', () => {
