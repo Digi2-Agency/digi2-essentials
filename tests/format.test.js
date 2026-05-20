@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'format.js');
 
 function createElement(tagName, attrs, textContent) {
+  const classes = new Set();
   const el = {
     tagName: tagName.toUpperCase(),
     attributes: Object.assign({}, attrs || {}),
@@ -22,6 +23,11 @@ function createElement(tagName, attrs, textContent) {
     },
     hasAttribute(name) {
       return Object.prototype.hasOwnProperty.call(this.attributes, name);
+    },
+    classList: {
+      contains(name) {
+        return classes.has(name);
+      },
     },
     appendChild(child) {
       child.parentElement = this;
@@ -45,10 +51,18 @@ function createElement(tagName, attrs, textContent) {
     },
   };
 
+  if (attrs && attrs.class) {
+    attrs.class.split(/\s+/).filter(Boolean).forEach((name) => classes.add(name));
+  }
+
   return el;
 }
 
 function matchesSelector(node, selector) {
+  if (selector.startsWith('.')) {
+    return node.classList.contains(selector.slice(1));
+  }
+
   const attrMatches = Array.from(selector.matchAll(/\[([^=\]]+)(?:="([^"]*)")?\]/g));
   if (!attrMatches.length) return false;
 
@@ -140,4 +154,15 @@ test('d2-format-number price alias formats dynamically added elements', async ()
   await flushTimers();
 
   assert.equal(price.textContent, '422 934 PLN');
+});
+
+test('legacy format-price class is treated as a price formatter', async () => {
+  const env = createEnvironment();
+  const price = createElement('div', { class: 'format-price' }, '199999');
+  env.body.appendChild(price);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(price.textContent, '199 999 PLN');
 });

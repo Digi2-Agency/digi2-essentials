@@ -156,6 +156,12 @@ function createItem(fields) {
   return item;
 }
 
+function createPriceItem(value) {
+  const item = createElement('div', { 'd2-cms-item': '' });
+  item.appendChild(createElement('span', { 'd2-format-price': '' }, String(value)));
+  return item;
+}
+
 function createEnvironment() {
   const body = createElement('body');
   const listeners = {};
@@ -352,4 +358,41 @@ test('webflow pagination load button resolves the sibling CMS list and prevents 
   assert.equal(event.immediatePropagationStopped, true);
   assert.equal(first.style.display, '');
   assert.equal(second.style.display, '');
+});
+
+test('cms render refreshes price formatting when items are revealed later', async () => {
+  const env = createEnvironment();
+  const list = createElement('div', {
+    'd2-cms-list': 'offers',
+    'd2-cms-per-page': '1',
+    'd2-cms-load-mode': 'more',
+  });
+  const first = createPriceItem('199999');
+  const second = createPriceItem('422934.4');
+
+  env.window.digi2.format = {
+    refresh(root) {
+      root.querySelectorAll('[d2-format-price]').forEach((el) => {
+        const value = Number(String(el.textContent).replace(/[^\d.-]/g, ''));
+        if (!Number.isNaN(value)) {
+          el.textContent = Math.round(value).toLocaleString('pl-PL').replace(/\u00A0|\u202F/g, ' ') + ' PLN';
+        }
+      });
+    },
+  };
+
+  list.appendChild(first);
+  list.appendChild(second);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(first.querySelector('[d2-format-price]').textContent, '199 999 PLN');
+  assert.equal(second.querySelector('[d2-format-price]').textContent, '422 934 PLN');
+
+  await env.window.digi2.cms.get('offers').loadMore(1);
+  await flushTimers();
+
+  assert.equal(second.querySelector('[d2-format-price]').textContent, '422 934 PLN');
 });

@@ -1424,6 +1424,13 @@
       // fetches may un-hide .w-pagination-previous/next/etc; keep them off.
       this._applyPaginationHiding();
 
+      // Let the optional format module process CMS nodes after every render.
+      // This covers items revealed by loadMore/loadAll and items appended from
+      // fetched Webflow pagination pages.
+      if (window.digi2 && window.digi2.format && typeof window.digi2.format.refresh === 'function') {
+        window.digi2.format.refresh(listEl);
+      }
+
       // Sentinel observation: only observe if there are more to reveal
       this._observeSentinel(visibleCount < matching.length);
 

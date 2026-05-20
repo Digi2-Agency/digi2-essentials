@@ -6,6 +6,7 @@
  * Webflow setup:
  *   <div d2-format-price>199999</div>                  -> 199 999 PLN
  *   <div d2-format-number="price">199999</div>         -> 199 999 PLN
+ *   <div class="format-price">199999</div>             -> 199 999 PLN
  *   <div d2-format-price d2-format-currency="EUR">199999</div>
  *   <div d2-format-price d2-format-decimals="2">199999</div>
  *
@@ -63,6 +64,15 @@
     if (value == null || value === '') return null;
     var parsed = parseInt(value, 10);
     return isNaN(parsed) ? null : parsed;
+  }
+
+  function hasClass(el, name) {
+    if (!el) return false;
+    if (el.classList && typeof el.classList.contains === 'function') {
+      return el.classList.contains(name);
+    }
+    var classAttr = el.getAttribute && el.getAttribute('class');
+    return (' ' + (classAttr || '') + ' ').indexOf(' ' + name + ' ') !== -1;
   }
 
   function formatNumber(value, options) {
@@ -131,7 +141,7 @@
   function formatElement(el) {
     if (!el) return;
 
-    var mode = el.hasAttribute('d2-format-price')
+    var mode = el.hasAttribute('d2-format-price') || hasClass(el, 'format-price') || hasClass(el, 'format_price')
       ? 'price'
       : (attr(el, 'd2-format-number') || '').trim().toLowerCase();
 
@@ -149,7 +159,7 @@
 
   function refresh(root) {
     var scope = root && root.querySelectorAll ? root : document;
-    var els = scope.querySelectorAll('[d2-format-price], [d2-format-number="price"]');
+    var els = scope.querySelectorAll('[d2-format-price], [d2-format-number="price"], .format-price, .format_price');
     for (var i = 0; i < els.length; i++) formatElement(els[i]);
   }
 
