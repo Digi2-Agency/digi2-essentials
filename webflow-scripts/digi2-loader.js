@@ -18,6 +18,7 @@
  *   d2-cookies  →  modules/cookies.js   Cookie get/set/remove helpers
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
+ *   d2-format   →  modules/format.js    Number and price formatting
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
@@ -451,6 +452,7 @@
     lazy: 'lazy',
     countdown: 'countdown',
     filter: 'filter',
+    format: 'format',
     copy: 'copy',
     cms: 'cms',
     interactions: 'interactions',
@@ -588,7 +590,11 @@
     } else if (name === 'd2-debug-mode') {
       // skip — not a module
     } else if (name.indexOf('d2-') === 0) {
-      modules.push(name.substring(3)); // "d2-popups" → "popups"
+      var moduleName = name.substring(3); // "d2-popups" -> "popups"
+      if (moduleName === 'format-price' || moduleName === 'format-number') {
+        moduleName = 'format';
+      }
+      if (modules.indexOf(moduleName) === -1) modules.push(moduleName);
     }
   }
 

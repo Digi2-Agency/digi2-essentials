@@ -21,6 +21,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
   d2-lazy
   d2-countdown
   d2-filter
+  d2-format
   d2-copy
 ></script>
 ```
@@ -46,11 +47,12 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-lazy` | lazy | 2.5 KB | Lazy images/video/iframes + blur-up |
 | `d2-countdown` | countdown | 3.4 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
+| `d2-format` | format | 2.5 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **140.7 KB min** / **42.3 KB** gzipped.
+Total (all modules): **167.2 KB min** / **49.6 KB** gzipped.
 
 ---
 
@@ -1005,6 +1007,39 @@ list.reset()                   // no sort, no filters, first page
 list.refresh()                 // re-scan items (after Webflow re-renders the list)
 list.getState()                // { visible, totalMatching, total, sort, filters }
 list.destroy()
+```
+
+---
+
+## Format
+
+Load with any of these loader attributes: `d2-format`, `d2-format-price`, or `d2-format-number`.
+
+```html
+<div d2-format-price>199999</div>
+<div d2-format-number="price">422934.4</div>
+```
+
+Both render as PLN prices by default:
+
+```text
+199 999 PLN
+422 934 PLN
+```
+
+Optional overrides:
+
+```html
+<div d2-format-price d2-format-currency="EUR">199999</div>
+<div d2-format-price d2-format-decimals="2">199999</div>
+<div d2-format-price d2-format-suffix=" zl netto">199999</div>
+```
+
+The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically.
+
+```js
+digi2.format.price('199999')       // "199 999 PLN"
+digi2.format.refresh()             // rescan document
 ```
 
 ---
