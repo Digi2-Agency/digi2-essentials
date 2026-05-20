@@ -1970,9 +1970,27 @@
     if (explicit) return _parseTargetNames(explicit);
     var ancestor = triggerEl.closest('[d2-cms-list]');
     if (ancestor) return [attr(ancestor, 'd2-cms-list')].filter(Boolean);
+    var paginationTargets = _targetNamesFromPagination(triggerEl);
+    if (paginationTargets.length) return paginationTargets;
     var keys = Object.keys(registry);
     if (keys.length === 1) return [keys[0]];
     return [];
+  }
+
+  function _targetNamesFromPagination(triggerEl) {
+    var wrapper = triggerEl && triggerEl.closest && triggerEl.closest('.w-pagination-wrapper');
+    if (!wrapper || !wrapper.parentElement) return [];
+
+    var names = [];
+    var seen = {};
+    var lists = wrapper.parentElement.querySelectorAll('[d2-cms-list]');
+    for (var i = 0; i < lists.length; i++) {
+      var name = attr(lists[i], 'd2-cms-list');
+      if (!name || seen[name]) continue;
+      seen[name] = true;
+      names.push(name);
+    }
+    return names;
   }
 
   function _resolveTargetName(triggerEl) {

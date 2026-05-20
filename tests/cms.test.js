@@ -104,6 +104,11 @@ function createElement(tagName, attrs, textContent) {
 
 function matchesSelector(node, selector) {
   if (!node || !selector) return false;
+  const selectors = selector.split(',').map((item) => item.trim()).filter(Boolean);
+  if (selectors.length > 1) {
+    return selectors.some((sel) => matchesSelector(node, sel));
+  }
+
   const parts = selector.trim().split(/\s+/);
   if (parts.length > 1) {
     const right = parts.pop();
@@ -210,11 +215,21 @@ function flushTimers() {
 function dispatchDocument(env, type, target) {
   const event = {
     target,
-    preventDefault() {},
-    stopPropagation() {},
-    stopImmediatePropagation() {},
+    defaultPrevented: false,
+    propagationStopped: false,
+    immediatePropagationStopped: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopPropagation() {
+      this.propagationStopped = true;
+    },
+    stopImmediatePropagation() {
+      this.immediatePropagationStopped = true;
+    },
   };
   (env.listeners[type] || []).forEach((fn) => fn(event));
+  return event;
 }
 
 test('filter trigger can target multiple CMS lists', async () => {
@@ -296,4 +311,45 @@ test('range slider can target multiple CMS lists', async () => {
   assert.equal(listHigh.style.display, '');
   assert.equal(gridLow.style.display, 'none');
   assert.equal(gridHigh.style.display, '');
+});
+
+test('webflow pagination load button resolves the sibling CMS list and prevents navigation', async () => {
+  const env = createEnvironment();
+  const dynList = createElement('div', { class: 'w-dyn-list' });
+  const list = createElement('div', {
+    'd2-cms-list': 'offers-list',
+    'd2-cms-per-page': '1',
+    'd2-cms-load-mode': 'more',
+  });
+  const pagination = createElement('div', { class: 'w-pagination-wrapper' });
+  const loadButton = createElement('a', {
+    href: '?offers_page=2',
+    class: 'w-pagination-next',
+    'd2-cms-loadcount': 'all',
+  });
+  const pageCount = createElement('div', { class: 'w-page-count' }, '1 / 1');
+  const first = createItem({ status: 'Dostępne' });
+  const second = createItem({ status: 'Dostępne' });
+
+  list.appendChild(first);
+  list.appendChild(second);
+  pagination.appendChild(loadButton);
+  pagination.appendChild(pageCount);
+  dynList.appendChild(list);
+  dynList.appendChild(pagination);
+  env.body.appendChild(dynList);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(first.style.display, '');
+  assert.equal(second.style.display, 'none');
+
+  const event = dispatchDocument(env, 'click', loadButton);
+  await flushTimers();
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(event.immediatePropagationStopped, true);
+  assert.equal(first.style.display, '');
+  assert.equal(second.style.display, '');
 });
