@@ -4,15 +4,16 @@
  * or d2-format-number is present on the loader tag.
  *
  * Webflow setup:
- *   <div d2-format-price>199999</div>                  -> 199 999 PLN
- *   <div d2-format-number="price">199999</div>         -> 199 999 PLN
- *   <div class="format-price">199999</div>             -> 199 999 PLN
+ *   <div d2-format-price>199999</div>                  -> 199 999
+ *   <div d2-format-number="price">199999</div>         -> 199 999
+ *   <div class="format-price">199999</div>             -> 199 999
+ *   <div d2-format-price d2-format-currency="PLN">199999</div>
  *   <div d2-format-price d2-format-currency="EUR">199999</div>
  *   <div d2-format-price d2-format-decimals="2">199999</div>
  *
  * API:
- *   digi2.format.price(199999)                         -> "199 999 PLN"
- *   digi2.format.number(199999, { suffix: ' PLN' })    -> "199 999 PLN"
+ *   digi2.format.price(199999)                         -> "199 999"
+ *   digi2.format.price(199999, { currency: 'PLN' })    -> "199 999 PLN"
  *   digi2.format.refresh()
  */
 (function () {
@@ -98,7 +99,7 @@
 
   function formatPrice(value, options) {
     options = options || {};
-    var currency = options.currency == null ? 'PLN' : String(options.currency);
+    var currency = options.currency == null ? '' : String(options.currency);
     var suffix = options.suffix;
     if (suffix == null) suffix = currency ? ' ' + currency : '';
 
@@ -123,7 +124,6 @@
       if ((currency == null || currency === '') && priceAttr && priceAttr !== 'true') {
         currency = priceAttr;
       }
-      if (currency == null || currency === '') currency = 'PLN';
       if (suffix == null) suffix = currency ? ' ' + currency : '';
     } else if (suffix == null) {
       suffix = '';

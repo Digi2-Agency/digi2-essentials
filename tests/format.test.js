@@ -130,7 +130,7 @@ function flushTimers() {
   return new Promise((resolve) => setTimeout(resolve, 5));
 }
 
-test('d2-format-price formats plain CMS text as PLN price', async () => {
+test('d2-format-price formats plain CMS text without a default currency suffix', async () => {
   const env = createEnvironment();
   const price = createElement('div', { 'd2-format-price': '' }, '199999');
   env.body.appendChild(price);
@@ -138,8 +138,8 @@ test('d2-format-price formats plain CMS text as PLN price', async () => {
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(price.textContent, '199 999 PLN');
-  assert.equal(env.window.digi2.format.price('422934.4'), '422 934 PLN');
+  assert.equal(price.textContent, '199 999');
+  assert.equal(env.window.digi2.format.price('422934.4'), '422 934');
 });
 
 test('d2-format-number price alias formats dynamically added elements', async () => {
@@ -153,10 +153,10 @@ test('d2-format-number price alias formats dynamically added elements', async ()
   env.observers.forEach((observer) => observer.callback());
   await flushTimers();
 
-  assert.equal(price.textContent, '422 934 PLN');
+  assert.equal(price.textContent, '422 934');
 });
 
-test('legacy format-price class is treated as a price formatter', async () => {
+test('legacy format-price class is treated as a price formatter without default suffix', async () => {
   const env = createEnvironment();
   const price = createElement('div', { class: 'format-price' }, '199999');
   env.body.appendChild(price);
@@ -164,5 +164,19 @@ test('legacy format-price class is treated as a price formatter', async () => {
   loadFormatModule(env);
   await flushTimers();
 
+  assert.equal(price.textContent, '199 999');
+});
+
+test('price formatter appends currency only when configured', async () => {
+  const env = createEnvironment();
+  const price = createElement('div', { 'd2-format-price': '', 'd2-format-currency': 'PLN' }, '199999');
+  const suffixed = createElement('div', { 'd2-format-price': '', 'd2-format-suffix': ' PLN netto' }, '422934.4');
+  env.body.appendChild(price);
+  env.body.appendChild(suffixed);
+
+  loadFormatModule(env);
+  await flushTimers();
+
   assert.equal(price.textContent, '199 999 PLN');
+  assert.equal(suffixed.textContent, '422 934 PLN netto');
 });

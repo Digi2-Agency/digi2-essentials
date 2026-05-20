@@ -47,7 +47,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-lazy` | lazy | 2.5 KB | Lazy images/video/iframes + blur-up |
 | `d2-countdown` | countdown | 3.4 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
-| `d2-format` | format | 2.8 KB | Number and price formatting |
+| `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
@@ -1021,16 +1021,17 @@ Load with any of these loader attributes: `d2-format`, `d2-format-price`, or `d2
 <div class="format-price">199999</div>
 ```
 
-Both render as PLN prices by default:
+They format the number only by default:
 
 ```text
-199 999 PLN
-422 934 PLN
+199 999
+422 934
 ```
 
 Optional overrides:
 
 ```html
+<div d2-format-price d2-format-suffix=" PLN">199999</div>
 <div d2-format-price d2-format-currency="EUR">199999</div>
 <div d2-format-price d2-format-decimals="2">199999</div>
 <div d2-format-price d2-format-suffix=" zl netto">199999</div>
@@ -1039,7 +1040,8 @@ Optional overrides:
 The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically.
 
 ```js
-digi2.format.price('199999')       // "199 999 PLN"
+digi2.format.price('199999')       // "199 999"
+digi2.format.price('199999', { currency: 'PLN' }) // "199 999 PLN"
 digi2.format.refresh()             // rescan document
 ```
 
