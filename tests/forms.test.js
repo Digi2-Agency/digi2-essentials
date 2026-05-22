@@ -244,12 +244,15 @@ function createAutoValidationEnvironment() {
   const firstName = createElement('input', { type: 'text', name: 'FIRST_NAME', required: '' });
   const email = createElement('input', { type: 'email', name: 'EMAIL', required: '' });
   const consent = createElement('input', { type: 'checkbox', name: 'CONSENT_PHONE', required: '' });
+  const duplicateConsent = createElement('input', { type: 'checkbox', name: 'CONSENT_PHONE', required: '' });
   const consentWrap = createWebflowCheckbox(consent);
+  const duplicateConsentWrap = createWebflowCheckbox(duplicateConsent);
 
   webflowWrapper.classList.add('w-form');
   form.appendChild(firstName);
   form.appendChild(email);
   form.appendChild(consentWrap.label);
+  form.appendChild(duplicateConsentWrap.label);
   webflowWrapper.appendChild(form);
   body.appendChild(webflowWrapper);
 
@@ -297,7 +300,9 @@ function createAutoValidationEnvironment() {
     firstName,
     email,
     consent,
+    duplicateConsent,
     consentVisual: consentWrap.visual,
+    duplicateConsentVisual: duplicateConsentWrap.visual,
   };
 }
 
@@ -471,7 +476,9 @@ test('forms module auto initializes Webflow form validation and creates error el
   assert.equal(env.firstName.classList.contains('d2-error'), true);
   assert.equal(env.email.classList.contains('d2-error'), true);
   assert.equal(env.consent.closest('label').classList.contains('d2-error'), true);
+  assert.equal(env.duplicateConsent.closest('label').classList.contains('d2-error'), true);
   assert.equal(Boolean(env.firstName.parentElement.querySelector('[d2-form-error-text]')), true);
   assert.equal(Boolean(env.email.parentElement.querySelector('[d2-form-error-text]')), true);
   assert.equal(Boolean(env.consent.closest('label').querySelector('[d2-form-error-text]')), true);
+  assert.equal(Boolean(env.duplicateConsent.closest('label').querySelector('[d2-form-error-text]')), true);
 });
