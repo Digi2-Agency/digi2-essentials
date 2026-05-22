@@ -727,16 +727,21 @@
         if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
 
         var input = this.formElement.querySelector('[name="' + fieldName + '"]');
-        if (!input || input.type === 'hidden' || input.type === 'checkbox' || input.type === 'radio') continue;
+        if (!input || input.type === 'hidden') continue;
 
         // Skip if an error element already exists for this input
         if (this._findErrorElement(input)) continue;
 
         // --- Ensure input is inside a <label> with position:relative ---
+        var isChoiceInput = input.type === 'checkbox' || input.type === 'radio';
         var existingLabel = input.closest('label');
         var wrapper;
 
-        if (existingLabel) {
+        if (isChoiceInput) {
+          wrapper = existingLabel || input.parentElement;
+          if (!wrapper) continue;
+          wrapper.style.position = wrapper.style.position || 'relative';
+        } else if (existingLabel) {
           wrapper = existingLabel;
           wrapper.style.position = 'relative';
           wrapper.style.display = 'block';
@@ -1316,6 +1321,87 @@
   // ---------------------------------------------------------------------------
   var registry = {};
 
+  function _formHasValidationFields(form) {
+    if (!form || typeof form.querySelectorAll !== 'function') return false;
+
+    var fields = form.querySelectorAll('input, textarea, select');
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (!field || !field.name || field.type === 'hidden') continue;
+      if (field.hasAttribute && field.hasAttribute('required')) return true;
+      if (field.type === 'email') return true;
+      if (DEFAULT_FIELD_RULES[field.name]) return true;
+    }
+
+    return false;
+  }
+
+  function _autoFormBaseName(form, index) {
+    var raw = form.id || form.getAttribute('name') || form.getAttribute('data-name') || 'auto-form-' + index;
+    return String(raw).replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'auto-form-' + index;
+  }
+
+  function initAutoValidationForms(root, options) {
+    root = root || document;
+    options = options || {};
+    if (!root || typeof root.querySelectorAll !== 'function') return [];
+
+    var forms = root.tagName === 'FORM'
+      ? [root]
+      : Array.prototype.slice.call(root.querySelectorAll('form'));
+    var created = [];
+    var counts = {};
+
+    var defaults = {
+      utmTracking: false,
+      clickIdTracking: false,
+      gaClientId: false,
+      pageMeta: false,
+      autoValidation: true,
+      autoErrorElements: true,
+      validateOn: 'both',
+      errorMessages: {
+        required: 'To pole jest wymagane.',
+        email: 'Podaj poprawny adres e-mail.',
+        phone: 'Podaj poprawny numer telefonu.',
+        minLength: 'Minimum {param} znaków.',
+      },
+      errorTextStyle: {
+        position: 'static',
+        width: 'auto',
+        marginTop: '6px',
+        fontSize: '12px',
+        lineHeight: '1.3',
+      },
+    };
+
+    forms.forEach(function (form, index) {
+      if (!form || form._d2AutoValidationInit) return;
+      if (typeof form.closest === 'function' && form.closest('[d2-form]')) return;
+      if (!_formHasValidationFields(form)) return;
+
+      var baseName = _autoFormBaseName(form, index + 1);
+      counts[baseName] = (counts[baseName] || 0) + 1;
+      var registryKey = counts[baseName] === 1 ? baseName : baseName + '-' + counts[baseName];
+      while (registry[registryKey]) {
+        counts[baseName] += 1;
+        registryKey = baseName + '-' + counts[baseName];
+      }
+
+      var opts = Object.assign({}, defaults, options, { _formElement: form });
+      var instance = new FormManager(registryKey, opts);
+      registry[registryKey] = instance;
+      form._d2AutoValidationInit = true;
+      created.push(instance);
+    });
+
+    if (created.length > 0) {
+      _log('auto validation initialized → ' + created.length + ' forms', created.map(function (f) { return f.name; }));
+    }
+
+    return created;
+  }
+
   window.digi2.forms = {
     create: function (name, options) {
       if (registry[name]) {
@@ -1430,6 +1516,10 @@
       return setupConsentMasters(root || document, []);
     },
 
+    initAutoValidation: function (root, options) {
+      return initAutoValidationForms(root || document, options);
+    },
+
     /**
      * Initialize password toggle on all [d2-password-toggle] elements.
      * Clicking toggles the associated input between type="password" and type="text".
@@ -1492,6 +1582,7 @@
   function bootConsentMasters() {
     if (window.digi2 && window.digi2.forms) {
       window.digi2.forms.initConsentMasters();
+      window.digi2.forms.initAutoValidation();
     }
   }
 

@@ -115,9 +115,13 @@ function matches(node, selector) {
   if (selector === 'form') return node.tagName === 'FORM';
   if (selector === 'label') return node.tagName === 'LABEL';
   if (selector === '[d2-form]') return node.hasAttribute('d2-form');
+  if (selector === '[d2-form-error-text]') return node.hasAttribute('d2-form-error-text');
   if (selector === '[d2-consent-master]') return node.hasAttribute('d2-consent-master');
   if (selector === '[d2-consent-item]') return node.hasAttribute('d2-consent-item');
   if (selector === 'input') return node.tagName === 'INPUT';
+  if (selector === 'input[required]') return node.tagName === 'INPUT' && node.hasAttribute('required');
+  if (selector === 'textarea[required]') return node.tagName === 'TEXTAREA' && node.hasAttribute('required');
+  if (selector === 'select[required]') return node.tagName === 'SELECT' && node.hasAttribute('required');
   if (selector === 'input, textarea, select') {
     return node.tagName === 'INPUT' || node.tagName === 'TEXTAREA' || node.tagName === 'SELECT';
   }
@@ -127,6 +131,9 @@ function matches(node, selector) {
 
   match = selector.match(/^input\[name="([^"]+)"\]$/);
   if (match) return node.tagName === 'INPUT' && node.name === match[1];
+
+  match = selector.match(/^\[name="([^"]+)"\]$/);
+  if (match) return node.name === match[1];
 
   match = selector.match(/^\[d2-consent-item="([^"]+)"\]$/);
   if (match) return node.getAttribute('d2-consent-item') === match[1];
@@ -227,6 +234,71 @@ function createWebflowEnvironment() {
     emailVisual: emailWrap.visual,
     phoneVisual: phoneWrap.visual,
   });
+}
+
+function createAutoValidationEnvironment() {
+  const body = createElement('body');
+  const head = createElement('head');
+  const webflowWrapper = createElement('div');
+  const form = createElement('form', { id: 'wf-form-Contact-Form' });
+  const firstName = createElement('input', { type: 'text', name: 'FIRST_NAME', required: '' });
+  const email = createElement('input', { type: 'email', name: 'EMAIL', required: '' });
+  const consent = createElement('input', { type: 'checkbox', name: 'CONSENT_PHONE', required: '' });
+  const consentWrap = createWebflowCheckbox(consent);
+
+  webflowWrapper.classList.add('w-form');
+  form.appendChild(firstName);
+  form.appendChild(email);
+  form.appendChild(consentWrap.label);
+  webflowWrapper.appendChild(form);
+  body.appendChild(webflowWrapper);
+
+  const document = {
+    body,
+    head,
+    title: '',
+    referrer: '',
+    createElement(tagName) {
+      return createElement(tagName);
+    },
+    querySelector(selector) {
+      if (selector === '#wf-form-Contact-Form') return form;
+      return body.querySelector(selector);
+    },
+    querySelectorAll(selector) {
+      return body.querySelectorAll(selector);
+    },
+  };
+
+  const window = {
+    digi2: {
+      log() {},
+    },
+    location: { search: '', href: 'https://example.com/contact' },
+  };
+
+  return {
+    context: vm.createContext({
+      window,
+      document,
+      console,
+      Event,
+      setTimeout,
+      URLSearchParams,
+      getComputedStyle: (el) => ({
+        display: '',
+        visibility: '',
+        opacity: el && el.type === 'checkbox' ? '0' : '1',
+      }),
+      fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+    }),
+    window,
+    form,
+    firstName,
+    email,
+    consent,
+    consentVisual: consentWrap.visual,
+  };
 }
 
 function loadFormsModule(env) {
@@ -369,4 +441,37 @@ test('consent master does not dispatch child change events that Webflow can inve
   assert.equal(env.gdpr.checked, true);
   assert.equal(env.email.checked, true);
   assert.equal(env.phone.checked, true);
+});
+
+test('forms module auto initializes Webflow form validation and creates error elements', () => {
+  const env = createAutoValidationEnvironment();
+  loadFormsModule(env);
+
+  const submitEvent = {
+    type: 'submit',
+    bubbles: true,
+    defaultPrevented: false,
+    propagationStopped: false,
+    preventDefault() {
+      this.defaultPrevented = true;
+    },
+    stopImmediatePropagation() {
+      this.propagationStopped = true;
+    },
+  };
+
+  env.form.dispatchEvent(submitEvent);
+
+  assert.equal(submitEvent.defaultPrevented, true);
+  assert.equal(submitEvent.propagationStopped, true);
+  assert.equal(env.form.hasAttribute('novalidate'), true);
+  assert.equal(env.firstName.hasAttribute('required'), false);
+  assert.equal(env.email.hasAttribute('required'), false);
+  assert.equal(env.consent.hasAttribute('required'), false);
+  assert.equal(env.firstName.classList.contains('d2-error'), true);
+  assert.equal(env.email.classList.contains('d2-error'), true);
+  assert.equal(env.consent.closest('label').classList.contains('d2-error'), true);
+  assert.equal(Boolean(env.firstName.parentElement.querySelector('[d2-form-error-text]')), true);
+  assert.equal(Boolean(env.email.parentElement.querySelector('[d2-form-error-text]')), true);
+  assert.equal(Boolean(env.consent.closest('label').querySelector('[d2-form-error-text]')), true);
 });
