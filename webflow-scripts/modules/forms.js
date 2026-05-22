@@ -436,6 +436,7 @@
       this._inputFilters = [];
       this._consentMasterBindings = [];
       this._boundBlurHandler = null;
+      this._boundChangeHandler = null;
       this._boundSubmitHandler = null;
 
       this._init();
@@ -528,6 +529,9 @@
 
       if (this.formElement && this._boundBlurHandler) {
         this.formElement.removeEventListener('focusout', this._boundBlurHandler);
+      }
+      if (this.formElement && this._boundChangeHandler) {
+        this.formElement.removeEventListener('change', this._boundChangeHandler);
       }
       if (this.formElement && this._boundSubmitHandler) {
         this.formElement.removeEventListener('submit', this._boundSubmitHandler);
@@ -806,6 +810,19 @@
           }
         };
         this.formElement.addEventListener('focusout', this._boundBlurHandler);
+
+        this._boundChangeHandler = function (e) {
+          var input = e.target;
+          if (!input || !input.name) return;
+          var fieldName = input.name;
+          if (!self._resolvedValidation[fieldName]) return;
+
+          var type = String(input.type || '').toLowerCase();
+          if (type === 'checkbox' || type === 'radio' || input.tagName === 'SELECT') {
+            self._validateField(fieldName, input);
+          }
+        };
+        this.formElement.addEventListener('change', this._boundChangeHandler);
       }
 
       // Submit validation — use capture phase to run BEFORE Webflow's handler

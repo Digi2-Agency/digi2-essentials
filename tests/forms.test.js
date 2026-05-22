@@ -128,6 +128,9 @@ function matches(node, selector) {
   match = selector.match(/^input\[name="([^"]+)"\]$/);
   if (match) return node.tagName === 'INPUT' && node.name === match[1];
 
+  match = selector.match(/^\[name="([^"]+)"\]$/);
+  if (match) return node.name === match[1];
+
   match = selector.match(/^\[d2-consent-item="([^"]+)"\]$/);
   if (match) return node.getAttribute('d2-consent-item') === match[1];
 
@@ -369,4 +372,37 @@ test('consent master does not dispatch child change events that Webflow can inve
   assert.equal(env.gdpr.checked, true);
   assert.equal(env.email.checked, true);
   assert.equal(env.phone.checked, true);
+});
+
+test('checkbox validation error clears when checkbox changes', () => {
+  const env = createWebflowEnvironment();
+  loadFormsModule(env);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false,
+    clickIdTracking: false,
+    gaClientId: false,
+    pageMeta: false,
+    autoValidation: false,
+    validation: {
+      CONSENT_GDPR: { required: true },
+    },
+    inputOnError: { borderColor: '#cc3300' },
+    inputOnValid: { borderColor: '' },
+  });
+
+  const form = env.master.closest('form');
+  form.dispatchEvent({
+    type: 'submit',
+    preventDefault() {},
+    stopImmediatePropagation() {},
+  });
+
+  assert.equal(env.gdpr.parentElement.classList.contains('d2-error'), true);
+
+  env.gdpr.checked = true;
+  change(env.gdpr);
+
+  assert.equal(env.gdpr.parentElement.classList.contains('d2-error'), false);
+  assert.equal(env.gdpr.parentElement.getAttribute('d2-error'), null);
 });
