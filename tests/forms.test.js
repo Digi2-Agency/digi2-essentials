@@ -183,6 +183,7 @@ function createEnvironment() {
       window,
       document,
       console,
+      Event,
       setTimeout,
       URLSearchParams,
       getComputedStyle: () => ({ display: '', visibility: '', opacity: '1' }),
@@ -348,4 +349,24 @@ test('consent master re-checks state after delayed Webflow checkbox updates', as
   assert.equal(env.email.checked, true);
   assert.equal(env.phone.checked, true);
   assert.equal(env.gdprVisual.classList.contains('w--redirected-checked'), true);
+});
+
+test('consent master does not dispatch child change events that Webflow can invert', async () => {
+  const env = createWebflowEnvironment();
+  loadFormsModule(env);
+
+  [env.gdpr, env.email, env.phone].forEach((item) => {
+    item.addEventListener('change', () => {
+      item.checked = !item.checked;
+    });
+  });
+
+  env.master.checked = true;
+  change(env.master);
+  await tick();
+
+  assert.equal(env.master.checked, true);
+  assert.equal(env.gdpr.checked, true);
+  assert.equal(env.email.checked, true);
+  assert.equal(env.phone.checked, true);
 });

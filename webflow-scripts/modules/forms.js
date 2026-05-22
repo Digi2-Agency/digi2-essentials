@@ -77,12 +77,6 @@
     return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
-  function _dispatchChange(input) {
-    if (!input || typeof input.dispatchEvent !== 'function') return;
-    if (typeof Event !== 'function') return;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
   function _defer(fn) {
     if (typeof setTimeout === 'function') {
       setTimeout(fn, 0);
@@ -165,7 +159,6 @@
           item.checked = checked;
           item.indeterminate = false;
           _syncWebflowCheckboxVisual(item);
-          _dispatchChange(item);
         });
 
         updateMaster();
