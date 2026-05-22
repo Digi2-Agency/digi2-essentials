@@ -485,13 +485,11 @@
         var self = this;
         for (var fieldName in this._resolvedValidation) {
           if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
-          var inputs = this._getFieldInputs(fieldName);
-          inputs.forEach(function (input) {
-            if (input && input.hasAttribute('required')) {
-              input.removeAttribute('required');
-              _log('removed native required → ' + fieldName);
-            }
-          });
+          var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+          if (input && input.hasAttribute('required')) {
+            input.removeAttribute('required');
+            _log('removed native required → ' + fieldName);
+          }
         }
         // Also disable Webflow's novalidate isn't always set
         this.formElement.setAttribute('novalidate', '');
@@ -689,11 +687,6 @@
       setupConsentMasters(this.formElement, this._consentMasterBindings);
     }
 
-    _getFieldInputs(fieldName) {
-      if (!this.formElement) return [];
-      return Array.prototype.slice.call(this.formElement.querySelectorAll('[name="' + fieldName + '"]'));
-    }
-
     // ---- Error message resolution -------------------------------------------
 
     /**
@@ -733,71 +726,62 @@
       for (var fieldName in this._resolvedValidation) {
         if (!this._resolvedValidation.hasOwnProperty(fieldName)) continue;
 
-        var inputs = this._getFieldInputs(fieldName);
+        var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+        if (!input || input.type === 'hidden' || input.type === 'checkbox' || input.type === 'radio') continue;
 
-        for (var fieldIndex = 0; fieldIndex < inputs.length; fieldIndex++) {
-          var input = inputs[fieldIndex];
-          if (!input || input.type === 'hidden') continue;
+        // Skip if an error element already exists for this input
+        if (this._findErrorElement(input)) continue;
 
-          // Skip if an error element already exists for this input
-          if (this._findErrorElement(input)) continue;
+        // --- Ensure input is inside a <label> with position:relative ---
+        var existingLabel = input.closest('label');
+        var wrapper;
 
-          // --- Ensure input is inside a <label> with position:relative ---
-          var isChoiceInput = input.type === 'checkbox' || input.type === 'radio';
-          var existingLabel = input.closest('label');
-          var wrapper;
+        if (existingLabel) {
+          wrapper = existingLabel;
+          wrapper.style.position = 'relative';
+          wrapper.style.display = 'block';
+        } else {
+          wrapper = document.createElement('label');
+          wrapper.style.position = 'relative';
+          wrapper.style.display = 'block';
+          if (opts.errorWrapClass) wrapper.className = opts.errorWrapClass;
 
-          if (isChoiceInput) {
-            wrapper = existingLabel || input.parentElement;
-            if (!wrapper) continue;
-            wrapper.style.position = wrapper.style.position || 'relative';
-          } else if (existingLabel) {
-            wrapper = existingLabel;
-            wrapper.style.position = 'relative';
-            wrapper.style.display = 'block';
-          } else {
-            wrapper = document.createElement('label');
-            wrapper.style.position = 'relative';
-            wrapper.style.display = 'block';
-            if (opts.errorWrapClass) wrapper.className = opts.errorWrapClass;
+          input.parentNode.insertBefore(wrapper, input);
+          wrapper.appendChild(input);
 
-            input.parentNode.insertBefore(wrapper, input);
-            wrapper.appendChild(input);
-
-            this._autoCreatedWrappers.push({ wrapper: wrapper, input: input });
-          }
-
-          // Apply custom wrapper styles
-          if (opts.errorWrapStyle) {
-            Object.assign(wrapper.style, opts.errorWrapStyle);
-          }
-
-          // --- Create error text element (absolutely positioned) ---
-          var errorEl = document.createElement('div');
-          errorEl.setAttribute('d2-form-error-text', '');
-          errorEl.style.display = 'none';
-          errorEl.style.position = 'absolute';
-          errorEl.style.left = '0';
-          errorEl.style.width = '100%';
-          errorEl.style.fontSize = opts.errorFontSize;
-          errorEl.style.color = opts.errorColor;
-          errorEl.style.pointerEvents = 'none';
-
-          if (opts.errorLocation === 'above') {
-            errorEl.style.bottom = '100%';
-          } else {
-            errorEl.style.top = '100%';
-          }
-
-          // Apply custom error text styles (overrides defaults)
-          if (opts.errorTextStyle) {
-            Object.assign(errorEl.style, opts.errorTextStyle);
-          }
-
-          wrapper.appendChild(errorEl);
-          this._autoCreatedElements.push(errorEl);
-          created.push(fieldName);
+          this._autoCreatedWrappers.push({ wrapper: wrapper, input: input });
         }
+
+        // Apply custom wrapper styles
+        if (opts.errorWrapStyle) {
+          Object.assign(wrapper.style, opts.errorWrapStyle);
+        }
+
+        // --- Create error text element (absolutely positioned) ---
+        var errorEl = document.createElement('div');
+        errorEl.setAttribute('d2-form-error-text', '');
+        errorEl.style.display = 'none';
+        errorEl.style.position = 'absolute';
+        errorEl.style.left = '0';
+        errorEl.style.width = '100%';
+        errorEl.style.fontSize = opts.errorFontSize;
+        errorEl.style.color = opts.errorColor;
+        errorEl.style.pointerEvents = 'none';
+
+        if (opts.errorLocation === 'above') {
+          errorEl.style.bottom = '100%';
+        } else {
+          errorEl.style.top = '100%';
+        }
+
+        // Apply custom error text styles (overrides defaults)
+        if (opts.errorTextStyle) {
+          Object.assign(errorEl.style, opts.errorTextStyle);
+        }
+
+        wrapper.appendChild(errorEl);
+        this._autoCreatedElements.push(errorEl);
+        created.push(fieldName);
       }
 
       if (created.length > 0) {
@@ -862,12 +846,9 @@
         var rules = this._resolvedValidation[fieldName];
 
         if (rules.phone === true) {
-          var inputs = this._getFieldInputs(fieldName);
-          for (var i = 0; i < inputs.length; i++) {
-            var input = inputs[i];
-            if (!input || input.type === 'hidden') continue;
-            this._attachInputFilter(input, /[^\d+\-]/g, 'phone');
-          }
+          var input = this.formElement.querySelector('[name="' + fieldName + '"]');
+          if (!input || input.type === 'hidden') continue;
+          this._attachInputFilter(input, /[^\d+\-]/g, 'phone');
         }
       }
     }
@@ -952,7 +933,7 @@
      */
     _validateField(fieldName, inputEl) {
       if (!inputEl) {
-        inputEl = this._getFieldInputs(fieldName)[0];
+        inputEl = this.formElement.querySelector('[name="' + fieldName + '"]');
       }
       if (!inputEl) return { valid: true, errors: [] };
 
@@ -1020,14 +1001,10 @@
 
       for (var fieldName in validation) {
         if (!validation.hasOwnProperty(fieldName)) continue;
-        var inputs = this._getFieldInputs(fieldName);
-        if (!inputs.length) continue;
-        for (var i = 0; i < inputs.length; i++) {
-          var result = this._validateField(fieldName, inputs[i]);
-          if (!result.valid) {
-            allValid = false;
-            failedFields.push({ name: fieldName, errors: result.errors });
-          }
+        var result = this._validateField(fieldName);
+        if (!result.valid) {
+          allValid = false;
+          failedFields.push({ name: fieldName, errors: result.errors });
         }
       }
 
@@ -1339,87 +1316,6 @@
   // ---------------------------------------------------------------------------
   var registry = {};
 
-  function _formHasValidationFields(form) {
-    if (!form || typeof form.querySelectorAll !== 'function') return false;
-
-    var fields = form.querySelectorAll('input, textarea, select');
-    for (var i = 0; i < fields.length; i++) {
-      var field = fields[i];
-      if (!field || !field.name || field.type === 'hidden') continue;
-      if (field.hasAttribute && field.hasAttribute('required')) return true;
-      if (field.type === 'email') return true;
-      if (DEFAULT_FIELD_RULES[field.name]) return true;
-    }
-
-    return false;
-  }
-
-  function _autoFormBaseName(form, index) {
-    var raw = form.id || form.getAttribute('name') || form.getAttribute('data-name') || 'auto-form-' + index;
-    return String(raw).replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'auto-form-' + index;
-  }
-
-  function initAutoValidationForms(root, options) {
-    root = root || document;
-    options = options || {};
-    if (!root || typeof root.querySelectorAll !== 'function') return [];
-
-    var forms = root.tagName === 'FORM'
-      ? [root]
-      : Array.prototype.slice.call(root.querySelectorAll('form'));
-    var created = [];
-    var counts = {};
-
-    var defaults = {
-      utmTracking: false,
-      clickIdTracking: false,
-      gaClientId: false,
-      pageMeta: false,
-      autoValidation: true,
-      autoErrorElements: true,
-      validateOn: 'both',
-      errorMessages: {
-        required: 'To pole jest wymagane.',
-        email: 'Podaj poprawny adres e-mail.',
-        phone: 'Podaj poprawny numer telefonu.',
-        minLength: 'Minimum {param} znaków.',
-      },
-      errorTextStyle: {
-        position: 'static',
-        width: 'auto',
-        marginTop: '6px',
-        fontSize: '12px',
-        lineHeight: '1.3',
-      },
-    };
-
-    forms.forEach(function (form, index) {
-      if (!form || form._d2AutoValidationInit) return;
-      if (typeof form.closest === 'function' && form.closest('[d2-form]')) return;
-      if (!_formHasValidationFields(form)) return;
-
-      var baseName = _autoFormBaseName(form, index + 1);
-      counts[baseName] = (counts[baseName] || 0) + 1;
-      var registryKey = counts[baseName] === 1 ? baseName : baseName + '-' + counts[baseName];
-      while (registry[registryKey]) {
-        counts[baseName] += 1;
-        registryKey = baseName + '-' + counts[baseName];
-      }
-
-      var opts = Object.assign({}, defaults, options, { _formElement: form });
-      var instance = new FormManager(registryKey, opts);
-      registry[registryKey] = instance;
-      form._d2AutoValidationInit = true;
-      created.push(instance);
-    });
-
-    if (created.length > 0) {
-      _log('auto validation initialized → ' + created.length + ' forms', created.map(function (f) { return f.name; }));
-    }
-
-    return created;
-  }
-
   window.digi2.forms = {
     create: function (name, options) {
       if (registry[name]) {
@@ -1534,10 +1430,6 @@
       return setupConsentMasters(root || document, []);
     },
 
-    initAutoValidation: function (root, options) {
-      return initAutoValidationForms(root || document, options);
-    },
-
     /**
      * Initialize password toggle on all [d2-password-toggle] elements.
      * Clicking toggles the associated input between type="password" and type="text".
@@ -1600,7 +1492,6 @@
   function bootConsentMasters() {
     if (window.digi2 && window.digi2.forms) {
       window.digi2.forms.initConsentMasters();
-      window.digi2.forms.initAutoValidation();
     }
   }
 
