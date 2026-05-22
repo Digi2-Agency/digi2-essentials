@@ -183,6 +183,7 @@ function createEnvironment() {
       window,
       document,
       console,
+      setTimeout,
       URLSearchParams,
       getComputedStyle: () => ({ display: '', visibility: '', opacity: '1' }),
       fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
@@ -244,6 +245,10 @@ function createForm(env) {
     pageMeta: false,
     autoValidation: false,
   });
+}
+
+function tick() {
+  return new Promise((resolve) => setTimeout(resolve, 5));
 }
 
 test('consent master checkbox toggles all consent items in the same group', () => {
@@ -321,6 +326,23 @@ test('consent masters auto initialize without digi2.forms.create', () => {
 
   env.master.checked = true;
   change(env.master);
+
+  assert.equal(env.gdpr.checked, true);
+  assert.equal(env.email.checked, true);
+  assert.equal(env.phone.checked, true);
+  assert.equal(env.gdprVisual.classList.contains('w--redirected-checked'), true);
+});
+
+test('consent master re-checks state after delayed Webflow checkbox updates', async () => {
+  const env = createWebflowEnvironment();
+  loadFormsModule(env);
+
+  env.master.addEventListener('change', () => {
+    env.master.checked = true;
+  });
+  change(env.master);
+
+  await tick();
 
   assert.equal(env.gdpr.checked, true);
   assert.equal(env.email.checked, true);

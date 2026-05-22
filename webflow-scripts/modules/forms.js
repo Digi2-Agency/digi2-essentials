@@ -83,6 +83,12 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function _defer(fn) {
+    if (typeof setTimeout === 'function') {
+      setTimeout(fn, 0);
+    }
+  }
+
   function _findWebflowCheckboxVisual(input) {
     if (!input || typeof input.closest !== 'function') return null;
 
@@ -149,7 +155,7 @@
         _syncWebflowCheckboxVisual(master);
       };
 
-      var masterHandler = function () {
+      var applyMaster = function () {
         var checked = master.checked;
         master.indeterminate = false;
         _syncWebflowCheckboxVisual(master);
@@ -165,12 +171,21 @@
         updateMaster();
       };
 
+      var masterHandler = function () {
+        applyMaster();
+        _defer(applyMaster);
+      };
+
       master.addEventListener('change', masterHandler);
       bindings.push({ el: master, handler: masterHandler });
 
       items.forEach(function (item) {
-        item.addEventListener('change', updateMaster);
-        bindings.push({ el: item, handler: updateMaster });
+        var itemHandler = function () {
+          updateMaster();
+          _defer(updateMaster);
+        };
+        item.addEventListener('change', itemHandler);
+        bindings.push({ el: item, handler: itemHandler });
         _syncWebflowCheckboxVisual(item);
       });
 
