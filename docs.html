@@ -761,7 +761,7 @@
       <tr><td><code>d2-ab-tests="configName"</code></td><td>A/B redirects + link rewriting</td><td>6.3 KB</td></tr>
       <tr><td><code>d2-popups</code></td><td>Popup / modal manager</td><td>8.4 KB</td></tr>
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
-      <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM</td><td>12.1 KB</td></tr>
+      <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM + consent master</td><td>18.9 KB</td></tr>
       <tr><td><code>d2-interactions</code></td><td>Hover/click show-hide + animations</td><td>9.1 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
@@ -1010,8 +1010,22 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
           <div d2-form-error-text style="display:none"></div>
         </label>
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
-          <input type="checkbox" name="CONSENT_GDPR" style="width:auto; margin:0;">
+          <input type="checkbox" d2-consent-master="test-form" style="width:auto; margin:0;">
+          Select all consents
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+          <input type="checkbox" name="CONSENT_GDPR" d2-consent-item="test-form" style="width:auto; margin:0;">
           I agree to GDPR terms
+          <div d2-form-error-text style="display:none; margin:0;"></div>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+          <input type="checkbox" name="CONSENT_EMAIL" d2-consent-item="test-form" style="width:auto; margin:0;">
+          I agree to email contact
+          <div d2-form-error-text style="display:none; margin:0;"></div>
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+          <input type="checkbox" name="CONSENT_PHONE" d2-consent-item="test-form" style="width:auto; margin:0;">
+          I agree to phone contact
           <div d2-form-error-text style="display:none; margin:0;"></div>
         </label>
         <button type="submit" class="btn">Submit</button>
@@ -1033,6 +1047,24 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
       <tr><td><code>CONSENT_EMAIL</code></td><td>required (checkbox)</td></tr>
       <tr><td><code>CONSENT_PHONE</code></td><td>required (checkbox)</td></tr>
     </table>
+
+    <h3>Consent Master Checkbox</h3>
+    <p>Use <code>d2-consent-master="group"</code> for a checkbox that selects all enabled <code>d2-consent-item="group"</code> checkboxes in the same form.</p>
+    <pre><code>&lt;label&gt;
+  &lt;input <span class="prop">type</span>=<span class="string">"checkbox"</span> <span class="prop">d2-consent-master</span>=<span class="string">"contact"</span>&gt;
+  Select all
+&lt;/label&gt;
+
+&lt;label&gt;
+  &lt;input <span class="prop">type</span>=<span class="string">"checkbox"</span> <span class="prop">name</span>=<span class="string">"CONSENT_GDPR"</span> <span class="prop">d2-consent-item</span>=<span class="string">"contact"</span>&gt;
+  GDPR consent
+&lt;/label&gt;
+
+&lt;label&gt;
+  &lt;input <span class="prop">type</span>=<span class="string">"checkbox"</span> <span class="prop">name</span>=<span class="string">"CONSENT_EMAIL"</span> <span class="prop">d2-consent-item</span>=<span class="string">"contact"</span>&gt;
+  Email consent
+&lt;/label&gt;</code></pre>
+    <p>When only some items are selected, the master checkbox uses the native <code>indeterminate</code> state.</p>
 
     <h3>All Validation Rules</h3>
     <table>

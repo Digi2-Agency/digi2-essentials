@@ -37,7 +37,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-ab-tests="configName"` | ab-tests | 6.3 KB | A/B redirects and link rewriting from a sitemap config |
 | `d2-popups` | popups | 23.3 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
-| `d2-forms` | forms | 17.6 KB | UTM tracking + validation + password toggle |
+| `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
 | `d2-tabs` | tabs | 5.8 KB | Tabs & accordions with animations |
 | `d2-sliders` | sliders | 7.5 KB | Carousel with touch/drag, autoplay |
 | `d2-animate` | animate | 5.2 KB | 22 scroll animation presets + stagger |
@@ -430,7 +430,13 @@ digi2.cookies.remove('theme')
     <input type="email" name="EMAIL" />
     <input type="tel" name="PHONE" />
     <textarea name="MESSAGE"></textarea>
-    <input type="checkbox" name="CONSENT_GDPR" />
+    <label>
+      <input type="checkbox" d2-consent-master="contact" />
+      Select all consents
+    </label>
+    <input type="checkbox" name="CONSENT_GDPR" d2-consent-item="contact" />
+    <input type="checkbox" name="CONSENT_EMAIL" d2-consent-item="contact" />
+    <input type="checkbox" name="CONSENT_PHONE" d2-consent-item="contact" />
     <button type="submit">Send</button>
   </form>
 </div>
@@ -473,6 +479,35 @@ digi2.forms.create('contact', {
 | `CONSENT_GDPR` | required (checkbox) |
 | `CONSENT_EMAIL` | required (checkbox) |
 | `CONSENT_PHONE` | required (checkbox) |
+
+### Consent Master Checkbox
+
+Use `d2-consent-master="group"` for a checkbox that selects all consent items in that group.
+Use `d2-consent-item="group"` on each child consent checkbox.
+
+```html
+<label>
+  <input type="checkbox" d2-consent-master="contact" />
+  Select all
+</label>
+
+<label>
+  <input type="checkbox" name="CONSENT_GDPR" d2-consent-item="contact" />
+  GDPR consent
+</label>
+
+<label>
+  <input type="checkbox" name="CONSENT_EMAIL" d2-consent-item="contact" />
+  Email consent
+</label>
+
+<label>
+  <input type="checkbox" name="CONSENT_PHONE" d2-consent-item="contact" />
+  Phone consent
+</label>
+```
+
+When the master is checked, all enabled items in the same form and group are checked. When a child item changes, the master updates automatically and uses the native `indeterminate` state when only some items are checked.
 
 ### Validation Rules
 

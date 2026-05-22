@@ -6,6 +6,7 @@
  *   - UTM tracking, click IDs, GA client ID, IP, page meta (auto-injected hidden inputs)
  *   - Validation engine with built-in rules + custom patterns
  *   - On-blur + on-submit validation with CSS class + data-attribute error feedback
+ *   - Consent master checkbox for selecting grouped consent checkboxes
  *
  * Setup in Webflow:
  *   Wrap your form in a div with: d2-form="formName"
@@ -70,6 +71,16 @@
 
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('forms', action, data);
+  }
+
+  function _escapeAttrValue(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  function _dispatchChange(input) {
+    if (!input || typeof input.dispatchEvent !== 'function') return;
+    if (typeof Event !== 'function') return;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   // ---------------------------------------------------------------------------
@@ -315,6 +326,7 @@
       this._autoCreatedElements = [];
       this._autoCreatedWrappers = [];
       this._inputFilters = [];
+      this._consentMasterBindings = [];
       this._boundBlurHandler = null;
       this._boundSubmitHandler = null;
 
@@ -342,18 +354,21 @@
       // 3. Inject hidden fields
       this._injectTrackingFields();
 
-      // 4. Build validation rules (auto-detect + user overrides)
+      // 4. Wire consent master checkboxes
+      this._setupConsentMasters();
+
+      // 5. Build validation rules (auto-detect + user overrides)
       this._resolvedValidation = this._buildValidationRules();
 
       if (this._resolvedValidation && Object.keys(this._resolvedValidation).length > 0) {
         _log('validation setup → ' + this.name, this._resolvedValidation);
 
-        // 4b. Auto-create error text elements if enabled
+        // 5b. Auto-create error text elements if enabled
         this._createAutoErrorElements();
 
         this._setupValidation();
 
-        // 4c. Attach realtime input filters (e.g. phone fields strip letters)
+        // 5c. Attach realtime input filters (e.g. phone fields strip letters)
         this._setupInputFilters();
 
         // Remove native `required` attributes on fields that digi2 validates.
@@ -372,7 +387,7 @@
         this.formElement.setAttribute('novalidate', '');
       }
 
-      // 5. IP tracking (async)
+      // 6. IP tracking (async)
       if (this.options.ipTracking) {
         this._fetchAndInjectIp();
       } else {
@@ -414,6 +429,11 @@
         entry.input.removeEventListener('input', entry.handler);
       });
       this._inputFilters = [];
+
+      this._consentMasterBindings.forEach(function (entry) {
+        entry.el.removeEventListener('change', entry.handler);
+      });
+      this._consentMasterBindings = [];
 
       this.formElement = null;
     }
@@ -551,6 +571,64 @@
       }
 
       return merged;
+    }
+
+    // ---- Consent master checkboxes -----------------------------------------
+
+    _setupConsentMasters() {
+      if (!this.formElement) return;
+
+      var masters = this.formElement.querySelectorAll('[d2-consent-master]');
+      if (!masters || !masters.length) return;
+
+      var self = this;
+
+      masters.forEach(function (master) {
+        if (!master || master.type !== 'checkbox') return;
+
+        var group = attr(master, 'd2-consent-master') || '';
+        var selector = group
+          ? '[d2-consent-item="' + _escapeAttrValue(group) + '"]'
+          : '[d2-consent-item]';
+        var items = Array.prototype.slice.call(self.formElement.querySelectorAll(selector)).filter(function (item) {
+          return item && item !== master && item.type === 'checkbox';
+        });
+
+        if (!items.length) return;
+
+        var updateMaster = function () {
+          var enabledItems = items.filter(function (item) { return !item.disabled; });
+          var total = enabledItems.length;
+          var checked = enabledItems.filter(function (item) { return item.checked; }).length;
+
+          master.checked = total > 0 && checked === total;
+          master.indeterminate = checked > 0 && checked < total;
+        };
+
+        var masterHandler = function () {
+          var checked = master.checked;
+          master.indeterminate = false;
+
+          items.forEach(function (item) {
+            if (item.disabled || item.checked === checked) return;
+            item.checked = checked;
+            _dispatchChange(item);
+          });
+
+          updateMaster();
+        };
+
+        master.addEventListener('change', masterHandler);
+        self._consentMasterBindings.push({ el: master, handler: masterHandler });
+
+        items.forEach(function (item) {
+          item.addEventListener('change', updateMaster);
+          self._consentMasterBindings.push({ el: item, handler: updateMaster });
+        });
+
+        updateMaster();
+        _log('consent master initialized → ' + (group || 'default'), { items: items.length });
+      });
     }
 
     // ---- Error message resolution -------------------------------------------
