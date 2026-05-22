@@ -507,7 +507,7 @@ Use `d2-consent-item="group"` on each child consent checkbox.
 </label>
 ```
 
-When the master is checked, all enabled items in the same form and group are checked. When a child item changes, the master updates automatically and uses the native `indeterminate` state when only some items are checked.
+When the master is checked, all enabled items in the same form and group are checked. When a child item changes, the master updates automatically and uses the native `indeterminate` state when only some items are checked. Webflow custom checkbox visuals are synced via `w--redirected-checked`.
 
 ### Validation Rules
 

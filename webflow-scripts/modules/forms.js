@@ -83,6 +83,38 @@
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function _findWebflowCheckboxVisual(input) {
+    if (!input || typeof input.closest !== 'function') return null;
+
+    var label = input.closest('label');
+    if (!label || !label.children) return null;
+
+    for (var i = 0; i < label.children.length; i++) {
+      var child = label.children[i];
+      if (child === input || !child.classList) continue;
+      if (child.classList.contains('w-checkbox-input')) return child;
+    }
+
+    return null;
+  }
+
+  function _syncWebflowCheckboxVisual(input) {
+    var visual = _findWebflowCheckboxVisual(input);
+    if (!visual || !visual.classList) return;
+
+    if (input.checked) {
+      visual.classList.add('w--redirected-checked');
+    } else {
+      visual.classList.remove('w--redirected-checked');
+    }
+
+    if (input.indeterminate) {
+      visual.classList.add('d2-consent-indeterminate');
+    } else {
+      visual.classList.remove('d2-consent-indeterminate');
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Cookie helpers — use digi2.cookies if available, fallback to internal
   // ---------------------------------------------------------------------------
@@ -603,15 +635,19 @@
 
           master.checked = total > 0 && checked === total;
           master.indeterminate = checked > 0 && checked < total;
+          _syncWebflowCheckboxVisual(master);
         };
 
         var masterHandler = function () {
           var checked = master.checked;
           master.indeterminate = false;
+          _syncWebflowCheckboxVisual(master);
 
           items.forEach(function (item) {
             if (item.disabled || item.checked === checked) return;
             item.checked = checked;
+            item.indeterminate = false;
+            _syncWebflowCheckboxVisual(item);
             _dispatchChange(item);
           });
 
@@ -624,6 +660,7 @@
         items.forEach(function (item) {
           item.addEventListener('change', updateMaster);
           self._consentMasterBindings.push({ el: item, handler: updateMaster });
+          _syncWebflowCheckboxVisual(item);
         });
 
         updateMaster();

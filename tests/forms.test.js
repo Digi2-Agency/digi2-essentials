@@ -113,6 +113,7 @@ function matches(node, selector) {
   }
 
   if (selector === 'form') return node.tagName === 'FORM';
+  if (selector === 'label') return node.tagName === 'LABEL';
   if (selector === '[d2-form]') return node.hasAttribute('d2-form');
   if (selector === '[d2-consent-master]') return node.hasAttribute('d2-consent-master');
   if (selector === '[d2-consent-item]') return node.hasAttribute('d2-consent-item');
@@ -194,6 +195,38 @@ function createEnvironment() {
   };
 }
 
+function createWebflowCheckbox(input) {
+  const label = createElement('label');
+  const visual = createElement('div');
+  visual.classList.add('w-checkbox-input');
+  label.appendChild(visual);
+  label.appendChild(input);
+  return { label, visual };
+}
+
+function createWebflowEnvironment() {
+  const env = createEnvironment();
+  const form = env.master.parentElement;
+  form.children = [];
+
+  const masterWrap = createWebflowCheckbox(env.master);
+  const gdprWrap = createWebflowCheckbox(env.gdpr);
+  const emailWrap = createWebflowCheckbox(env.email);
+  const phoneWrap = createWebflowCheckbox(env.phone);
+
+  form.appendChild(masterWrap.label);
+  form.appendChild(gdprWrap.label);
+  form.appendChild(emailWrap.label);
+  form.appendChild(phoneWrap.label);
+
+  return Object.assign(env, {
+    masterVisual: masterWrap.visual,
+    gdprVisual: gdprWrap.visual,
+    emailVisual: emailWrap.visual,
+    phoneVisual: phoneWrap.visual,
+  });
+}
+
 function loadFormsModule(env) {
   const code = fs.readFileSync(modulePath, 'utf8');
   vm.runInContext(code, env.context, { filename: modulePath });
@@ -258,4 +291,26 @@ test('consent items update master checked and indeterminate state', () => {
 
   assert.equal(env.master.checked, false);
   assert.equal(env.master.indeterminate, true);
+});
+
+test('consent master syncs Webflow custom checkbox checked classes', () => {
+  const env = createWebflowEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  env.master.checked = true;
+  change(env.master);
+
+  assert.equal(env.gdpr.checked, true);
+  assert.equal(env.gdprVisual.classList.contains('w--redirected-checked'), true);
+  assert.equal(env.emailVisual.classList.contains('w--redirected-checked'), true);
+  assert.equal(env.phoneVisual.classList.contains('w--redirected-checked'), true);
+
+  env.email.checked = false;
+  change(env.email);
+
+  assert.equal(env.master.checked, false);
+  assert.equal(env.master.indeterminate, true);
+  assert.equal(env.masterVisual.classList.contains('w--redirected-checked'), false);
+  assert.equal(env.masterVisual.classList.contains('d2-consent-indeterminate'), true);
 });
