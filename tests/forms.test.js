@@ -314,3 +314,16 @@ test('consent master syncs Webflow custom checkbox checked classes', () => {
   assert.equal(env.masterVisual.classList.contains('w--redirected-checked'), false);
   assert.equal(env.masterVisual.classList.contains('d2-consent-indeterminate'), true);
 });
+
+test('consent masters auto initialize without digi2.forms.create', () => {
+  const env = createWebflowEnvironment();
+  loadFormsModule(env);
+
+  env.master.checked = true;
+  change(env.master);
+
+  assert.equal(env.gdpr.checked, true);
+  assert.equal(env.email.checked, true);
+  assert.equal(env.phone.checked, true);
+  assert.equal(env.gdprVisual.classList.contains('w--redirected-checked'), true);
+});

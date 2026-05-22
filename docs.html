@@ -1064,7 +1064,7 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
   &lt;input <span class="prop">type</span>=<span class="string">"checkbox"</span> <span class="prop">name</span>=<span class="string">"CONSENT_EMAIL"</span> <span class="prop">d2-consent-item</span>=<span class="string">"contact"</span>&gt;
   Email consent
 &lt;/label&gt;</code></pre>
-    <p>When only some items are selected, the master checkbox uses the native <code>indeterminate</code> state. Webflow custom checkbox visuals are synced via <code>w--redirected-checked</code>.</p>
+    <p>Consent master checkboxes auto-initialize when <code>d2-forms</code> loads; <code>digi2.forms.create(...)</code> is not required for this feature. When only some items are selected, the master checkbox uses the native <code>indeterminate</code> state. Webflow custom checkbox visuals are synced via <code>w--redirected-checked</code>.</p>
 
     <h3>All Validation Rules</h3>
     <table>

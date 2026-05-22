@@ -115,6 +115,74 @@
     }
   }
 
+  function setupConsentMasters(root, bindings) {
+    root = root || document;
+    bindings = bindings || [];
+    if (!root || typeof root.querySelectorAll !== 'function') return 0;
+
+    var masters = root.querySelectorAll('[d2-consent-master]');
+    if (!masters || !masters.length) return 0;
+
+    var initialized = 0;
+
+    masters.forEach(function (master) {
+      if (!master || master.type !== 'checkbox' || master._d2ConsentMasterInit) return;
+
+      var group = attr(master, 'd2-consent-master') || '';
+      var scope = typeof master.closest === 'function' ? master.closest('form') || root : root;
+      var selector = group
+        ? '[d2-consent-item="' + _escapeAttrValue(group) + '"]'
+        : '[d2-consent-item]';
+      var items = Array.prototype.slice.call(scope.querySelectorAll(selector)).filter(function (item) {
+        return item && item !== master && item.type === 'checkbox';
+      });
+
+      if (!items.length) return;
+
+      var updateMaster = function () {
+        var enabledItems = items.filter(function (item) { return !item.disabled; });
+        var total = enabledItems.length;
+        var checked = enabledItems.filter(function (item) { return item.checked; }).length;
+
+        master.checked = total > 0 && checked === total;
+        master.indeterminate = checked > 0 && checked < total;
+        _syncWebflowCheckboxVisual(master);
+      };
+
+      var masterHandler = function () {
+        var checked = master.checked;
+        master.indeterminate = false;
+        _syncWebflowCheckboxVisual(master);
+
+        items.forEach(function (item) {
+          if (item.disabled || item.checked === checked) return;
+          item.checked = checked;
+          item.indeterminate = false;
+          _syncWebflowCheckboxVisual(item);
+          _dispatchChange(item);
+        });
+
+        updateMaster();
+      };
+
+      master.addEventListener('change', masterHandler);
+      bindings.push({ el: master, handler: masterHandler });
+
+      items.forEach(function (item) {
+        item.addEventListener('change', updateMaster);
+        bindings.push({ el: item, handler: updateMaster });
+        _syncWebflowCheckboxVisual(item);
+      });
+
+      master._d2ConsentMasterInit = true;
+      updateMaster();
+      initialized += 1;
+      _log('consent master initialized → ' + (group || 'default'), { items: items.length });
+    });
+
+    return initialized;
+  }
+
   // ---------------------------------------------------------------------------
   // Cookie helpers — use digi2.cookies if available, fallback to internal
   // ---------------------------------------------------------------------------
@@ -608,64 +676,7 @@
     // ---- Consent master checkboxes -----------------------------------------
 
     _setupConsentMasters() {
-      if (!this.formElement) return;
-
-      var masters = this.formElement.querySelectorAll('[d2-consent-master]');
-      if (!masters || !masters.length) return;
-
-      var self = this;
-
-      masters.forEach(function (master) {
-        if (!master || master.type !== 'checkbox') return;
-
-        var group = attr(master, 'd2-consent-master') || '';
-        var selector = group
-          ? '[d2-consent-item="' + _escapeAttrValue(group) + '"]'
-          : '[d2-consent-item]';
-        var items = Array.prototype.slice.call(self.formElement.querySelectorAll(selector)).filter(function (item) {
-          return item && item !== master && item.type === 'checkbox';
-        });
-
-        if (!items.length) return;
-
-        var updateMaster = function () {
-          var enabledItems = items.filter(function (item) { return !item.disabled; });
-          var total = enabledItems.length;
-          var checked = enabledItems.filter(function (item) { return item.checked; }).length;
-
-          master.checked = total > 0 && checked === total;
-          master.indeterminate = checked > 0 && checked < total;
-          _syncWebflowCheckboxVisual(master);
-        };
-
-        var masterHandler = function () {
-          var checked = master.checked;
-          master.indeterminate = false;
-          _syncWebflowCheckboxVisual(master);
-
-          items.forEach(function (item) {
-            if (item.disabled || item.checked === checked) return;
-            item.checked = checked;
-            item.indeterminate = false;
-            _syncWebflowCheckboxVisual(item);
-            _dispatchChange(item);
-          });
-
-          updateMaster();
-        };
-
-        master.addEventListener('change', masterHandler);
-        self._consentMasterBindings.push({ el: master, handler: masterHandler });
-
-        items.forEach(function (item) {
-          item.addEventListener('change', updateMaster);
-          self._consentMasterBindings.push({ el: item, handler: updateMaster });
-          _syncWebflowCheckboxVisual(item);
-        });
-
-        updateMaster();
-        _log('consent master initialized → ' + (group || 'default'), { items: items.length });
-      });
+      setupConsentMasters(this.formElement, this._consentMasterBindings);
     }
 
     // ---- Error message resolution -------------------------------------------
@@ -1407,6 +1418,10 @@
       customRules[name] = fn;
     },
 
+    initConsentMasters: function (root) {
+      return setupConsentMasters(root || document, []);
+    },
+
     /**
      * Initialize password toggle on all [d2-password-toggle] elements.
      * Clicking toggles the associated input between type="password" and type="text".
@@ -1465,4 +1480,16 @@
       _log('password toggles initialized');
     },
   };
+
+  function bootConsentMasters() {
+    if (window.digi2 && window.digi2.forms) {
+      window.digi2.forms.initConsentMasters();
+    }
+  }
+
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', bootConsentMasters);
+  } else {
+    bootConsentMasters();
+  }
 })();

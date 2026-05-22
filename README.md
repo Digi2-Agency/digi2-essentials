@@ -507,7 +507,7 @@ Use `d2-consent-item="group"` on each child consent checkbox.
 </label>
 ```
 
-When the master is checked, all enabled items in the same form and group are checked. When a child item changes, the master updates automatically and uses the native `indeterminate` state when only some items are checked. Webflow custom checkbox visuals are synced via `w--redirected-checked`.
+Consent master checkboxes auto-initialize when `d2-forms` loads; `digi2.forms.create(...)` is not required for this feature. When the master is checked, all enabled items in the same form and group are checked. When a child item changes, the master updates automatically and uses the native `indeterminate` state when only some items are checked. Webflow custom checkbox visuals are synced via `w--redirected-checked`.
 
 ### Validation Rules
 
@@ -577,6 +577,7 @@ digi2.forms.destroy('name')
 digi2.forms.list()
 digi2.forms.validate(value, rules)      // standalone
 digi2.forms.addRule('name', fn)         // custom rule
+digi2.forms.initConsentMasters()        // re-scan consent master checkboxes
 
 var form = digi2.forms.get('contact')
 form.validateAll()
