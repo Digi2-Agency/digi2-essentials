@@ -69,6 +69,23 @@
     return el.getAttribute(name);
   }
 
+  // Read a d2- attribute, falling back to its data- prefixed variant.
+  // Webflow users habitually write data-d2-form instead of d2-form.
+  function d2attr(el, name) {
+    var v = attr(el, name);
+    if (v === null || v === '') v = attr(el, 'data-' + name);
+    return v;
+  }
+
+  // Build a selector that matches both the bare and data- prefixed variant
+  // of a d2- attribute (e.g. d2-form and data-d2-form).
+  function d2sel(name, value) {
+    if (value == null) {
+      return '[' + name + '], [data-' + name + ']';
+    }
+    return '[' + name + '="' + value + '"], [data-' + name + '="' + value + '"]';
+  }
+
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('forms', action, data);
   }
@@ -562,7 +579,7 @@
         return document.querySelector(this.options.formSelector);
       }
 
-      var wrapper = document.querySelector('[d2-form="' + this.name + '"]');
+      var wrapper = document.querySelector(d2sel('d2-form', this.name));
       if (wrapper) {
         if (wrapper.tagName === 'FORM') return wrapper;
         return wrapper.querySelector('form');
@@ -583,7 +600,7 @@
 
       var formSel = this.formElement.id
         ? '#' + this.formElement.id
-        : '[d2-form="' + this.name + '"] form';
+        : '[d2-form="' + this.name + '"] form, [data-d2-form="' + this.name + '"] form';
 
       var css =
         formSel + ' input:-webkit-autofill,' +
@@ -1367,14 +1384,14 @@
       options = options || {};
 
       var selector = nameFilter
-        ? '[d2-form="' + nameFilter + '"]'
-        : '[d2-form]';
+        ? d2sel('d2-form', nameFilter)
+        : d2sel('d2-form');
       var wrappers = document.querySelectorAll(selector);
       var created = [];
       var nameCount = {};
 
       wrappers.forEach(function (wrapper) {
-        var baseName = attr(wrapper, 'd2-form');
+        var baseName = d2attr(wrapper, 'd2-form');
         if (!baseName) return;
 
         // Generate unique registry key for duplicates

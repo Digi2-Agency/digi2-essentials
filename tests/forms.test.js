@@ -115,6 +115,7 @@ function matches(node, selector) {
   if (selector === 'form') return node.tagName === 'FORM';
   if (selector === 'label') return node.tagName === 'LABEL';
   if (selector === '[d2-form]') return node.hasAttribute('d2-form');
+  if (selector === '[data-d2-form]') return node.hasAttribute('data-d2-form');
   if (selector === '[d2-consent-master]') return node.hasAttribute('d2-consent-master');
   if (selector === '[d2-consent-item]') return node.hasAttribute('d2-consent-item');
   if (selector === 'input') return node.tagName === 'INPUT';
@@ -124,6 +125,9 @@ function matches(node, selector) {
 
   let match = selector.match(/^\[d2-form="([^"]+)"\]$/);
   if (match) return node.getAttribute('d2-form') === match[1];
+
+  match = selector.match(/^\[data-d2-form="([^"]+)"\]$/);
+  if (match) return node.getAttribute('data-d2-form') === match[1];
 
   match = selector.match(/^input\[name="([^"]+)"\]$/);
   if (match) return node.tagName === 'INPUT' && node.name === match[1];
@@ -405,4 +409,50 @@ test('checkbox validation error clears when checkbox changes', () => {
 
   assert.equal(env.gdpr.parentElement.classList.contains('d2-error'), false);
   assert.equal(env.gdpr.parentElement.getAttribute('d2-error'), null);
+});
+
+test('createAll binds wrappers using the data-d2-form fallback and injects UTM', () => {
+  const body = createElement('body');
+  const head = createElement('head');
+  const wrapper = createElement('div', { 'data-d2-form': 'contact-form' });
+  const form = createElement('form');
+  wrapper.appendChild(form);
+  body.appendChild(wrapper);
+
+  const document = {
+    body,
+    head,
+    title: '',
+    referrer: '',
+    cookie: '',
+    createElement(tagName) { return createElement(tagName); },
+    querySelector(selector) { return body.querySelector(selector); },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+
+  const window = {
+    digi2: { log() {} },
+    location: { search: '?utm_source=newsletter', href: 'https://example.com/contact' },
+  };
+
+  const context = vm.createContext({
+    window, document, console, Event, setTimeout, URLSearchParams,
+    getComputedStyle: () => ({ display: '', visibility: '', opacity: '1' }),
+    fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+  });
+
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  const created = window.digi2.forms.createAll('contact-form', {
+    utmTracking: true,
+    clickIdTracking: false,
+    gaClientId: false,
+    pageMeta: false,
+    autoValidation: false,
+  });
+
+  assert.equal(created.length, 1);
+  const utm = form.querySelector('input[name="UTM_SOURCE"]');
+  assert.ok(utm, 'UTM_SOURCE hidden input should be injected');
+  assert.equal(utm.value, 'newsletter');
 });
