@@ -319,13 +319,13 @@ test('range slider can target multiple CMS lists', async () => {
   assert.equal(gridHigh.style.display, '');
 });
 
-test('currency displayformat alias seeds a unit suffix on range displays', async () => {
+test('currency displayformat alias formats the number without injecting a unit', async () => {
   const env = createEnvironment();
   const range = createElement('div', {
     'd2-cms-range': '',
     'd2-cms-range-field': 'price',
     'd2-cms-range-min': '0',
-    'd2-cms-range-max': '100',
+    'd2-cms-range-max': '2000',
     'd2-cms-range-step': '10',
     'd2-cms-range-displayformat': 'PLN',
     'd2-cms-target': 'offers-list',
@@ -345,24 +345,24 @@ test('currency displayformat alias seeds a unit suffix on range displays', async
 
   const list = createElement('div', { 'd2-cms-list': 'offers-list' });
   list.appendChild(createItem({ price: '40' }));
-  list.appendChild(createItem({ price: '80' }));
+  list.appendChild(createItem({ price: '1500' }));
   env.body.appendChild(range);
   env.body.appendChild(list);
 
   loadCmsModule(env);
   await flushTimers();
 
-  assert.match(minDisplay.textContent, /zł$/);
-  assert.match(maxDisplay.textContent, /zł$/);
+  assert.doesNotMatch(minDisplay.textContent, /zł|PLN/);
+  assert.match(maxDisplay.textContent, /\d/);
 });
 
-test('explicit range suffix overrides the currency alias default unit', async () => {
+test('explicit range suffix still renders on a currency alias display', async () => {
   const env = createEnvironment();
   const range = createElement('div', {
     'd2-cms-range': '',
     'd2-cms-range-field': 'price',
     'd2-cms-range-min': '0',
-    'd2-cms-range-max': '100',
+    'd2-cms-range-max': '2000',
     'd2-cms-range-step': '10',
     'd2-cms-range-displayformat': 'PLN',
     'd2-cms-range-suffix': ' PLN',
@@ -381,7 +381,7 @@ test('explicit range suffix overrides the currency alias default unit', async ()
 
   const list = createElement('div', { 'd2-cms-list': 'offers-list' });
   list.appendChild(createItem({ price: '40' }));
-  list.appendChild(createItem({ price: '80' }));
+  list.appendChild(createItem({ price: '1500' }));
   env.body.appendChild(range);
   env.body.appendChild(list);
 
@@ -389,7 +389,6 @@ test('explicit range suffix overrides the currency alias default unit', async ()
   await flushTimers();
 
   assert.match(minDisplay.textContent, /PLN$/);
-  assert.doesNotMatch(minDisplay.textContent, /zł/);
 });
 
 test('webflow pagination load button resolves the sibling CMS list and prevents navigation', async () => {

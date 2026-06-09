@@ -2430,21 +2430,15 @@
                    || attr(wrapper, 'd2-cms-range-format')
                    || 'thousands';
       var known = { thousands: 1, float: 1, integer: 1, plain: 1 };
-      // Locale aliases → BCP-47 tags for toLocaleString
+      // Locale aliases → BCP-47 tags for toLocaleString. The alias only sets
+      // number formatting; the unit stays author-controlled (static label or
+      // d2-cms-range-suffix) so we never double up an existing "PLN"/"zł".
       var localeAliases = {
         pln: 'pl-PL', pl: 'pl-PL',
         eur: 'de-DE', de: 'de-DE',
         usd: 'en-US', en: 'en-US',
       };
-      // Currency aliases also imply a unit, so a bare displayformat="PLN"
-      // renders "420 000 zł" rather than silently dropping the unit.
-      var localeUnits = {
-        pln: ' zł', pl: ' zł',
-        eur: ' €', de: ' €',
-        usd: ' $', en: ' $',
-      };
       var lowered = rawFormat.toLowerCase();
-      var localeUnit = '';
       if (known[lowered]) {
         this.displayFormat = lowered;
         this._pattern = null;
@@ -2453,7 +2447,6 @@
         this.displayFormat = 'locale';
         this._locale = localeAliases[lowered];
         this._pattern = null;
-        localeUnit = localeUnits[lowered] || '';
       } else {
         this._pattern = parseRangePattern(rawFormat);
         this.displayFormat = this._pattern ? 'pattern' : 'thousands';
@@ -2461,10 +2454,9 @@
       }
 
       // Only used when no pattern — pattern templates embed their own
-      // prefix/suffix so these attrs become redundant. A currency alias
-      // seeds a default suffix that an explicit attribute can still override.
+      // prefix/suffix so these attrs become redundant.
       this.prefix = attr(wrapper, 'd2-cms-range-prefix') || '';
-      this.suffix = attr(wrapper, 'd2-cms-range-suffix') || localeUnit;
+      this.suffix = attr(wrapper, 'd2-cms-range-suffix') || '';
 
       var attrMin = parseFloat(attr(wrapper, 'd2-cms-range-min'));
       var attrMax = parseFloat(attr(wrapper, 'd2-cms-range-max'));
