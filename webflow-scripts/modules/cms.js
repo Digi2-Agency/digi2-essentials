@@ -40,6 +40,7 @@
  *
  *   <button d2-cms-target="products" d2-cms-sort="price">Price ▼</button>
  *   <button d2-cms-target="products" d2-cms-filter="category:shoes">Shoes</button>
+ *   <button d2-cms-target="products|products-grid" d2-cms-filter="category:shoes">Shoes in both views</button>
  *   <button d2-cms-target="products" d2-cms-load-more>Load more</button>
  *   <div    d2-cms-target="products" d2-cms-empty>No matches.</div>
  *
@@ -1423,6 +1424,13 @@
       // fetches may un-hide .w-pagination-previous/next/etc; keep them off.
       this._applyPaginationHiding();
 
+      // Let the optional format module process CMS nodes after every render.
+      // This covers items revealed by loadMore/loadAll and items appended from
+      // fetched Webflow pagination pages.
+      if (window.digi2 && window.digi2.format && typeof window.digi2.format.refresh === 'function') {
+        window.digi2.format.refresh(listEl);
+      }
+
       // Sentinel observation: only observe if there are more to reveal
       this._observeSentinel(visibleCount < matching.length);
 
@@ -1453,9 +1461,9 @@
           document.querySelectorAll(this.options.emptySelector)
         );
       } else {
-        var scopedSel = '[d2-cms-empty][d2-cms-target="' + this.name + '"], '
-          + '[d2-cms-list="' + this.name + '"] [d2-cms-empty]:not([d2-cms-target])';
-        this._emptyEls = Array.prototype.slice.call(document.querySelectorAll(scopedSel));
+        var scopedSel = '[d2-cms-list="' + this.name + '"] [d2-cms-empty]:not([d2-cms-target])';
+        this._emptyEls = _elementsTargeting('[d2-cms-empty]', this.name)
+          .concat(Array.prototype.slice.call(document.querySelectorAll(scopedSel)));
         if (this._isSoloList()) {
           this._emptyEls = this._emptyEls.concat(this._orphansBySelector('[d2-cms-empty]'));
         }
@@ -1526,16 +1534,17 @@
      * A `d2-cms-display-format` value takes precedence over `d2-cms-display`.
      *
      * Scoping: element is claimed by this list if it has `d2-cms-target="<name>"`
+     * or a multi-target containing the name, e.g. `d2-cms-target="list|grid"`,
      * OR is nested inside `[d2-cms-list="<name>"]`. If neither is set and this
      * is the only registered list, the orphan element is claimed automatically.
      */
     _updateDisplayElements(counts) {
       var name = this.name;
-      var scopedSel = '[d2-cms-display][d2-cms-target="' + name + '"], '
-        + '[d2-cms-display-format][d2-cms-target="' + name + '"], '
-        + '[d2-cms-list="' + name + '"] [d2-cms-display]:not([d2-cms-target]), '
+      var scopedSel = '[d2-cms-list="' + name + '"] [d2-cms-display]:not([d2-cms-target]), '
         + '[d2-cms-list="' + name + '"] [d2-cms-display-format]:not([d2-cms-target])';
-      var els = Array.prototype.slice.call(document.querySelectorAll(scopedSel));
+      var els = _elementsTargeting('[d2-cms-display]', name)
+        .concat(_elementsTargeting('[d2-cms-display-format]', name))
+        .concat(Array.prototype.slice.call(document.querySelectorAll(scopedSel)));
       if (this._isSoloList()) {
         els = els
           .concat(this._orphansBySelector('[d2-cms-display]'))
@@ -1838,7 +1847,7 @@
 
     /**
      * Find buttons that target THIS list. A button targets this list when:
-     *   - It has d2-cms-target="<name>"; OR
+     *   - It has d2-cms-target="<name>" or a multi-target containing name; OR
      *   - It is inside [d2-cms-list="<name>"] and has no d2-cms-target attr; OR
      *   - It is an orphan (no target, not inside any list) AND this is the only registered list.
      * Used for visual-state reflection — matches the click handler's resolution.
@@ -1856,9 +1865,7 @@
 
     _buttonsForName(attrSelector) {
       var name = this.name;
-      var explicit = Array.prototype.slice.call(
-        document.querySelectorAll(attrSelector + '[d2-cms-target="' + name + '"]')
-      );
+      var explicit = _elementsTargeting(attrSelector, name);
       var scoped = Array.prototype.slice.call(
         document.querySelectorAll('[d2-cms-list="' + name + '"] ' + attrSelector + ':not([d2-cms-target])')
       );
@@ -1935,14 +1942,95 @@
     if (list) list.classList.remove('w--open');
   }
 
-  function _resolveTargetName(triggerEl) {
+  function _parseTargetNames(raw) {
+    if (!raw) return [];
+    var seen = {};
+    return String(raw)
+      .split(/[|,\s]+/)
+      .map(function (name) { return name.trim(); })
+      .filter(function (name) {
+        if (!name || seen[name]) return false;
+        seen[name] = true;
+        return true;
+      });
+  }
+
+  function _explicitTargetNames(triggerEl) {
+    return _parseTargetNames(attr(triggerEl, 'd2-cms-target'));
+  }
+
+  function _targetIncludes(triggerEl, name) {
+    return _explicitTargetNames(triggerEl).indexOf(name) !== -1;
+  }
+
+  function _elementsTargeting(baseSelector, name) {
+    var nodes = document.querySelectorAll(baseSelector + '[d2-cms-target]');
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (_targetIncludes(nodes[i], name)) out.push(nodes[i]);
+    }
+    return out;
+  }
+
+  function _resolveTargetNames(triggerEl) {
     var explicit = attr(triggerEl, 'd2-cms-target');
-    if (explicit) return explicit;
+    if (explicit) return _parseTargetNames(explicit);
     var ancestor = triggerEl.closest('[d2-cms-list]');
-    if (ancestor) return attr(ancestor, 'd2-cms-list');
+    if (ancestor) return [attr(ancestor, 'd2-cms-list')].filter(Boolean);
+    var paginationTargets = _targetNamesFromPagination(triggerEl);
+    if (paginationTargets.length) return paginationTargets;
     var keys = Object.keys(registry);
-    if (keys.length === 1) return keys[0];
-    return null;
+    if (keys.length === 1) return [keys[0]];
+    return [];
+  }
+
+  function _targetNamesFromPagination(triggerEl) {
+    var wrapper = triggerEl && triggerEl.closest && triggerEl.closest('.w-pagination-wrapper');
+    if (!wrapper || !wrapper.parentElement) return [];
+
+    var names = [];
+    var seen = {};
+    var lists = wrapper.parentElement.querySelectorAll('[d2-cms-list]');
+    for (var i = 0; i < lists.length; i++) {
+      var name = attr(lists[i], 'd2-cms-list');
+      if (!name || seen[name]) continue;
+      seen[name] = true;
+      names.push(name);
+    }
+    return names;
+  }
+
+  function _resolveTargetName(triggerEl) {
+    var names = _resolveTargetNames(triggerEl);
+    return names.length ? names[0] : null;
+  }
+
+  function _instancesForTargetNames(names) {
+    var out = [];
+    for (var i = 0; i < names.length; i++) {
+      var instance = registry[names[i]];
+      if (instance) out.push(instance);
+    }
+    return out;
+  }
+
+  function _syncFiltersFrom(source, targets) {
+    if (!source || !targets.length) return;
+    var filters = source._filtersAsObject();
+    targets.forEach(function (target) {
+      target.filter(filters);
+    });
+  }
+
+  function _syncSortFrom(source, targets) {
+    if (!source || !targets.length) return;
+    targets.forEach(function (target) {
+      if (source._sort && source._sort.field) {
+        target.sort(source._sort.field, source._sort.dir, source._sort.order);
+      } else {
+        target.clearSort();
+      }
+    });
   }
 
   window.digi2.cms = {
@@ -2109,10 +2197,11 @@
     var btn = sortBtn || filterBtn || loadBtn || dirBtn;
     if (!btn) return;
 
-    var name = _resolveTargetName(btn);
-    if (!name) return;
-    var instance = registry[name];
-    if (!instance) return;
+    var names = _resolveTargetNames(btn);
+    var instances = _instancesForTargetNames(names);
+    if (!instances.length) return;
+    var instance = instances[0];
+    var mirrors = instances.slice(1);
 
     e.preventDefault();
     // Critical when the button is Webflow's own .w-pagination-next anchor
@@ -2130,25 +2219,32 @@
       var orderRaw = attr(sortBtn, 'd2-cms-sort-order');
       var order = orderRaw ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : undefined;
       instance.sort(field, forced || undefined, order);
+      _syncSortFrom(instance, mirrors);
     } else if (filterBtn) {
       var parsed = parseFilterAttr(attr(filterBtn, 'd2-cms-filter'));
-      if (parsed) instance._batchFilter(parsed.key, parsed.values, 'toggle');
+      if (parsed) {
+        instance._batchFilter(parsed.key, parsed.values, 'toggle');
+        _syncFiltersFrom(instance, mirrors);
+      }
     } else if (loadBtn) {
       var countAttr = attr(loadBtn, 'd2-cms-loadcount');
       if (countAttr != null) {
         var trimmed = countAttr.trim().toLowerCase();
         if (trimmed === 'all') {
-          instance.loadAll();
+          instances.forEach(function (cms) { cms.loadAll(); });
         } else {
           var nParsed = parseInt(trimmed, 10);
-          instance.loadMore(!isNaN(nParsed) && nParsed > 0 ? nParsed : undefined);
+          instances.forEach(function (cms) {
+            cms.loadMore(!isNaN(nParsed) && nParsed > 0 ? nParsed : undefined);
+          });
         }
       } else {
-        instance.loadMore();
+        instances.forEach(function (cms) { cms.loadMore(); });
       }
     } else if (dirBtn) {
       var dirVal = (attr(dirBtn, 'd2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
+      _syncSortFrom(instance, mirrors);
     }
 
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
@@ -2185,10 +2281,10 @@
         && (target.type === 'checkbox' || target.type === 'radio')) {
       var fparsed = parseFilterAttr(attr(target, 'd2-cms-filter'));
       if (!fparsed) return;
-      var fname = _resolveTargetName(target);
-      if (!fname) return;
-      var finstance = registry[fname];
-      if (!finstance) return;
+      var fnames = _resolveTargetNames(target);
+      var finstances = _instancesForTargetNames(fnames);
+      if (!finstances.length) return;
+      var finstance = finstances[0];
 
       if (target.type === 'radio') {
         if (target.checked) finstance._batchFilter(fparsed.key, fparsed.values, 'replace');
@@ -2196,6 +2292,7 @@
       } else {
         finstance._batchFilter(fparsed.key, fparsed.values, target.checked ? 'add' : 'remove');
       }
+      _syncFiltersFrom(finstance, finstances.slice(1));
       return;
     }
 
@@ -2209,14 +2306,14 @@
     if (!sortEnabled) return;
 
     var opt = target.options[target.selectedIndex];
-    var name = _resolveTargetName(target) || (opt ? _resolveTargetName(opt) : null);
-    if (!name) return;
-    var instance = registry[name];
-    if (!instance) return;
+    var names = _resolveTargetNames(target);
+    if (!names.length && opt) names = _resolveTargetNames(opt);
+    var instances = _instancesForTargetNames(names);
+    if (!instances.length) return;
 
     var field = opt ? attr(opt, 'd2-cms-sort') : null;
     if (!field) {
-      instance.clearSort();
+      instances.forEach(function (cms) { cms.clearSort(); });
       return;
     }
 
@@ -2225,7 +2322,9 @@
     var order = orderRaw
       ? orderRaw.split('|').map(function (s) { return s.trim(); }).filter(Boolean)
       : undefined;
-    instance.sort(field, forced || 'asc', order);
+    instances.forEach(function (cms) {
+      cms.sort(field, forced || 'asc', order);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -2337,7 +2436,15 @@
         eur: 'de-DE', de: 'de-DE',
         usd: 'en-US', en: 'en-US',
       };
+      // Currency aliases also imply a unit, so a bare displayformat="PLN"
+      // renders "420 000 zł" rather than silently dropping the unit.
+      var localeUnits = {
+        pln: ' zł', pl: ' zł',
+        eur: ' €', de: ' €',
+        usd: ' $', en: ' $',
+      };
       var lowered = rawFormat.toLowerCase();
+      var localeUnit = '';
       if (known[lowered]) {
         this.displayFormat = lowered;
         this._pattern = null;
@@ -2346,6 +2453,7 @@
         this.displayFormat = 'locale';
         this._locale = localeAliases[lowered];
         this._pattern = null;
+        localeUnit = localeUnits[lowered] || '';
       } else {
         this._pattern = parseRangePattern(rawFormat);
         this.displayFormat = this._pattern ? 'pattern' : 'thousands';
@@ -2353,9 +2461,10 @@
       }
 
       // Only used when no pattern — pattern templates embed their own
-      // prefix/suffix so these attrs become redundant.
+      // prefix/suffix so these attrs become redundant. A currency alias
+      // seeds a default suffix that an explicit attribute can still override.
       this.prefix = attr(wrapper, 'd2-cms-range-prefix') || '';
-      this.suffix = attr(wrapper, 'd2-cms-range-suffix') || '';
+      this.suffix = attr(wrapper, 'd2-cms-range-suffix') || localeUnit;
 
       var attrMin = parseFloat(attr(wrapper, 'd2-cms-range-min'));
       var attrMax = parseFloat(attr(wrapper, 'd2-cms-range-max'));
@@ -2370,6 +2479,7 @@
       this._defaultMax = isNaN(attrDefMax) ? null : attrDefMax;
 
       this.cms = null;
+      this.cmsTargets = [];
       this.min = 0;
       this.max = 100;
       this.currentMin = 0;
@@ -2394,26 +2504,31 @@
       // range at whatever prices happen to be on the first page. Preload every
       // remaining server page so the slider reflects the full dataset, then
       // refresh to re-measure bounds.
-      if (this.cms && this.cms._nextPageUrl) {
+      var preloadTargets = this.cmsTargets.filter(function (cms) { return cms._nextPageUrl; });
+      if (preloadTargets.length) {
         var _slf = this;
-        this.cms._ensureAllLoaded().then(function () {
+        Promise.all(preloadTargets.map(function (cms) { return cms._ensureAllLoaded(); })).then(function () {
           if (_slf.track) _slf.refresh();
         });
       }
     }
 
     _resolveBounds() {
-      var name = _resolveTargetName(this.wrapper);
-      this.cms = name ? registry[name] : null;
+      var names = _resolveTargetNames(this.wrapper);
+      this.cmsTargets = _instancesForTargetNames(names);
+      this.cms = this.cmsTargets.length ? this.cmsTargets[0] : null;
 
       var min = this._attrMin, max = this._attrMax;
-      if ((min == null || max == null) && this.cms && this.cms.items.length) {
+      if ((min == null || max == null) && this.cmsTargets.length) {
         var lo = Infinity, hi = -Infinity;
-        for (var i = 0; i < this.cms.items.length; i++) {
-          var v = parseLooseNumber(this.cms.items[i].fields[this.field]);
-          if (isNaN(v)) continue;
-          if (v < lo) lo = v;
-          if (v > hi) hi = v;
+        for (var c = 0; c < this.cmsTargets.length; c++) {
+          var items = this.cmsTargets[c].items || [];
+          for (var i = 0; i < items.length; i++) {
+            var v = parseLooseNumber(items[i].fields[this.field]);
+            if (isNaN(v)) continue;
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
         }
         if (isFinite(lo) && isFinite(hi)) {
           if (min == null) min = lo;
@@ -2549,13 +2664,15 @@
       //   • _visibleCount = items.length — a paginated "show first N" mode
       //     would otherwise clip the filtered set to the initial chunk;
       //     expand it so every matching item is visible.
-      if (firstTouch && this.cms) {
-        var _cms = this.cms;
+      if (firstTouch && this.cmsTargets.length) {
+        this.cmsTargets.forEach(function (_cms) {
+          if (!_cms) return;
         _cms._loadAllRequested = true;
         _cms._visibleCount = _cms.items.length;
         _cms._ensureAllLoaded().then(function () {
           _cms._visibleCount = _cms.items.length;
           _cms._render();
+        });
         });
       }
 
@@ -2677,12 +2794,15 @@
     }
 
     _applyToCms() {
-      if (!this.cms) return;
-      if (this.currentMin <= this.min && this.currentMax >= this.max) {
-        this.cms.clearRange(this.field);
-      } else {
-        this.cms.setRange(this.field, this.currentMin, this.currentMax);
-      }
+      if (!this.cmsTargets.length) return;
+      var self = this;
+      this.cmsTargets.forEach(function (cms) {
+        if (self.currentMin <= self.min && self.currentMax >= self.max) {
+          cms.clearRange(self.field);
+        } else {
+          cms.setRange(self.field, self.currentMin, self.currentMax);
+        }
+      });
     }
   }
 
