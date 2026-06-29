@@ -281,6 +281,7 @@
     .wf-el { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 0; }
     .wf-elname { color: var(--text); font-weight: 600; }
     .wf-elname .muted { color: var(--text-dim); font-weight: 400; }
+    .muted { color: var(--text-dim); }
     .wf-arrow { color: var(--text-dim); }
 
     .chip {
@@ -1041,7 +1042,7 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
   <!-- ── POPUPS · SCHEDULING ── -->
   <section id="popups-schedule">
     <h2>Scheduled Popups</h2>
-    <p>A <strong>schedule</strong> limits a popup to a date/time window. It is a <em>gate</em>, not a trigger — every trigger you set (load, delay, exit-intent, a <code>d2-show-popup</code> click…) still runs, but the popup will not appear before the start or after the end. Outside the window it stays silent; inside it, it behaves exactly as configured.</p>
+    <p>Limit a popup to a date/time window. It’s a gate, not a trigger — your triggers still run, but the popup won’t show outside the window. Times use the visitor’s local timezone.</p>
 
     <div class="platform" data-platform>
       <div class="platform-tabs">
@@ -1049,190 +1050,93 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
         <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
       </div>
 
-      <!-- JS panel -->
       <div class="platform-panel is-active" data-platform-panel="js">
-        <p>Pass <code>schedule</code> to <code>create()</code> as an object (recommended) or a comma string.</p>
-        <pre><code><span class="comment">// Object form — recommended</span>
-digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
-  <span class="prop">popupSelector</span>: <span class="string">'#promo'</span>,
-  <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
-  <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
+        <pre><code>digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
   <span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span>, <span class="prop">to</span>: <span class="string">'2026-07-15 23:59'</span> },
-})</code></pre>
-        <pre><code><span class="comment">// String form — same value the HTML attribute uses</span>
-<span class="prop">schedule</span>: <span class="string">'2026-07-01 18:00, 2026-07-15 23:59'</span>
+})
 
-<span class="comment">// Open-ended — drop either bound</span>
-<span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span> }   <span class="comment">// from then on, no end</span>
-<span class="prop">schedule</span>: { <span class="prop">to</span>:   <span class="string">'2026-07-15 23:59'</span> }   <span class="comment">// until then, starts now</span></code></pre>
+<span class="comment">// open-ended — drop either bound</span>
+<span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span> }   <span class="comment">// from then on</span>
+<span class="prop">schedule</span>: { <span class="prop">to</span>:   <span class="string">'2026-07-15 23:59'</span> }   <span class="comment">// until then</span></code></pre>
       </div>
 
-      <!-- Webflow panel -->
       <div class="platform-panel" data-platform-panel="webflow">
-        <p>Put the window straight on the popup wrapper — no embed needed for the schedule itself. In the Designer select the popup element → <strong>Settings (gear) → Custom attributes → +</strong>:</p>
+        <p>Add a custom attribute to the popup wrapper:</p>
         <div class="wf-map">
           <div class="wf-el">
-            <span class="wf-elname">Popup Wrapper <span class="muted">(the element your popup uses)</span></span>
+            <span class="wf-elname">Popup Wrapper</span>
             <span class="wf-arrow">→</span>
             <span class="chip chip--attr"><span class="k">Name</span> d2-popup-schedule</span>
             <span class="chip chip--attr"><span class="k">Value</span> 2026-07-01 18:00, 2026-07-15 23:59</span>
           </div>
         </div>
-        <div class="callout callout--info">
-          <span class="ic">ℹ︎</span>
-          <p>The attribute is read by the popup instance when it is created, so the popup still needs its one-time <code>digi2.popups.create()</code> embed (see <a href="#popups-webflow">Webflow Setup</a>). The schedule can live on the attribute <em>or</em> in the embed — pick one.</p>
-        </div>
-        <p><code>data-d2-popup-schedule</code> works as a fallback if you prefer a <code>data-</code> prefix.</p>
+        <p class="muted">The popup still needs its <code>create()</code> embed (see <a href="#popups-webflow">Webflow Setup</a>) — the schedule can live on the attribute or in the embed.</p>
       </div>
     </div>
 
     <h3>Format</h3>
     <table>
-      <tr><th>Part</th><th>Example</th><th>Notes</th></tr>
-      <tr><td>Full window</td><td><code>2026-07-01 18:00, 2026-07-15 23:59</code></td><td><code>from, to</code> separated by a comma</td></tr>
-      <tr><td>Date + time</td><td><code>YYYY-MM-DD HH:MM</code></td><td>Seconds optional (<code>:SS</code>)</td></tr>
-      <tr><td>Date only</td><td><code>2026-07-01</code></td><td>Start → <code>00:00:00</code>, end → <code>23:59:59</code> of that day</td></tr>
-      <tr><td>Only start</td><td><code>2026-07-01 18:00,</code></td><td>Open-ended — from then on</td></tr>
-      <tr><td>Only end</td><td><code>,2026-07-15 23:59</code></td><td>Open-ended — until then</td></tr>
+      <tr><th>Form</th><th>Example</th></tr>
+      <tr><td>Full window</td><td><code>2026-07-01 18:00, 2026-07-15 23:59</code></td></tr>
+      <tr><td>Date only</td><td><code>2026-07-01</code> <span class="muted">→ start 00:00, end 23:59:59</span></td></tr>
+      <tr><td>Only start</td><td><code>2026-07-01 18:00,</code></td></tr>
+      <tr><td>Only end</td><td><code>,2026-07-15 23:59</code></td></tr>
     </table>
-
-    <h3>Behaviour</h3>
-    <ul>
-      <li>Times are parsed in the <strong>visitor's local timezone</strong>.</li>
-      <li>Either bound may be blank/omitted for an open-ended window.</li>
-      <li>An invalid value logs a console warning and that bound is ignored — the popup is never silently blocked forever.</li>
-      <li>The dismissal cookie still applies: once closed inside the window, it stays closed for <code>cookieDurationDays</code>.</li>
-    </ul>
-    <div class="callout callout--warn">
-      <span class="ic">⚠︎</span>
-      <p>The window uses each visitor's clock. For a promo that must flip at a fixed wall-clock time everywhere, keep your audience in one timezone or coordinate the start server-side.</p>
-    </div>
+    <p class="muted">Seconds optional. <code>data-d2-popup-schedule</code> also works. Invalid value → console warning, that bound is ignored.</p>
   </section>
 
   <!-- ── POPUPS · WEBFLOW SETUP ── -->
   <section id="popups-webflow">
     <h2>Popups in Webflow</h2>
-    <p>A digi2 popup is two halves: the <strong>structure + attributes</strong> you build in the Designer, and one small <strong>init embed</strong> that registers it. This page shows exactly which tag goes on which element and how the two halves connect.</p>
+    <p>Build the structure + attributes in the Designer, then register the popup once with a small embed. Prerequisite: the loader runs with <code>d2-popups</code>.</p>
 
-    <div class="callout callout--info">
-      <span class="ic">ℹ︎</span>
-      <p>Prerequisite: the loader runs with the <code>d2-popups</code> flag in your site’s <code>&lt;head&gt;</code> — <code>&lt;script src="…digi2-loader.min.js" <span class="prop">d2-popups</span>&gt;&lt;/script&gt;</code>. That loads the popups module; the embed below registers individual popups.</p>
-    </div>
-
-    <h3>The element map</h3>
-    <p>Build this structure in the Designer. Classes drive the default selectors; custom attributes wire triggers and scheduling.</p>
+    <h3>The elements</h3>
     <div class="wf-map">
       <div class="wf-el">
-        <span class="wf-elname">Popup Wrapper <span class="muted">(Div block — fixed, full-screen, hidden)</span></span>
+        <span class="wf-elname">Popup Wrapper <span class="muted">(fixed, full-screen, hidden)</span></span>
         <span class="chip chip--class"><span class="k">class</span> popup__overlay</span>
         <span class="chip chip--attr"><span class="k">attr</span> d2-popup-schedule = …</span>
-        <span class="chip chip--note">← the element the popup shows/hides</span>
       </div>
       <div class="wf-children">
-        <div class="wf-el">
-          <span class="wf-elname">Popup Content <span class="muted">(Div block — the visible card)</span></span>
-        </div>
+        <div class="wf-el"><span class="wf-elname">Content <span class="muted">— your card</span></span></div>
         <div class="wf-children">
-          <div class="wf-el"><span class="wf-elname">Heading · Text · Form · Image…</span><span class="chip chip--note">your content</span></div>
           <div class="wf-el">
-            <span class="wf-elname">Close button <span class="muted">(Link block / Div)</span></span>
+            <span class="wf-elname">Close button</span>
             <span class="chip chip--class"><span class="k">class</span> popup-close</span>
-            <span class="chip chip--note">← click closes</span>
           </div>
         </div>
       </div>
     </div>
     <div class="wf-map">
       <div class="wf-el">
-        <span class="wf-elname">Trigger <span class="muted">(Button / Link — anywhere on the page)</span></span>
+        <span class="wf-elname">Trigger <span class="muted">(button anywhere)</span></span>
         <span class="chip chip--attr"><span class="k">attr</span> d2-show-popup = promo</span>
-        <span class="chip chip--note">← click opens the popup named “promo”</span>
       </div>
     </div>
-    <div class="callout callout--tip">
-      <span class="ic">✓</span>
-      <p>Clicking the dark overlay (outside the content card) also closes the popup automatically — the <code>popup-close</code> class is only needed for an explicit X button.</p>
-    </div>
 
-    <h3>Step by step</h3>
-    <ol class="steps">
-      <li>
-        <h4>Build the wrapper</h4>
-        <p>Add a Div block, set it <code>position: fixed</code>, full-screen, <code>display: none</code> by default. Give it the class <span class="chip chip--class">popup__overlay</span> (the module’s default selector).</p>
-      </li>
-      <li>
-        <h4>Add content + a close button</h4>
-        <p>Inside the wrapper, add your content card. Give the X button the class <span class="chip chip--class">popup-close</span>.</p>
-      </li>
-      <li>
-        <h4>Add a trigger</h4>
-        <p>On any button or link, add a custom attribute <span class="chip chip--attr"><span class="k">d2-show-popup</span> = promo</span>. The value is the popup’s name.</p>
-      </li>
-      <li>
-        <h4>(Optional) Schedule it</h4>
-        <p>On the <em>wrapper</em>, add <span class="chip chip--attr"><span class="k">d2-popup-schedule</span> = 2026-07-01 18:00, 2026-07-15 23:59</span>.</p>
-      </li>
-      <li>
-        <h4>Register it once</h4>
-        <p>In <strong>Page Settings → Custom code → Before <code>&lt;/body&gt;</code></strong> (or a Code Embed), add:</p>
-        <pre><code>&lt;script&gt;
+    <h3>How it connects</h3>
+    <table>
+      <tr><th>In the Designer</th><th>In the embed</th></tr>
+      <tr><td>Class <code>popup__overlay</code> on the wrapper</td><td><code>popupSelector</code> <span class="muted">(default — omit)</span></td></tr>
+      <tr><td>Attribute <code>d2-show-popup="promo"</code></td><td><code>create('promo', …)</code> <span class="muted">— names must match</span></td></tr>
+      <tr><td>Class <code>popup-close</code> on the X</td><td><code>closeTriggerSelector: '.popup-close'</code></td></tr>
+      <tr><td>Attribute <code>d2-popup-schedule</code></td><td>or <code>schedule: { from, to }</code></td></tr>
+    </table>
+
+    <h3>The embed</h3>
+    <p>Page Settings → Before <code>&lt;/body&gt;</code>:</p>
+    <pre><code>&lt;script&gt;
   digi2.<span class="fn">onReady</span>(<span class="keyword">function</span> () {
     digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
       <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
       <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
-      <span class="comment">// schedule here instead of the attribute, if you prefer:</span>
-      <span class="comment">// schedule: { from: '2026-07-01 18:00', to: '2026-07-15 23:59' },</span>
     });
   });
 &lt;/script&gt;</code></pre>
-      </li>
-    </ol>
-
-    <h3>How it connects</h3>
-    <p>Three independent links bind the Designer to the embed. Keep them straight and everything works.</p>
-    <table>
-      <tr><th>In the Designer</th><th>Binds via</th><th>In the init embed</th></tr>
-      <tr>
-        <td>Class <span class="chip chip--class">popup__overlay</span> on the wrapper</td>
-        <td><span class="chip chip--bind">CSS selector</span></td>
-        <td><code>popupSelector: '.popup__overlay'</code> <span class="muted">(default — omit when you use this class)</span></td>
-      </tr>
-      <tr>
-        <td>Attribute <span class="chip chip--attr">d2-show-popup = promo</span> on a button</td>
-        <td><span class="chip chip--bind">name match</span></td>
-        <td><code>digi2.popups.create(<span class="string">'promo'</span>, …)</code> — the name must be identical</td>
-      </tr>
-      <tr>
-        <td>Attribute <span class="chip chip--attr">d2-popup-schedule = …</span> on the wrapper</td>
-        <td><span class="chip chip--bind">read on create</span></td>
-        <td><code>schedule: { from, to }</code> <span class="muted">(or leave it on the attribute)</span></td>
-      </tr>
-      <tr>
-        <td>Class <span class="chip chip--class">popup-close</span> on the X</td>
-        <td><span class="chip chip--bind">CSS selector</span></td>
-        <td><code>closeTriggerSelector: '.popup-close'</code></td>
-      </tr>
-    </table>
     <div class="callout callout--warn">
       <span class="ic">⚠︎</span>
-      <p><code>popupSelector</code> finds the <em>element</em>; the <code>create('promo')</code> name + <code>d2-show-popup="promo"</code> wire the <em>trigger</em>. They are two separate links — a popup with no matching <code>create()</code> call will never open, even if the attributes are present.</p>
+      <p>A popup with no matching <code>create()</code> call never opens — the attributes alone aren’t enough.</p>
     </div>
-
-    <h3>Common recipes</h3>
-    <pre><code><span class="comment">// Scheduled launch promo — opens 4s in, only during the window</span>
-digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
-  <span class="prop">openAfterDelay</span>: <span class="keyword">4</span>,
-  <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
-  <span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span>, <span class="prop">to</span>: <span class="string">'2026-07-15 23:59'</span> },
-  <span class="prop">cookieName</span>: <span class="string">'promo_seen'</span>,
-  <span class="prop">cookieDurationDays</span>: <span class="keyword">3</span>,
-})
-
-<span class="comment">// Exit-intent newsletter — no schedule, shows until dismissed</span>
-digi2.popups.<span class="fn">create</span>(<span class="string">'newsletter'</span>, {
-  <span class="prop">openOnExitIntent</span>: <span class="keyword">true</span>,
-  <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
-})</code></pre>
   </section>
 
   <!-- ── COOKIES ── -->
