@@ -238,6 +238,98 @@
     .console .log-entry { margin-bottom: 2px; }
     .console .log-module { color: var(--accent); font-weight: 700; }
 
+    /* ── Platform toggle (JS | Webflow) ── */
+    .platform { margin: 16px 0 8px; }
+    .platform-tabs {
+      display: inline-flex;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 3px;
+      margin-bottom: 16px;
+    }
+    .platform-tab {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 7px 16px;
+      font-family: var(--font-mono);
+      font-size: 12px; font-weight: 600;
+      color: var(--text-dim);
+      background: transparent; border: none; border-radius: 6px;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .platform-tab:hover { color: var(--text); }
+    .platform-tab.is-active { background: var(--accent); color: #fff; }
+    .platform-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.65; }
+    .platform-panel { display: none; }
+    .platform-panel.is-active { display: block; animation: platFade 0.22s ease; }
+    @keyframes platFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    /* ── Webflow attribute map (element tree) ── */
+    .wf-map {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 18px 20px;
+      margin: 12px 0 20px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+    .wf-children { margin-left: 10px; border-left: 1px dashed var(--border); padding-left: 18px; }
+    .wf-el { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 0; }
+    .wf-elname { color: var(--text); font-weight: 600; }
+    .wf-elname .muted { color: var(--text-dim); font-weight: 400; }
+    .wf-arrow { color: var(--text-dim); }
+
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 5px;
+      font-size: 11px; font-weight: 500;
+      border: 1px solid transparent; white-space: nowrap;
+    }
+    .chip .k { opacity: 0.7; }
+    .chip--attr  { background: rgba(124,58,237,0.14); color: #c4b5fd; border-color: rgba(124,58,237,0.35); }
+    .chip--class { background: rgba(34,197,94,0.10);  color: #86efac; border-color: rgba(34,197,94,0.28); }
+    .chip--bind  { background: rgba(234,179,8,0.10);  color: #fde047; border-color: rgba(234,179,8,0.28); }
+    .chip--req   { background: rgba(239,68,68,0.12);  color: #fca5a5; border-color: rgba(239,68,68,0.3); font-size: 10px; padding: 1px 6px; }
+    .chip--note  { background: transparent; color: var(--text-dim); border: none; font-style: italic; }
+
+    /* ── Numbered steps ── */
+    .steps { list-style: none; padding: 0; margin: 16px 0 20px; }
+    .steps > li {
+      position: relative; padding: 0 0 20px 36px;
+      margin-left: 13px; border-left: 1px solid var(--border);
+    }
+    .steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+    .steps > li::before {
+      counter-increment: stepc; content: counter(stepc);
+      position: absolute; left: -13px; top: -3px;
+      width: 26px; height: 26px; border-radius: 50%;
+      background: var(--accent); color: #fff;
+      font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .steps { counter-reset: stepc; }
+    .steps h4 { font-size: 13px; color: var(--text); margin: 1px 0 5px; font-weight: 600; }
+    .steps p { margin-bottom: 8px; }
+    .steps pre { margin: 8px 0 4px; }
+
+    /* ── Callouts ── */
+    .callout {
+      border-radius: 8px; padding: 12px 15px; margin: 12px 0 20px;
+      font-size: 12px; border: 1px solid var(--border);
+      display: flex; gap: 11px; align-items: flex-start;
+    }
+    .callout .ic { flex: none; font-size: 14px; line-height: 1.4; }
+    .callout p { margin: 0; color: var(--text); }
+    .callout p + p { margin-top: 6px; }
+    .callout code { font-size: 11px; }
+    .callout--info { background: rgba(59,130,246,0.07); border-color: rgba(59,130,246,0.3); }
+    .callout--warn { background: rgba(234,179,8,0.07);  border-color: rgba(234,179,8,0.3); }
+    .callout--tip  { background: rgba(34,197,94,0.07);  border-color: rgba(34,197,94,0.3); }
+
     /* ── Popup overlay (test) ── */
     .popup__overlay {
       display: none;
@@ -616,6 +708,8 @@
       <a href="#popups">Overview</a>
       <a href="#popups-animations">Animations</a>
       <a href="#popups-triggers">Triggers</a>
+      <a href="#popups-schedule">Scheduling</a>
+      <a href="#popups-webflow">Webflow Setup</a>
     </div>
   </div>
 
@@ -717,6 +811,7 @@
       <a href="#countdown">Countdown</a>
       <a href="#filter">CMS Filtering</a>
       <a href="#cms">CMS List (sort + load more)</a>
+      <a href="#format">Number / Price Format</a>
       <a href="#copy">Copy to Clipboard</a>
     </div>
   </div>
@@ -763,6 +858,7 @@
       <tr><td><code>d2-cookies</code></td><td>Cookie helpers</td><td>1.1 KB</td></tr>
       <tr><td><code>d2-forms</code></td><td>Forms + validation + UTM + consent master</td><td>18.9 KB</td></tr>
       <tr><td><code>d2-interactions</code></td><td>Hover/click show-hide + animations</td><td>9.1 KB</td></tr>
+      <tr><td><code>d2-format</code></td><td>Number and price formatting</td><td>2.7 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
   </section>
@@ -873,6 +969,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>openOnSelectAbandon</code></td><td><code>null</code></td><td>CSS selector for a form/container — fires if user focuses a <code>&lt;select&gt;</code> inside, doesn't change it, then mouses out</td></tr>
       <tr><td><code>openOnScrollSpeed</code></td><td><code>null</code></td><td>Number (px/sec) or <code>{ speed, direction: 'up'|'down'|'any' }</code> — open on fast scroll</td></tr>
       <tr><td><code>interceptLinks</code></td><td><code>false</code></td><td><code>true</code> · CSS selector · <code>{ device: 'mobile'|'desktop'|'both', selector }</code> — intercept link clicks, show popup first, navigate on close (skips <code>target=_blank</code>, modifier-clicks, <code>#hash</code>, <code>mailto:</code>/<code>tel:</code>)</td></tr>
+      <tr><td><code>schedule</code></td><td><code>null</code></td><td><code>{ from, to }</code> or <code>'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'</code> — only show within this date/time window. Also readable from <code>d2-popup-schedule</code> on the popup element. See <a href="#popups-schedule">Scheduling</a></td></tr>
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie. Set to <code>null</code> to disable — popup re-shows every page load</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
     </table>
@@ -939,6 +1036,203 @@ digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>, <
 digi2.popups.<span class="fn">get</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">list</span>()</code></pre>
+  </section>
+
+  <!-- ── POPUPS · SCHEDULING ── -->
+  <section id="popups-schedule">
+    <h2>Scheduled Popups</h2>
+    <p>A <strong>schedule</strong> limits a popup to a date/time window. It is a <em>gate</em>, not a trigger — every trigger you set (load, delay, exit-intent, a <code>d2-show-popup</code> click…) still runs, but the popup will not appear before the start or after the end. Outside the window it stays silent; inside it, it behaves exactly as configured.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+        <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+      </div>
+
+      <!-- JS panel -->
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <p>Pass <code>schedule</code> to <code>create()</code> as an object (recommended) or a comma string.</p>
+        <pre><code><span class="comment">// Object form — recommended</span>
+digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+  <span class="prop">popupSelector</span>: <span class="string">'#promo'</span>,
+  <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
+  <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
+  <span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span>, <span class="prop">to</span>: <span class="string">'2026-07-15 23:59'</span> },
+})</code></pre>
+        <pre><code><span class="comment">// String form — same value the HTML attribute uses</span>
+<span class="prop">schedule</span>: <span class="string">'2026-07-01 18:00, 2026-07-15 23:59'</span>
+
+<span class="comment">// Open-ended — drop either bound</span>
+<span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span> }   <span class="comment">// from then on, no end</span>
+<span class="prop">schedule</span>: { <span class="prop">to</span>:   <span class="string">'2026-07-15 23:59'</span> }   <span class="comment">// until then, starts now</span></code></pre>
+      </div>
+
+      <!-- Webflow panel -->
+      <div class="platform-panel" data-platform-panel="webflow">
+        <p>Put the window straight on the popup wrapper — no embed needed for the schedule itself. In the Designer select the popup element → <strong>Settings (gear) → Custom attributes → +</strong>:</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Popup Wrapper <span class="muted">(the element your popup uses)</span></span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-popup-schedule</span>
+            <span class="chip chip--attr"><span class="k">Value</span> 2026-07-01 18:00, 2026-07-15 23:59</span>
+          </div>
+        </div>
+        <div class="callout callout--info">
+          <span class="ic">ℹ︎</span>
+          <p>The attribute is read by the popup instance when it is created, so the popup still needs its one-time <code>digi2.popups.create()</code> embed (see <a href="#popups-webflow">Webflow Setup</a>). The schedule can live on the attribute <em>or</em> in the embed — pick one.</p>
+        </div>
+        <p><code>data-d2-popup-schedule</code> works as a fallback if you prefer a <code>data-</code> prefix.</p>
+      </div>
+    </div>
+
+    <h3>Format</h3>
+    <table>
+      <tr><th>Part</th><th>Example</th><th>Notes</th></tr>
+      <tr><td>Full window</td><td><code>2026-07-01 18:00, 2026-07-15 23:59</code></td><td><code>from, to</code> separated by a comma</td></tr>
+      <tr><td>Date + time</td><td><code>YYYY-MM-DD HH:MM</code></td><td>Seconds optional (<code>:SS</code>)</td></tr>
+      <tr><td>Date only</td><td><code>2026-07-01</code></td><td>Start → <code>00:00:00</code>, end → <code>23:59:59</code> of that day</td></tr>
+      <tr><td>Only start</td><td><code>2026-07-01 18:00,</code></td><td>Open-ended — from then on</td></tr>
+      <tr><td>Only end</td><td><code>,2026-07-15 23:59</code></td><td>Open-ended — until then</td></tr>
+    </table>
+
+    <h3>Behaviour</h3>
+    <ul>
+      <li>Times are parsed in the <strong>visitor's local timezone</strong>.</li>
+      <li>Either bound may be blank/omitted for an open-ended window.</li>
+      <li>An invalid value logs a console warning and that bound is ignored — the popup is never silently blocked forever.</li>
+      <li>The dismissal cookie still applies: once closed inside the window, it stays closed for <code>cookieDurationDays</code>.</li>
+    </ul>
+    <div class="callout callout--warn">
+      <span class="ic">⚠︎</span>
+      <p>The window uses each visitor's clock. For a promo that must flip at a fixed wall-clock time everywhere, keep your audience in one timezone or coordinate the start server-side.</p>
+    </div>
+  </section>
+
+  <!-- ── POPUPS · WEBFLOW SETUP ── -->
+  <section id="popups-webflow">
+    <h2>Popups in Webflow</h2>
+    <p>A digi2 popup is two halves: the <strong>structure + attributes</strong> you build in the Designer, and one small <strong>init embed</strong> that registers it. This page shows exactly which tag goes on which element and how the two halves connect.</p>
+
+    <div class="callout callout--info">
+      <span class="ic">ℹ︎</span>
+      <p>Prerequisite: the loader runs with the <code>d2-popups</code> flag in your site’s <code>&lt;head&gt;</code> — <code>&lt;script src="…digi2-loader.min.js" <span class="prop">d2-popups</span>&gt;&lt;/script&gt;</code>. That loads the popups module; the embed below registers individual popups.</p>
+    </div>
+
+    <h3>The element map</h3>
+    <p>Build this structure in the Designer. Classes drive the default selectors; custom attributes wire triggers and scheduling.</p>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Popup Wrapper <span class="muted">(Div block — fixed, full-screen, hidden)</span></span>
+        <span class="chip chip--class"><span class="k">class</span> popup__overlay</span>
+        <span class="chip chip--attr"><span class="k">attr</span> d2-popup-schedule = …</span>
+        <span class="chip chip--note">← the element the popup shows/hides</span>
+      </div>
+      <div class="wf-children">
+        <div class="wf-el">
+          <span class="wf-elname">Popup Content <span class="muted">(Div block — the visible card)</span></span>
+        </div>
+        <div class="wf-children">
+          <div class="wf-el"><span class="wf-elname">Heading · Text · Form · Image…</span><span class="chip chip--note">your content</span></div>
+          <div class="wf-el">
+            <span class="wf-elname">Close button <span class="muted">(Link block / Div)</span></span>
+            <span class="chip chip--class"><span class="k">class</span> popup-close</span>
+            <span class="chip chip--note">← click closes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Trigger <span class="muted">(Button / Link — anywhere on the page)</span></span>
+        <span class="chip chip--attr"><span class="k">attr</span> d2-show-popup = promo</span>
+        <span class="chip chip--note">← click opens the popup named “promo”</span>
+      </div>
+    </div>
+    <div class="callout callout--tip">
+      <span class="ic">✓</span>
+      <p>Clicking the dark overlay (outside the content card) also closes the popup automatically — the <code>popup-close</code> class is only needed for an explicit X button.</p>
+    </div>
+
+    <h3>Step by step</h3>
+    <ol class="steps">
+      <li>
+        <h4>Build the wrapper</h4>
+        <p>Add a Div block, set it <code>position: fixed</code>, full-screen, <code>display: none</code> by default. Give it the class <span class="chip chip--class">popup__overlay</span> (the module’s default selector).</p>
+      </li>
+      <li>
+        <h4>Add content + a close button</h4>
+        <p>Inside the wrapper, add your content card. Give the X button the class <span class="chip chip--class">popup-close</span>.</p>
+      </li>
+      <li>
+        <h4>Add a trigger</h4>
+        <p>On any button or link, add a custom attribute <span class="chip chip--attr"><span class="k">d2-show-popup</span> = promo</span>. The value is the popup’s name.</p>
+      </li>
+      <li>
+        <h4>(Optional) Schedule it</h4>
+        <p>On the <em>wrapper</em>, add <span class="chip chip--attr"><span class="k">d2-popup-schedule</span> = 2026-07-01 18:00, 2026-07-15 23:59</span>.</p>
+      </li>
+      <li>
+        <h4>Register it once</h4>
+        <p>In <strong>Page Settings → Custom code → Before <code>&lt;/body&gt;</code></strong> (or a Code Embed), add:</p>
+        <pre><code>&lt;script&gt;
+  digi2.<span class="fn">onReady</span>(<span class="keyword">function</span> () {
+    digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+      <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
+      <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
+      <span class="comment">// schedule here instead of the attribute, if you prefer:</span>
+      <span class="comment">// schedule: { from: '2026-07-01 18:00', to: '2026-07-15 23:59' },</span>
+    });
+  });
+&lt;/script&gt;</code></pre>
+      </li>
+    </ol>
+
+    <h3>How it connects</h3>
+    <p>Three independent links bind the Designer to the embed. Keep them straight and everything works.</p>
+    <table>
+      <tr><th>In the Designer</th><th>Binds via</th><th>In the init embed</th></tr>
+      <tr>
+        <td>Class <span class="chip chip--class">popup__overlay</span> on the wrapper</td>
+        <td><span class="chip chip--bind">CSS selector</span></td>
+        <td><code>popupSelector: '.popup__overlay'</code> <span class="muted">(default — omit when you use this class)</span></td>
+      </tr>
+      <tr>
+        <td>Attribute <span class="chip chip--attr">d2-show-popup = promo</span> on a button</td>
+        <td><span class="chip chip--bind">name match</span></td>
+        <td><code>digi2.popups.create(<span class="string">'promo'</span>, …)</code> — the name must be identical</td>
+      </tr>
+      <tr>
+        <td>Attribute <span class="chip chip--attr">d2-popup-schedule = …</span> on the wrapper</td>
+        <td><span class="chip chip--bind">read on create</span></td>
+        <td><code>schedule: { from, to }</code> <span class="muted">(or leave it on the attribute)</span></td>
+      </tr>
+      <tr>
+        <td>Class <span class="chip chip--class">popup-close</span> on the X</td>
+        <td><span class="chip chip--bind">CSS selector</span></td>
+        <td><code>closeTriggerSelector: '.popup-close'</code></td>
+      </tr>
+    </table>
+    <div class="callout callout--warn">
+      <span class="ic">⚠︎</span>
+      <p><code>popupSelector</code> finds the <em>element</em>; the <code>create('promo')</code> name + <code>d2-show-popup="promo"</code> wire the <em>trigger</em>. They are two separate links — a popup with no matching <code>create()</code> call will never open, even if the attributes are present.</p>
+    </div>
+
+    <h3>Common recipes</h3>
+    <pre><code><span class="comment">// Scheduled launch promo — opens 4s in, only during the window</span>
+digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+  <span class="prop">openAfterDelay</span>: <span class="keyword">4</span>,
+  <span class="prop">animation</span>: <span class="string">'slide-up'</span>,
+  <span class="prop">schedule</span>: { <span class="prop">from</span>: <span class="string">'2026-07-01 18:00'</span>, <span class="prop">to</span>: <span class="string">'2026-07-15 23:59'</span> },
+  <span class="prop">cookieName</span>: <span class="string">'promo_seen'</span>,
+  <span class="prop">cookieDurationDays</span>: <span class="keyword">3</span>,
+})
+
+<span class="comment">// Exit-intent newsletter — no schedule, shows until dismissed</span>
+digi2.popups.<span class="fn">create</span>(<span class="string">'newsletter'</span>, {
+  <span class="prop">openOnExitIntent</span>: <span class="keyword">true</span>,
+  <span class="prop">closeTriggerSelector</span>: <span class="string">'.popup-close'</span>,
+})</code></pre>
   </section>
 
   <!-- ── COOKIES ── -->
@@ -1760,6 +2054,33 @@ digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// afte
 &lt;button <span class="prop">d2-cms-target</span>=<span class="string">"products"</span> <span class="prop">d2-cms-load-more</span>&gt;Load more&lt;/button&gt;</code></pre>
   </section>
 
+  <!-- ── FORMAT ── -->
+  <section id="format">
+    <h2>Number / Price Format</h2>
+    <p>Format raw CMS text values as localized numbers. Load with <code>d2-format</code>, <code>d2-format-price</code>, or <code>d2-format-number</code> on the loader tag.</p>
+
+    <pre><code>&lt;script src=<span class="string">"...digi2-loader.min.js"</span> <span class="prop">d2-format</span>&gt;&lt;/script&gt;</code></pre>
+
+    <pre><code>&lt;div <span class="prop">d2-format-price</span>&gt;199999&lt;/div&gt;
+&lt;div <span class="prop">d2-format-number</span>=<span class="string">"price"</span>&gt;422934.4&lt;/div&gt;
+&lt;div class=<span class="string">"format-price"</span>&gt;199999&lt;/div&gt;</code></pre>
+
+    <p>By default, price formatting outputs only the number:</p>
+    <pre><code>199 999
+422 934</code></pre>
+
+    <p>Add currency or suffix explicitly when needed:</p>
+    <pre><code>&lt;div <span class="prop">d2-format-price</span> <span class="prop">d2-format-suffix</span>=<span class="string">" PLN"</span>&gt;199999&lt;/div&gt;
+&lt;div <span class="prop">d2-format-price</span> <span class="prop">d2-format-currency</span>=<span class="string">"PLN"</span>&gt;199999&lt;/div&gt;
+&lt;div <span class="prop">d2-format-price</span> <span class="prop">d2-format-decimals</span>=<span class="string">"2"</span>&gt;199999&lt;/div&gt;
+&lt;div <span class="prop">d2-format-price</span> <span class="prop">d2-format-suffix</span>=<span class="string">" zl netto"</span>&gt;199999&lt;/div&gt;</code></pre>
+
+    <p>The formatter observes new DOM and is refreshed after <code>d2-cms</code> renders loaded Collection items.</p>
+    <pre><code>digi2.format.<span class="fn">price</span>(<span class="string">'199999'</span>)                         <span class="comment">// "199 999"</span>
+digi2.format.<span class="fn">price</span>(<span class="string">'199999'</span>, { <span class="prop">currency</span>: <span class="string">'PLN'</span> })  <span class="comment">// "199 999 PLN"</span>
+digi2.format.<span class="fn">refresh</span>()                               <span class="comment">// rescan document</span></code></pre>
+  </section>
+
   <!-- ── COPY ── -->
   <section id="copy">
     <h2>Copy to Clipboard</h2>
@@ -2295,6 +2616,25 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- PLATFORM TOGGLE (JS | Webflow) -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+  document.querySelectorAll('[data-platform]').forEach(function (block) {
+    var tabs = block.querySelectorAll('[data-platform-tab]');
+    var panels = block.querySelectorAll('[data-platform-panel]');
+    tabs.forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        var key = tab.getAttribute('data-platform-tab');
+        tabs.forEach(function (t) { t.classList.toggle('is-active', t === tab); });
+        panels.forEach(function (p) {
+          p.classList.toggle('is-active', p.getAttribute('data-platform-panel') === key);
+        });
+      });
+    });
+  });
+</script>
 
 </body>
 </html>

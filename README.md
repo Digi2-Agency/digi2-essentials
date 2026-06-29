@@ -21,6 +21,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
   d2-lazy
   d2-countdown
   d2-filter
+  d2-format
   d2-copy
 ></script>
 ```
@@ -46,11 +47,12 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-lazy` | lazy | 2.5 KB | Lazy images/video/iframes + blur-up |
 | `d2-countdown` | countdown | 3.4 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
+| `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **140.7 KB min** / **42.3 KB** gzipped.
+Total (all modules): **167.6 KB min** / **49.7 KB** gzipped.
 
 ---
 
@@ -342,6 +344,7 @@ digi2.popups.create('newsletter', {
 | `openOnSelectAbandon` | `null` | Form selector — fires on `<select>` interaction without change + mouseleave |
 | `openOnScrollSpeed` | `null` | px/sec or `{ speed, direction }` — fast-scroll trigger |
 | `interceptLinks` | `false` | `true` · selector · `{ device, selector }` — intercept link clicks, navigate on close |
+| `schedule` | `null` | `{ from, to }` or `'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'` — only show within this window. See [Scheduling](#scheduling) |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `excludeUrls` | `[]` | URL patterns to skip |
@@ -394,6 +397,73 @@ digi2.popups.get('name')
 digi2.popups.destroy('name')
 digi2.popups.list()
 ```
+
+### Scheduling
+
+Limit a popup to a date/time window. A schedule is a **gate**, not a trigger — every trigger you set still runs, but the popup will not appear outside the window. Parsed in the **visitor's local timezone**.
+
+```js
+// Object form (recommended) — pass to create()
+digi2.popups.create('promo', {
+  popupSelector: '#promo',
+  closeTriggerSelector: '.popup-close',
+  schedule: { from: '2026-07-01 18:00', to: '2026-07-15 23:59' },
+})
+
+// String form — same value the HTML attribute uses
+schedule: '2026-07-01 18:00, 2026-07-15 23:59'
+
+// Open-ended — drop either bound
+schedule: { from: '2026-07-01 18:00' }   // from then on
+schedule: { to:   '2026-07-15 23:59' }   // until then
+```
+
+Or set it declaratively on the popup element (no embed value needed):
+
+```html
+<div class="popup__overlay" d2-popup-schedule="2026-07-01 18:00, 2026-07-15 23:59">…</div>
+```
+
+| Form | Example | Notes |
+|---|---|---|
+| Full window | `2026-07-01 18:00, 2026-07-15 23:59` | `from, to` separated by a comma |
+| Date + time | `YYYY-MM-DD HH:MM` | Seconds optional (`:SS`) |
+| Date only | `2026-07-01` | Start → `00:00:00`, end → `23:59:59` of that day |
+| Only start | `2026-07-01 18:00,` | Open-ended — from then on |
+| Only end | `,2026-07-15 23:59` | Open-ended — until then |
+
+- Either bound may be blank/omitted for an open-ended window.
+- `data-d2-popup-schedule` works as a fallback if you prefer a `data-` prefix.
+- Invalid value → console warning, that bound is ignored (never blocks forever).
+
+### Webflow setup
+
+A popup is two halves: the **structure + attributes** you build in the Designer, and one small **init embed** that registers it.
+
+**In the Designer:**
+
+| Element | Add | Role |
+|---|---|---|
+| Popup wrapper | Class `popup__overlay` | The element shown/hidden (`popupSelector`) |
+| Popup wrapper | Attr `d2-popup-schedule="…"` | Optional display window |
+| X button | Class `popup-close` | Click closes (`closeTriggerSelector`) |
+| Trigger button | Attr `d2-show-popup="promo"` | Click opens the popup named `promo` |
+
+**Then register it once** (Page Settings → Before `</body>`):
+
+```html
+<script>
+  digi2.onReady(function () {
+    digi2.popups.create('promo', {
+      animation: 'slide-up',
+      closeTriggerSelector: '.popup-close',
+      // schedule: { from: '2026-07-01 18:00', to: '2026-07-15 23:59' },
+    });
+  });
+</script>
+```
+
+> The `create('promo')` name must match `d2-show-popup="promo"`. `popupSelector` finds the element; the name wires the trigger — two separate links. A popup with no matching `create()` call never opens.
 
 ---
 
@@ -1041,6 +1111,42 @@ list.reset()                   // no sort, no filters, first page
 list.refresh()                 // re-scan items (after Webflow re-renders the list)
 list.getState()                // { visible, totalMatching, total, sort, filters }
 list.destroy()
+```
+
+---
+
+## Format
+
+Load with any of these loader attributes: `d2-format`, `d2-format-price`, or `d2-format-number`.
+
+```html
+<div d2-format-price>199999</div>
+<div d2-format-number="price">422934.4</div>
+<div class="format-price">199999</div>
+```
+
+They format the number only by default:
+
+```text
+199 999
+422 934
+```
+
+Optional overrides:
+
+```html
+<div d2-format-price d2-format-suffix=" PLN">199999</div>
+<div d2-format-price d2-format-currency="EUR">199999</div>
+<div d2-format-price d2-format-decimals="2">199999</div>
+<div d2-format-price d2-format-suffix=" zl netto">199999</div>
+```
+
+The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically.
+
+```js
+digi2.format.price('199999')       // "199 999"
+digi2.format.price('199999', { currency: 'PLN' }) // "199 999 PLN"
+digi2.format.refresh()             // rescan document
 ```
 
 ---
