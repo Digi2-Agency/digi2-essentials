@@ -367,6 +367,7 @@ digi2.popups.create('newsletter', {
 | Method | Code |
 |---|---|
 | Data attribute | `<button d2-show-popup="name">` |
+| Data attribute + delay | `<button d2-show-popup="name" d2-show-popup-delay="50">` — opens 50s after click (`data-d2-` prefix works too) |
 | Programmatic | `digi2.popups.show('name')` / `.close('name')` |
 | Open selector | `openTriggerSelector: '.btn'` |
 | Close selector | `closeTriggerSelector: '.close'` |

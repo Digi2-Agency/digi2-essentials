@@ -1094,17 +1094,31 @@
   // Only triggers if the matching instance has dataTagTrigger: true (default).
   // The attribute itself supports the responsive `name;name@max` syntax via
   // attr(), so different popups can be wired to the same trigger element per
-  // breakpoint.
+  // breakpoint. Both d2-show-popup and data-d2-show-popup are recognised.
+  //
+  // Optional delay: add d2-show-popup-delay (or data-d2-show-popup-delay) in
+  // seconds to open the popup N seconds after the click instead of instantly:
+  //   <button d2-show-popup="lead" d2-show-popup-delay="50">Download</button>
   // ---------------------------------------------------------------------------
   document.addEventListener('click', function (e) {
-    var trigger = e.target.closest('[d2-show-popup]');
+    var trigger = e.target.closest('[d2-show-popup], [data-d2-show-popup]');
     if (!trigger) return;
 
-    var name = attr(trigger, 'd2-show-popup');
+    var name = attr(trigger, 'd2-show-popup') || trigger.getAttribute('data-d2-show-popup');
     if (!name) return;
     var instance = registry[name];
-    if (instance && instance.options.dataTagTrigger) {
-      e.preventDefault();
+    if (!instance || !instance.options.dataTagTrigger) return;
+
+    e.preventDefault();
+
+    var delayRaw = attr(trigger, 'd2-show-popup-delay');
+    if (delayRaw == null) delayRaw = trigger.getAttribute('data-d2-show-popup-delay');
+    var delay = parseFloat(delayRaw);
+
+    if (!isNaN(delay) && delay > 0) {
+      _log('data-tag trigger clicked → ' + name + ' (delay ' + delay + 's)', trigger);
+      setTimeout(function () { instance.show(); }, delay * 1000);
+    } else {
       _log('data-tag trigger clicked → ' + name, trigger);
       instance.show();
     }

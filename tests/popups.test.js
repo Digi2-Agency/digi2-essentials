@@ -72,6 +72,10 @@ function createElement(tagName, attrs, textContent) {
 
 function matchesSelector(node, selector) {
   if (!node || !selector) return false;
+  if (selector.indexOf(',') !== -1) {
+    return selector.split(',').map((s) => s.trim()).filter(Boolean)
+      .some((s) => matchesSelector(node, s));
+  }
   let simple = selector.trim();
   const tagMatch = simple.match(/^[a-zA-Z][a-zA-Z0-9-]*/);
   if (tagMatch && node.tagName !== tagMatch[0].toUpperCase()) return false;
@@ -88,6 +92,8 @@ function createEnvironment() {
   const body = createElement('body');
   const documentElement = createElement('html');
   const store = {};
+  const docListeners = {};
+  const timers = [];
 
   const document = {
     body,
@@ -95,8 +101,13 @@ function createEnvironment() {
     readyState: 'complete',
     cookie: '',
     visibilityState: 'visible',
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener(type, fn) {
+      docListeners[type] = docListeners[type] || [];
+      docListeners[type].push(fn);
+    },
+    removeEventListener(type, fn) {
+      if (docListeners[type]) docListeners[type] = docListeners[type].filter((h) => h !== fn);
+    },
     querySelector(selector) { return body.querySelector(selector); },
     querySelectorAll(selector) { return body.querySelectorAll(selector); },
     createElement,
@@ -115,21 +126,36 @@ function createEnvironment() {
     removeItem(k) { delete store[k]; },
   };
 
-  return {
+  // Capturing setTimeout — records (fn, ms) so tests can assert the delay and
+  // fire the callback manually instead of waiting in real time.
+  function fakeSetTimeout(fn, ms) {
+    timers.push({ fn: fn, ms: ms });
+    return timers.length - 1;
+  }
+  function fakeClearTimeout() {}
+
+  const env = {
     context: vm.createContext({
       window,
       document,
       navigator: { userAgent: 'node-test' },
       sessionStorage,
       console,
-      setTimeout,
-      clearTimeout,
+      setTimeout: fakeSetTimeout,
+      clearTimeout: fakeClearTimeout,
       Date,
     }),
     window,
     document,
     body,
+    timers,
+    dispatchDoc(type, target) {
+      const event = { target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+      (docListeners[type] || []).forEach((fn) => fn(event));
+      return event;
+    },
   };
+  return env;
 }
 
 function loadPopupsModule(env) {
@@ -261,5 +287,50 @@ test('empty object schedule imposes no restriction', () => {
   const env = createEnvironment();
   loadPopupsModule(env);
   const inst = buildPopup(env, { schedule: { from: '', to: '' } });
+  assert.equal(inst.isVisible, true);
+});
+
+test('data-tag click trigger opens the popup after the configured delay', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+  const btn = createElement('button', { 'd2-show-popup': 'lead', 'd2-show-popup-delay': '50' });
+  env.body.appendChild(btn);
+  const inst = env.window.digi2.popups.create('lead', { animation: 'none' });
+
+  env.dispatchDoc('click', btn);
+  assert.equal(inst.isVisible, false);        // not opened yet
+  assert.equal(env.timers.length, 1);
+  assert.equal(env.timers[0].ms, 50000);      // 50s in ms
+
+  env.timers[0].fn();                          // fire the timer
+  assert.equal(inst.isVisible, true);
+});
+
+test('data-tag click without delay opens immediately', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+  const btn = createElement('button', { 'd2-show-popup': 'lead' });
+  env.body.appendChild(btn);
+  const inst = env.window.digi2.popups.create('lead', { animation: 'none' });
+
+  env.dispatchDoc('click', btn);
+  assert.equal(inst.isVisible, true);
+  assert.equal(env.timers.length, 0);
+});
+
+test('delay is read from the data-d2- prefixed attribute too', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+  const btn = createElement('button', { 'data-d2-show-popup': 'lead', 'data-d2-show-popup-delay': '10' });
+  env.body.appendChild(btn);
+  const inst = env.window.digi2.popups.create('lead', { animation: 'none' });
+
+  env.dispatchDoc('click', btn);
+  assert.equal(inst.isVisible, false);
+  assert.equal(env.timers[0].ms, 10000);
+  env.timers[0].fn();
   assert.equal(inst.isVisible, true);
 });
