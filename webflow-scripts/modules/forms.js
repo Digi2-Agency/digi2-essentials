@@ -960,6 +960,38 @@
     }
 
     /**
+     * Find the closest [d2-form-success] element for a given input.
+     * Same search as the error element: direct children of up to 3 ancestor
+     * levels, so it only matches an element in this field's own wrapper.
+     */
+    _findSuccessElement(inputEl) {
+      if (!inputEl) return null;
+      var parent = inputEl.parentElement;
+      for (var i = 0; i < 3 && parent; i++) {
+        var children = parent.children;
+        for (var j = 0; j < children.length; j++) {
+          if (children[j].hasAttribute('d2-form-success')) return children[j];
+        }
+        parent = parent.parentElement;
+      }
+      return null;
+    }
+
+    /**
+     * Show/hide a field's [d2-form-success] element. Shown only when the field
+     * is valid AND has a value, so an untouched empty field shows nothing.
+     * Hiding clears the inline display; showing restores it to the CSS default.
+     *
+     * Webflow setup (inside the input wrapper, next to the error element):
+     *   <div d2-form-success style="display:none">Looks good ✓</div>
+     */
+    _updateSuccessElement(inputEl, isValid, hasValue) {
+      var el = this._findSuccessElement(inputEl);
+      if (!el) return;
+      el.style.display = (isValid && hasValue) ? '' : 'none';
+    }
+
+    /**
      * Validate a single field by name.
      * @param {string} fieldName
      * @param {Element} [inputEl] — auto-found if not provided
@@ -1020,6 +1052,9 @@
       if (this.options.errorDisplay === 'inline') {
         this._updateErrorElement(errorEl, result.errors, result.valid, rules);
       }
+
+      // Toggle the inline success element (valid + non-empty)
+      this._updateSuccessElement(inputEl, result.valid, String(val).trim() !== '');
 
       return result;
     }

@@ -633,6 +633,20 @@ Consent master checkboxes auto-initialize when `d2-forms` loads; `digi2.forms.cr
 </label>
 ```
 
+### Success Element
+
+Add `d2-form-success` inside an input wrapper to show a success state when that field passes validation **and** has a value (mirror of the error element). Hides when the field is invalid or empty.
+
+```html
+<label>
+  <input name="EMAIL" type="email">
+  <div d2-form-error-text style="display:none"></div>
+  <div d2-form-success style="display:none">Looks good ✓</div>
+</label>
+```
+
+Found like the error element (a sibling in the field's wrapper). Text inputs flip it on blur, checkboxes/selects on change. Start it `display:none`; when shown the inline display is cleared so your CSS controls layout.
+
 ### Auto-Injected Hidden Inputs
 
 | Input name | Source |
