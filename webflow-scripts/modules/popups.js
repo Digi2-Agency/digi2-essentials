@@ -202,6 +202,37 @@
     return el.getAttribute(name);
   }
 
+  function _pad2(v) {
+    v = String(v);
+    return v.length < 2 ? '0' + v : v;
+  }
+
+  // Parse one side of a schedule range ("YYYY-MM-DD[ HH:MM[:SS]]").
+  // Returns a local-time timestamp (number), null for a blank/omitted bound,
+  // or undefined when a value is present but cannot be parsed.
+  function _parseScheduleDate(str, isEnd) {
+    if (str == null) return null;
+    var s = String(str).trim();
+    if (!s) return null;
+
+    // Accept a space or ISO "T" between date and time.
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (!m) return undefined;
+
+    var hh = m[4], mm = m[5], ss = m[6];
+    if (hh == null) {
+      // Date only → start of day, or end of day for the upper bound.
+      hh = isEnd ? '23' : '00';
+      mm = isEnd ? '59' : '00';
+      ss = isEnd ? '59' : '00';
+    }
+    // Date-time forms without an offset are parsed as local time (per spec).
+    var iso = m[1] + '-' + m[2] + '-' + m[3] + 'T' +
+      _pad2(hh) + ':' + mm + ':' + (ss != null ? ss : '00');
+    var t = new Date(iso).getTime();
+    return isNaN(t) ? undefined : t;
+  }
+
   // ---------------------------------------------------------------------------
   // PopupManager (internal)
   // ---------------------------------------------------------------------------
@@ -226,6 +257,7 @@
         openAfterPageViews: null,
         sessionStorageKey: 'popupPageViews',
         lockScrollOnShow: true,       // lock body scroll when popup is visible
+        schedule: null,               // "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM" — only show within this window (either side may be blank for open-ended). Also read from d2-popup-schedule / data-d2-popup-schedule on the popup element.
         // ---- New triggers --------------------------------------------------
         openOnOutsideClick: null,         // CSS selector — clicks anywhere outside this element open popup
         openOnElementMouseLeave: null,    // CSS selector — mouse leaving this element opens popup
@@ -293,6 +325,8 @@
       this.isMobile = /Mobi|Android/i.test(navigator.userAgent);
       this.lastScrollY = window.scrollY;
 
+      this._parseScheduleOption();
+
       _log('init → ' + this.name, this.options);
 
       this._attachTriggers();
@@ -326,7 +360,49 @@
     }
 
     _canTrigger() {
-      return !this._isCookieSet() && !this.isVisible && !this._animating;
+      return !this._isCookieSet() && !this.isVisible && !this._animating && this._isWithinSchedule();
+    }
+
+    // ---- Scheduling ---------------------------------------------------------
+    // Reads `schedule` from options, falling back to the popup element's
+    // d2-popup-schedule / data-d2-popup-schedule attribute. Format:
+    //   "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM"  → only show within [start, end]
+    // Either side may be blank for an open-ended window:
+    //   "2026-06-29 18:00,"   → from this moment on
+    //   ",2026-07-01 23:59"   → until this moment
+    // Parsed in the visitor's local timezone. A date with no time defaults to
+    // 00:00 for the start bound and 23:59:59 for the end bound of that day.
+    _parseScheduleOption() {
+      var raw = this.options.schedule;
+      if (raw == null && this.popupElement) {
+        raw = attr(this.popupElement, 'd2-popup-schedule');
+        if (raw == null) raw = this.popupElement.getAttribute('data-d2-popup-schedule');
+      }
+
+      this._schedule = null;
+      if (raw == null || String(raw).trim() === '') return;
+
+      var parts = String(raw).split(',');
+      var start = _parseScheduleDate(parts[0], false);
+      var end = parts.length > 1 ? _parseScheduleDate(parts[1], true) : null;
+
+      if (start === undefined || end === undefined) {
+        console.warn('[digi2.popups] "' + this.name + '" — invalid d2-popup-schedule: ' + raw);
+      }
+      // `undefined` = present but unparseable → ignore that bound rather than
+      // suppressing the popup forever.
+      this._schedule = {
+        start: typeof start === 'number' ? start : null,
+        end: typeof end === 'number' ? end : null,
+      };
+    }
+
+    _isWithinSchedule() {
+      if (!this._schedule) return true;
+      var now = Date.now();
+      if (this._schedule.start !== null && now < this._schedule.start) return false;
+      if (this._schedule.end !== null && now > this._schedule.end) return false;
+      return true;
     }
 
     destroy() {
@@ -363,6 +439,10 @@
 
     show() {
       if (!this.popupElement || this.isVisible || this._animating) return;
+      if (!this._isWithinSchedule()) {
+        _log('show suppressed — outside schedule → ' + this.name, this._schedule);
+        return;
+      }
 
       // Resolve responsive option strings (e.g. animation: 'fade;slide-up@911')
       // at show time so breakpoint changes take effect without re-create.
