@@ -960,17 +960,17 @@
     }
 
     /**
-     * Find the closest [d2-form-success] element for a given input.
-     * Same search as the error element: direct children of up to 3 ancestor
-     * levels, so it only matches an element in this field's own wrapper.
+     * Find the closest element carrying `attrName` for a given input — direct
+     * children of up to 3 ancestor levels, so it only matches an element in
+     * this field's own wrapper (used for success/error state toggles).
      */
-    _findSuccessElement(inputEl) {
+    _findFieldEl(inputEl, attrName) {
       if (!inputEl) return null;
       var parent = inputEl.parentElement;
       for (var i = 0; i < 3 && parent; i++) {
         var children = parent.children;
         for (var j = 0; j < children.length; j++) {
-          if (children[j].hasAttribute('d2-form-success')) return children[j];
+          if (children[j].hasAttribute(attrName)) return children[j];
         }
         parent = parent.parentElement;
       }
@@ -978,17 +978,23 @@
     }
 
     /**
-     * Show/hide a field's [d2-form-success] element. Shown only when the field
-     * is valid AND has a value, so an untouched empty field shows nothing.
-     * Hiding clears the inline display; showing restores it to the CSS default.
+     * Toggle a field's state elements (visibility only, no text):
+     *   [d2-form-success] — shown when valid AND filled
+     *   [d2-form-error]   — shown when invalid (any value)
+     * These are separate from [d2-form-error-text], which injects the message
+     * text. Use them for icons/badges (e.g. 🟢/🔴) you don't want overwritten.
+     * Hiding clears inline display; showing restores the CSS default.
      *
-     * Webflow setup (inside the input wrapper, next to the error element):
-     *   <div d2-form-success style="display:none">Looks good ✓</div>
+     * Webflow setup (inside the input wrapper):
+     *   <span d2-form-success style="display:none">🟢</span>
+     *   <span d2-form-error   style="display:none">🔴</span>
      */
-    _updateSuccessElement(inputEl, isValid, hasValue) {
-      var el = this._findSuccessElement(inputEl);
-      if (!el) return;
-      el.style.display = (isValid && hasValue) ? '' : 'none';
+    _updateStateElements(inputEl, isValid, hasValue) {
+      var successEl = this._findFieldEl(inputEl, 'd2-form-success');
+      if (successEl) successEl.style.display = (isValid && hasValue) ? '' : 'none';
+
+      var errorEl = this._findFieldEl(inputEl, 'd2-form-error');
+      if (errorEl) errorEl.style.display = !isValid ? '' : 'none';
     }
 
     /**
@@ -1053,8 +1059,8 @@
         this._updateErrorElement(errorEl, result.errors, result.valid, rules);
       }
 
-      // Toggle the inline success element (valid + non-empty)
-      this._updateSuccessElement(inputEl, result.valid, String(val).trim() !== '');
+      // Toggle the inline success/error state elements (icons, badges…)
+      this._updateStateElements(inputEl, result.valid, String(val).trim() !== '');
 
       return result;
     }

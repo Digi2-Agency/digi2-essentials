@@ -633,19 +633,26 @@ Consent master checkboxes auto-initialize when `d2-forms` loads; `digi2.forms.cr
 </label>
 ```
 
-### Success Element
+### Success / error state elements
 
-Add `d2-form-success` inside an input wrapper to show a success state when that field passes validation **and** has a value (mirror of the error element). Hides when the field is invalid or empty.
+Toggle-only elements inside the input wrapper — visibility only, no text injected, so they suit icons/badges (🟢 / 🔴):
+
+| Attribute | Shown when |
+|---|---|
+| `d2-form-success` | field is valid **and** has a value |
+| `d2-form-error` | field is invalid |
+| `d2-form-error-text` | invalid — injects the message text (overwrites content) |
 
 ```html
-<label>
+<div class="input__wrapper">
   <input name="EMAIL" type="email">
-  <div d2-form-error-text style="display:none"></div>
-  <div d2-form-success style="display:none">Looks good ✓</div>
-</label>
+  <span d2-form-success style="display:none">🟢</span>
+  <span d2-form-error   style="display:none">🔴</span>
+  <div  d2-form-error-text style="display:none"></div>
+</div>
 ```
 
-Found like the error element (a sibling in the field's wrapper). Text inputs flip it on blur, checkboxes/selects on change. Start it `display:none`; when shown the inline display is cleared so your CSS controls layout.
+Use `d2-form-error` (toggle, keeps your icon) for badges; use `d2-form-error-text` when you want the message text. Found as a sibling in the field's wrapper. Text inputs flip on blur, checkboxes/selects on change. Start `display:none`; when shown the inline display is cleared so your CSS controls layout.
 
 ### Auto-Injected Hidden Inputs
 

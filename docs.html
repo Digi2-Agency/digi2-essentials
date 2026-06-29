@@ -1384,14 +1384,20 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
 &lt;/label&gt;</code></pre>
     <p>When validation fails, the first error's message is injected as text content and <code>display: flex</code> is applied. When valid, it's hidden and cleared.</p>
 
-    <h3>Success Element</h3>
-    <p>Add a <code>d2-form-success</code> element inside the same input wrapper to show a success state (a checkmark, “Looks good”, etc.). It appears when that field passes validation <strong>and</strong> has a value, and hides when the field is invalid or empty — the mirror of <code>d2-form-error-text</code>.</p>
-    <pre><code>&lt;label&gt;
+    <h3>Success / Error State Elements</h3>
+    <p>Toggle-only state elements inside the input wrapper — visibility only, no text injected, so they're perfect for icons or badges (🟢 / 🔴):</p>
+    <table>
+      <tr><th>Attribute</th><th>Shown when</th></tr>
+      <tr><td><code>d2-form-success</code></td><td>field is valid <strong>and</strong> has a value</td></tr>
+      <tr><td><code>d2-form-error</code></td><td>field is invalid</td></tr>
+    </table>
+    <pre><code>&lt;div class=<span class="string">"input__wrapper"</span>&gt;
   &lt;input name=<span class="string">"EMAIL"</span> type=<span class="string">"email"</span>&gt;
-  &lt;div <span class="prop">d2-form-error-text</span> style=<span class="string">"display:none"</span>&gt;&lt;/div&gt;
-  &lt;div <span class="prop">d2-form-success</span> style=<span class="string">"display:none"</span>&gt;Looks good ✓&lt;/div&gt;
-&lt;/label&gt;</code></pre>
-    <p class="muted">Found the same way as the error element (a sibling within the field's wrapper). Text inputs flip it on blur; checkboxes/selects on change. Start it with <code>style="display:none"</code>; when shown the inline <code>display</code> is cleared so your Webflow styling controls layout.</p>
+  &lt;span <span class="prop">d2-form-success</span> style=<span class="string">"display:none"</span>&gt;🟢&lt;/span&gt;
+  &lt;span <span class="prop">d2-form-error</span>   style=<span class="string">"display:none"</span>&gt;🔴&lt;/span&gt;
+  &lt;div  <span class="prop">d2-form-error-text</span> style=<span class="string">"display:none"</span>&gt;&lt;/div&gt;  <span class="comment">&lt;!-- message text --&gt;</span>
+&lt;/div&gt;</code></pre>
+    <p class="muted">Use <code>d2-form-error</code> (toggle, keeps your icon) for badges; use <code>d2-form-error-text</code> when you want the actual message injected. Found as a sibling within the field's wrapper. Text inputs flip on blur, checkboxes/selects on change. Start with <code>display:none</code>; when shown the inline display is cleared so your CSS controls layout.</p>
 
     <h3>Error Display Modes</h3>
     <pre><code><span class="comment">// Per-field (default)</span>

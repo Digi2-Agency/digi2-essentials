@@ -529,7 +529,7 @@ test('captureFrom updates an existing field instead of duplicating it', () => {
   assert.equal(fields[0].value, 'B', 'value updated to the latest click');
 });
 
-test('d2-form-success shows when a field passes validation and hides otherwise', () => {
+test('d2-form-success / d2-form-error toggle with field validity', () => {
   const env = createEnvironment();
   loadFormsModule(env);
 
@@ -551,22 +551,29 @@ test('d2-form-success shows when a field passes validation and hides otherwise',
     validation: { EMAIL: { required: true, email: true } },
   });
 
+  const error = createElement('div', { 'd2-form-error': '' });
+  error.style.display = 'none';
+  wrap.appendChild(error);
+
   const blur = (el) => el.dispatchEvent({ type: 'focusout', bubbles: true });
 
-  // Invalid value → success stays hidden
+  // Invalid value → success hidden, error shown
   input.value = 'nope';
   blur(input);
   assert.equal(success.style.display, 'none');
+  assert.notEqual(error.style.display, 'none');
 
-  // Valid value → success shows
+  // Valid value → success shown, error hidden
   input.value = 'a@b.com';
   blur(input);
   assert.notEqual(success.style.display, 'none');
+  assert.equal(error.style.display, 'none');
 
-  // Cleared → hidden again
+  // Cleared (required → invalid) → success hidden, error shown
   input.value = '';
   blur(input);
   assert.equal(success.style.display, 'none');
+  assert.notEqual(error.style.display, 'none');
 });
 
 test('forms.setField sets a field on a registered form', () => {
