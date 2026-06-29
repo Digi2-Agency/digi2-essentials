@@ -1350,6 +1350,93 @@
   // ---------------------------------------------------------------------------
   var registry = {};
 
+  // ---------------------------------------------------------------------------
+  // Context capture — d2-form-data-<field>="value"
+  // Put data attributes on any container; a click inside it copies them into
+  // the form as hidden fields (named <field>, optionally prefixed). Handy for
+  // "which product/plan did they click?" before opening a form popup.
+  //
+  //   <div d2-form-data-product="Pro plan" d2-form-data-target="lead">
+  //     <button d2-show-popup="lead">Ask about this</button>
+  //   </div>
+  //
+  // Reserved suffixes: -target (which form receives the data; defaults to all
+  // registered forms) and -prefix (prepended to every field name).
+  // Both d2-form-data-* and data-d2-form-data-* are recognised.
+  // ---------------------------------------------------------------------------
+  var FORM_DATA_RE = /^(?:data-)?d2-form-data-(.+)$/;
+
+  // Iterate an element's attributes across real DOM (NamedNodeMap) and the
+  // plain-object shape used by the test harness.
+  function _eachAttr(el, cb) {
+    var attrs = el && el.attributes;
+    if (!attrs) return;
+    if (typeof attrs.length === 'number') {
+      for (var i = 0; i < attrs.length; i++) cb(attrs[i].name, attrs[i].value);
+    } else {
+      Object.keys(attrs).forEach(function (k) { cb(k, attrs[k]); });
+    }
+  }
+
+  function _hasFormData(el) {
+    var found = false;
+    _eachAttr(el, function (name) {
+      if (FORM_DATA_RE.test(name) && !/-(?:target|prefix)$/.test(name)) found = true;
+    });
+    return found;
+  }
+
+  function _readFormData(el) {
+    var out = { fields: {}, target: null, prefix: '', count: 0 };
+    _eachAttr(el, function (name, value) {
+      var m = FORM_DATA_RE.exec(name);
+      if (!m) return;
+      var key = m[1];
+      if (key === 'target') { out.target = value; return; }
+      if (key === 'prefix') { out.prefix = value; return; }
+      out.fields[key] = value;
+      out.count++;
+    });
+    return out;
+  }
+
+  function _findFormDataContainer(node) {
+    while (node && node.attributes != null) {
+      if (_hasFormData(node)) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  function _applyFormData(data) {
+    if (!data || !data.count) return;
+    var targets;
+    if (data.target) {
+      if (!registry[data.target]) {
+        console.warn('[digi2.forms] d2-form-data-target="' + data.target + '" — no such form registered.');
+        return;
+      }
+      targets = [registry[data.target]];
+    } else {
+      targets = Object.keys(registry).map(function (k) { return registry[k]; });
+    }
+    targets.forEach(function (form) {
+      Object.keys(data.fields).forEach(function (f) {
+        form.setField(data.prefix + f, data.fields[f]);
+      });
+    });
+    _log('context capture', { target: data.target || '*', prefix: data.prefix, fields: data.fields });
+  }
+
+  function setupFormDataCapture() {
+    if (!document.addEventListener) return;
+    // Capture phase so the data lands before a popup opens or the page navigates.
+    document.addEventListener('click', function (e) {
+      var container = _findFormDataContainer(e.target);
+      if (container) _applyFormData(_readFormData(container));
+    }, true);
+  }
+
   window.digi2.forms = {
     create: function (name, options) {
       if (registry[name]) {
@@ -1435,6 +1522,37 @@
 
     list: function () {
       return Object.keys(registry);
+    },
+
+    /**
+     * Set a field on a registered form, creating a hidden input if needed.
+     * @param {string} formName
+     * @param {string} field
+     * @param {*}      value
+     */
+    setField: function (formName, field, value) {
+      var instance = registry[formName];
+      if (!instance) {
+        console.warn('[digi2.forms] "' + formName + '" not found.');
+        return;
+      }
+      instance.setField(field, value);
+    },
+
+    /**
+     * Programmatic context capture. Reads d2-form-data-* from `el` (or its
+     * nearest ancestor that carries them) and copies the values into the
+     * target form(s) as hidden fields — the same thing a click does.
+     * @param {Element} el           Container or any element inside it
+     * @param {string}  [targetName] Override d2-form-data-target
+     * @returns {object} the captured { field: value } map
+     */
+    captureFrom: function (el, targetName) {
+      var container = _findFormDataContainer(el) || el;
+      var data = _readFormData(container);
+      if (targetName) data.target = targetName;
+      _applyFormData(data);
+      return data.fields;
     },
 
     /**
@@ -1534,4 +1652,6 @@
   } else {
     bootConsentMasters();
   }
+
+  setupFormDataCapture();
 })();

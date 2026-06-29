@@ -456,3 +456,86 @@ test('createAll binds wrappers using the data-d2-form fallback and injects UTM',
   assert.ok(utm, 'UTM_SOURCE hidden input should be injected');
   assert.equal(utm.value, 'newsletter');
 });
+
+test('captureFrom copies d2-form-data values into the form as fields', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  const container = createElement('div', { 'd2-form-data-product': 'Pro plan', 'd2-form-data-plan': 'annual' });
+  const button = createElement('button', { 'd2-show-popup': 'lead' });
+  container.appendChild(button);
+
+  env.window.digi2.forms.captureFrom(button);
+
+  const form = env.master.parentElement;
+  const product = form.querySelector('input[name="product"]');
+  const plan = form.querySelector('input[name="plan"]');
+  assert.ok(product, 'product field injected');
+  assert.equal(product.value, 'Pro plan');
+  assert.equal(plan.value, 'annual');
+});
+
+test('d2-form-data respects target and prefix', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  const container = createElement('div', {
+    'd2-form-data-product': 'Pro',
+    'd2-form-data-target': 'contact',
+    'd2-form-data-prefix': 'p_',
+  });
+  const button = createElement('button', {});
+  container.appendChild(button);
+
+  env.window.digi2.forms.captureFrom(button);
+
+  const form = env.master.parentElement;
+  assert.equal(form.querySelector('input[name="p_product"]').value, 'Pro');
+});
+
+test('captureFrom reads the data-d2-form-data- variant', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  const container = createElement('div', { 'data-d2-form-data-product': 'Starter' });
+  const button = createElement('button', {});
+  container.appendChild(button);
+
+  env.window.digi2.forms.captureFrom(button);
+
+  const form = env.master.parentElement;
+  assert.equal(form.querySelector('input[name="product"]').value, 'Starter');
+});
+
+test('captureFrom updates an existing field instead of duplicating it', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  const c1 = createElement('div', { 'd2-form-data-product': 'A' });
+  const c2 = createElement('div', { 'd2-form-data-product': 'B' });
+  c1.appendChild(createElement('button', {}));
+  c2.appendChild(createElement('button', {}));
+
+  env.window.digi2.forms.captureFrom(c1.children[0]);
+  env.window.digi2.forms.captureFrom(c2.children[0]);
+
+  const form = env.master.parentElement;
+  const fields = form.querySelectorAll('input[name="product"]');
+  assert.equal(fields.length, 1, 'no duplicate field');
+  assert.equal(fields[0].value, 'B', 'value updated to the latest click');
+});
+
+test('forms.setField sets a field on a registered form', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+  createForm(env);
+
+  env.window.digi2.forms.setField('contact', 'source', 'pricing-page');
+
+  const form = env.master.parentElement;
+  assert.equal(form.querySelector('input[name="source"]').value, 'pricing-page');
+});

@@ -625,6 +625,33 @@ Consent master checkboxes auto-initialize when `d2-forms` loads; `digi2.forms.cr
 | `page_url` / `page_title` / `page_referrer` | Page meta |
 | `ip_address` | ipify API |
 
+### Context Capture
+
+Capture "which one did they click?" into the form. Put `d2-form-data-<field>="value"` on any container; a click inside it copies the value into the form as a hidden field named `<field>`. Ideal for a grid of product/plan cards that all open the same form popup.
+
+```html
+<div d2-form-data-product="Pro plan" d2-form-data-plan="annual">
+  <!-- card content -->
+  <button d2-show-popup="lead">Ask about this</button>
+</div>
+```
+
+On click, the form gets hidden fields `product` and `plan`, submitted like any other field.
+
+| Attribute | Role |
+|---|---|
+| `d2-form-data-<field>="value"` | Adds a hidden field named `<field>` |
+| `d2-form-data-target="formName"` | Send only to this form (default: all registered forms) |
+| `d2-form-data-prefix="p_"` | Prepend a prefix to every field name |
+
+- `data-d2-` prefix works too. Re-clicking another card overwrites the field (no duplicates).
+- The form must be created via `digi2.forms.create()` / `createAll()`.
+
+```js
+digi2.forms.captureFrom(element)              // capture from a container/element
+digi2.forms.setField('lead', 'product', 'Pro plan')  // set one field on a named form
+```
+
 ### Password Toggle
 
 ```html

@@ -724,6 +724,7 @@
       <a href="#forms-validation">Validation</a>
       <a href="#forms-errors">Error Elements</a>
       <a href="#forms-tracking">UTM Tracking</a>
+      <a href="#forms-context">Context Capture</a>
     </div>
   </div>
 
@@ -1397,6 +1398,59 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
       <tr><td><code>page_referrer</code></td><td><code>document.referrer</code></td><td><code>pageMeta</code></td></tr>
       <tr><td><code>ip_address</code></td><td>ipify.org API</td><td><code>ipTracking</code></td></tr>
     </table>
+  </section>
+
+  <!-- ── FORMS · CONTEXT CAPTURE ── -->
+  <section id="forms-context">
+    <h2>Context Capture</h2>
+    <p>Capture “which one did they click?” into the form. Put <code>d2-form-data-&lt;field&gt;="value"</code> on any container; a click inside it copies the value into the form as a hidden field named <code>&lt;field&gt;</code>. Perfect for a grid of product/plan cards that all open the same form popup.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>Webflow</button>
+        <button class="platform-tab" data-platform-tab="api"><span class="dot"></span>JavaScript</button>
+      </div>
+
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <p>Attributes on the card; the button inside opens the form popup. On click, <code>product</code> + <code>plan</code> land in the form.</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Product Card <span class="muted">(container)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-form-data-product = Pro plan</span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-form-data-plan = annual</span>
+          </div>
+          <div class="wf-children">
+            <div class="wf-el">
+              <span class="wf-elname">Button</span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-show-popup = lead</span>
+              <span class="chip chip--note">← click captures + opens</span>
+            </div>
+          </div>
+        </div>
+        <pre><code>&lt;div <span class="prop">d2-form-data-product</span>=<span class="string">"Pro plan"</span> <span class="prop">d2-form-data-plan</span>=<span class="string">"annual"</span>&gt;
+  <span class="comment">&lt;!-- card content --&gt;</span>
+  &lt;button <span class="prop">d2-show-popup</span>=<span class="string">"lead"</span>&gt;Ask about this&lt;/button&gt;
+&lt;/div&gt;</code></pre>
+        <p class="muted">The form receives hidden fields <code>product</code> and <code>plan</code> — they submit like any other field.</p>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="api">
+        <pre><code><span class="comment">// capture from a container/element programmatically</span>
+digi2.forms.<span class="fn">captureFrom</span>(<span class="prop">element</span>)
+
+<span class="comment">// or set a single field on a named form</span>
+digi2.forms.<span class="fn">setField</span>(<span class="string">'lead'</span>, <span class="string">'product'</span>, <span class="string">'Pro plan'</span>)</code></pre>
+      </div>
+    </div>
+
+    <h3>Attributes</h3>
+    <table>
+      <tr><th>Attribute</th><th>Role</th></tr>
+      <tr><td><code>d2-form-data-&lt;field&gt;="value"</code></td><td>Adds a hidden field named <code>&lt;field&gt;</code> with this value</td></tr>
+      <tr><td><code>d2-form-data-target="formName"</code></td><td>Send only to this form <span class="muted">(default: all registered forms)</span></td></tr>
+      <tr><td><code>d2-form-data-prefix="p_"</code></td><td>Prepend a prefix to every field name</td></tr>
+    </table>
+    <p class="muted">The <code>data-d2-</code> prefix works too. Re-clicking another card overwrites the field (no duplicates). The form must be created with <code>digi2.forms.create()</code> / <code>createAll()</code>.</p>
   </section>
 
   <!-- ── GOOGLE ── -->
