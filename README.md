@@ -56,6 +56,28 @@ Total (all modules): **167.6 KB min** / **49.7 KB** gzipped.
 
 ---
 
+## Per-page modules
+
+Keep the loader in the **global site head** (no flags) and request modules **per page** so each page only fetches what it uses. Drop a declaration element in the page's custom code — the loader scans on DOM-ready and loads exactly those modules.
+
+```html
+<!-- Site Settings → Custom Code → Head (once, every page) -->
+<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"></script>
+
+<!-- Page Settings → Custom Code (per page) -->
+<digi2-module d2-forms d2-popups></digi2-module>
+
+<!-- Or a space/comma list on any element -->
+<div d2-modules="forms popups cookies"></div>
+```
+
+- Flags on the loader tag and every `<digi2-module>` on the page are **merged and de-duplicated**.
+- `d2-gtm="GTM-XXX"` and `d2-ab-tests="configName"` work on the element too.
+- Calling a module API auto-loads it on demand; use `<digi2-module>` for declarative features (`d2-show-popup`, consent masters, auto-format) that need the module present without a JS call.
+- `digi2.modules.require('forms')` loads a module programmatically (returns a Promise).
+
+---
+
 ## Responsive attributes
 
 Any value-bearing `d2-*` attribute supports per-breakpoint overrides:

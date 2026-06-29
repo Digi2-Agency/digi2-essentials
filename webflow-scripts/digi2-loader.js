@@ -18,6 +18,7 @@
  *   d2-cookies  →  modules/cookies.js   Cookie get/set/remove helpers
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
+ *   d2-format   →  modules/format.js    Number and price formatting
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
@@ -451,6 +452,7 @@
     lazy: 'lazy',
     countdown: 'countdown',
     filter: 'filter',
+    format: 'format',
     copy: 'copy',
     cms: 'cms',
     interactions: 'interactions',
@@ -563,51 +565,96 @@
     refresh: _initStaticWidth,
   };
 
-  // ---- Discover requested modules from d2-* attributes --------------------
-  var modules = [];
-  var attrs = loaderScript.attributes;
+  // ---- Discover requested modules -----------------------------------------
+  // Modules can be declared two ways:
+  //   1. d2-* flags on the loader <script> tag — global, every page.
+  //   2. Per page, via a declaration element in the page's custom code:
+  //        <digi2-module d2-forms d2-popups></digi2-module>
+  //        <div d2-modules="forms popups"></div>   <!-- list form -->
+  //      Use this when the loader lives in the global site <head> but each
+  //      page needs a different set of modules — drop the tag in the page.
+  //
+  // A declaration element placed in the <body> (or page <head> below the
+  // loader) isn't parsed yet when the loader first runs, so we re-scan once
+  // the DOM is ready.
 
-  // Special: d2-gtm="GTM-XXX" — auto-loads google module and stores the ID
-  var gtmAttr = loaderScript.getAttribute('d2-gtm');
-  if (gtmAttr) {
-    window.digi2._gtmId = gtmAttr;
-    window.digi2.log('loader', 'd2-gtm detected → ' + gtmAttr);
+  function _pushModule(into, name) {
+    if (name && into.indexOf(name) === -1) into.push(name);
   }
 
-  var abTestsAttr = loaderScript.getAttribute('d2-ab-tests');
-  if (abTestsAttr) {
-    window.digi2._abTestsConfigName = abTestsAttr;
-    window.digi2.log('loader', 'd2-ab-tests detected → ' + abTestsAttr);
-  }
-
-  for (var i = 0; i < attrs.length; i++) {
-    var name = attrs[i].name;
-    if (name === 'd2-gtm') {
-      // d2-gtm="ID" loads the google module
-      if (modules.indexOf('google') === -1) modules.push('google');
-    } else if (name === 'd2-debug-mode') {
-      // skip — not a module
-    } else if (name.indexOf('d2-') === 0) {
-      modules.push(name.substring(3)); // "d2-popups" → "popups"
+  // Read module flags from one element's d2-* attributes (+ d2-modules list).
+  function _collectModules(el, into) {
+    if (!el || !el.attributes) return;
+    var a = el.attributes;
+    for (var i = 0; i < a.length; i++) {
+      var name = a[i].name;
+      if (name === 'd2-gtm') {
+        var id = el.getAttribute('d2-gtm');
+        if (id) window.digi2._gtmId = id;
+        _pushModule(into, 'google');
+      } else if (name === 'd2-ab-tests') {
+        var cfg = el.getAttribute('d2-ab-tests');
+        if (cfg) window.digi2._abTestsConfigName = cfg;
+        _pushModule(into, 'ab-tests');
+      } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules') {
+        // not a module flag
+      } else if (name.indexOf('d2-') === 0) {
+        var m = name.substring(3); // "d2-popups" -> "popups"
+        if (m === 'format-price' || m === 'format-number') m = 'format';
+        _pushModule(into, m);
+      }
+    }
+    // List form: d2-modules="forms popups, cookies"
+    var list = el.getAttribute('d2-modules');
+    if (list) {
+      list.split(/[\s,]+/).forEach(function (raw) {
+        if (!raw) return;
+        var m = raw.replace(/^d2-/, '');
+        if (m === 'gtm') m = 'google';
+        if (m === 'format-price' || m === 'format-number') m = 'format';
+        _pushModule(into, m);
+      });
     }
   }
 
-  if (modules.length === 0) {
-    console.warn('[digi2] No d2-* modules specified on the loader script tag.');
-    window.digi2._allLoaded = true;
-    window.digi2.emit('loaded');
-    return;
+  // Scan the document for per-page declaration elements.
+  function _scanDeclarations(into) {
+    var els = document.querySelectorAll('digi2-module, digi2-modules, [d2-module], [d2-modules]');
+    for (var i = 0; i < els.length; i++) _collectModules(els[i], into);
   }
 
-  // ---- Load initial modules (from d2-* attributes) -------------------------
-  Promise.all(modules.map(function (moduleName) {
-    return loadModule(moduleName);
-  })).then(function () {
-    window.digi2._allLoaded = true;
-    window.digi2.emit('loaded');
-  }).catch(function () {
-    // Some modules failed — still mark as done so onReady fires
-    window.digi2._allLoaded = true;
-    window.digi2.emit('loaded');
-  });
+  var modules = [];
+  _collectModules(loaderScript, modules); // loader tag (global)
+  _scanDeclarations(modules);             // declarations already in the DOM
+
+  // Load whatever is known right now — loader-tag modules start ASAP.
+  modules.forEach(function (m) { loadModule(m); });
+
+  function _finalizeLoad() {
+    _scanDeclarations(modules); // body / page declarations are now parsed
+
+    if (modules.length === 0) {
+      console.warn('[digi2] No modules requested. Add d2-* flags to the loader tag or a <digi2-module> element on the page.');
+      window.digi2._allLoaded = true;
+      window.digi2.emit('loaded');
+      return;
+    }
+
+    window.digi2.log('loader', 'modules requested', modules);
+
+    Promise.all(modules.map(function (m) { return loadModule(m); })).then(function () {
+      window.digi2._allLoaded = true;
+      window.digi2.emit('loaded');
+    }).catch(function () {
+      // Some modules failed — still mark done so onReady fires
+      window.digi2._allLoaded = true;
+      window.digi2.emit('loaded');
+    });
+  }
+
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', _finalizeLoad);
+  } else {
+    _finalizeLoad();
+  }
 })();

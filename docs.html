@@ -695,6 +695,7 @@
     </button>
     <div class="sidebar-group-items">
       <a href="#setup">Installation</a>
+      <a href="#per-page-modules">Per-Page Modules</a>
       <a href="#responsive">Responsive Attributes</a>
       <a href="#debug">Debug Mode</a>
     </div>
@@ -863,6 +864,47 @@
       <tr><td><code>d2-format</code></td><td>Number and price formatting</td><td>2.7 KB</td></tr>
     </table>
     <p>Loader itself: <strong>3.4 KB</strong>. Only requested modules are fetched.</p>
+  </section>
+
+  <!-- ── PER-PAGE MODULES ── -->
+  <section id="per-page-modules">
+    <h2>Per-Page Modules</h2>
+    <p>Put the loader once in the global site head, then request modules <em>per page</em> so each page only fetches what it uses. Drop a declaration element in the page’s custom code — the loader scans the page on DOM-ready and loads exactly those modules.</p>
+
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Site Settings → Head <span class="muted">(global, every page)</span></span>
+        <span class="chip chip--class"><span class="k">script</span> digi2-loader.min.js</span>
+        <span class="chip chip--note">← no module flags needed</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Page custom code <span class="muted">(per page)</span></span>
+        <span class="chip chip--attr"><span class="k">tag</span> &lt;digi2-module d2-forms d2-popups&gt;</span>
+        <span class="chip chip--note">← only this page loads forms + popups</span>
+      </div>
+    </div>
+
+    <pre><code><span class="comment">&lt;!-- Site Settings → Custom Code → Head (once, all pages) --&gt;</span>
+&lt;script src=<span class="string">"https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"</span>&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!-- Page Settings → Custom Code (per page) --&gt;</span>
+&lt;digi2-module <span class="prop">d2-forms</span> <span class="prop">d2-popups</span>&gt;&lt;/digi2-module&gt;</code></pre>
+
+    <h3>Two forms, same result</h3>
+    <pre><code><span class="comment">&lt;!-- Custom element with d2-* flags --&gt;</span>
+&lt;digi2-module <span class="prop">d2-forms</span> <span class="prop">d2-popups</span> <span class="prop">d2-cookies</span>&gt;&lt;/digi2-module&gt;
+
+<span class="comment">&lt;!-- Or a space/comma list on any element --&gt;</span>
+&lt;div <span class="prop">d2-modules</span>=<span class="string">"forms popups cookies"</span>&gt;&lt;/div&gt;</code></pre>
+
+    <div class="callout callout--info">
+      <span class="ic">ℹ︎</span>
+      <p>Flags on the loader tag and every <code>&lt;digi2-module&gt;</code> on the page are merged and de-duplicated. You can still keep global modules on the loader tag and add page-specific ones with the element. <code>d2-gtm="GTM-XXX"</code> and <code>d2-ab-tests="configName"</code> work on the element too.</p>
+    </div>
+    <div class="callout callout--tip">
+      <span class="ic">✓</span>
+      <p>Calling a module’s API also auto-loads it on demand (e.g. <code>digi2.forms.create()</code>). Use <code>&lt;digi2-module&gt;</code> when you rely on declarative features (<code>d2-show-popup</code>, consent masters, auto-format) that need the module present without a JS call.</p>
+    </div>
   </section>
 
   <!-- ── RESPONSIVE ── -->
