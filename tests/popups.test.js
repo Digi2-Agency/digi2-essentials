@@ -155,7 +155,7 @@ function buildPopup(env, { schedule, scheduleAttr, dataAttr } = {}) {
   env.body.appendChild(createElement('div', attrs));
 
   const options = { animation: 'none', openOnLoad: true };
-  if (schedule) options.schedule = schedule;
+  if (schedule !== undefined) options.schedule = schedule;
   return env.window.digi2.popups.create('promo', options);
 }
 
@@ -222,5 +222,44 @@ test('no schedule means always allowed', () => {
   const env = createEnvironment();
   loadPopupsModule(env);
   const inst = buildPopup(env, {});
+  assert.equal(inst.isVisible, true);
+});
+
+test('object form { from, to } opens inside the window', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const now = Date.now();
+  const inst = buildPopup(env, { schedule: { from: fmtLocal(now - HOUR), to: fmtLocal(now + HOUR) } });
+  assert.equal(inst.isVisible, true);
+});
+
+test('object form { from, to } stays hidden before the window', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const now = Date.now();
+  const inst = buildPopup(env, { schedule: { from: fmtLocal(now + HOUR), to: fmtLocal(now + 2 * HOUR) } });
+  assert.equal(inst.isVisible, false);
+});
+
+test('object form with only { from } stays open-ended afterwards', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const now = Date.now();
+  const inst = buildPopup(env, { schedule: { from: fmtLocal(now - HOUR) } });
+  assert.equal(inst.isVisible, true);
+});
+
+test('object form with only { to } suppresses once past', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const now = Date.now();
+  const inst = buildPopup(env, { schedule: { to: fmtLocal(now - HOUR) } });
+  assert.equal(inst.isVisible, false);
+});
+
+test('empty object schedule imposes no restriction', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const inst = buildPopup(env, { schedule: { from: '', to: '' } });
   assert.equal(inst.isVisible, true);
 });

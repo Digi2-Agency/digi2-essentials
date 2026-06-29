@@ -257,7 +257,7 @@
         openAfterPageViews: null,
         sessionStorageKey: 'popupPageViews',
         lockScrollOnShow: true,       // lock body scroll when popup is visible
-        schedule: null,               // "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM" — only show within this window (either side may be blank for open-ended). Also read from d2-popup-schedule / data-d2-popup-schedule on the popup element.
+        schedule: null,               // { from, to } or "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM" — only show within this window (either bound may be blank for open-ended). Also read from d2-popup-schedule / data-d2-popup-schedule on the popup element.
         // ---- New triggers --------------------------------------------------
         openOnOutsideClick: null,         // CSS selector — clicks anywhere outside this element open popup
         openOnElementMouseLeave: null,    // CSS selector — mouse leaving this element opens popup
@@ -365,11 +365,13 @@
 
     // ---- Scheduling ---------------------------------------------------------
     // Reads `schedule` from options, falling back to the popup element's
-    // d2-popup-schedule / data-d2-popup-schedule attribute. Format:
-    //   "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM"  → only show within [start, end]
-    // Either side may be blank for an open-ended window:
-    //   "2026-06-29 18:00,"   → from this moment on
-    //   ",2026-07-01 23:59"   → until this moment
+    // d2-popup-schedule / data-d2-popup-schedule attribute. Accepted forms:
+    //   { from: "YYYY-MM-DD HH:MM", to: "YYYY-MM-DD HH:MM" }   (JS API)
+    //   "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM"                   (string / attribute)
+    // Only shows within [from, to]. Either bound may be blank/omitted for an
+    // open-ended window:
+    //   { from: "2026-06-29 18:00" }   → from this moment on
+    //   ",2026-07-01 23:59"            → until this moment
     // Parsed in the visitor's local timezone. A date with no time defaults to
     // 00:00 for the start bound and 23:59:59 for the end bound of that day.
     _parseScheduleOption() {
@@ -380,21 +382,32 @@
       }
 
       this._schedule = null;
-      if (raw == null || String(raw).trim() === '') return;
+      if (raw == null) return;
 
-      var parts = String(raw).split(',');
-      var start = _parseScheduleDate(parts[0], false);
-      var end = parts.length > 1 ? _parseScheduleDate(parts[1], true) : null;
+      var fromRaw, toRaw;
+      if (typeof raw === 'object') {
+        fromRaw = raw.from;
+        toRaw = raw.to;
+      } else {
+        if (String(raw).trim() === '') return;
+        var parts = String(raw).split(',');
+        fromRaw = parts[0];
+        toRaw = parts.length > 1 ? parts[1] : null;
+      }
+
+      var start = _parseScheduleDate(fromRaw, false);
+      var end = _parseScheduleDate(toRaw, true);
 
       if (start === undefined || end === undefined) {
-        console.warn('[digi2.popups] "' + this.name + '" — invalid d2-popup-schedule: ' + raw);
+        console.warn('[digi2.popups] "' + this.name + '" — invalid schedule: ' + JSON.stringify(raw));
       }
       // `undefined` = present but unparseable → ignore that bound rather than
       // suppressing the popup forever.
-      this._schedule = {
-        start: typeof start === 'number' ? start : null,
-        end: typeof end === 'number' ? end : null,
-      };
+      start = typeof start === 'number' ? start : null;
+      end = typeof end === 'number' ? end : null;
+      if (start === null && end === null) return;
+
+      this._schedule = { start: start, end: end };
     }
 
     _isWithinSchedule() {
