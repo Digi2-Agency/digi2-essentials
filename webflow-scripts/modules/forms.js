@@ -989,12 +989,23 @@
      *   <span d2-form-success style="display:none">🟢</span>
      *   <span d2-form-error   style="display:none">🔴</span>
      */
-    _updateStateElements(inputEl, isValid, hasValue) {
-      var successEl = this._findFieldEl(inputEl, 'd2-form-success');
-      if (successEl) successEl.style.display = (isValid && hasValue) ? '' : 'none';
+    _setStateVisible(el, visible) {
+      if (!el) return;
+      if (!visible) { el.style.display = 'none'; return; }
+      // Clear the inline display first so the author's CSS layout wins.
+      el.style.display = '';
+      // …but if a CSS rule still hides it (e.g. .icon{display:none}), clearing
+      // the inline style is a no-op — force a visible value so it actually shows.
+      try {
+        if (typeof getComputedStyle === 'function' && getComputedStyle(el).display === 'none') {
+          el.style.display = 'inline-flex';
+        }
+      } catch (e) {}
+    }
 
-      var errorEl = this._findFieldEl(inputEl, 'd2-form-error');
-      if (errorEl) errorEl.style.display = !isValid ? '' : 'none';
+    _updateStateElements(inputEl, isValid, hasValue) {
+      this._setStateVisible(this._findFieldEl(inputEl, 'd2-form-success'), isValid && hasValue);
+      this._setStateVisible(this._findFieldEl(inputEl, 'd2-form-error'), !isValid);
     }
 
     /**

@@ -144,7 +144,8 @@ function matches(node, selector) {
   return false;
 }
 
-function createEnvironment() {
+function createEnvironment(opts) {
+  opts = opts || {};
   const body = createElement('body');
   const head = createElement('head');
   const wrapper = createElement('div', { 'd2-form': 'contact' });
@@ -193,7 +194,7 @@ function createEnvironment() {
       Event,
       setTimeout,
       URLSearchParams,
-      getComputedStyle: () => ({ display: '', visibility: '', opacity: '1' }),
+      getComputedStyle: () => ({ display: opts.computedDisplay || '', visibility: '', opacity: '1' }),
       fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
     }),
     window,
@@ -574,6 +575,32 @@ test('d2-form-success / d2-form-error toggle with field validity', () => {
   blur(input);
   assert.equal(success.style.display, 'none');
   assert.notEqual(error.style.display, 'none');
+});
+
+test('state element hidden by CSS display:none is forced visible on show', () => {
+  const env = createEnvironment({ computedDisplay: 'none' }); // simulate .icon{display:none}
+  loadFormsModule(env);
+
+  const form = env.master.parentElement;
+  const wrap = createElement('div', {});
+  const input = createElement('input', { type: 'text', name: 'EMAIL' });
+  const success = createElement('div', { 'd2-form-success': '' });
+  success.style.display = 'none';
+  wrap.appendChild(input);
+  wrap.appendChild(success);
+  form.appendChild(wrap);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false, clickIdTracking: false, gaClientId: false, pageMeta: false,
+    autoValidation: false,
+    validation: { EMAIL: { required: true, email: true } },
+  });
+
+  input.value = 'a@b.com';
+  input.dispatchEvent({ type: 'focusout', bubbles: true });
+
+  // '' would be a no-op against CSS display:none → module must force a value
+  assert.equal(success.style.display, 'inline-flex');
 });
 
 test('forms.setField sets a field on a registered form', () => {
