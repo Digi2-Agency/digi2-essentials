@@ -56,7 +56,8 @@
         direction: 'horizontal',       // 'horizontal' | 'vertical'
         slidesPerView: 1,
         gap: 0,                        // px between slides
-        loop: false,
+        loop: false,                   // rewind: snaps back to start at the end
+        infinite: false,               // true endless loop (cloned slides, no rewind)
         autoplay: false,               // false or ms (e.g. 3000)
         pauseOnHover: true,
         speed: 400,                    // transition speed in ms
@@ -84,6 +85,13 @@
       this._startPos = 0;
       this._currentTranslate = 0;
       this._prevTranslate = 0;
+
+      // Infinite-loop (clone) state
+      this._clones = 0;       // clones added on each side
+      this._realCount = 0;    // number of real (non-clone) slides
+      this._pos = 0;          // position over the extended track (incl. clones)
+      this._animating = false;
+      this._snapTimer = null;
 
       this._init();
     }
@@ -117,8 +125,19 @@
         return;
       }
 
+      this._realCount = this.slides.length;
+
+      // Endless loop needs clones on both sides. Only when there are more
+      // slides than fit in view — otherwise there is nothing to loop.
+      if (this.options.infinite && this._realCount > this.options.slidesPerView) {
+        this._setupClones();
+      } else {
+        this.options.infinite = false;
+      }
+
       _log('init → ' + this.name, {
-        slides: this.slides.length,
+        slides: this._realCount,
+        infinite: this.options.infinite,
         direction: this.options.direction,
         draggable: this.options.draggable,
       });
@@ -135,6 +154,7 @@
 
     destroy() {
       this.pause();
+      if (this._snapTimer) { clearTimeout(this._snapTimer); this._snapTimer = null; }
       this.containerEl = null;
       this.trackEl = null;
       this.slides = [];
@@ -154,6 +174,38 @@
     }
 
     // ---- Setup --------------------------------------------------------------
+
+    // For endless looping we clone `slidesPerView` slides onto each end:
+    // tail clones (copies of the first slides) appended after the last real
+    // slide, head clones (copies of the last slides) prepended before the
+    // first. Navigating onto a clone animates seamlessly, then we silently
+    // jump (no transition) to the matching real slide. this.slides becomes
+    // the full visual sequence; real slides live at index [_clones, _clones+_realCount).
+    _setupClones() {
+      var P = this.options.slidesPerView;
+      this._clones = P;
+
+      var real = this.slides;
+      var firstReal = real[0];
+
+      // Tail clones: copies of the first P slides, in order, appended.
+      for (var i = 0; i < P; i++) {
+        var tail = real[i].cloneNode(true);
+        tail.setAttribute('d2-slide-clone', '');
+        this.trackEl.appendChild(tail);
+      }
+
+      // Head clones: copies of the last P slides, in order, prepended.
+      for (var j = 0; j < P; j++) {
+        var head = real[real.length - P + j].cloneNode(true);
+        head.setAttribute('d2-slide-clone', '');
+        this.trackEl.insertBefore(head, firstReal);
+      }
+
+      // Re-collect the full sequence (real + clones) for sizing/translate.
+      this.slides = Array.from(this.trackEl.querySelectorAll('[d2-slide]'));
+      this._pos = this._clones + this.options.startIndex;
+    }
 
     _setupStyles() {
       var isH = this.options.direction === 'horizontal';
@@ -191,7 +243,7 @@
 
       this.dotsContainer.innerHTML = '';
       this.dots = [];
-      var count = this._getMaxIndex() + 1;
+      var count = this.options.infinite ? this._realCount : (this._getMaxIndex() + 1);
       var self = this;
 
       for (var i = 0; i < count; i++) {
@@ -331,9 +383,66 @@
       }
     }
 
+    // ---- Infinite-loop helpers ---------------------------------------------
+
+    // Real (0-based) index currently shown, derived from the extended pos.
+    _realIndex() {
+      var n = this._realCount;
+      return ((this._pos - this._clones) % n + n) % n;
+    }
+
+    // Move the track to an extended position (may be a clone).
+    _slideToPos(pos, animate) {
+      if (animate === false) this.trackEl.style.transition = 'none';
+
+      var size = this._getSlideSize();
+      this._currentTranslate = -pos * size;
+      this._setTranslate(this._currentTranslate);
+
+      if (animate === false) {
+        void this.trackEl.offsetHeight; // reflow so the snap is instant
+        this.trackEl.style.transition = 'transform ' + this.options.speed + 'ms ' + this.options.easing;
+      }
+    }
+
+    // After animating onto a clone, jump (no transition) to the matching
+    // real slide so the next move continues seamlessly forward/back.
+    _maybeSnap() {
+      var snapTo = null;
+      if (this._pos >= this._clones + this._realCount) snapTo = this._pos - this._realCount;
+      else if (this._pos < this._clones) snapTo = this._pos + this._realCount;
+      if (snapTo === null) return;
+
+      var self = this;
+      this._animating = true;
+
+      var done = function () {
+        self.trackEl.removeEventListener('transitionend', done);
+        if (self._snapTimer) { clearTimeout(self._snapTimer); self._snapTimer = null; }
+        self._pos = snapTo;
+        self._slideToPos(self._pos, false);
+        self._animating = false;
+      };
+
+      this.trackEl.addEventListener('transitionend', done);
+      // Fallback in case transitionend doesn't fire (tab blur, etc.)
+      this._snapTimer = setTimeout(done, this.options.speed + 60);
+    }
+
     // ---- Public API ---------------------------------------------------------
 
     next() {
+      if (this.options.infinite) {
+        if (this._animating) return;            // wait out a boundary snap
+        this._pos += 1;
+        this._currentIndex = this._realIndex();
+        this._slideToPos(this._pos, true);
+        this._updateState();
+        if (typeof this.options.onChange === 'function') this.options.onChange(this._currentIndex, this);
+        this._maybeSnap();
+        return;
+      }
+
       var maxIndex = this._getMaxIndex();
       var newIndex = this._currentIndex + 1;
 
@@ -346,6 +455,17 @@
     }
 
     prev() {
+      if (this.options.infinite) {
+        if (this._animating) return;
+        this._pos -= 1;
+        this._currentIndex = this._realIndex();
+        this._slideToPos(this._pos, true);
+        this._updateState();
+        if (typeof this.options.onChange === 'function') this.options.onChange(this._currentIndex, this);
+        this._maybeSnap();
+        return;
+      }
+
       var maxIndex = this._getMaxIndex();
       var newIndex = this._currentIndex - 1;
 
@@ -358,6 +478,21 @@
     }
 
     goTo(index, animate) {
+      if (this.options.infinite) {
+        var n = this._realCount;
+        var real = ((index % n) + n) % n;
+        this._currentIndex = real;
+        this._pos = this._clones + real;
+
+        _log('goTo → ' + real);
+
+        this._slideToPos(this._pos, animate);
+        this._updateState();
+
+        if (typeof this.options.onChange === 'function') this.options.onChange(real, this);
+        return;
+      }
+
       var maxIndex = this._getMaxIndex();
       index = Math.max(0, Math.min(index, maxIndex));
       this._currentIndex = index;
@@ -438,9 +573,12 @@
       var dotActiveClass = this.options.dotActiveClass;
       var perView = this.options.slidesPerView;
 
-      // Active slides
+      // Active slides — in infinite mode indices are offset by the head clones,
+      // and clones themselves never get the active class.
+      var offset = this.options.infinite ? this._clones : 0;
       this.slides.forEach(function (slide, i) {
-        if (i >= self._currentIndex && i < self._currentIndex + perView) {
+        var idx = i - offset;
+        if (idx >= self._currentIndex && idx < self._currentIndex + perView) {
           slide.classList.add(activeClass);
         } else {
           slide.classList.remove(activeClass);
@@ -456,8 +594,8 @@
         }
       });
 
-      // Arrow states (disable at bounds when no loop)
-      if (!this.options.loop) {
+      // Arrow states (disable at bounds when neither loop nor infinite)
+      if (!this.options.loop && !this.options.infinite) {
         if (this.prevBtn) {
           this.prevBtn.disabled = this._currentIndex === 0;
         }
@@ -550,9 +688,9 @@
   // Any [d2-slider] on the page is initialized automatically — no JS call
   // needed. Per-slider options come from attributes on the container:
   //   d2-slider-loop            d2-slider-autoplay="4000"
-  //   d2-slider-per-view="2"    d2-slider-gap="16"
-  //   d2-slider-direction="vertical"   d2-slider-draggable="false"
-  //   d2-slider-speed="400"
+  //   d2-slider-infinite        d2-slider-per-view="2"
+  //   d2-slider-gap="16"        d2-slider-direction="vertical"
+  //   d2-slider-draggable="false"   d2-slider-speed="400"
   // A MutationObserver re-scans so sliders injected later (CMS render, an
   // attribute-mapping script, etc.) get picked up too.
   // ---------------------------------------------------------------------------
@@ -572,6 +710,9 @@
     var o = {};
     var loop = _boolAttr(el, 'd2-slider-loop');
     if (loop !== undefined) o.loop = loop;
+
+    var infinite = _boolAttr(el, 'd2-slider-infinite');
+    if (infinite !== undefined) o.infinite = infinite;
 
     if (el.hasAttribute('d2-slider-autoplay')) {
       var ms = _numAttr(el, 'd2-slider-autoplay');
