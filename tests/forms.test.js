@@ -603,6 +603,26 @@ test('state element hidden by CSS display:none is forced visible on show', () =>
   assert.equal(success.style.display, 'inline-flex');
 });
 
+test('phone input filter keeps spaces and + but strips letters', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+
+  const form = env.master.parentElement;
+  const input = createElement('input', { type: 'tel', name: 'PHONE' });
+  form.appendChild(input);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false, clickIdTracking: false, gaClientId: false, pageMeta: false,
+    autoValidation: false,
+    validation: { PHONE: { required: true, phone: true } },
+  });
+
+  input.value = '+48 123 abc 456';
+  input.dispatchEvent({ type: 'input', bubbles: true });
+
+  assert.equal(input.value, '+48 123  456'); // letters stripped, spaces + plus kept
+});
+
 test('forms.setField sets a field on a registered form', () => {
   const env = createEnvironment();
   loadFormsModule(env);

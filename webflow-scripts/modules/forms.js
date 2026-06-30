@@ -870,7 +870,9 @@
      * from fields based on their validation rules.
      *
      * Currently:
-     *   - phone: true  → allow only digits, '+', and '-'
+     *   - phone: true  → allow digits, spaces and + - ( ) .
+     *                    (kept in sync with the `phone` validation rule so a
+     *                    formatted number like "+48 123 123 123" isn't stripped)
      */
     _setupInputFilters() {
       if (!this.formElement || !this._resolvedValidation) return;
@@ -882,7 +884,7 @@
         if (rules.phone === true) {
           var input = this.formElement.querySelector('[name="' + fieldName + '"]');
           if (!input || input.type === 'hidden') continue;
-          this._attachInputFilter(input, /[^\d+\-]/g, 'phone');
+          this._attachInputFilter(input, /[^\d\s+\-().]/g, 'phone');
         }
       }
     }
