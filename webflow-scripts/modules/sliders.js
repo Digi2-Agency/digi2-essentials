@@ -141,6 +141,9 @@
     // ---- Find container -----------------------------------------------------
 
     _findContainer() {
+      if (this.options.containerEl) {
+        return this.options.containerEl;
+      }
       if (this.options.containerSelector) {
         return document.querySelector(this.options.containerSelector);
       }
@@ -476,6 +479,50 @@
       var instance = new SliderManager(name, options);
       registry[name] = instance;
       return instance;
+    },
+
+    /**
+     * Initialize every [d2-slider] element on the page (or those matching
+     * `filter`). Each gets its own instance; duplicate names are made unique
+     * (e.g. gallery, gallery-2, gallery-3). Handy when the same slider markup
+     * repeats across CMS items — one call wires them all.
+     *
+     *   digi2.sliders.createAll({ loop: true })
+     *   digi2.sliders.createAll('.card-slider', { loop: true })  // CSS filter
+     *
+     * @param {string} [filter]   Optional CSS selector to narrow the elements
+     * @param {object} [options]  Shared options applied to every slider
+     * @returns {object[]} created instances
+     */
+    createAll: function (filter, options) {
+      if (typeof filter === 'object' && filter !== null) {
+        options = filter;
+        filter = null;
+      }
+      options = options || {};
+
+      var selector = filter || '[d2-slider]';
+      var els = document.querySelectorAll(selector);
+      var created = [];
+      var nameCount = {};
+
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        var base = el.getAttribute('d2-slider') || 'slider';
+        if (!base) base = 'slider';
+
+        nameCount[base] = (nameCount[base] || 0) + 1;
+        var key = nameCount[base] === 1 ? base : base + '-' + nameCount[base];
+        while (registry[key]) { nameCount[base]++; key = base + '-' + nameCount[base]; }
+
+        var opts = Object.assign({}, options, { containerEl: el });
+        var instance = new SliderManager(key, opts);
+        registry[key] = instance;
+        created.push(instance);
+      }
+
+      _log('createAll → ' + created.length + ' sliders', { selector: selector });
+      return created;
     },
 
     get: function (name) {
