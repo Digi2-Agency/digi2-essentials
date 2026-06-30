@@ -98,6 +98,9 @@
         return;
       }
 
+      // Mark so auto-init doesn't double-initialize this element.
+      if (this.containerEl.setAttribute) this.containerEl.setAttribute('d2-slider-ready', '');
+
       this.trackEl = this.containerEl.querySelector('[d2-slider-track]');
       if (!this.trackEl) {
         // If no explicit track, use direct children
@@ -541,4 +544,99 @@
       return Object.keys(registry);
     },
   };
+
+  // ---------------------------------------------------------------------------
+  // Declarative auto-init
+  // Any [d2-slider] on the page is initialized automatically — no JS call
+  // needed. Per-slider options come from attributes on the container:
+  //   d2-slider-loop            d2-slider-autoplay="4000"
+  //   d2-slider-per-view="2"    d2-slider-gap="16"
+  //   d2-slider-direction="vertical"   d2-slider-draggable="false"
+  //   d2-slider-speed="400"
+  // A MutationObserver re-scans so sliders injected later (CMS render, an
+  // attribute-mapping script, etc.) get picked up too.
+  // ---------------------------------------------------------------------------
+  function _boolAttr(el, name) {
+    if (!el.hasAttribute(name)) return undefined;
+    var v = el.getAttribute(name);
+    return v === '' || v === 'true' || v === '1' || v === 'yes';
+  }
+
+  function _numAttr(el, name) {
+    if (!el.hasAttribute(name)) return undefined;
+    var n = parseFloat(el.getAttribute(name));
+    return isNaN(n) ? undefined : n;
+  }
+
+  function _optsFromAttrs(el) {
+    var o = {};
+    var loop = _boolAttr(el, 'd2-slider-loop');
+    if (loop !== undefined) o.loop = loop;
+
+    if (el.hasAttribute('d2-slider-autoplay')) {
+      var ms = _numAttr(el, 'd2-slider-autoplay');
+      o.autoplay = ms !== undefined ? ms : (_boolAttr(el, 'd2-slider-autoplay') ? 3000 : false);
+    }
+
+    var pv = _numAttr(el, 'd2-slider-per-view');
+    if (pv === undefined) pv = _numAttr(el, 'd2-slider-slides-per-view');
+    if (pv !== undefined) o.slidesPerView = pv;
+
+    var gap = _numAttr(el, 'd2-slider-gap');
+    if (gap !== undefined) o.gap = gap;
+
+    var dir = el.getAttribute('d2-slider-direction');
+    if (dir) o.direction = dir;
+
+    var drag = _boolAttr(el, 'd2-slider-draggable');
+    if (drag !== undefined) o.draggable = drag;
+
+    var speed = _numAttr(el, 'd2-slider-speed');
+    if (speed !== undefined) o.speed = speed;
+
+    return o;
+  }
+
+  function _autoInit() {
+    var els = document.querySelectorAll('[d2-slider]:not([d2-slider-ready])');
+    var nameCount = {};
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var base = el.getAttribute('d2-slider') || 'slider';
+      if (!base) base = 'slider';
+
+      nameCount[base] = (nameCount[base] || 0) + 1;
+      var key = nameCount[base] === 1 ? base : base + '-' + nameCount[base];
+      while (registry[key]) { nameCount[base]++; key = base + '-' + nameCount[base]; }
+
+      var opts = _optsFromAttrs(el);
+      opts.containerEl = el;
+      registry[key] = new SliderManager(key, opts);
+    }
+  }
+
+  var _autoMo = null;
+  function _startAutoObserver() {
+    if (typeof MutationObserver === 'undefined' || !document.body || _autoMo) return;
+    var t = null;
+    _autoMo = new MutationObserver(function () {
+      if (t) return;
+      t = setTimeout(function () { t = null; _autoInit(); }, 50);
+    });
+    _autoMo.observe(document.body, {
+      childList: true, subtree: true,
+      attributes: true, attributeFilter: ['d2-slider'],
+    });
+  }
+
+  function _boot() {
+    _autoInit();
+    _startAutoObserver();
+  }
+
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', _boot);
+  } else {
+    _boot();
+  }
 })();
