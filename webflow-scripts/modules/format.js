@@ -10,6 +10,13 @@
  *   <div d2-format-price d2-format-currency="PLN">199999</div>
  *   <div d2-format-price d2-format-currency="EUR">199999</div>
  *   <div d2-format-price d2-format-decimals="2">199999</div>
+ *   <div d2-format-price d2-format-unit="zł/m²">20500</div>       -> 20 500 zł/m²
+ *   <div d2-format-price d2-format-suffix="zł/m²" d2-format-space>20500</div>
+ *
+ * Uwaga: Webflow przycina spacje na krańcach wartości atrybutu, więc
+ *   d2-format-suffix=" zł/m²"  ->  "zł/m²" (bez odstępu). Dlatego użyj:
+ *     d2-format-unit="zł/m²"   (jednostka zawsze poprzedzona spacją), albo
+ *     d2-format-space          (wymusza spację przed suffixem/walutą).
  *
  * API:
  *   digi2.format.price(199999)                         -> "199 999"
@@ -94,20 +101,33 @@
       body = number.toFixed(decimals);
     }
 
-    return normalSpaces((options.prefix || '') + body + (options.suffix || ''));
+    var suffix = options.suffix;
+    // jednostka: zawsze poprzedzona spacją kontrolowaną przez moduł (Webflow nie tnie)
+    if ((suffix == null || suffix === '') && options.unit != null && options.unit !== '') {
+      suffix = ' ' + options.unit;
+    }
+    // wymuszenie spacji przed suffixem (gdy Webflow ją przyciął)
+    if (options.space && suffix && !/^\s/.test(suffix)) suffix = ' ' + suffix;
+
+    return normalSpaces((options.prefix || '') + body + (suffix || ''));
   }
 
   function formatPrice(value, options) {
     options = options || {};
     var currency = options.currency == null ? '' : String(options.currency);
     var suffix = options.suffix;
-    if (suffix == null) suffix = currency ? ' ' + currency : '';
+    // brak jawnego suffixu i brak jednostki -> domyślnie waluta (ze spacją)
+    if (suffix == null && (options.unit == null || options.unit === '') && currency) {
+      suffix = ' ' + currency;
+    }
 
     return formatNumber(value, {
       locale: options.locale || 'pl-PL',
       decimals: typeof options.decimals === 'number' ? options.decimals : 0,
       prefix: options.prefix || '',
       suffix: suffix,
+      unit: options.unit,
+      space: options.space,
     });
   }
 
@@ -117,6 +137,8 @@
     var decimals = integerOrNull(attr(el, 'd2-format-decimals'));
     var prefix = attr(el, 'd2-format-prefix') || '';
     var suffix = attr(el, 'd2-format-suffix');
+    var unit = attr(el, 'd2-format-unit');
+    var space = !!(el && el.hasAttribute && el.hasAttribute('d2-format-space'));
     var currency = attr(el, 'd2-format-currency');
 
     if (isPrice) {
@@ -124,17 +146,17 @@
       if ((currency == null || currency === '') && priceAttr && priceAttr !== 'true') {
         currency = priceAttr;
       }
-      if (suffix == null) suffix = currency ? ' ' + currency : '';
-    } else if (suffix == null) {
-      suffix = '';
     }
+    // suffix/unit/waluta rozwiązywane w formatPrice/formatNumber
 
     return {
       locale: locale,
-      decimals: decimals == null ? (isPrice ? 0 : 0) : decimals,
+      decimals: decimals == null ? 0 : decimals,
       prefix: prefix,
       suffix: suffix,
       currency: currency,
+      unit: unit,
+      space: space,
     };
   }
 

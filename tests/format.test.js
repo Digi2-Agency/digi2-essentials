@@ -180,3 +180,37 @@ test('price formatter appends currency only when configured', async () => {
   assert.equal(price.textContent, '199 999 PLN');
   assert.equal(suffixed.textContent, '422 934 PLN netto');
 });
+
+test('d2-format-unit prepends a module-controlled space before the unit', async () => {
+  const env = createEnvironment();
+  const el = createElement('div', { 'd2-format-price': '', 'd2-format-unit': 'zł/m²' }, '20500');
+  env.body.appendChild(el);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(el.textContent, '20 500 zł/m²');
+  assert.equal(env.window.digi2.format.price('20500', { unit: 'zł/m²' }), '20 500 zł/m²');
+});
+
+test('d2-format-space forces a space before a suffix trimmed by Webflow', async () => {
+  const env = createEnvironment();
+  const el = createElement('div', { 'd2-format-price': '', 'd2-format-suffix': 'zł/m²', 'd2-format-space': '' }, '20500');
+  env.body.appendChild(el);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(el.textContent, '20 500 zł/m²');
+});
+
+test('d2-format-space does not double an existing leading space', async () => {
+  const env = createEnvironment();
+  const el = createElement('div', { 'd2-format-price': '', 'd2-format-currency': 'PLN', 'd2-format-space': '' }, '199999');
+  env.body.appendChild(el);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(el.textContent, '199 999 PLN');
+});
