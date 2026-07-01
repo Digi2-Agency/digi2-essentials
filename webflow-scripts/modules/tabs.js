@@ -572,38 +572,27 @@
       var self = this;
       var done = typeof onDone === 'function' ? onDone : function () {};
       this._animating = true;
-
-      // Measure the panel at its FINAL height first (inline height removed → its
-      // CSS height / natural content height applies). Measuring while collapsed
-      // to 0 would zero out percentage-height children (e.g. a slider set to
-      // height:100%), producing a wrong, tiny target. offsetHeight respects a
-      // fixed CSS height too, so the end state matches the design exactly.
-      showElement(panel);
       panel.style.overflow = 'hidden';
-      panel.style.transition = 'none';
-      panel.style.height = '';
-      var target = panel.offsetHeight;
-
-      // Collapse to 0, then animate up to the measured height.
-      panel.style.height = '0px';
-      void panel.offsetHeight;                       // commit the 0 state
-      panel.style.transition = 'height ' + dur + 's ease';
-      panel.style.height = target + 'px';
+      panel.style.maxHeight = '0px';
+      panel.style.transition = 'max-height ' + dur + 's ease';
+      showElement(panel);
+      void panel.offsetHeight;                       // reflow at 0
+      panel.style.maxHeight = panel.scrollHeight + 'px';
 
       var finished = false;
       function finish() {
         if (finished) return;
         finished = true;
         panel.removeEventListener('transitionend', handler);
-        // Revert to the stylesheet height (fixed or auto) — no end-of-anim jump.
-        panel.style.height = '';
+        // Let the panel grow naturally afterwards (nested media, etc.)
+        panel.style.maxHeight = 'none';
         panel.style.overflow = '';
         panel.style.transition = '';
         self._animating = false;
         done();
       }
       function handler(e) {
-        if (e && e.propertyName && e.propertyName !== 'height') return;
+        if (e && e.propertyName && e.propertyName !== 'max-height') return;
         finish();
       }
       panel.addEventListener('transitionend', handler);
@@ -613,23 +602,22 @@
     _hidePanelHeight(panel, dur) {
       var finished = false;
       panel.style.overflow = 'hidden';
-      panel.style.transition = 'none';
-      panel.style.height = panel.offsetHeight + 'px';      // pin current rendered height
-      void panel.offsetHeight;                             // commit the pinned height
-      panel.style.transition = 'height ' + dur + 's ease';
-      panel.style.height = '0px';
+      panel.style.maxHeight = panel.scrollHeight + 'px';   // pin current height
+      panel.style.transition = 'max-height ' + dur + 's ease';
+      void panel.offsetHeight;                             // reflow
+      panel.style.maxHeight = '0px';
 
       function finish() {
         if (finished) return;
         finished = true;
         panel.removeEventListener('transitionend', handler);
         hideElement(panel);
-        panel.style.height = '';
+        panel.style.maxHeight = '';
         panel.style.overflow = '';
         panel.style.transition = '';
       }
       function handler(e) {
-        if (e && e.propertyName && e.propertyName !== 'height') return;
+        if (e && e.propertyName && e.propertyName !== 'max-height') return;
         finish();
       }
       panel.addEventListener('transitionend', handler);
