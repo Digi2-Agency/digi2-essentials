@@ -130,6 +130,8 @@
         defaultOpen: null,            // tab id to open by default (string or array for accordion)
         activeClass: 'd2-tab-active', // class added to active trigger
         hashSync: false,              // sync active tab with URL hash
+        scroll: false,                // on open, scroll the panel into view
+        scrollBlock: 'center',        // scrollIntoView block: start|center|end|nearest
         onChange: null,               // callback(tabId, instance)
         ...options,
       };
@@ -329,6 +331,12 @@
       this._activeTabs.add(tabId);
       this._updateTriggers();
 
+      // Scroll the freshly opened panel into view (centered by default). Skip
+      // during the initial default-open so the page doesn't jump on load.
+      if (this.options.scroll && !this._initializing) {
+        this._scrollToTab(tabId);
+      }
+
       if (this.options.hashSync) {
         history.replaceState(null, '', '#' + tabId);
       }
@@ -373,6 +381,23 @@
     getActive() {
       var arr = Array.from(this._activeTabs);
       return this.options.mode === 'tabs' ? (arr[0] || null) : arr;
+    }
+
+    // Scroll a freshly opened panel into view. Waits out the open animation so
+    // the final (height-animated) layout is settled before centering. Targets
+    // the panel; falls back to the trigger row when the panel is missing.
+    _scrollToTab(tabId) {
+      var target = this._getPanel(tabId) || this._getTrigger(tabId);
+      if (!target || typeof target.scrollIntoView !== 'function') return;
+      var block = this.options.scrollBlock || 'center';
+      var delay = Math.max(0, (this.options.animationDuration || 0) * 1000);
+      setTimeout(function () {
+        try {
+          target.scrollIntoView({ behavior: 'smooth', block: block, inline: 'nearest' });
+        } catch (e) {
+          target.scrollIntoView();
+        }
+      }, delay);
     }
 
     // ---- Internal -----------------------------------------------------------
@@ -628,6 +653,8 @@
     //   d2-tab-duration="0.4"          (seconds)
     //   d2-tab-multiple                (accordion: allow several open at once)
     //   d2-tab-default="item-1"        (id, or "a|b" for multiple)
+    //   d2-tab-scroll                  (on open, scroll panel to center; value
+    //                                   start|center|end|nearest overrides block)
     function _optionsFromGroup(group) {
       var o = { animation: 'none' };
       var mode = attr(group, 'd2-tab-mode');
@@ -639,6 +666,13 @@
       }
       var dur = parseFloat(attr(group, 'd2-tab-duration'));
       if (!isNaN(dur)) o.animationDuration = dur;
+      // d2-tab-scroll            → scroll opened panel into view (centered)
+      // d2-tab-scroll="start"    → override block (start|center|end|nearest)
+      if (group.hasAttribute && group.hasAttribute('d2-tab-scroll')) {
+        o.scroll = true;
+        var sb = String(attr(group, 'd2-tab-scroll') || '').trim().toLowerCase();
+        if (sb === 'start' || sb === 'center' || sb === 'end' || sb === 'nearest') o.scrollBlock = sb;
+      }
       var def = attr(group, 'd2-tab-default');
       if (def) o.defaultOpen = def.indexOf('|') !== -1 ? def.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : def;
       return o;

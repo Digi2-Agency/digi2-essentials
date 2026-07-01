@@ -70,6 +70,9 @@ function createElement(tagName, attrs) {
         this._listeners.click({ preventDefault() {}, target: this });
       }
     },
+    scrollIntoView(opts) {
+      this._scrolledInto = opts || {};
+    },
     querySelectorAll(selector) {
       const results = [];
       const selectors = selector.split(',').map((item) => item.trim());
@@ -331,4 +334,26 @@ test('nested tab groups do not steal each others triggers/panels', () => {
   rowTrigger.click();
   assert.equal(listPanel.style.display, '', 'list view must stay visible');
   assert.equal(rowPanel.style.display, '', 'row panel must open');
+});
+
+test('scroll option scrolls the opened panel into view (centered), not on default open', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  env.window.digi2.tabs.create('pricing', {
+    animation: 'none',
+    animationDuration: 0,
+    scroll: true,
+  });
+
+  // Default-open (monthly) must NOT scroll the page on load.
+  assert.equal(env.monthlyPanel._scrolledInto, undefined);
+
+  env.yearlyTrigger.click();
+  await wait(5);
+
+  assert.ok(env.yearlyPanel._scrolledInto, 'opened panel was scrolled into view');
+  assert.equal(env.yearlyPanel._scrolledInto.block, 'center');
+  assert.equal(env.yearlyPanel._scrolledInto.behavior, 'smooth');
 });
