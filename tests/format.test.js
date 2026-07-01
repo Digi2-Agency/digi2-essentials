@@ -214,3 +214,19 @@ test('d2-format-space does not double an existing leading space', async () => {
 
   assert.equal(el.textContent, '199 999 PLN');
 });
+
+test('d2-format-price inside a hidden nested panel (accordion) still formats', async () => {
+  const env = createEnvironment();
+  // Mirrors the list layout: item → hidden accordion panel → price
+  const item = createElement('div', { 'd2-cms-item': '' });
+  const panel = createElement('div', { 'd2-tab-instance': 'a-3-12' });
+  const price = createElement('div', { 'd2-format-price': '' }, '1683540');
+  panel.appendChild(price);
+  item.appendChild(panel);
+  env.body.appendChild(item);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(price.textContent, '1 683 540', 'hidden nested price must format');
+});
