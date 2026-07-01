@@ -6,6 +6,10 @@ const vm = require('node:vm');
 
 const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'format.js');
 
+// Formatted output uses non-breaking spaces by default; nb() rewrites the
+// regular spaces in an expected literal to U+00A0 so assertions stay readable.
+const nb = (s) => s.replace(/ /g, String.fromCharCode(160));
+
 function createElement(tagName, attrs, textContent) {
   const classes = new Set();
   const el = {
@@ -138,8 +142,8 @@ test('d2-format-price formats plain CMS text without a default currency suffix',
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(price.textContent, '199 999');
-  assert.equal(env.window.digi2.format.price('422934.4'), '422 934');
+  assert.equal(price.textContent, nb('199 999'));
+  assert.equal(env.window.digi2.format.price('422934.4'), nb('422 934'));
 });
 
 test('d2-format-number price alias formats dynamically added elements', async () => {
@@ -153,7 +157,7 @@ test('d2-format-number price alias formats dynamically added elements', async ()
   env.observers.forEach((observer) => observer.callback());
   await flushTimers();
 
-  assert.equal(price.textContent, '422 934');
+  assert.equal(price.textContent, nb('422 934'));
 });
 
 test('legacy format-price class is treated as a price formatter without default suffix', async () => {
@@ -164,7 +168,7 @@ test('legacy format-price class is treated as a price formatter without default 
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(price.textContent, '199 999');
+  assert.equal(price.textContent, nb('199 999'));
 });
 
 test('price formatter appends currency only when configured', async () => {
@@ -177,8 +181,8 @@ test('price formatter appends currency only when configured', async () => {
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(price.textContent, '199 999 PLN');
-  assert.equal(suffixed.textContent, '422 934 PLN netto');
+  assert.equal(price.textContent, nb('199 999 PLN'));
+  assert.equal(suffixed.textContent, nb('422 934 PLN netto'));
 });
 
 test('d2-format-unit prepends a module-controlled space before the unit', async () => {
@@ -189,8 +193,8 @@ test('d2-format-unit prepends a module-controlled space before the unit', async 
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(el.textContent, '20 500 zł/m²');
-  assert.equal(env.window.digi2.format.price('20500', { unit: 'zł/m²' }), '20 500 zł/m²');
+  assert.equal(el.textContent, nb('20 500 zł/m²'));
+  assert.equal(env.window.digi2.format.price('20500', { unit: 'zł/m²' }), nb('20 500 zł/m²'));
 });
 
 test('d2-format-space forces a space before a suffix trimmed by Webflow', async () => {
@@ -201,7 +205,7 @@ test('d2-format-space forces a space before a suffix trimmed by Webflow', async 
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(el.textContent, '20 500 zł/m²');
+  assert.equal(el.textContent, nb('20 500 zł/m²'));
 });
 
 test('d2-format-space does not double an existing leading space', async () => {
@@ -212,7 +216,7 @@ test('d2-format-space does not double an existing leading space', async () => {
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(el.textContent, '199 999 PLN');
+  assert.equal(el.textContent, nb('199 999 PLN'));
 });
 
 test('d2-format-price inside a hidden nested panel (accordion) still formats', async () => {
@@ -228,7 +232,7 @@ test('d2-format-price inside a hidden nested panel (accordion) still formats', a
   loadFormatModule(env);
   await flushTimers();
 
-  assert.equal(price.textContent, '1 683 540', 'hidden nested price must format');
+  assert.equal(price.textContent, nb('1 683 540'), 'hidden nested price must format');
 });
 
 test('d2-format-nbsp keeps separators as non-breaking spaces (no wrap)', async () => {
@@ -248,4 +252,16 @@ test('d2-format-nbsp keeps separators as non-breaking spaces (no wrap)', async (
   env.body.appendChild(withCur);
   env.window.digi2.format.refresh();
   assert.equal(withCur.textContent, '1 468 620 PLN', 'suffix space must be non-breaking too');
+});
+
+test('d2-format-break opts back into regular, wrappable spaces', async () => {
+  const env = createEnvironment();
+  const price = createElement('div', { 'd2-format-price': '', 'd2-format-break': '' }, '1468620');
+  env.body.appendChild(price);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(price.textContent, '1 468 620', 'regular spaces when opted out');
+  assert.equal(/ /.test(price.textContent), false, 'no non-breaking spaces remain');
 });
