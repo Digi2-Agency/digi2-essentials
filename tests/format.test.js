@@ -230,3 +230,22 @@ test('d2-format-price inside a hidden nested panel (accordion) still formats', a
 
   assert.equal(price.textContent, '1 683 540', 'hidden nested price must format');
 });
+
+test('d2-format-nbsp keeps separators as non-breaking spaces (no wrap)', async () => {
+  const env = createEnvironment();
+  const price = createElement('div', { 'd2-format-price': '', 'd2-format-nbsp': '' }, '1468620');
+  env.body.appendChild(price);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(price.textContent, '1 468 620', 'thousands separators must be U+00A0');
+  assert.equal(/[  ]/.test(price.textContent), false, 'no regular/narrow spaces remain');
+
+  const withCur = createElement('div', {
+    'd2-format-price': '', 'd2-format-currency': 'PLN', 'd2-format-nbsp': '',
+  }, '1468620');
+  env.body.appendChild(withCur);
+  env.window.digi2.format.refresh();
+  assert.equal(withCur.textContent, '1 468 620 PLN', 'suffix space must be non-breaking too');
+});

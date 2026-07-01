@@ -12,6 +12,7 @@
  *   <div d2-format-price d2-format-decimals="2">199999</div>
  *   <div d2-format-price d2-format-unit="zł/m²">20500</div>       -> 20 500 zł/m²
  *   <div d2-format-price d2-format-suffix="zł/m²" d2-format-space>20500</div>
+ *   <div d2-format-price d2-format-nbsp>1468620</div>          -> 1 468 620 (U+00A0, no wrap)
  *
  * Uwaga: Webflow przycina spacje na krańcach wartości atrybutu, więc
  *   d2-format-suffix=" zł/m²"  ->  "zł/m²" (bez odstępu). Dlatego użyj:
@@ -68,6 +69,12 @@
     return String(value).replace(/\u00A0|\u202F/g, ' ');
   }
 
+  // Force every regular/narrow space to a non-breaking space so a formatted
+  // number never wraps mid-value (e.g. "1 468 620 z\u0142" stays on one line).
+  function toNbsp(value) {
+    return String(value).replace(/[ \u202F]/g, '\u00A0');
+  }
+
   function integerOrNull(value) {
     if (value == null || value === '') return null;
     var parsed = parseInt(value, 10);
@@ -109,7 +116,11 @@
     // wymuszenie spacji przed suffixem (gdy Webflow ją przyciął)
     if (options.space && suffix && !/^\s/.test(suffix)) suffix = ' ' + suffix;
 
-    return normalSpaces((options.prefix || '') + body + (suffix || ''));
+    var out = (options.prefix || '') + body + (suffix || '');
+    // d2-format-nbsp → keep every space non-breaking (thousands separator +
+    // any prefix/suffix space) so the price never wraps mid-number. Default
+    // stays regular spaces via normalSpaces() for backwards compatibility.
+    return options.nbsp ? toNbsp(out) : normalSpaces(out);
   }
 
   function formatPrice(value, options) {
@@ -128,6 +139,7 @@
       suffix: suffix,
       unit: options.unit,
       space: options.space,
+      nbsp: options.nbsp,
     });
   }
 
@@ -139,6 +151,7 @@
     var suffix = attr(el, 'd2-format-suffix');
     var unit = attr(el, 'd2-format-unit');
     var space = !!(el && el.hasAttribute && el.hasAttribute('d2-format-space'));
+    var nbsp = !!(el && el.hasAttribute && el.hasAttribute('d2-format-nbsp'));
     var currency = attr(el, 'd2-format-currency');
 
     if (isPrice) {
@@ -157,6 +170,7 @@
       currency: currency,
       unit: unit,
       space: space,
+      nbsp: nbsp,
     };
   }
 
