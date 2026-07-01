@@ -44,6 +44,20 @@
  *   <button d2-cms-target="products" d2-cms-load-more>Load more</button>
  *   <div    d2-cms-target="products" d2-cms-empty>No matches.</div>
  *
+ *   Facet filter from a native <select> (single-select; empty value = clear):
+ *     <select d2-cms-target="products" d2-cms-filter-field="floor">
+ *       <option value="">Any floor</option>
+ *       <option value="1">1</option><option value="2">2</option>
+ *     </select>
+ *
+ *   Clear all filters (facet + range). d2-cms-clear="all" also clears sort:
+ *     <a d2-cms-target="products" d2-cms-clear>Clear filters</a>
+ *
+ *   Inline field values on the item (instead of a nested [d2-cms-field]):
+ *     <div d2-cms-item
+ *          d2-cms-field-status="Available"
+ *          d2-cms-field-price="1200" d2-cms-field-type-price="number">…</div>
+ *
  * API:
  *   digi2.cms.createList('products', { perPage: 12, loadMode: 'scroll', ... })
  *   digi2.cms.create(...)              // alias of createList
@@ -108,6 +122,24 @@
       fields[key] = (el.textContent || '').trim();
       var t = attr(el, 'd2-cms-field-type');
       if (t) types[key] = normalizeType(t);
+    }
+    // Inline attribute fields on the item element itself:
+    //   d2-cms-field-<name>="value"        → same as <span d2-cms-field="<name>">value</span>
+    //   d2-cms-field-type-<name>="number"  → optional type for that inline field
+    // Handy when you don't want an extra hidden element per field. Nested
+    // [d2-cms-field] elements take precedence if the same name appears twice.
+    if (itemEl.attributes) {
+      var PFX = 'd2-cms-field-';
+      for (var a = 0; a < itemEl.attributes.length; a++) {
+        var an = itemEl.attributes[a].name;               // DOM lowercases attr names
+        if (an.indexOf(PFX) !== 0) continue;
+        var suffix = an.slice(PFX.length);
+        if (!suffix || suffix === 'type' || suffix.indexOf('type-') === 0) continue; // reserved
+        if (suffix in fields) continue;                   // nested element wins
+        fields[suffix] = String(itemEl.attributes[a].value || '').trim();
+        var it = itemEl.getAttribute(PFX + 'type-' + suffix);
+        if (it) types[suffix] = normalizeType(it);
+      }
     }
     return { fields: fields, types: types };
   }
@@ -1627,6 +1659,9 @@
       // Native <select> sort controls — sync select.value to the active sort
       this._reflectSortSelects();
 
+      // Native <select d2-cms-filter-field> controls — sync to active filter
+      this._reflectFilterSelects();
+
       // Sort-label elements (custom dropdown trigger text, standalone display)
       this._reflectSortLabels();
 
@@ -1638,6 +1673,22 @@
     // matches the current _sort state and sync the select's value to it.
     // This keeps a native select in sync when sort is changed programmatically
     // or via a different UI element (e.g. custom dropdown item).
+    // For each <select d2-cms-filter-field="key"> targeting this list, sync the
+    // select's value to the active filter for that key (first value), or '' when
+    // no filter is active. Keeps the dropdown correct after clear / programmatic
+    // filter changes.
+    _reflectFilterSelects() {
+      var self = this;
+      var selects = document.querySelectorAll('select[d2-cms-filter-field]');
+      Array.prototype.forEach.call(selects, function (sel) {
+        if (_resolveTargetName(sel) !== self.name) return;
+        var key = attr(sel, 'd2-cms-filter-field');
+        var set = self._filters[key];
+        var val = (set && set.size) ? String(Array.from(set)[0]) : '';
+        if (sel.value !== val) sel.value = val;
+      });
+    }
+
     _reflectSortSelects() {
       var self = this;
       var selects = document.querySelectorAll('select');
@@ -2186,6 +2237,7 @@
     //   empty/missing → falls back to perPage.
     var loadBtn = target.closest('[d2-cms-load-more], [d2-cms-loadcount]');
     var dirBtn = target.closest('[d2-cms-direction]');
+    var clearBtn = target.closest('[d2-cms-clear]');
 
     // Checkbox/radio inputs drive filters via the 'change' event — let the
     // browser toggle `checked` natively and skip the click path here.
@@ -2194,7 +2246,7 @@
       filterBtn = null;
     }
 
-    var btn = sortBtn || filterBtn || loadBtn || dirBtn;
+    var btn = sortBtn || filterBtn || loadBtn || dirBtn || clearBtn;
     if (!btn) return;
 
     var names = _resolveTargetNames(btn);
@@ -2245,6 +2297,14 @@
       var dirVal = (attr(dirBtn, 'd2-cms-direction') || 'toggle').trim();
       instance.setDirection(dirVal || 'toggle');
       _syncSortFrom(instance, mirrors);
+    } else if (clearBtn) {
+      // Clear all facet + range filters. d2-cms-clear="all" also clears sort.
+      var alsoSort = (attr(clearBtn, 'd2-cms-clear') || '').trim().toLowerCase() === 'all';
+      instances.forEach(function (cms) {
+        cms.clearFilters();      // also clears range filters internally
+        if (alsoSort && typeof cms.clearSort === 'function') cms.clearSort();
+      });
+      _resetRangeSlidersFor(names);   // snap slider handles back to full extent
     }
 
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
@@ -2297,6 +2357,24 @@
     }
 
     if (target.tagName !== 'SELECT') return;
+
+    // ---- <select d2-cms-filter-field="floor"> — value-based facet filter ----
+    // Selected <option value="3"> filters key "floor" to "3". An empty value
+    // (e.g. <option value="">Any</option>) clears that key. Single-select
+    // semantics: the chosen value replaces whatever was active for the key.
+    if (target.hasAttribute('d2-cms-filter-field')) {
+      var fkey = attr(target, 'd2-cms-filter-field');
+      var snames = _resolveTargetNames(target);
+      var sinstances = _instancesForTargetNames(snames);
+      if (!sinstances.length) return;
+      var sval = target.value;
+      sinstances.forEach(function (cms) {
+        if (sval === '' || sval == null) cms.removeFilter(fkey);
+        else cms._batchFilter(fkey, [sval], 'replace');
+      });
+      _syncFiltersFrom(sinstances[0], sinstances.slice(1));
+      return;
+    }
 
     // Only handle selects that carry any sort-bound option
     var sortEnabled = false;
@@ -2574,6 +2652,16 @@
       this._applyToCms();
     }
 
+    // Reset handles to the full extent and drop the range filter. Used by
+    // [d2-cms-clear] so a "clear filters" button also resets the sliders.
+    reset() {
+      this.currentMin = this.min;
+      this.currentMax = this.max;
+      this._userTouched = false;
+      this._render();
+      this._applyToCms();   // full extent => clears the range filter
+    }
+
     _attachEvents() {
       var self = this;
       // Disable native touch gestures on the slider surface so dragging a
@@ -2799,6 +2887,18 @@
   }
 
   var _rangeRegistry = [];
+
+  // Reset every range slider bound to any of the given list names (used by
+  // the [d2-cms-clear] trigger so sliders snap back to their full extent).
+  function _resetRangeSlidersFor(names) {
+    if (!names || !names.length) return;
+    _rangeRegistry.forEach(function (s) {
+      var hit = s.cmsTargets && s.cmsTargets.some(function (cms) {
+        return names.indexOf(cms.name) !== -1;
+      });
+      if (hit && typeof s.reset === 'function') s.reset();
+    });
+  }
 
   function _autoInitRangeSliders() {
     var wrappers = document.querySelectorAll('[d2-cms-range]');

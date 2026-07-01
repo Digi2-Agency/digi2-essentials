@@ -8,9 +8,11 @@ const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'cms
 
 function createElement(tagName, attrs, textContent) {
   const classes = new Set();
+  const attrList = [];
+  const findAttr = (name) => { for (let i = 0; i < attrList.length; i++) if (attrList[i].name === name) return i; return -1; };
   const el = {
     tagName: tagName.toUpperCase(),
-    attributes: Object.assign({}, attrs || {}),
+    attributes: attrList,
     children: [],
     parentNode: null,
     parentElement: null,
@@ -35,16 +37,23 @@ function createElement(tagName, attrs, textContent) {
       },
     },
     getAttribute(name) {
-      return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
+      const i = findAttr(name);
+      return i === -1 ? null : attrList[i].value;
     },
     setAttribute(name, value) {
-      this.attributes[name] = String(value);
+      const i = findAttr(name);
+      if (i === -1) attrList.push({ name, value: String(value) });
+      else attrList[i].value = String(value);
     },
     removeAttribute(name) {
-      delete this.attributes[name];
+      const i = findAttr(name);
+      if (i !== -1) attrList.splice(i, 1);
     },
     hasAttribute(name) {
-      return Object.prototype.hasOwnProperty.call(this.attributes, name);
+      return findAttr(name) !== -1;
+    },
+    get options() {
+      return this.children.filter((c) => c.tagName === 'OPTION');
     },
     addEventListener(type, fn) {
       this._listeners[type] = fn;
@@ -94,6 +103,8 @@ function createElement(tagName, attrs, textContent) {
       return { left: 0, width: 100 };
     },
   };
+
+  Object.entries(attrs || {}).forEach(([name, value]) => attrList.push({ name, value: String(value) }));
 
   if (attrs && attrs.class) {
     attrs.class.split(/\s+/).filter(Boolean).forEach((name) => classes.add(name));
@@ -467,4 +478,89 @@ test('cms render refreshes price formatting when items are revealed later', asyn
   await flushTimers();
 
   assert.equal(second.querySelector('[d2-format-price]').textContent, '422 934');
+});
+
+test('inline d2-cms-field-<name> attribute is read like a nested field', async () => {
+  const env = createEnvironment();
+  const trigger = createElement('button', { 'd2-cms-filter': 'status:Dostępne', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const okItem = createElement('div', { 'd2-cms-item': '', 'd2-cms-field-status': 'Dostępne' });
+  const noItem = createElement('div', { 'd2-cms-item': '', 'd2-cms-field-status': 'Sprzedane' });
+  list.appendChild(okItem);
+  list.appendChild(noItem);
+  env.body.appendChild(trigger);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', trigger);
+
+  assert.equal(okItem.style.display, '');
+  assert.equal(noItem.style.display, 'none');
+});
+
+test('select d2-cms-filter-field applies and clears a facet filter on change', async () => {
+  const env = createEnvironment();
+  const sel = createElement('select', { 'd2-cms-filter-field': 'floor', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const f3 = createItem({ floor: '3' });
+  const f2 = createItem({ floor: '2' });
+  list.appendChild(f3);
+  list.appendChild(f2);
+  env.body.appendChild(sel);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  sel.value = '3';                 // user picks floor 3
+  dispatchDocument(env, 'change', sel);
+  assert.equal(f3.style.display, '');
+  assert.equal(f2.style.display, 'none');
+
+  sel.value = '';
+  dispatchDocument(env, 'change', sel);
+  assert.equal(f3.style.display, '');
+  assert.equal(f2.style.display, '');
+});
+
+test('d2-cms-clear resets facet filters and range sliders', async () => {
+  const env = createEnvironment();
+  const filterBtn = createElement('button', { 'd2-cms-filter': 'status:Dostępne', 'd2-cms-target': 'offers' });
+  const clearBtn = createElement('button', { 'd2-cms-clear': '', 'd2-cms-target': 'offers' });
+  const range = createElement('div', {
+    'd2-cms-range': '', 'd2-cms-range-field': 'price',
+    'd2-cms-range-min': '0', 'd2-cms-range-max': '100', 'd2-cms-range-step': '10',
+    'd2-cms-target': 'offers',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minH = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxH = createElement('button', { 'd2-cms-range-handle': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minH);
+  track.appendChild(maxH);
+  range.appendChild(track);
+
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const a = createItem({ status: 'Dostępne', price: '40' });
+  const b = createItem({ status: 'Sprzedane', price: '80' });
+  list.appendChild(a);
+  list.appendChild(b);
+  env.body.appendChild(filterBtn);
+  env.body.appendChild(clearBtn);
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', filterBtn);           // filter status:Dostępne
+  track._listeners.pointerdown({ target: track, clientX: 50, preventDefault() {} }); // narrow price range
+  assert.equal(b.style.display, 'none');
+
+  dispatchDocument(env, 'click', clearBtn);             // clear everything
+  assert.equal(a.style.display, '');
+  assert.equal(b.style.display, '');
 });
