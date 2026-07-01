@@ -572,20 +572,31 @@
       var self = this;
       var done = typeof onDone === 'function' ? onDone : function () {};
       this._animating = true;
-      panel.style.overflow = 'hidden';
-      panel.style.height = '0px';
-      panel.style.transition = 'height ' + dur + 's ease';
+
+      // Measure the panel at its FINAL height first (inline height removed → its
+      // CSS height / natural content height applies). Measuring while collapsed
+      // to 0 would zero out percentage-height children (e.g. a slider set to
+      // height:100%), producing a wrong, tiny target. offsetHeight respects a
+      // fixed CSS height too, so the end state matches the design exactly.
       showElement(panel);
-      void panel.offsetHeight;                       // reflow at 0
-      panel.style.height = panel.scrollHeight + 'px';
+      panel.style.overflow = 'hidden';
+      panel.style.transition = 'none';
+      panel.style.height = '';
+      var target = panel.offsetHeight;
+
+      // Collapse to 0, then animate up to the measured height.
+      panel.style.height = '0px';
+      void panel.offsetHeight;                       // commit the 0 state
+      panel.style.transition = 'height ' + dur + 's ease';
+      panel.style.height = target + 'px';
 
       var finished = false;
       function finish() {
         if (finished) return;
         finished = true;
         panel.removeEventListener('transitionend', handler);
-        // Release to natural height so nested media / later growth still fit.
-        panel.style.height = 'auto';
+        // Revert to the stylesheet height (fixed or auto) — no end-of-anim jump.
+        panel.style.height = '';
         panel.style.overflow = '';
         panel.style.transition = '';
         self._animating = false;
@@ -602,9 +613,10 @@
     _hidePanelHeight(panel, dur) {
       var finished = false;
       panel.style.overflow = 'hidden';
-      panel.style.height = panel.scrollHeight + 'px';      // pin current height
+      panel.style.transition = 'none';
+      panel.style.height = panel.offsetHeight + 'px';      // pin current rendered height
+      void panel.offsetHeight;                             // commit the pinned height
       panel.style.transition = 'height ' + dur + 's ease';
-      void panel.offsetHeight;                             // reflow
       panel.style.height = '0px';
 
       function finish() {
@@ -704,10 +716,15 @@
       var dur = parseFloat(attr(group, 'd2-tab-duration'));
       if (!isNaN(dur)) o.animationDuration = dur;
       // d2-tab-scroll            → scroll opened panel into view (centered)
-      // d2-tab-scroll="start"    → override block (start|center|end|nearest)
-      if (group.hasAttribute && group.hasAttribute('d2-tab-scroll')) {
+      // d2-tab-scroll="start"    → override position (start|center|end)
+      // Accept it on the group element OR on any descendant (trigger/panel),
+      // so putting it on the rows works too.
+      var scrollEl = (group.hasAttribute && group.hasAttribute('d2-tab-scroll'))
+        ? group
+        : (group.querySelector ? group.querySelector('[d2-tab-scroll]') : null);
+      if (scrollEl) {
         o.scroll = true;
-        var sb = String(attr(group, 'd2-tab-scroll') || '').trim().toLowerCase();
+        var sb = String(attr(scrollEl, 'd2-tab-scroll') || '').trim().toLowerCase();
         if (sb === 'start' || sb === 'center' || sb === 'end') o.scrollBlock = sb;
       }
       var def = attr(group, 'd2-tab-default');
