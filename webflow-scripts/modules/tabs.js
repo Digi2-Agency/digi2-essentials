@@ -3,7 +3,13 @@
  * Loaded automatically by digi2-loader.js when d2-tabs is present.
  *
  * Supports two modes: tabs (one panel visible) and accordion (collapsible, multiple open).
- * Uses same animation presets as popups module.
+ * Animations: none | fade | slide-up | slide-down | zoom | height.
+ *   'height' = smooth max-height collapse (best for accordions with variable
+ *   content — e.g. expanding table rows).
+ *
+ *   digi2.tabs.create('rows', { groupSelector: '.list', mode: 'accordion',
+ *                               allowMultiple: false, animation: 'height',
+ *                               animationDuration: 0.4 })
  *
  * Webflow setup:
  *   <div d2-tab-group="faq">
@@ -423,13 +429,16 @@
       var panel = this._getPanel(tabId);
       if (!panel) return;
 
-      var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
       var dur = this.options.animationDuration;
 
-      if (this._initializing || anim === ANIMATIONS.none) {
-        showElement(panel);
-        return;
-      }
+      if (this._initializing) { showElement(panel); return; }
+
+      // Height (max-height) collapse — smooth accordion grow. Measures the
+      // panel's natural height and animates max-height 0 → full → none.
+      if (this.options.animation === 'height') { this._showPanelHeight(panel, dur); return; }
+
+      var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
+      if (anim === ANIMATIONS.none) { showElement(panel); return; }
 
       this._animating = true;
       applyStyles(panel, anim.setup(dur));
@@ -451,12 +460,17 @@
       var panel = this._getPanel(tabId);
       if (!panel) return;
 
-      var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
       var dur = this.options.animationDuration;
 
-      if (anim === ANIMATIONS.none) {
+      if (this.options.animation === 'height' && !this._initializing) {
+        this._hidePanelHeight(panel, dur); return;
+      }
+
+      var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
+
+      if (anim === ANIMATIONS.none || this.options.animation === 'height') {
         hideElement(panel);
-        applyStyles(panel, anim.reset());
+        if (anim.reset) applyStyles(panel, anim.reset());
         return;
       }
 
@@ -476,6 +490,57 @@
           applyStyles(panel, anim.reset());
         }
       }, dur * 1000 + 50);
+    }
+
+    // --- max-height collapse animation (accordion "height" mode) ------------
+    _showPanelHeight(panel, dur) {
+      var self = this;
+      this._animating = true;
+      panel.style.overflow = 'hidden';
+      panel.style.maxHeight = '0px';
+      panel.style.transition = 'max-height ' + dur + 's ease';
+      showElement(panel);
+      void panel.offsetHeight;                       // reflow at 0
+      panel.style.maxHeight = panel.scrollHeight + 'px';
+
+      function done() {
+        // Let the panel grow naturally afterwards (nested media, etc.)
+        panel.style.maxHeight = 'none';
+        panel.style.overflow = '';
+        panel.style.transition = '';
+        self._animating = false;
+      }
+      function handler(e) {
+        if (e && e.propertyName && e.propertyName !== 'max-height') return;
+        panel.removeEventListener('transitionend', handler);
+        done();
+      }
+      panel.addEventListener('transitionend', handler);
+      setTimeout(function () { panel.removeEventListener('transitionend', handler); done(); }, dur * 1000 + 60);
+    }
+
+    _hidePanelHeight(panel, dur) {
+      panel.style.overflow = 'hidden';
+      panel.style.maxHeight = panel.scrollHeight + 'px';   // pin current height
+      panel.style.transition = 'max-height ' + dur + 's ease';
+      void panel.offsetHeight;                             // reflow
+      panel.style.maxHeight = '0px';
+
+      function finish() {
+        hideElement(panel);
+        panel.style.maxHeight = '';
+        panel.style.overflow = '';
+        panel.style.transition = '';
+      }
+      function handler(e) {
+        if (e && e.propertyName && e.propertyName !== 'max-height') return;
+        panel.removeEventListener('transitionend', handler);
+        finish();
+      }
+      panel.addEventListener('transitionend', handler);
+      setTimeout(function () {
+        if (panel.style.display !== 'none') { panel.removeEventListener('transitionend', handler); finish(); }
+      }, dur * 1000 + 60);
     }
 
     _updateTriggers() {

@@ -1861,6 +1861,22 @@
         if (explicit) return explicit;
         return (candidates[i].textContent || '').trim();
       }
+      // Fallback: value set via <select d2-cms-filter-field="key"> — return the
+      // matching option's text so a [d2-cms-filter-label] / dropdown toggle can
+      // show the human-readable selection.
+      if (key) {
+        var selects = document.querySelectorAll('select[d2-cms-filter-field="' + key + '"]');
+        for (var s = 0; s < selects.length; s++) {
+          if (_resolveTargetName(selects[s]) !== this.name) continue;
+          if (scope && !scope.contains(selects[s])) continue;
+          var opts = selects[s].options;
+          for (var o = 0; o < opts.length; o++) {
+            if (String(opts[o].value) === String(value)) {
+              return (opts[o].textContent || '').trim();
+            }
+          }
+        }
+      }
       return null;
     }
 

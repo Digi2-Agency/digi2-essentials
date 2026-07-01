@@ -248,3 +248,31 @@ test('hidden tab instances use display none important', () => {
   assert.equal(env.monthlyPanel.style.getPropertyPriority('display'), 'important');
   assert.equal(env.yearlyPanel.style.display, '');
 });
+
+test('accordion height animation shows/hides panels (fallback timers)', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  env.window.digi2.tabs.create('pricing', {
+    mode: 'accordion',
+    allowMultiple: false,
+    animation: 'height',
+    animationDuration: 0.01,
+  });
+
+  // Accordion: nothing open by default
+  assert.equal(env.monthlyPanel.style.display, 'none');
+  assert.equal(env.yearlyPanel.style.display, 'none');
+
+  // Open monthly
+  env.monthlyTrigger.click();
+  await wait(90);
+  assert.equal(env.monthlyPanel.style.display, '');
+
+  // Open yearly → monthly closes (allowMultiple: false)
+  env.yearlyTrigger.click();
+  await wait(90);
+  assert.equal(env.yearlyPanel.style.display, '');
+  assert.equal(env.monthlyPanel.style.display, 'none');
+});
