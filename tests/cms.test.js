@@ -564,3 +564,38 @@ test('d2-cms-clear resets facet filters and range sliders', async () => {
   assert.equal(a.style.display, '');
   assert.equal(b.style.display, '');
 });
+
+test('d2-cms-clear="field" resets only that filter key and leaves others', async () => {
+  const env = createEnvironment();
+  const filterTag = createElement('button', { 'd2-cms-filter': 'tag:OFERTA', 'd2-cms-target': 'offers' });
+  const filterStatus = createElement('button', { 'd2-cms-filter': 'status:Dostępne', 'd2-cms-target': 'offers' });
+  const clearTag = createElement('button', { 'd2-cms-clear': 'tag', 'd2-cms-target': 'offers' });
+
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const itA = createItem({ tag: 'OFERTA', status: 'Dostępne' });
+  const itB = createItem({ tag: 'PREMIERA', status: 'Dostępne' });
+  const itC = createItem({ tag: 'OFERTA', status: 'Sprzedane' });
+  list.appendChild(itA);
+  list.appendChild(itB);
+  list.appendChild(itC);
+  env.body.appendChild(filterTag);
+  env.body.appendChild(filterStatus);
+  env.body.appendChild(clearTag);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', filterStatus);   // status:Dostępne → itA, itB
+  dispatchDocument(env, 'click', filterTag);       // + tag:OFERTA → itA only
+  assert.equal(itA.style.display, '');
+  assert.equal(itB.style.display, 'none');
+  assert.equal(itC.style.display, 'none');
+
+  dispatchDocument(env, 'click', clearTag);        // clear ONLY tag; status stays
+  assert.equal(itA.style.display, '');
+  assert.equal(itB.style.display, '', 'tag filter cleared → PREMIERA reappears');
+  assert.equal(itC.style.display, 'none', 'status:Dostępne must remain active');
+  assert.equal(filterTag.hasAttribute('d2-cms-filter-active'), false, 'tag trigger de-activated (checkbox would uncheck)');
+  assert.equal(filterStatus.hasAttribute('d2-cms-filter-active'), true, 'status trigger stays active');
+});

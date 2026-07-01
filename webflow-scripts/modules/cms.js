@@ -52,6 +52,9 @@
  *
  *   Clear all filters (facet + range). d2-cms-clear="all" also clears sort:
  *     <a d2-cms-target="products" d2-cms-clear>Clear filters</a>
+ *   Clear only specific field(s) — e.g. reset just the "tag" checkboxes:
+ *     <a d2-cms-target="products" d2-cms-clear="tag">Reset tags</a>
+ *     <a d2-cms-target="products" d2-cms-clear="tag|floor">Reset tags + floor</a>
  *
  *   Inline field values on the item (instead of a nested [d2-cms-field]):
  *     <div d2-cms-item
@@ -2314,13 +2317,29 @@
       instance.setDirection(dirVal || 'toggle');
       _syncSortFrom(instance, mirrors);
     } else if (clearBtn) {
-      // Clear all facet + range filters. d2-cms-clear="all" also clears sort.
-      var alsoSort = (attr(clearBtn, 'd2-cms-clear') || '').trim().toLowerCase() === 'all';
-      instances.forEach(function (cms) {
-        cms.clearFilters();      // also clears range filters internally
-        if (alsoSort && typeof cms.clearSort === 'function') cms.clearSort();
-      });
-      _resetRangeSlidersFor(names);   // snap slider handles back to full extent
+      // d2-cms-clear                → clear all facet + range filters
+      // d2-cms-clear="all"          → also clears sort
+      // d2-cms-clear="tag"          → clear ONLY the "tag" filter key / range field
+      // d2-cms-clear="tag|floor"    → clear only those fields (pipe-separated)
+      var clearVal = (attr(clearBtn, 'd2-cms-clear') || '').trim();
+      var clearLower = clearVal.toLowerCase();
+      if (clearVal && clearLower !== 'all') {
+        var fields = clearVal.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+        instances.forEach(function (cms) {
+          fields.forEach(function (f) {
+            if (typeof cms.removeFilter === 'function') cms.removeFilter(f); // unchecks bound checkboxes/radios
+            if (typeof cms.clearRange === 'function') cms.clearRange(f);      // no-op when f isn't a range field
+          });
+        });
+        _resetRangeSlidersFor(names, fields);
+      } else {
+        var alsoSort = clearLower === 'all';
+        instances.forEach(function (cms) {
+          cms.clearFilters();      // also clears range filters internally
+          if (alsoSort && typeof cms.clearSort === 'function') cms.clearSort();
+        });
+        _resetRangeSlidersFor(names);   // snap slider handles back to full extent
+      }
     }
 
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
@@ -2906,9 +2925,14 @@
 
   // Reset every range slider bound to any of the given list names (used by
   // the [d2-cms-clear] trigger so sliders snap back to their full extent).
-  function _resetRangeSlidersFor(names) {
+  // Snap range sliders back to full extent. When `fields` is a non-empty array,
+  // only sliders bound to one of those fields are reset (used by field-scoped
+  // d2-cms-clear); otherwise every slider for the named lists is reset.
+  function _resetRangeSlidersFor(names, fields) {
     if (!names || !names.length) return;
+    var scoped = Array.isArray(fields) && fields.length;
     _rangeRegistry.forEach(function (s) {
+      if (scoped && fields.indexOf(s.field) === -1) return;
       var hit = s.cmsTargets && s.cmsTargets.some(function (cms) {
         return names.indexOf(cms.name) !== -1;
       });
