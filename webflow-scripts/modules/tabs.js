@@ -156,8 +156,11 @@
         return;
       }
 
-      this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab-trigger], [d2-tab]'));
-      this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-instance], [d2-tab-content]'));
+      var self = this;
+      this.triggers = Array.from(this.groupEl.querySelectorAll('[d2-tab-trigger], [d2-tab]'))
+        .filter(function (el) { return self._ownsElement(el); });
+      this.panels = Array.from(this.groupEl.querySelectorAll('[d2-tab-instance], [d2-tab-content]'))
+        .filter(function (el) { return self._ownsElement(el); });
       this.externalTriggers = this._findExternalTriggers();
       var initialActiveTrigger = this._getInitialActiveTrigger();
       this._initialActiveTabId = initialActiveTrigger ? this._getTriggerTabId(initialActiveTrigger) || this._getExternalTriggerTabId(initialActiveTrigger) : null;
@@ -226,6 +229,22 @@
       }
 
       return this;
+    }
+
+    // An element belongs to THIS group only when no other [d2-tab-group] sits
+    // between it and this.groupEl. Otherwise it belongs to a nested group and
+    // must be ignored here — this stops an outer group (e.g. a list/grid view
+    // switch) from stealing a nested accordion's triggers/panels and hiding
+    // the whole view when a row is clicked.
+    _ownsElement(el) {
+      var node = el.parentElement;
+      while (node && node !== this.groupEl) {
+        if (node.hasAttribute && node.hasAttribute('d2-tab-group')) {
+          return false;
+        }
+        node = node.parentElement;
+      }
+      return node === this.groupEl;
     }
 
     // ---- Find group ---------------------------------------------------------
@@ -602,11 +621,34 @@
     var initialized = [];
     var groups = Array.from(document.querySelectorAll('[d2-tab-group]'));
 
+    // Read config from the group element's attributes so accordions can be
+    // set up fully declaratively (no digi2.tabs.create call):
+    //   d2-tab-mode="accordion"        (tabs | accordion; default tabs)
+    //   d2-tab-animation="height"      (none | fade | slide-up | slide-down | zoom | height)
+    //   d2-tab-duration="0.4"          (seconds)
+    //   d2-tab-multiple                (accordion: allow several open at once)
+    //   d2-tab-default="item-1"        (id, or "a|b" for multiple)
+    function _optionsFromGroup(group) {
+      var o = { animation: 'none' };
+      var mode = attr(group, 'd2-tab-mode');
+      if (mode) o.mode = String(mode).trim().toLowerCase() === 'accordion' ? 'accordion' : 'tabs';
+      var anim = attr(group, 'd2-tab-animation');
+      if (anim) o.animation = String(anim).trim();
+      if (group.hasAttribute && group.hasAttribute('d2-tab-multiple')) {
+        o.allowMultiple = String(attr(group, 'd2-tab-multiple')) !== 'false';
+      }
+      var dur = parseFloat(attr(group, 'd2-tab-duration'));
+      if (!isNaN(dur)) o.animationDuration = dur;
+      var def = attr(group, 'd2-tab-default');
+      if (def) o.defaultOpen = def.indexOf('|') !== -1 ? def.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : def;
+      return o;
+    }
+
     groups.forEach(function (group) {
       var name = attr(group, 'd2-tab-group');
       if (!name || registry[name]) return;
 
-      registry[name] = new TabManager(name, { animation: 'none' });
+      registry[name] = new TabManager(name, _optionsFromGroup(group));
       initialized.push(name);
     });
 

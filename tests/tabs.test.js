@@ -13,6 +13,7 @@ function createElement(tagName, attrs) {
     attributes: Object.assign({}, attrs || {}),
     children: [],
     parentNode: null,
+    parentElement: null,
     style: {
       _priorities: {},
       setProperty(name, value, priority) {
@@ -57,6 +58,7 @@ function createElement(tagName, attrs) {
     },
     appendChild(child) {
       child.parentNode = this;
+      child.parentElement = this;
       this.children.push(child);
     },
     contains(node) {
@@ -275,4 +277,58 @@ test('accordion height animation shows/hides panels (fallback timers)', async ()
   await wait(90);
   assert.equal(env.yearlyPanel.style.display, '');
   assert.equal(env.monthlyPanel.style.display, 'none');
+});
+
+test('nested tab groups do not steal each others triggers/panels', () => {
+  const body = createElement('body');
+  const outer = createElement('div', { 'd2-tab-group': 'outer' });
+  const triggerList = createElement('button', { 'd2-tab-trigger': 'list' });
+  const triggerGrid = createElement('button', { 'd2-tab-trigger': 'grid' });
+  const listPanel = createElement('div', { 'd2-tab-instance': 'list' });
+  const gridPanel = createElement('div', { 'd2-tab-instance': 'grid' });
+
+  const inner = createElement('div', {
+    'd2-tab-group': 'inner',
+    'd2-tab-mode': 'accordion',
+    'd2-tab-animation': 'none',
+  });
+  const rowTrigger = createElement('div', { 'd2-tab-trigger': 'row-a' });
+  const rowPanel = createElement('div', { 'd2-tab-instance': 'row-a' });
+
+  inner.appendChild(rowTrigger);
+  inner.appendChild(rowPanel);
+  listPanel.appendChild(inner);
+  outer.appendChild(triggerList);
+  outer.appendChild(triggerGrid);
+  outer.appendChild(listPanel);
+  outer.appendChild(gridPanel);
+  body.appendChild(outer);
+
+  const document = {
+    body,
+    readyState: 'complete',
+    addEventListener() {},
+    querySelector(selector) {
+      if (selector === '[d2-tab-group="outer"]') return outer;
+      if (selector === '[d2-tab-group="inner"]') return inner;
+      return null;
+    },
+    querySelectorAll(selector) {
+      return body.querySelectorAll(selector);
+    },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  // Outer group defaults to list view; grid hidden.
+  assert.equal(listPanel.style.display, '');
+  assert.equal(gridPanel.style.display, 'none');
+
+  // Clicking a nested accordion row must NOT collapse the outer list view.
+  rowTrigger.click();
+  assert.equal(listPanel.style.display, '', 'list view must stay visible');
+  assert.equal(rowPanel.style.display, '', 'row panel must open');
 });
