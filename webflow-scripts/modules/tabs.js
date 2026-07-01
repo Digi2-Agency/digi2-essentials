@@ -131,7 +131,7 @@
         activeClass: 'd2-tab-active', // class added to active trigger
         hashSync: false,              // sync active tab with URL hash
         scroll: false,                // on open, scroll the panel into view
-        scrollBlock: 'center',        // scrollIntoView block: start|center|end|nearest
+        scrollBlock: 'center',        // where the opened panel lands: start|center|end
         onChange: null,               // callback(tabId, instance)
         ...options,
       };
@@ -327,15 +327,14 @@
         });
       }
 
-      this._showPanel(tabId);
+      // Scroll the freshly opened panel into view once its open animation has
+      // fully settled (final layout), so centering is accurate and there's no
+      // scroll-then-jump. Skipped during the initial default-open.
+      var self3 = this;
+      var shouldScroll = this.options.scroll && !this._initializing;
+      this._showPanel(tabId, shouldScroll ? function () { self3._scrollToTab(tabId); } : null);
       this._activeTabs.add(tabId);
       this._updateTriggers();
-
-      // Scroll the freshly opened panel into view (centered by default). Skip
-      // during the initial default-open so the page doesn't jump on load.
-      if (this.options.scroll && !this._initializing) {
-        this._scrollToTab(tabId);
-      }
 
       if (this.options.hashSync) {
         history.replaceState(null, '', '#' + tabId);
@@ -383,21 +382,42 @@
       return this.options.mode === 'tabs' ? (arr[0] || null) : arr;
     }
 
-    // Scroll a freshly opened panel into view. Waits out the open animation so
-    // the final (height-animated) layout is settled before centering. Targets
-    // the panel; falls back to the trigger row when the panel is missing.
+    // Scroll the opened panel into the viewport. Called after the open
+    // animation settles, so layout is final. Computes an absolute window scroll
+    // position (rather than scrollIntoView) so the PAGE reliably scrolls and the
+    // element lands where scrollBlock asks (center by default). A panel taller
+    // than the viewport is clamped so its top stays visible.
     _scrollToTab(tabId) {
       var target = this._getPanel(tabId) || this._getTrigger(tabId);
-      if (!target || typeof target.scrollIntoView !== 'function') return;
+      if (!target) return;
+
+      var win = (typeof window !== 'undefined') ? window : null;
       var block = this.options.scrollBlock || 'center';
-      var delay = Math.max(0, (this.options.animationDuration || 0) * 1000);
-      setTimeout(function () {
-        try {
-          target.scrollIntoView({ behavior: 'smooth', block: block, inline: 'nearest' });
-        } catch (e) {
-          target.scrollIntoView();
+
+      if (win && typeof target.getBoundingClientRect === 'function' && typeof win.scrollTo === 'function') {
+        var rect = target.getBoundingClientRect();
+        var pageY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
+        var viewport = win.innerHeight || 0;
+        var elemTop = rect.top + pageY;
+        var top;
+        if (block === 'start') {
+          top = elemTop;
+        } else if (block === 'end') {
+          top = elemTop - Math.max(0, viewport - rect.height);
+        } else { // center (default) — clamp when taller than the viewport
+          top = rect.height > viewport ? elemTop : elemTop - (viewport - rect.height) / 2;
         }
-      }, delay);
+        try {
+          win.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+          return;
+        } catch (e) { /* fall through to scrollIntoView */ }
+      }
+
+      if (typeof target.scrollIntoView === 'function') {
+        try {
+          target.scrollIntoView({ behavior: 'smooth', block: block === 'end' ? 'end' : (block === 'start' ? 'start' : 'center') });
+        } catch (e) { target.scrollIntoView(); }
+      }
     }
 
     // ---- Internal -----------------------------------------------------------
@@ -469,20 +489,21 @@
       });
     }
 
-    _showPanel(tabId) {
+    _showPanel(tabId, onDone) {
       var panel = this._getPanel(tabId);
       if (!panel) return;
 
       var dur = this.options.animationDuration;
+      var done = typeof onDone === 'function' ? onDone : function () {};
 
-      if (this._initializing) { showElement(panel); return; }
+      if (this._initializing) { showElement(panel); done(); return; }
 
-      // Height (max-height) collapse — smooth accordion grow. Measures the
-      // panel's natural height and animates max-height 0 → full → none.
-      if (this.options.animation === 'height') { this._showPanelHeight(panel, dur); return; }
+      // Height collapse — smooth accordion grow. Animates the exact height
+      // 0 → scrollHeight → auto (padding-safe, no end-of-animation jump).
+      if (this.options.animation === 'height') { this._showPanelHeight(panel, dur, done); return; }
 
       var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
-      if (anim === ANIMATIONS.none) { showElement(panel); return; }
+      if (anim === ANIMATIONS.none) { showElement(panel); done(); return; }
 
       this._animating = true;
       applyStyles(panel, anim.setup(dur));
@@ -491,13 +512,20 @@
       applyStyles(panel, anim.in());
 
       var self = this;
-      panel.addEventListener('transitionend', function handler() {
+      var finished = false;
+      function finish() {
+        if (finished) return;
+        finished = true;
         self._animating = false;
+        done();
+      }
+      panel.addEventListener('transitionend', function handler() {
         panel.removeEventListener('transitionend', handler);
+        finish();
       }, { once: true });
 
       // Fallback timeout in case transitionend doesn't fire
-      setTimeout(function () { self._animating = false; }, dur * 1000 + 50);
+      setTimeout(finish, dur * 1000 + 50);
     }
 
     _hidePanel(tabId) {
@@ -536,55 +564,64 @@
       }, dur * 1000 + 50);
     }
 
-    // --- max-height collapse animation (accordion "height" mode) ------------
-    _showPanelHeight(panel, dur) {
+    // --- height collapse animation (accordion "height" mode) ---------------
+    // Animates the exact `height` (not max-height): with border-box the pinned
+    // scrollHeight equals the natural height incl. padding, so releasing to
+    // `auto` at the end causes no visible jump — even with panel padding.
+    _showPanelHeight(panel, dur, onDone) {
       var self = this;
+      var done = typeof onDone === 'function' ? onDone : function () {};
       this._animating = true;
       panel.style.overflow = 'hidden';
-      panel.style.maxHeight = '0px';
-      panel.style.transition = 'max-height ' + dur + 's ease';
+      panel.style.height = '0px';
+      panel.style.transition = 'height ' + dur + 's ease';
       showElement(panel);
       void panel.offsetHeight;                       // reflow at 0
-      panel.style.maxHeight = panel.scrollHeight + 'px';
+      panel.style.height = panel.scrollHeight + 'px';
 
-      function done() {
-        // Let the panel grow naturally afterwards (nested media, etc.)
-        panel.style.maxHeight = 'none';
+      var finished = false;
+      function finish() {
+        if (finished) return;
+        finished = true;
+        panel.removeEventListener('transitionend', handler);
+        // Release to natural height so nested media / later growth still fit.
+        panel.style.height = 'auto';
         panel.style.overflow = '';
         panel.style.transition = '';
         self._animating = false;
-      }
-      function handler(e) {
-        if (e && e.propertyName && e.propertyName !== 'max-height') return;
-        panel.removeEventListener('transitionend', handler);
         done();
       }
+      function handler(e) {
+        if (e && e.propertyName && e.propertyName !== 'height') return;
+        finish();
+      }
       panel.addEventListener('transitionend', handler);
-      setTimeout(function () { panel.removeEventListener('transitionend', handler); done(); }, dur * 1000 + 60);
+      setTimeout(finish, dur * 1000 + 60);
     }
 
     _hidePanelHeight(panel, dur) {
+      var finished = false;
       panel.style.overflow = 'hidden';
-      panel.style.maxHeight = panel.scrollHeight + 'px';   // pin current height
-      panel.style.transition = 'max-height ' + dur + 's ease';
+      panel.style.height = panel.scrollHeight + 'px';      // pin current height
+      panel.style.transition = 'height ' + dur + 's ease';
       void panel.offsetHeight;                             // reflow
-      panel.style.maxHeight = '0px';
+      panel.style.height = '0px';
 
       function finish() {
+        if (finished) return;
+        finished = true;
+        panel.removeEventListener('transitionend', handler);
         hideElement(panel);
-        panel.style.maxHeight = '';
+        panel.style.height = '';
         panel.style.overflow = '';
         panel.style.transition = '';
       }
       function handler(e) {
-        if (e && e.propertyName && e.propertyName !== 'max-height') return;
-        panel.removeEventListener('transitionend', handler);
+        if (e && e.propertyName && e.propertyName !== 'height') return;
         finish();
       }
       panel.addEventListener('transitionend', handler);
-      setTimeout(function () {
-        if (panel.style.display !== 'none') { panel.removeEventListener('transitionend', handler); finish(); }
-      }, dur * 1000 + 60);
+      setTimeout(finish, dur * 1000 + 60);
     }
 
     _updateTriggers() {
@@ -654,7 +691,7 @@
     //   d2-tab-multiple                (accordion: allow several open at once)
     //   d2-tab-default="item-1"        (id, or "a|b" for multiple)
     //   d2-tab-scroll                  (on open, scroll panel to center; value
-    //                                   start|center|end|nearest overrides block)
+    //                                   start|center|end overrides position)
     function _optionsFromGroup(group) {
       var o = { animation: 'none' };
       var mode = attr(group, 'd2-tab-mode');
@@ -671,7 +708,7 @@
       if (group.hasAttribute && group.hasAttribute('d2-tab-scroll')) {
         o.scroll = true;
         var sb = String(attr(group, 'd2-tab-scroll') || '').trim().toLowerCase();
-        if (sb === 'start' || sb === 'center' || sb === 'end' || sb === 'nearest') o.scrollBlock = sb;
+        if (sb === 'start' || sb === 'center' || sb === 'end') o.scrollBlock = sb;
       }
       var def = attr(group, 'd2-tab-default');
       if (def) o.defaultOpen = def.indexOf('|') !== -1 ? def.split('|').map(function (s) { return s.trim(); }).filter(Boolean) : def;

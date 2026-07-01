@@ -336,9 +336,18 @@ test('nested tab groups do not steal each others triggers/panels', () => {
   assert.equal(rowPanel.style.display, '', 'row panel must open');
 });
 
-test('scroll option scrolls the opened panel into view (centered), not on default open', async () => {
+test('scroll option centers the opened panel in the window, not on default open', async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const env = createEnvironment();
+
+  // Window scroll plumbing the module reads.
+  const scrollCalls = [];
+  env.window.innerHeight = 800;
+  env.window.pageYOffset = 0;
+  env.window.scrollTo = (opts) => scrollCalls.push(opts);
+  // Panel geometry: 200px tall, 1000px down the page.
+  env.yearlyPanel.getBoundingClientRect = () => ({ top: 1000, height: 200 });
+
   loadTabsModule(env);
 
   env.window.digi2.tabs.create('pricing', {
@@ -348,12 +357,13 @@ test('scroll option scrolls the opened panel into view (centered), not on defaul
   });
 
   // Default-open (monthly) must NOT scroll the page on load.
-  assert.equal(env.monthlyPanel._scrolledInto, undefined);
+  assert.equal(scrollCalls.length, 0);
 
   env.yearlyTrigger.click();
   await wait(5);
 
-  assert.ok(env.yearlyPanel._scrolledInto, 'opened panel was scrolled into view');
-  assert.equal(env.yearlyPanel._scrolledInto.block, 'center');
-  assert.equal(env.yearlyPanel._scrolledInto.behavior, 'smooth');
+  assert.equal(scrollCalls.length, 1, 'opened panel triggered a window scroll');
+  assert.equal(scrollCalls[0].behavior, 'smooth');
+  // center: elemTop(1000) - (viewport(800) - height(200)) / 2 = 700
+  assert.equal(scrollCalls[0].top, 700);
 });
