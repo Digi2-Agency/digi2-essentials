@@ -677,10 +677,12 @@
 
       // Lazy images inside a previously display:none panel have no intrinsic
       // size yet (mobile: the slider image drives the row height). Force them
-      // to load now and, when one arrives mid-animation, re-target the running
-      // transition to the new full height — the panel keeps gliding instead of
-      // opening short and snapping once the image pops in.
-      var imgListeners = [];
+      // to load now. When one arrives:
+      //   - mid-animation → re-target the running transition (keeps gliding);
+      //   - AFTER the animation (slow network) → clamp back to the pre-image
+      //     height within the same frame and run a short grow transition, so
+      //     the image never pops the row open with a jump.
+      var lastKnown = target;
       if (panel.querySelectorAll) {
         var imgs = panel.querySelectorAll('img');
         for (var i = 0; i < imgs.length; i++) {
@@ -688,18 +690,45 @@
             if (img.complete || typeof img.addEventListener !== 'function') return;
             try { if (img.loading === 'lazy') img.loading = 'eager'; } catch (e) {}
             var onload = function () {
-              if (finished) return;
+              img.removeEventListener('load', onload);
+              if (panel.style.display === 'none') return;   // closed meanwhile
               var grown = panel.scrollHeight + padBottom;
-              if (grown > target + 1) {
-                target = grown;
-                panel._d2TargetHeight = target;
-                panel.style.maxHeight = target + 'px';   // transition re-targets smoothly
+              if (grown <= lastKnown + 1) return;
+
+              if (!finished) {
+                // Still animating — glide on to the new target.
+                lastKnown = target = grown;
+                panel._d2TargetHeight = grown;
+                panel.style.maxHeight = grown + 'px';
                 clearTimeout(timer);
                 timer = setTimeout(finish, dur * 1000 + 60);
+                return;
               }
+
+              // Late load — animate the growth instead of an instant jump.
+              panel.style.overflow = 'hidden';
+              panel.style.transition = 'none';
+              panel.style.maxHeight = lastKnown + 'px';
+              void panel.offsetHeight;                       // commit the clamp
+              panel.style.transition = 'max-height ' + dur + 's ease';
+              panel.style.maxHeight = grown + 'px';
+              lastKnown = grown;
+              panel._d2TargetHeight = grown;
+
+              var released = false;
+              var release = function (e) {
+                if (e && e.propertyName && e.propertyName !== 'max-height') return;
+                if (released) return;
+                released = true;
+                panel.removeEventListener('transitionend', release);
+                panel.style.maxHeight = 'none';
+                panel.style.overflow = '';
+                panel.style.transition = '';
+              };
+              panel.addEventListener('transitionend', release);
+              setTimeout(release, dur * 1000 + 60);
             };
             img.addEventListener('load', onload);
-            imgListeners.push([img, onload]);
           })(imgs[i]);
         }
       }
@@ -709,10 +738,9 @@
         finished = true;
         clearTimeout(timer);
         panel.removeEventListener('transitionend', handler);
-        for (var li = 0; li < imgListeners.length; li++) {
-          imgListeners[li][0].removeEventListener('load', imgListeners[li][1]);
-        }
-        // Let the panel grow naturally afterwards (nested media, etc.)
+        // Let the panel grow naturally afterwards (nested media, etc.).
+        // Image load listeners stay attached — a late image triggers a smooth
+        // grow (see onload above) instead of popping the row open.
         panel.style.maxHeight = 'none';
         panel.style.overflow = '';
         panel.style.transition = '';
