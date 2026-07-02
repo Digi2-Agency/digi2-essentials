@@ -327,12 +327,13 @@
         });
       }
 
-      // Scroll the freshly opened panel into view once its open animation has
-      // fully settled (final layout), so centering is accurate and there's no
-      // scroll-then-jump. Skipped during the initial default-open.
-      var self3 = this;
+      // Scroll WITH the open animation: a per-frame tracking loop re-computes
+      // the panel's position as it grows (and as a sibling panel collapses
+      // above it), so the view glides along and lands centered on the final
+      // layout. Skipped during the initial default-open.
       var shouldScroll = this.options.scroll && !this._initializing;
-      this._showPanel(tabId, shouldScroll ? function () { self3._scrollToTab(tabId); } : null);
+      this._showPanel(tabId, null);
+      if (shouldScroll) this._scrollToTab(tabId);
       this._activeTabs.add(tabId);
       this._updateTriggers();
 
@@ -382,11 +383,13 @@
       return this.options.mode === 'tabs' ? (arr[0] || null) : arr;
     }
 
-    // Scroll the opened panel into the viewport. Called after the open
-    // animation settles, so layout is final. Computes an absolute window scroll
-    // position (rather than scrollIntoView) so the PAGE reliably scrolls and the
-    // element lands where scrollBlock asks (center by default). A panel taller
-    // than the viewport is clamped so its top stays visible.
+    // Scroll the opened panel into the viewport WHILE it animates open.
+    // A per-frame loop re-computes the target position from the live layout —
+    // so the growing panel and any sibling collapsing above it are both
+    // accounted for — and eases the window toward it over the animation's
+    // duration, landing exactly on the final centered position. The loop
+    // aborts if the user scrolls manually (wheel/touch) so we never fight
+    // their input.
     _scrollToTab(tabId) {
       var target = this._getPanel(tabId) || this._getTrigger(tabId);
       if (!target) return;
@@ -394,7 +397,31 @@
       var win = (typeof window !== 'undefined') ? window : null;
       var block = this.options.scrollBlock || 'center';
 
-      if (win && typeof target.getBoundingClientRect === 'function' && typeof win.scrollTo === 'function') {
+      if (!win || typeof target.getBoundingClientRect !== 'function' || typeof win.scrollTo !== 'function') {
+        // No window plumbing (or exotic embed) — one-shot native fallback.
+        if (typeof target.scrollIntoView === 'function') {
+          try {
+            target.scrollIntoView({ behavior: 'smooth', block: block === 'end' ? 'end' : (block === 'start' ? 'start' : 'center') });
+          } catch (e) { target.scrollIntoView(); }
+        }
+        return;
+      }
+
+      // Cancel a previous tracking loop (rapid open/open on another row).
+      if (this._scrollCancel) this._scrollCancel();
+
+      var self = this;
+      var dur = Math.max(0, (this.options.animationDuration || 0) * 1000);
+      var settle = 80;                    // keep tracking briefly past the end
+      var total = dur + settle;
+      var startY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
+      var t0 = Date.now();
+      var cancelled = false;
+      var raf = typeof win.requestAnimationFrame === 'function'
+        ? function (fn) { win.requestAnimationFrame(fn); }
+        : function (fn) { setTimeout(fn, 16); };
+
+      function currentTargetY() {
         var rect = target.getBoundingClientRect();
         var pageY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
         var viewport = win.innerHeight || 0;
@@ -404,20 +431,44 @@
           top = elemTop;
         } else if (block === 'end') {
           top = elemTop - Math.max(0, viewport - rect.height);
-        } else { // center (default) — clamp when taller than the viewport
+        } else { // center — clamp when taller than the viewport
           top = rect.height > viewport ? elemTop : elemTop - (viewport - rect.height) / 2;
         }
-        try {
-          win.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-          return;
-        } catch (e) { /* fall through to scrollIntoView */ }
+        // Clamp to the document's scrollable range when measurable.
+        var docEl = (typeof document !== 'undefined') && document.documentElement;
+        if (docEl && docEl.scrollHeight) {
+          top = Math.min(top, Math.max(0, docEl.scrollHeight - viewport));
+        }
+        return Math.max(0, top);
       }
 
-      if (typeof target.scrollIntoView === 'function') {
-        try {
-          target.scrollIntoView({ behavior: 'smooth', block: block === 'end' ? 'end' : (block === 'start' ? 'start' : 'center') });
-        } catch (e) { target.scrollIntoView(); }
+      function easeInOut(p) {
+        return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
       }
+
+      function cancel() {
+        cancelled = true;
+        if (typeof win.removeEventListener === 'function') {
+          win.removeEventListener('wheel', cancel);
+          win.removeEventListener('touchstart', cancel);
+        }
+        if (self._scrollCancel === cancel) self._scrollCancel = null;
+      }
+      this._scrollCancel = cancel;
+      if (typeof win.addEventListener === 'function') {
+        win.addEventListener('wheel', cancel, { passive: true });
+        win.addEventListener('touchstart', cancel, { passive: true });
+      }
+
+      function step() {
+        if (cancelled) return;
+        var p = total > 0 ? Math.min(1, (Date.now() - t0) / total) : 1;
+        var y = startY + (currentTargetY() - startY) * easeInOut(p);
+        try { win.scrollTo({ top: y }); } catch (e) { win.scrollTo(0, y); }
+        if (p < 1) raf(step);
+        else cancel();                    // done — detach listeners
+      }
+      step();
     }
 
     // ---- Internal -----------------------------------------------------------

@@ -336,7 +336,7 @@ test('nested tab groups do not steal each others triggers/panels', () => {
   assert.equal(rowPanel.style.display, '', 'row panel must open');
 });
 
-test('scroll option centers the opened panel in the window, not on default open', async () => {
+test('scroll option tracks the opening panel and lands centered, not on default open', async () => {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const env = createEnvironment();
 
@@ -360,10 +360,9 @@ test('scroll option centers the opened panel in the window, not on default open'
   assert.equal(scrollCalls.length, 0);
 
   env.yearlyTrigger.click();
-  await wait(5);
+  await wait(200); // tracking loop runs ~80ms settle window
 
-  assert.equal(scrollCalls.length, 1, 'opened panel triggered a window scroll');
-  assert.equal(scrollCalls[0].behavior, 'smooth');
+  assert.ok(scrollCalls.length >= 2, 'tracking loop scrolled across multiple frames');
   // center: elemTop(1000) - (viewport(800) - height(200)) / 2 = 700
-  assert.equal(scrollCalls[0].top, 700);
+  assert.equal(scrollCalls[scrollCalls.length - 1].top, 700, 'final frame lands centered');
 });
