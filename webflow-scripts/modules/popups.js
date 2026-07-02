@@ -311,9 +311,17 @@
     // ---- Lifecycle ----------------------------------------------------------
 
     _init() {
-      if (this._shouldExcludeUrl() || !this._shouldContainUrl()) return;
-
       this.popupElement = document.querySelector(this.options.popupSelector);
+
+      // Element-level URL filters must merge BEFORE the URL gate below.
+      if (this.popupElement) this._mergeUrlFilterAttributes();
+
+      if (this._shouldExcludeUrl() || !this._shouldContainUrl()) {
+        // Hard-block every entry point on this URL — including direct show()
+        // calls and d2-show-popup click triggers.
+        this._urlBlocked = true;
+        return;
+      }
 
       if (!this.popupElement) {
         console.warn(
@@ -451,6 +459,10 @@
     // ---- Public API ---------------------------------------------------------
 
     show() {
+      if (this._urlBlocked) {
+        _log('show suppressed — URL excluded → ' + this.name);
+        return;
+      }
       if (!this.popupElement || this.isVisible || this._animating) return;
       if (!this._isWithinSchedule()) {
         _log('show suppressed — outside schedule → ' + this.name, this._schedule);
@@ -1005,6 +1017,29 @@
     }
 
     // ---- URL filters --------------------------------------------------------
+
+    // Element-level URL filters, readable straight from the Designer:
+    //   d2-popup-exclude="/wyszukiwarka|/kontakt"  → never on these subpages
+    //   d2-popup-include="/oferta|/produkty"       → ONLY on these subpages
+    // Values are pipe-separated URL fragments (matched against location.href,
+    // same semantics as excludeUrls/containsUrls); data-d2-popup-* also works.
+    // Exclude entries append to options.excludeUrls; include REPLACES
+    // options.containsUrls (turning the default match-everything into a
+    // whitelist).
+    _mergeUrlFilterAttributes() {
+      const el = this.popupElement;
+      const read = (name) => {
+        let raw = attr(el, name);
+        if (raw == null) raw = el.getAttribute('data-' + name);
+        if (raw == null || raw === '') return null;
+        const list = String(raw).split('|').map((s) => s.trim()).filter(Boolean);
+        return list.length ? list : null;
+      };
+      const exclude = read('d2-popup-exclude');
+      if (exclude) this.options.excludeUrls = (this.options.excludeUrls || []).concat(exclude);
+      const include = read('d2-popup-include');
+      if (include) this.options.containsUrls = include;
+    }
 
     _shouldContainUrl() {
       const href = window.location.href;

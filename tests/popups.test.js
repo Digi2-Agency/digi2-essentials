@@ -334,3 +334,51 @@ test('delay is read from the data-d2- prefixed attribute too', () => {
   env.timers[0].fn();
   assert.equal(inst.isVisible, true);
 });
+
+test('d2-popup-exclude keeps the popup inert on a matching subpage', () => {
+  const env = createEnvironment();
+  env.window.location.href = 'https://example.com/wyszukiwarka';
+  loadPopupsModule(env);
+
+  env.body.appendChild(createElement('div', {
+    class: 'popup__overlay',
+    'd2-popup-exclude': '/wyszukiwarka|/kontakt',
+  }));
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
+
+  assert.equal(inst.isVisible, false);
+  assert.notEqual(inst.popupElement && inst.popupElement.style.display, 'flex');
+
+  // Even an explicit d2-show-popup click must not open it here.
+  const btn = createElement('button', { 'd2-show-popup': 'promo' });
+  env.body.appendChild(btn);
+  env.dispatchDoc('click', btn);
+  assert.equal(inst.isVisible, false);
+});
+
+test('d2-popup-exclude does not affect other subpages', () => {
+  const env = createEnvironment();
+  env.window.location.href = 'https://example.com/oferta';
+  loadPopupsModule(env);
+
+  env.body.appendChild(createElement('div', {
+    class: 'popup__overlay',
+    'd2-popup-exclude': '/wyszukiwarka|/kontakt',
+  }));
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
+
+  assert.equal(inst.isVisible, true);
+});
+
+test('d2-popup-include whitelists subpages (skips others)', () => {
+  const env = createEnvironment();
+  env.window.location.href = 'https://example.com/o-nas';
+  loadPopupsModule(env);
+
+  env.body.appendChild(createElement('div', {
+    class: 'popup__overlay',
+    'd2-popup-include': '/oferta|/produkty',
+  }));
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
+  assert.equal(inst.isVisible, false);
+});
