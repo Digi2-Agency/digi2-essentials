@@ -442,8 +442,11 @@
         return Math.max(0, top);
       }
 
-      function easeInOut(p) {
-        return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      // Ease-out: moves immediately and decelerates — mirrors the panel's CSS
+      // 'ease' timing, so the scroll visibly rides along from the first frame
+      // instead of lagging behind the expansion.
+      function easeOut(p) {
+        return 1 - Math.pow(1 - p, 3);
       }
 
       function cancel() {
@@ -463,7 +466,7 @@
       function step() {
         if (cancelled) return;
         var p = total > 0 ? Math.min(1, (Date.now() - t0) / total) : 1;
-        var y = startY + (currentTargetY() - startY) * easeInOut(p);
+        var y = startY + (currentTargetY() - startY) * easeOut(p);
         try { win.scrollTo({ top: y }); } catch (e) { win.scrollTo(0, y); }
         if (p < 1) raf(step);
         else cancel();                    // done — detach listeners
