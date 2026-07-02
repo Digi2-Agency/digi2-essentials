@@ -83,6 +83,7 @@ function createElement(tagName, attrs) {
         if (sel === '[d2-tab-group]') return node.hasAttribute('d2-tab-group');
         if (sel === '[d2-tab-trigger]') return node.hasAttribute('d2-tab-trigger');
         if (sel === '[d2-tab-instance]') return node.hasAttribute('d2-tab-instance');
+        if (sel === '[d2-tab-scroll]') return node.hasAttribute('d2-tab-scroll');
         return false;
       }
 
@@ -150,6 +151,13 @@ function createEnvironment() {
       setTimeout,
       clearTimeout,
       history: { replaceState() {} },
+      // Simulates CSS: an element flagged _classHidden renders display:none
+      // unless an inline display overrides it.
+      getComputedStyle: (el) => ({
+        display: el._classHidden && !el.style.display
+          ? 'none'
+          : (el.style.display || 'block'),
+      }),
     }),
     window,
     monthlyTrigger,
@@ -395,4 +403,69 @@ test('predictive scroll accounts for a closing panel above the opening one', asy
   assert.ok(scrollCalls.length >= 1, 'glide ran');
   // finalTop = 1000 - 300 (collapsing above) = 700; center: 700 - (800-200)/2 = 400
   assert.equal(scrollCalls[scrollCalls.length - 1].top, 400, 'predicted target includes sibling collapse');
+});
+
+test('class-based display:none panel gets an inline display when shown', () => {
+  const env = createEnvironment();
+  env.yearlyPanel._classHidden = true;   // simulates a "hidden" combo class
+
+  loadTabsModule(env);
+  env.window.digi2.tabs.create('pricing', { animation: 'none' });
+
+  env.yearlyTrigger.click();
+  assert.equal(env.yearlyPanel.style.display, 'block', 'inline display overrides the class');
+
+  // d2-tab-display picks the value for flex/grid panels.
+  env.monthlyPanel._classHidden = true;
+  env.monthlyPanel.setAttribute('d2-tab-display', 'flex');
+  env.monthlyTrigger.click();
+  assert.equal(env.monthlyPanel.style.display, 'flex');
+});
+
+test('outer group does not inherit d2-tab-scroll from a nested accordion', () => {
+  const body = createElement('body');
+  const outer = createElement('div', { 'd2-tab-group': 'outer2' });
+  const triggerList = createElement('button', { 'd2-tab-trigger': 'list' });
+  const triggerGrid = createElement('button', { 'd2-tab-trigger': 'grid' });
+  const listPanel = createElement('div', { 'd2-tab-instance': 'list' });
+  const gridPanel = createElement('div', { 'd2-tab-instance': 'grid' });
+  const inner = createElement('div', {
+    'd2-tab-group': 'inner2', 'd2-tab-mode': 'accordion', 'd2-tab-animation': 'none',
+  });
+  const rowTrigger = createElement('div', { 'd2-tab-trigger': 'row-a' });
+  const rowPanel = createElement('div', { 'd2-tab-instance': 'row-a', 'd2-tab-scroll': 'center' });
+
+  inner.appendChild(rowTrigger);
+  inner.appendChild(rowPanel);
+  listPanel.appendChild(inner);
+  outer.appendChild(triggerList);
+  outer.appendChild(triggerGrid);
+  outer.appendChild(listPanel);
+  outer.appendChild(gridPanel);
+  body.appendChild(outer);
+
+  const document = {
+    body,
+    readyState: 'complete',
+    addEventListener() {},
+    querySelector(selector) {
+      if (selector === '[d2-tab-group="outer2"]') return outer;
+      if (selector === '[d2-tab-group="inner2"]') return inner;
+      return null;
+    },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  // Switching the outer view must NOT scroll (its scroll option stays off) …
+  triggerGrid.click();
+  assert.equal(gridPanel._scrolledInto, undefined, 'outer tab switch must not scroll');
+  // …while the inner accordion still scrolls to its opening row.
+  triggerList.click();
+  rowTrigger.click();
+  assert.ok(rowPanel._scrolledInto, 'inner accordion row still scrolls');
 });

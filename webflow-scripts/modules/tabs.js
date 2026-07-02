@@ -103,6 +103,17 @@
     } else {
       el.style.display = '';
     }
+    // A CLASS-based display:none (e.g. a "hidden" combo class set in the
+    // Designer to avoid a flash on load) survives clearing the inline style —
+    // override it inline so the panel actually appears. d2-tab-display picks
+    // the display value when 'block' isn't right (flex/grid panels).
+    if (typeof getComputedStyle === 'function') {
+      try {
+        if (getComputedStyle(el).display === 'none') {
+          el.style.display = attr(el, 'd2-tab-display') || 'block';
+        }
+      } catch (e) { /* detached node etc. — leave as-is */ }
+    }
   }
 
   function hideElement(el) {
@@ -822,11 +833,25 @@
       if (!isNaN(dur)) o.animationDuration = dur;
       // d2-tab-scroll            → scroll opened panel into view (centered)
       // d2-tab-scroll="start"    → override position (start|center|end)
-      // Accept it on the group element OR on any descendant (trigger/panel),
-      // so putting it on the rows works too.
-      var scrollEl = (group.hasAttribute && group.hasAttribute('d2-tab-scroll'))
-        ? group
-        : (group.querySelector ? group.querySelector('[d2-tab-scroll]') : null);
+      // Accept it on the group element OR on a descendant OWNED by this group
+      // (rows work) — but never one nested inside ANOTHER d2-tab-group, so an
+      // outer view-switch group doesn't inherit scroll from an inner accordion.
+      var scrollEl = null;
+      if (group.hasAttribute && group.hasAttribute('d2-tab-scroll')) {
+        scrollEl = group;
+      } else if (group.querySelectorAll) {
+        var scrollCands = group.querySelectorAll('[d2-tab-scroll]');
+        for (var sc = 0; sc < scrollCands.length; sc++) {
+          var n = scrollCands[sc].parentElement;
+          var owned = false;
+          while (n) {
+            if (n === group) { owned = true; break; }
+            if (n.hasAttribute && n.hasAttribute('d2-tab-group')) break;
+            n = n.parentElement;
+          }
+          if (owned) { scrollEl = scrollCands[sc]; break; }
+        }
+      }
       if (scrollEl) {
         o.scroll = true;
         var sb = String(attr(scrollEl, 'd2-tab-scroll') || '').trim().toLowerCase();
