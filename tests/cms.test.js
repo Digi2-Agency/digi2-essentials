@@ -632,3 +632,32 @@ test('list-level sort-order is base only: user sort replaces it, clearSort resto
   env.window.digi2.cms.get('offers').clearSort();
   assert.ok(idx(itOferta) < idx(itPremiera), 'base order restored after clearSort');
 });
+
+test('sort label with d2-cms-target updates next to two lists; sort-active honors dir', async () => {
+  const env = createEnvironment();
+  const label = createElement('div', { 'd2-cms-sort-label': '', 'd2-cms-target': 'offers' }, 'Sortuj według');
+  const optAsc = createElement('a', { 'd2-cms-sort': 'area', 'd2-cms-sort-dir': 'asc', 'd2-cms-target': 'offers' }, 'Od najmniejszych');
+  const optDesc = createElement('a', { 'd2-cms-sort': 'area', 'd2-cms-sort-dir': 'desc', 'd2-cms-target': 'offers' }, 'Od największych');
+
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  list.appendChild(createItem({ area: '10' }));
+  list.appendChild(createItem({ area: '99' }));
+  // Second list on the page — the label must still resolve via its target.
+  const other = createElement('div', { 'd2-cms-list': 'other' });
+  other.appendChild(createItem({ area: '1' }));
+
+  env.body.appendChild(label);
+  env.body.appendChild(optAsc);
+  env.body.appendChild(optDesc);
+  env.body.appendChild(list);
+  env.body.appendChild(other);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', optDesc);
+
+  assert.equal(label.textContent, 'Od największych', 'label swaps to the chosen option text');
+  assert.equal(optDesc.hasAttribute('d2-cms-sort-active'), true, 'desc option marked active');
+  assert.equal(optAsc.hasAttribute('d2-cms-sort-active'), false, 'asc option NOT marked active');
+});

@@ -1616,7 +1616,14 @@
       var self = this;
       sortBtns.forEach(function (btn) {
         var field = attr(btn, 'd2-cms-sort');
-        if (self._sort && self._sort.field === field) {
+        // A button with an explicit d2-cms-sort-dir is one concrete choice
+        // (e.g. dropdown options "asc" vs "desc" on the same field) — it's
+        // active only when the direction matches too. Dir-less buttons
+        // (toggling column headers) stay active on field match alone.
+        var wantDir = attr(btn, 'd2-cms-sort-dir');
+        var active = self._sort && self._sort.field === field
+          && (!wantDir || wantDir === self._sort.dir);
+        if (active) {
           btn.setAttribute('d2-cms-sort-active', self._sort.dir);
         } else {
           btn.removeAttribute('d2-cms-sort-active');
