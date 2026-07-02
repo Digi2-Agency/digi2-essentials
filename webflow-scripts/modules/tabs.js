@@ -564,20 +564,27 @@
       }, dur * 1000 + 50);
     }
 
-    // --- height collapse animation (accordion "height" mode) ---------------
-    // Animates the exact `height` (not max-height): with border-box the pinned
-    // scrollHeight equals the natural height incl. padding, so releasing to
-    // `auto` at the end causes no visible jump — even with panel padding.
+    // --- max-height collapse animation (accordion "height" mode) -----------
+    // Target height is measured with offsetHeight while max-height is briefly
+    // lifted — NOT scrollHeight, which omits the panel's bottom padding when
+    // content overflows, making the panel "jump" by that padding at the end.
     _showPanelHeight(panel, dur, onDone) {
       var self = this;
       var done = typeof onDone === 'function' ? onDone : function () {};
       this._animating = true;
-      panel.style.overflow = 'hidden';
-      panel.style.maxHeight = '0px';
-      panel.style.transition = 'max-height ' + dur + 's ease';
+
+      // Measure the real rendered height (incl. padding + CSS height rules).
       showElement(panel);
-      void panel.offsetHeight;                       // reflow at 0
-      panel.style.maxHeight = panel.scrollHeight + 'px';
+      panel.style.transition = 'none';
+      panel.style.maxHeight = 'none';
+      panel.style.overflow = 'hidden';
+      var target = panel.offsetHeight;
+
+      // Collapse and animate up to the measured target.
+      panel.style.maxHeight = '0px';
+      void panel.offsetHeight;                       // commit the 0 state
+      panel.style.transition = 'max-height ' + dur + 's ease';
+      panel.style.maxHeight = target + 'px';
 
       var finished = false;
       function finish() {
@@ -602,9 +609,10 @@
     _hidePanelHeight(panel, dur) {
       var finished = false;
       panel.style.overflow = 'hidden';
-      panel.style.maxHeight = panel.scrollHeight + 'px';   // pin current height
+      panel.style.transition = 'none';
+      panel.style.maxHeight = panel.offsetHeight + 'px';   // pin real rendered height
+      void panel.offsetHeight;                             // commit the pin
       panel.style.transition = 'max-height ' + dur + 's ease';
-      void panel.offsetHeight;                             // reflow
       panel.style.maxHeight = '0px';
 
       function finish() {
