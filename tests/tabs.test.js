@@ -366,3 +366,32 @@ test('scroll option tracks the opening panel and lands centered, not on default 
   // center: elemTop(1000) - (viewport(800) - height(200)) / 2 = 700
   assert.equal(scrollCalls[scrollCalls.length - 1].top, 700, 'final frame lands centered');
 });
+
+test('predictive scroll accounts for a closing panel above the opening one', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const env = createEnvironment();
+
+  const scrollCalls = [];
+  env.window.innerHeight = 800;
+  env.window.pageYOffset = 0;
+  env.window.scrollTo = (opts) => scrollCalls.push(opts);
+  // Open monthly panel sits above: top 100, height 300 — it will collapse.
+  env.monthlyPanel.getBoundingClientRect = () => ({ top: 100, height: 300 });
+  env.monthlyPanel.offsetHeight = 300;
+  // Yearly panel measured at its final size (animation 'none' shows full).
+  env.yearlyPanel.getBoundingClientRect = () => ({ top: 1000, height: 200 });
+
+  loadTabsModule(env);
+  env.window.digi2.tabs.create('pricing', {
+    animation: 'none',
+    animationDuration: 0,
+    scroll: true,
+  });
+
+  env.yearlyTrigger.click();
+  await wait(200);
+
+  assert.ok(scrollCalls.length >= 1, 'glide ran');
+  // finalTop = 1000 - 300 (collapsing above) = 700; center: 700 - (800-200)/2 = 400
+  assert.equal(scrollCalls[scrollCalls.length - 1].top, 400, 'predicted target includes sibling collapse');
+});

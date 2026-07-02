@@ -305,9 +305,22 @@
 
       _log('open → ' + tabId);
 
-      // In tabs mode, close all others first
-      if (this.options.mode === 'tabs') {
-        var self = this;
+      // Record the geometry of panels about to close BEFORE their collapse
+      // starts — their current heights feed the predictive scroll target (a
+      // closing panel above the opening one shifts it up by its full height).
+      var self = this;
+      var willCloseOthers = this.options.mode === 'tabs'
+        || (this.options.mode === 'accordion' && !this.options.allowMultiple);
+      var closingInfo = [];
+      if (willCloseOthers) {
+        this._activeTabs.forEach(function (activeId) {
+          if (activeId === tabId) return;
+          var p = self._getPanel(activeId);
+          if (p && typeof p.getBoundingClientRect === 'function') {
+            var r = p.getBoundingClientRect();
+            closingInfo.push({ top: r.top, height: (p.offsetHeight || r.height || 0) });
+          }
+        });
         this._activeTabs.forEach(function (activeId) {
           if (activeId !== tabId) {
             self._hidePanel(activeId);
@@ -316,24 +329,12 @@
         });
       }
 
-      // In accordion mode with !allowMultiple, close others
-      if (this.options.mode === 'accordion' && !this.options.allowMultiple) {
-        var self2 = this;
-        this._activeTabs.forEach(function (activeId) {
-          if (activeId !== tabId) {
-            self2._hidePanel(activeId);
-            self2._activeTabs.delete(activeId);
-          }
-        });
-      }
-
-      // Scroll WITH the open animation: a per-frame tracking loop re-computes
-      // the panel's position as it grows (and as a sibling panel collapses
-      // above it), so the view glides along and lands centered on the final
-      // layout. Skipped during the initial default-open.
+      // Predictive scroll: compute the panel's FINAL position + size up front
+      // (opening growth + siblings collapsing above) and glide straight there
+      // in one motion. Skipped during the initial default-open.
       var shouldScroll = this.options.scroll && !this._initializing;
       this._showPanel(tabId, null);
-      if (shouldScroll) this._scrollToTab(tabId);
+      if (shouldScroll) this._scrollToTab(tabId, closingInfo);
       this._activeTabs.add(tabId);
       this._updateTriggers();
 
@@ -383,14 +384,16 @@
       return this.options.mode === 'tabs' ? (arr[0] || null) : arr;
     }
 
-    // Scroll the opened panel into the viewport WHILE it animates open.
-    // A per-frame loop re-computes the target position from the live layout —
-    // so the growing panel and any sibling collapsing above it are both
-    // accounted for — and eases the window toward it over the animation's
-    // duration, landing exactly on the final centered position. The loop
-    // aborts if the user scrolls manually (wheel/touch) so we never fight
-    // their input.
-    _scrollToTab(tabId) {
+    // Predictive scroll: instead of chasing the live layout, compute where the
+    // panel will sit AFTER all animations finish and glide straight there.
+    //   final height = the measured expansion target (panel._d2TargetHeight,
+    //                  set by _showPanelHeight) — or the current rect for
+    //                  non-height animations (already at full size);
+    //   final top    = the panel's top right now minus the summed heights of
+    //                  closing panels that sit above it (they collapse to 0).
+    // The glide runs over the animation's duration with ease-out and aborts if
+    // the user scrolls manually (wheel/touch) so we never fight their input.
+    _scrollToTab(tabId, closingInfo) {
       var target = this._getPanel(tabId) || this._getTrigger(tabId);
       if (!target) return;
 
@@ -407,44 +410,52 @@
         return;
       }
 
-      // Cancel a previous tracking loop (rapid open/open on another row).
+      // Cancel a previous glide (rapid open/open on another row).
       if (this._scrollCancel) this._scrollCancel();
 
       var self = this;
+      var rect = target.getBoundingClientRect();
+      var pageY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
+      var viewport = win.innerHeight || 0;
+
+      // Predicted final geometry.
+      var finalHeight = (target._d2TargetHeight != null) ? target._d2TargetHeight : rect.height;
+      var closingAbove = 0;
+      if (closingInfo && closingInfo.length) {
+        for (var ci = 0; ci < closingInfo.length; ci++) {
+          if (closingInfo[ci].top < rect.top) closingAbove += closingInfo[ci].height || 0;
+        }
+      }
+      var finalTop = rect.top + pageY - closingAbove;
+
+      var destY;
+      if (block === 'start') {
+        destY = finalTop;
+      } else if (block === 'end') {
+        destY = finalTop - Math.max(0, viewport - finalHeight);
+      } else { // center — clamp when taller than the viewport
+        destY = finalHeight > viewport ? finalTop : finalTop - (viewport - finalHeight) / 2;
+      }
+      // Clamp to the PREDICTED document range (current height + panel growth
+      // − collapsing siblings), so end-of-list targets don't overshoot.
+      var docEl = (typeof document !== 'undefined') && document.documentElement;
+      if (docEl && docEl.scrollHeight) {
+        var predictedDocHeight = docEl.scrollHeight + (finalHeight - rect.height) - closingAbove;
+        destY = Math.min(destY, Math.max(0, predictedDocHeight - viewport));
+      }
+      destY = Math.max(0, destY);
+
       var dur = Math.max(0, (this.options.animationDuration || 0) * 1000);
-      var settle = 80;                    // keep tracking briefly past the end
-      var total = dur + settle;
-      var startY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
+      var total = dur + 80;               // glide a touch past the animation
+      var startY = pageY;
       var t0 = Date.now();
       var cancelled = false;
       var raf = typeof win.requestAnimationFrame === 'function'
         ? function (fn) { win.requestAnimationFrame(fn); }
         : function (fn) { setTimeout(fn, 16); };
 
-      function currentTargetY() {
-        var rect = target.getBoundingClientRect();
-        var pageY = win.pageYOffset != null ? win.pageYOffset : (win.scrollY || 0);
-        var viewport = win.innerHeight || 0;
-        var elemTop = rect.top + pageY;
-        var top;
-        if (block === 'start') {
-          top = elemTop;
-        } else if (block === 'end') {
-          top = elemTop - Math.max(0, viewport - rect.height);
-        } else { // center — clamp when taller than the viewport
-          top = rect.height > viewport ? elemTop : elemTop - (viewport - rect.height) / 2;
-        }
-        // Clamp to the document's scrollable range when measurable.
-        var docEl = (typeof document !== 'undefined') && document.documentElement;
-        if (docEl && docEl.scrollHeight) {
-          top = Math.min(top, Math.max(0, docEl.scrollHeight - viewport));
-        }
-        return Math.max(0, top);
-      }
-
       // Ease-out: moves immediately and decelerates — mirrors the panel's CSS
-      // 'ease' timing, so the scroll visibly rides along from the first frame
-      // instead of lagging behind the expansion.
+      // 'ease' timing, so the scroll rides along from the first frame.
       function easeOut(p) {
         return 1 - Math.pow(1 - p, 3);
       }
@@ -466,7 +477,7 @@
       function step() {
         if (cancelled) return;
         var p = total > 0 ? Math.min(1, (Date.now() - t0) / total) : 1;
-        var y = startY + (currentTargetY() - startY) * easeOut(p);
+        var y = startY + (destY - startY) * easeOut(p);
         try { win.scrollTo({ top: y }); } catch (e) { win.scrollTo(0, y); }
         if (p < 1) raf(step);
         else cancel();                    // done — detach listeners
@@ -633,6 +644,8 @@
       panel.style.maxHeight = 'none';
       panel.style.overflow = 'hidden';
       var target = panel.offsetHeight;
+      // Expose the final height for the predictive scroll (see _scrollToTab).
+      panel._d2TargetHeight = target;
 
       // Collapse and animate up to the measured target.
       panel.style.maxHeight = '0px';
