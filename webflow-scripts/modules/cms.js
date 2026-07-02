@@ -269,6 +269,8 @@
         defaultFilters: {},           // { key: [values] }
         groupBy: null,                // field name for persistent secondary sort (tiebreaker)
         groupOrder: null,             // array of values defining the group order
+        groupPersist: true,           // false → group order is BASE sort only; a user
+                                      // sort replaces it entirely (restored on clearSort)
         filterMatchMode: 'AND',       // AND across keys (always OR within a key)
         emptySelector: null,          // element shown when 0 matches
         hiddenClass: null,            // CSS class for hidden items (default: inline display:none)
@@ -1221,12 +1223,16 @@
 
     _applySort(matching) {
       var groupRanker = this._buildGroupRanker();
-      // Group rank is PRIMARY — the collection-list group order (e.g.
-      // status: dostępne → zarezerwowane → sprzedane) takes precedence
-      // over whatever column the user clicked, so "dostępne" always leads.
-      // Exception: when the user explicitly sorts the group field itself,
-      // their direction drives the ordering and we suspend the group rank.
+      // Group rank is PRIMARY — the group order (e.g. status: dostępne →
+      // zarezerwowane → sprzedane) outranks the user-clicked column — but only
+      // while it applies:
+      //   - groupPersist:false (implicit sort-by/sort-order base ordering):
+      //     any user-initiated sort suspends the group entirely; clearing the
+      //     sort restores it.
+      //   - the user explicitly sorts the group field itself: their direction
+      //     drives the ordering, so the extra rank pass is redundant.
       var groupActive = !!groupRanker
+        && (this.options.groupPersist || !this._userInitiatedSort)
         && (!this._sort || this._sort.field !== this.options.groupBy);
 
       if (!this._sort || !this._sort.field) {
@@ -2176,17 +2182,19 @@
         dir: dir === 'desc' ? 'desc' : 'asc',
         order: order && order.length ? order : undefined,
       };
-      // A list-level sort-by + sort-order also establishes a persistent "group"
-      // secondary sort. This way, when the user later clicks a different sort
-      // button (e.g. price), the custom status order still applies to group
-      // empty-price items / ties by status.
+      // A list-level sort-by + sort-order is the BASE ordering only: it drives
+      // the initial render, but a user-initiated sort replaces it entirely
+      // (groupPersist:false). Clearing the sort restores the base order.
       if (order && order.length) {
         opts.groupBy = v;
         opts.groupOrder = order.slice();
+        opts.groupPersist = false;
       }
     }
 
-    // Explicit group-sort attributes override the implicit default above.
+    // Explicit group-sort attributes override the implicit default above and
+    // stay persistent: the group order keeps ranking items even while the
+    // user sorts another column (classic tiebreaker behavior).
     var gb = attr(el, 'd2-cms-group-by');
     var goRaw = attr(el, 'd2-cms-group-order');
     if (gb && goRaw) {
@@ -2194,6 +2202,7 @@
       if (go.length) {
         opts.groupBy = gb;
         opts.groupOrder = go;
+        opts.groupPersist = true;
       }
     }
 

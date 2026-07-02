@@ -599,3 +599,36 @@ test('d2-cms-clear="field" resets only that filter key and leaves others', async
   assert.equal(filterTag.hasAttribute('d2-cms-filter-active'), false, 'tag trigger de-activated (checkbox would uncheck)');
   assert.equal(filterStatus.hasAttribute('d2-cms-filter-active'), true, 'status trigger stays active');
 });
+
+test('list-level sort-order is base only: user sort replaces it, clearSort restores it', async () => {
+  const env = createEnvironment();
+  const sortArea = createElement('button', { 'd2-cms-sort': 'area', 'd2-cms-target': 'offers' });
+  const list = createElement('div', {
+    'd2-cms-list': 'offers',
+    'd2-cms-sort-by': 'tag',
+    'd2-cms-sort-order': 'OFERTA|PREMIERA',
+  });
+  // Base (tag) order puts itPremiera AFTER itOferta; pure area asc reverses them.
+  const itOferta = createItem({ tag: 'OFERTA', area: '99' });
+  const itPremiera = createItem({ tag: 'PREMIERA', area: '10' });
+  list.appendChild(itOferta);
+  list.appendChild(itPremiera);
+  env.body.appendChild(sortArea);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const idx = (node) => list.children.indexOf(node);
+
+  // Initial render follows the collection-list base order (tag pipe order).
+  assert.ok(idx(itOferta) < idx(itPremiera), 'base order: OFERTA first');
+
+  // User sorts by area — base tag order must NOT rank the result anymore.
+  dispatchDocument(env, 'click', sortArea);
+  assert.ok(idx(itPremiera) < idx(itOferta), 'pure area asc: 10 before 99');
+
+  // Clearing the sort restores the base order.
+  env.window.digi2.cms.get('offers').clearSort();
+  assert.ok(idx(itOferta) < idx(itPremiera), 'base order restored after clearSort');
+});
