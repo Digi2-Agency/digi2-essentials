@@ -647,6 +647,14 @@
       // Expose the final height for the predictive scroll (see _scrollToTab).
       panel._d2TargetHeight = target;
 
+      // Bottom-padding compensation for mid-animation re-measures: while the
+      // panel is clipped, scrollHeight drops the panel's own bottom padding.
+      var padBottom = 0;
+      if (typeof getComputedStyle === 'function') {
+        var pb = parseFloat(getComputedStyle(panel).paddingBottom);
+        if (!isNaN(pb)) padBottom = pb;
+      }
+
       // Collapse and animate up to the measured target.
       panel.style.maxHeight = '0px';
       void panel.offsetHeight;                       // commit the 0 state
@@ -654,10 +662,45 @@
       panel.style.maxHeight = target + 'px';
 
       var finished = false;
+      var timer = setTimeout(finish, dur * 1000 + 60);
+
+      // Lazy images inside a previously display:none panel have no intrinsic
+      // size yet (mobile: the slider image drives the row height). Force them
+      // to load now and, when one arrives mid-animation, re-target the running
+      // transition to the new full height — the panel keeps gliding instead of
+      // opening short and snapping once the image pops in.
+      var imgListeners = [];
+      if (panel.querySelectorAll) {
+        var imgs = panel.querySelectorAll('img');
+        for (var i = 0; i < imgs.length; i++) {
+          (function (img) {
+            if (img.complete || typeof img.addEventListener !== 'function') return;
+            try { if (img.loading === 'lazy') img.loading = 'eager'; } catch (e) {}
+            var onload = function () {
+              if (finished) return;
+              var grown = panel.scrollHeight + padBottom;
+              if (grown > target + 1) {
+                target = grown;
+                panel._d2TargetHeight = target;
+                panel.style.maxHeight = target + 'px';   // transition re-targets smoothly
+                clearTimeout(timer);
+                timer = setTimeout(finish, dur * 1000 + 60);
+              }
+            };
+            img.addEventListener('load', onload);
+            imgListeners.push([img, onload]);
+          })(imgs[i]);
+        }
+      }
+
       function finish() {
         if (finished) return;
         finished = true;
+        clearTimeout(timer);
         panel.removeEventListener('transitionend', handler);
+        for (var li = 0; li < imgListeners.length; li++) {
+          imgListeners[li][0].removeEventListener('load', imgListeners[li][1]);
+        }
         // Let the panel grow naturally afterwards (nested media, etc.)
         panel.style.maxHeight = 'none';
         panel.style.overflow = '';
@@ -670,7 +713,6 @@
         finish();
       }
       panel.addEventListener('transitionend', handler);
-      setTimeout(finish, dur * 1000 + 60);
     }
 
     _hidePanelHeight(panel, dur) {

@@ -148,6 +148,7 @@ function createEnvironment() {
       document,
       console,
       setTimeout,
+      clearTimeout,
       history: { replaceState() {} },
     }),
     window,
@@ -322,7 +323,7 @@ test('nested tab groups do not steal each others triggers/panels', () => {
   };
   const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
   const context = vm.createContext({
-    window, document, console, setTimeout, history: { replaceState() {} },
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
   });
   vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
 
