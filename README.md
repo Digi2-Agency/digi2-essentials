@@ -2,6 +2,31 @@
 
 Component library for Webflow. One script tag, modular architecture, on-demand loading.
 
+**Contents:**
+[Quick Start](#quick-start) ·
+[Modules](#available-modules) ·
+[Per-page modules](#per-page-modules) ·
+[Responsive attributes](#responsive-attributes) ·
+[Google / Consent](#google--consent) ·
+[A/B Tests](#ab-tests) ·
+[Popups](#popups) ·
+[Cookies](#cookies) ·
+[Forms](#forms) ·
+[Tabs & Accordions](#tabs--accordions) ·
+[Sliders](#sliders) ·
+[Scroll Animations](#scroll-animations) ·
+[Toasts](#toasts) ·
+[Smooth Scroll](#smooth-scroll) ·
+[Lazy Loading](#lazy-loading) ·
+[Countdown](#countdown) ·
+[CMS Filtering](#cms-filtering) ·
+[CMS List](#cms-list-sort--filter--load-more) ·
+[Format](#format) ·
+[Copy](#copy-to-clipboard) ·
+[Events](#events) ·
+[Debug](#debug-mode) ·
+[Attributes cheat-sheet](#data-attributes)
+
 ---
 
 ## Quick Start
@@ -27,6 +52,8 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 ```
 
 Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzipped.
+
+> **Versioning:** `@latest` is cached by jsDelivr for up to ~12–24 h. During active development pin a commit hash instead (`…digi2-essentials@<sha>/dist/…`) and bump it on deploy — changes go live instantly and are immutable.
 
 ---
 
@@ -369,8 +396,8 @@ digi2.popups.create('newsletter', {
 | `schedule` | `null` | `{ from, to }` or `'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'` — only show within this window. See [Scheduling](#scheduling) |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
-| `excludeUrls` | `[]` | URL patterns to skip |
-| `containsUrls` | `['/']` | URL patterns required |
+| `excludeUrls` | `[]` | URL fragments to skip — see [URL filters](#url-filters) |
+| `containsUrls` | `['/']` | URL fragments required (whitelist) — see [URL filters](#url-filters) |
 | `onOpen` / `onClose` | `null` | Callbacks |
 
 ### 22 Animations
@@ -458,6 +485,23 @@ Or set it declaratively on the popup element (no embed value needed):
 - Either bound may be blank/omitted for an open-ended window.
 - `data-d2-popup-schedule` works as a fallback if you prefer a `data-` prefix.
 - Invalid value → console warning, that bound is ignored (never blocks forever).
+
+### URL filters
+
+Skip a popup on chosen subpages — straight from the Designer, on the popup element (pipe-separated URL fragments):
+
+```html
+<!-- never on these subpages -->
+<div class="popup__overlay" d2-popup-exclude="/wyszukiwarka|/kontakt">…</div>
+
+<!-- ONLY on these subpages (whitelist) -->
+<div class="popup__overlay" d2-popup-include="/oferta|/produkty">…</div>
+```
+
+- Fragments match against `location.href` (`/wyszukiwarka` also blocks `/wyszukiwarka?floor=3`). A full `https://…` value requires an exact match.
+- The block is **hard**: on an excluded page no trigger fires — not auto-triggers, not `d2-show-popup` clicks, not even `digi2.popups.show()`.
+- `data-d2-popup-exclude` / `data-d2-popup-include` work too.
+- JS equivalents: `excludeUrls: […]` (merges with the attribute) and `containsUrls: […]` (the attribute replaces the default match-everything).
 
 ### Webflow setup
 
@@ -770,15 +814,53 @@ For triggers inside the same `d2-tab-group`, the short form also works:
 <button d2-tab-trigger="yearly">Show yearly pricing</button>
 ```
 
-### Accordion Mode
+### Accordion Mode (attribute-only)
+
+Everything configurable from the group element — no JS call needed:
+
+```html
+<div d2-tab-group="apartments"
+     d2-tab-mode="accordion"
+     d2-tab-animation="height"
+     d2-tab-duration="0.4"
+     d2-tab-scroll>
+  <div d2-tab-trigger="row-1" class="row">…header…</div>
+  <div d2-tab-instance="row-1" class="row-expanded">…details…</div>
+  <div d2-tab-trigger="row-2" class="row">…</div>
+  <div d2-tab-instance="row-2" class="row-expanded">…</div>
+</div>
+```
+
+| Group attribute | Values | Description |
+|---|---|---|
+| `d2-tab-mode` | `tabs` \| `accordion` | Default `tabs` |
+| `d2-tab-animation` | `none` \| `fade` \| `slide-up` \| `slide-down` \| `zoom` \| `height` | `height` = smooth max-height grow/collapse (classic accordion feel) |
+| `d2-tab-duration` | seconds | Animation duration |
+| `d2-tab-multiple` | present / `"false"` | Accordion: allow several panels open at once. Omit for "opening one closes the rest" |
+| `d2-tab-default` | `id` or `a\|b` | Panel(s) open on load |
+| `d2-tab-scroll` | *(empty)* \| `start` \| `center` \| `end` | On open, glide the page so the panel lands at that viewport position (default `center`). Works on the group element **or** any row inside it |
+
+Or via JS:
 
 ```js
 digi2.tabs.create('faq', {
   mode: 'accordion',
   allowMultiple: true,
-  animation: 'slide-down',
+  animation: 'height',
+  animationDuration: 0.4,
+  scroll: true,             // scrollBlock: 'start' | 'center' | 'end'
 })
 ```
+
+**`height` animation details** — the target height is measured from the real rendered layout (padding-safe, honors a fixed CSS height), so the panel never "jumps" at the end of the animation. Lazy images inside the opening panel are force-loaded and, whenever one arrives (during **or after** the animation), the panel re-targets / grows smoothly instead of popping.
+
+**Predictive scroll (`d2-tab-scroll`)** — instead of chasing the live layout, the module precomputes the panel's **final** position and size (including a sibling panel collapsing above it) and glides straight there in one eased motion, synchronized with the animation. Manual scroll (wheel/touch) aborts the glide. The initial default-open never scrolls.
+
+### Behavior notes
+
+- **Nested groups are isolated** — a view-switch `d2-tab-group` can wrap an accordion `d2-tab-group`; neither steals the other's triggers, panels, or `d2-tab-scroll`.
+- **Real links inside a trigger navigate** — an `<a href="/product">` inside a trigger row opens the link instead of toggling. Hash/`javascript:` pseudo-links still toggle.
+- **Class-hidden panels** — hidden panels get inline `display:none !important`; on show the inline style is removed **and** a class-based `display:none` (e.g. a `hidden` combo class) is overridden with inline `display:block`. Use `d2-tab-display="flex"` (or `grid`) on the panel when block is wrong.
 
 ### Options
 
@@ -786,11 +868,13 @@ digi2.tabs.create('faq', {
 |---|---|---|
 | `mode` | `'tabs'` | `'tabs'` or `'accordion'` |
 | `allowMultiple` | `false` | Accordion: multiple open |
-| `animation` | `'fade'` | none / fade / slide-up / slide-down / zoom |
+| `animation` | `'fade'` | none / fade / slide-up / slide-down / zoom / **height** |
 | `animationDuration` | `0.25` | Seconds |
 | `defaultOpen` | `null` | Tab id or array |
 | `activeClass` | `'d2-tab-active'` | Class on active trigger |
 | `hashSync` | `false` | Sync with URL hash |
+| `scroll` | `false` | Glide the opened panel into view |
+| `scrollBlock` | `'center'` | Where it lands: `start` / `center` / `end` |
 | `onChange` | `null` | Callback(tabId, instance) |
 
 ### API
@@ -1115,6 +1199,80 @@ You can configure a list entirely from HTML — the module auto-initializes ever
         d2-cms-sort-order="new|featured|sale|regular">By status</button>
 ```
 
+Multiple lists can share one control — pipe the names: `d2-cms-target="products|products-grid"`.
+
+### Base order vs persistent groups
+
+Two distinct tools:
+
+- **`d2-cms-sort-by` + `d2-cms-sort-order`** (on the list) — the **base ordering**. Drives the initial render only; a user-initiated sort replaces it entirely, and clearing the sort restores it.
+- **`d2-cms-group-by` + `d2-cms-group-order`** (on the list) — a **persistent group**: the group order keeps ranking items even while the user sorts another column (e.g. "Available always first, sort by price within groups").
+
+```html
+<!-- initial: promo → finished → premiere; user sort takes over fully -->
+<div d2-cms-list="apartments" d2-cms-sort-by="tag" d2-cms-sort-order="OFERTA|WYKOŃCZONE|PREMIERA">…</div>
+
+<!-- Available always leads, regardless of the active sort -->
+<div d2-cms-list="apartments" d2-cms-group-by="status" d2-cms-group-order="Dostępne|Zarezerwowane|Sprzedane">…</div>
+```
+
+### Custom dropdowns, selects, labels
+
+```html
+<!-- Sort dropdown (Webflow w-dropdown) — the label swaps to the picked option -->
+<div class="w-dropdown">
+  <div class="w-dropdown-toggle">
+    <div d2-cms-sort-label d2-cms-target="products">Sortuj według</div>
+  </div>
+  <nav class="w-dropdown-list">
+    <a d2-cms-target="products" d2-cms-sort="price" d2-cms-sort-dir="asc">Cena: rosnąco</a>
+    <a d2-cms-target="products" d2-cms-sort="price" d2-cms-sort-dir="desc">Cena: malejąco</a>
+  </nav>
+</div>
+
+<!-- Facet filter via native select (empty option clears the key) -->
+<select d2-cms-target="products" d2-cms-filter-field="floor">
+  <option value="">Wybierz piętro</option>
+  <option value="2">2</option>
+  <option value="3">3</option>
+</select>
+
+<!-- Filter dropdown label (same pattern as sort) -->
+<div d2-cms-filter-label="floor" d2-cms-target="products">Dowolne piętro</div>
+```
+
+- With **more than one list on the page**, labels/controls outside a list **must** carry `d2-cms-target` — otherwise they're ambiguous and ignored.
+- Labels are scoped to their `.w-dropdown` (or a `[d2-cms-sort-scope]` wrapper), so table-header sort buttons elsewhere don't hijack a dropdown's text. `d2-cms-sort-option-label="…"` overrides the text an option contributes.
+- Checkboxes / radios carrying `d2-cms-filter="key:value"` sync their `checked` state automatically (also when cleared programmatically).
+
+### Clear buttons
+
+```html
+<a d2-cms-target="products" d2-cms-clear>Wyczyść filtry</a>            <!-- facets + ranges -->
+<a d2-cms-target="products" d2-cms-clear="all">Wyczyść wszystko</a>    <!-- + sort -->
+<a d2-cms-target="products" d2-cms-clear="tag">Reset tagów</a>         <!-- ONLY the "tag" key -->
+<a d2-cms-target="products" d2-cms-clear="tag|floor">Reset dwóch pól</a>
+```
+
+Field-scoped clear resets only that filter key / range field (unchecks its checkboxes, snaps its slider back) and leaves every other filter intact.
+
+### Range sliders
+
+```html
+<div d2-cms-target="products" d2-cms-range d2-cms-range-field="price"
+     d2-cms-range-step="10000" d2-cms-range-displayformat="pln">
+  <div d2-cms-range-display="min">0</div>
+  <div d2-cms-range-track>
+    <div d2-cms-range-fill></div>
+    <div d2-cms-range-handle="min"></div>
+    <div d2-cms-range-handle="max"></div>
+  </div>
+  <div d2-cms-range-display="max">0</div>
+</div>
+```
+
+Bounds auto-detect from item values (override with `d2-cms-range-min/max` or `d2-cms-range-default-min/max`). `d2-cms-range-displayformat="pln"` renders `1 600 000`-style values (no currency); a `0,000`-style pattern follows the browser locale instead.
+
 ### Options
 
 | Option | Default | Description |
@@ -1149,18 +1307,28 @@ You can configure a list entirely from HTML — the module auto-initializes ever
 | `d2-cms-hidden-class="..."` | list container | Attribute-init: CSS class for hidden items |
 | `d2-cms-scroll-offset="300"` | list container | Attribute-init: px before sentinel triggers next reveal |
 | `d2-cms-hide-pagination="false"` | list container | Attribute-init: keep Webflow's native `.w-pagination-wrapper` visible |
+| `d2-cms-group-by="field"` + `d2-cms-group-order="a\|b"` | list container | **Persistent** group ranking — keeps ordering items even while the user sorts another column |
 | `d2-cms-item` | each item (optional) | Explicit item marker; defaults to direct children |
 | `d2-cms-field="{name}"` | element inside item | Field value — read from this element's `.textContent` |
+| `d2-cms-field-{name}="value"` | item element | Inline field value from the attribute itself (no hidden span needed), e.g. `d2-cms-field-price="1468620"` |
 | `d2-cms-field-type="number\|text\|date"` | on `[d2-cms-field]` | Optional. Forces the comparator type. Without it, type is auto-detected (numbers-as-numbers, dates-as-dates, else alphabetical) |
-| `d2-cms-sort="field"` | button | Click toggles sort by this field — first click = asc (A→Z / 0→9), then desc, then off |
+| `d2-cms-sort="field"` | button | Click toggles sort by this field — first click = asc (A→Z / 0→9), then desc, then asc again |
+| `d2-cms-sort-dir="asc\|desc"` | sort button/option | Forces a fixed direction (no toggle) — use for explicit dropdown options |
 | `d2-cms-sort-type="number\|text\|date"` | button | Override auto-detection of value type |
-| `d2-cms-filter="key:value"` | button | Toggle a filter |
+| `d2-cms-sort-label` | any element | Swaps its text to the active sort option's text (custom dropdown toggle); restores the original when sort clears. Scoped to its `.w-dropdown` / `[d2-cms-sort-scope]` |
+| `d2-cms-sort-option-label="…"` | sort option | Overrides the text this option contributes to `d2-cms-sort-label` |
+| `d2-cms-filter="key:value"` | button / checkbox / radio | Toggle a filter. Composites: `key:a\|b` (both values), `key:a&b` (AND) |
+| `d2-cms-filter-field="key"` | `<select>` | Native select drives the filter; empty option clears the key |
+| `d2-cms-filter-label="key"` | any element | Swaps its text to the active filter value(s); empty attr tracks any key |
+| `d2-cms-clear` / `="all"` / `="key"` / `="key\|key2"` | button | Clear filters: everything / + sort / only the named field(s) — see [Clear buttons](#clear-buttons) |
+| `d2-cms-range` (+ `-field`, `-step`, `-min/max`, `-displayformat`) | wrapper | Numeric range slider bound to a field — see [Range sliders](#range-sliders) |
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
-| `d2-cms-target="name"` | sort/filter/load-more/display/empty elements | Target a specific list by name. Optional when the element is nested inside `[d2-cms-list]` (scoped to that list), OR when there is only one registered list (claimed automatically) |
+| `d2-cms-loadcount="6\|all"` | button | Reveal N items (or everything) per click |
+| `d2-cms-target="name"` or `"a\|b"` | sort/filter/load-more/display/empty/label elements | Target list(s) by name. Optional only when the element is nested inside `[d2-cms-list]`, OR when there is exactly one list on the page — **with two+ lists, controls outside a list require it** |
 | `d2-cms-empty` | any element | Shown when 0 items match |
 | `d2-cms-display="visible\|matching\|total\|hidden\|remaining"` | any element | Module writes the matching count into this element's textContent |
 | `d2-cms-display-format="{visible} of {matching}"` | any element | Template with `{visible}`, `{matching}`, `{total}`, `{hidden}`, `{remaining}` placeholders — takes precedence over `d2-cms-display` |
-| `d2-cms-sort-active="asc\|desc"` | button | (Set by module) Reflects current sort — style with `[d2-cms-sort-active="desc"]` selectors |
+| `d2-cms-sort-active="asc\|desc"` | button | (Set by module) Reflects current sort. A button with explicit `d2-cms-sort-dir` is marked only when the direction matches too — dropdown options highlight correctly |
 | `d2-cms-filter-active` | button | (Set by module) Reflects active filter |
 | `d2-cms-load-more-done` | button | (Set by module) Set when no more items to reveal (button is also hidden) |
 
@@ -1203,16 +1371,29 @@ They format the number only by default:
 422 934
 ```
 
+**Separators are non-breaking (`U+00A0`) by default** — a formatted price never wraps mid-number (`1 468 620 zł` stays on one line). This covers the thousands separator and the space before a suffix/currency/unit. Opt back into regular, wrappable spaces with `d2-format-break`.
+
 Optional overrides:
 
 ```html
 <div d2-format-price d2-format-suffix=" PLN">199999</div>
 <div d2-format-price d2-format-currency="EUR">199999</div>
 <div d2-format-price d2-format-decimals="2">199999</div>
-<div d2-format-price d2-format-suffix=" zl netto">199999</div>
+<div d2-format-price d2-format-unit="zł/m²">20500</div>            <!-- → 20 500 zł/m² -->
+<div d2-format-price d2-format-suffix="zł/m²" d2-format-space>20500</div>  <!-- force the space Webflow trims -->
+<div d2-format-price d2-format-break>1468620</div>                 <!-- regular spaces, may wrap -->
 ```
 
-The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically.
+| Attribute | Description |
+|---|---|
+| `d2-format-currency="PLN"` | Append a currency (with a leading space) |
+| `d2-format-suffix="…"` / `d2-format-prefix="…"` | Free-form text around the number |
+| `d2-format-unit="zł/m²"` | Unit with a module-controlled leading space |
+| `d2-format-space` | Force a space before the suffix when Webflow trimmed it |
+| `d2-format-decimals="2"` | Fraction digits (default 0) |
+| `d2-format-break` | Opt out of non-breaking spaces |
+
+The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically — and the CMS module re-formats after every render (sort / filter / load-more), including prices inside hidden accordion panels.
 
 ```js
 digi2.format.price('199999')       // "199 999"
@@ -1284,14 +1465,24 @@ digi2.log('module', 'action', data)
 | Attribute | Element | Description |
 |---|---|---|
 | `d2-show-popup="name"` | Any | Click opens popup |
+| `d2-popup-schedule="from, to"` | Popup element | Date/time window gate |
+| `d2-popup-exclude="/a\|/b"` | Popup element | Never show on these subpages (hard block) |
+| `d2-popup-include="/a\|/b"` | Popup element | Show ONLY on these subpages |
 | `d2-form="name"` | Div | Form enhancement wrapper |
 | `d2-form-error-{rule}` | Inside label | Per-rule error message |
 | `d2-form-summary` | Inside form | Summary error container |
 | `d2-password-toggle` | Button | Toggle password visibility |
 | `d2-tab-group="name"` | Div | Tabs/accordion wrapper |
-| `d2-tab-trigger="id"` | Button | Tab trigger |
+| `d2-tab-mode="accordion"` | Group | Accordion mode (default tabs) |
+| `d2-tab-animation="height"` | Group | Animation; `height` = smooth accordion |
+| `d2-tab-duration="0.4"` | Group | Animation duration (s) |
+| `d2-tab-multiple` | Group | Accordion: allow several open |
+| `d2-tab-default="id"` | Group | Panel(s) open on load (`a\|b`) |
+| `d2-tab-scroll` / `="start\|center\|end"` | Group or row | Glide opened panel into view (predictive) |
+| `d2-tab-trigger="id"` | Button | Tab trigger (real links inside navigate) |
 | `d2-tab-trigger="group:id"` | Any | External tab trigger |
 | `d2-tab-instance="id"` | Div | Tab panel |
+| `d2-tab-display="flex\|grid"` | Panel | Display used when overriding a class-based `display:none` |
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |
 | `d2-slider-track` | Div | Slide track |
@@ -1313,6 +1504,10 @@ digi2.log('module', 'action', data)
 | `d2-filter-category="cat"` | Div | Item categories |
 | `d2-copy="text"` | Button | Copy to clipboard |
 | `d2-copy-target="#id"` | Button | Copy element content |
+| `d2-format-price` | Any | Format number as price (nbsp separators) |
+| `d2-format-break` | On format element | Allow wrapping (regular spaces) |
+| `d2-cms-list="name"` | Div | CMS list — full reference in [CMS List](#attribute-reference) |
+| `d2-cms-clear` / `="tag"` | Button | Clear all filters / only one field |
 | `d2-debug-mode` | Loader script | Enable debug |
 | `d2-gtm="GTM-ID"` | Loader script | GTM container ID |
 
@@ -1335,9 +1530,12 @@ webflow-scripts/              ← source files
   digi2-loader.js
   digi2.js                    ← standalone build (no loader)
   modules/
-    google.js, popups.js, cookies.js, forms.js,
-    tabs.js, sliders.js, animate.js, toasts.js,
-    scroll.js, lazy.js, countdown.js, filter.js, copy.js
+    google.js, ab-tests.js, popups.js, cookies.js, forms.js,
+    tabs.js, sliders.js, animate.js, toasts.js, scroll.js,
+    lazy.js, countdown.js, filter.js, cms.js, format.js,
+    copy.js, interactions.js
+
+tests/                        ← node:test suites (node --test tests/)
 
 dist/                         ← production (minified only)
   digi2-loader.min.js
