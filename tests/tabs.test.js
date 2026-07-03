@@ -65,6 +65,14 @@ function createElement(tagName, attrs) {
       if (node === this) return true;
       return this.children.some((child) => child.contains && child.contains(node));
     },
+    closest(selector) {
+      let node = this;
+      while (node) {
+        if (selector === 'a[href]' && node.tagName === 'A' && node.hasAttribute('href')) return node;
+        node = node.parentElement;
+      }
+      return null;
+    },
     click() {
       if (this._listeners.click) {
         this._listeners.click({ preventDefault() {}, target: this });
@@ -468,4 +476,23 @@ test('outer group does not inherit d2-tab-scroll from a nested accordion', () =>
   triggerList.click();
   rowTrigger.click();
   assert.ok(rowPanel._scrolledInto, 'inner accordion row still scrolls');
+});
+
+test('a real link inside a trigger navigates instead of toggling the accordion', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+  env.window.digi2.tabs.create('pricing', { mode: 'accordion', animation: 'none' });
+
+  const detailsLink = createElement('a', { href: '/products/a-3-12' });
+  env.yearlyTrigger.appendChild(detailsLink);
+
+  // Click landing on the link: no toggle, no preventDefault (browser navigates).
+  let prevented = false;
+  env.yearlyTrigger._listeners.click({ preventDefault() { prevented = true; }, target: detailsLink });
+  assert.equal(env.yearlyPanel.style.display, 'none', 'accordion must NOT open');
+  assert.equal(prevented, false, 'navigation must NOT be prevented');
+
+  // Click elsewhere in the row still toggles.
+  env.yearlyTrigger._listeners.click({ preventDefault() {}, target: env.yearlyTrigger });
+  assert.equal(env.yearlyPanel.style.display, '', 'row click still opens the accordion');
 });

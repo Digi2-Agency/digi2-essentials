@@ -289,6 +289,15 @@
     _attachTrigger(trigger, getTabId) {
       var self = this;
       trigger.addEventListener('click', function (e) {
+        // A real link INSIDE the trigger row (e.g. a "Details" button) must
+        // navigate, not toggle the tab/accordion. Only bail for descendant
+        // anchors with a meaningful href — a trigger that itself is an <a>
+        // (or hash/js pseudo-links inside) still toggles.
+        var link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+        if (link && link !== trigger && trigger.contains && trigger.contains(link)) {
+          var href = link.getAttribute('href') || '';
+          if (href && href !== '#' && href.indexOf('javascript:') !== 0) return;
+        }
         e.preventDefault();
         var tabId = getTabId();
         if (!tabId) return;
