@@ -878,7 +878,22 @@ For repeated components (FAQ items, CMS lists) where per-item ids are a pain —
 - An item missing `d2-accordion-trigger` or `d2-accordion-body` is skipped; unmarked children are ignored entirely.
 - `d2-accordion="faq"` names the instance for the JS API (`digi2.tabs.get('faq')`); with no value a name is generated.
 
-**Indicator (`d2-accordion-indicator`)** — put it on the plus icon inside the trigger. While its item is open the icon rotates **45°** and takes `color: var(--swatch--primary, currentColor)` (with a 0.3 s transition). The icon must use `fill="currentColor"` for the color to apply. Styles are injected by the module — no CSS to write.
+**Indicator (`d2-accordion-indicator`)** — *optional*. Put it on the plus icon inside the trigger and the module styles it for free: while its item is open the icon rotates **45°** and takes `color: var(--swatch--primary, currentColor)` (0.3 s transition; the icon must use `fill="currentColor"`). Skip the attribute if you want to style state yourself — see below.
+
+### Active state (`d2-is-active`)
+
+Whenever a tab/accordion panel is open the module sets **`d2-is-active`** on both its **trigger** and its **panel** (in addition to the `d2-tab-active` class). Works in tabs mode too. Style anything from CSS — no JS, no reliance on class names:
+
+```css
+/* rotate your own indicator when the item is open */
+[d2-is-active] .my-icon { transform: rotate(45deg); color: var(--swatch--primary); }
+
+/* style the open panel / trigger */
+[d2-is-active].faq_item-trigger { color: var(--swatch--primary); }
+
+/* style the whole item via the trigger */
+.faq_item:has([d2-tab-trigger][d2-is-active]) { … }
+```
 
 ### Behavior notes
 
@@ -1499,7 +1514,8 @@ digi2.log('module', 'action', data)
 | `d2-tab-group="name"` | Div | Tabs/accordion wrapper |
 | `d2-accordion` | Div | Declarative accordion wrapper — ids auto-generated |
 | `d2-accordion-item/-trigger/-body` | Parts | Required part markers (unmarked children are ignored) |
-| `d2-accordion-indicator` | Icon in trigger | Open state: rotates 45° + `var(--swatch--primary)` |
+| `d2-accordion-indicator` | Icon in trigger | Optional — auto open state: rotates 45° + `var(--swatch--primary)` |
+| `d2-is-active` | Trigger + panel | (Set by module) Present while open — style with `[d2-is-active]` in tabs & accordions |
 | `d2-tab-mode="accordion"` | Group | Accordion mode (default tabs) |
 | `d2-tab-animation="height"` | Group | Animation; `height` = smooth accordion |
 | `d2-tab-duration="0.4"` | Group | Animation duration (s) |

@@ -47,6 +47,9 @@ function createElement(tagName, attrs) {
     setAttribute(name, value) {
       this.attributes[name] = String(value);
     },
+    removeAttribute(name) {
+      delete this.attributes[name];
+    },
     hasAttribute(name) {
       return Object.prototype.hasOwnProperty.call(this.attributes, name);
     },
@@ -565,4 +568,21 @@ test('d2-accordion desugars explicit item/trigger/body attributes into a working
   two.trigger.click();
   assert.equal(one.bodyEl.style.display, 'none');
   assert.equal(two.bodyEl.style.display, '');
+});
+
+test('open trigger and panel get d2-is-active (tabs and accordion)', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+  env.window.digi2.tabs.create('pricing', { animation: 'none' });
+
+  // tabs mode auto-opens the first tab
+  assert.equal(env.monthlyTrigger.hasAttribute('d2-is-active'), true);
+  assert.equal(env.monthlyPanel.hasAttribute('d2-is-active'), true);
+  assert.equal(env.yearlyPanel.hasAttribute('d2-is-active'), false);
+
+  env.yearlyTrigger.click();
+  assert.equal(env.monthlyTrigger.hasAttribute('d2-is-active'), false);
+  assert.equal(env.monthlyPanel.hasAttribute('d2-is-active'), false);
+  assert.equal(env.yearlyTrigger.hasAttribute('d2-is-active'), true);
+  assert.equal(env.yearlyPanel.hasAttribute('d2-is-active'), true);
 });

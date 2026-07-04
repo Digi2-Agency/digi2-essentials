@@ -805,14 +805,31 @@
       var activeTabs = this._activeTabs;
       var self = this;
 
+      // Triggers: active class (for JS/back-compat) + a stable d2-is-active
+      // attribute you can target from CSS regardless of a custom activeClass.
       this.triggers.concat(this.externalTriggers).forEach(function (trigger) {
         var tabId = self._getTriggerTabId(trigger) || self._getExternalTriggerTabId(trigger);
         if (activeTabs.has(tabId)) {
           trigger.classList.add(activeClass);
           trigger.setAttribute('aria-selected', 'true');
+          trigger.setAttribute('d2-is-active', '');
         } else {
           trigger.classList.remove(activeClass);
           trigger.setAttribute('aria-selected', 'false');
+          trigger.removeAttribute('d2-is-active');
+        }
+      });
+
+      // Panels get the same d2-is-active flag so open content / the whole item
+      // can be styled ([d2-is-active] { … } on the panel, or a wrapper via :has).
+      this.panels.forEach(function (panel) {
+        var pid = attr(panel, 'd2-tab-instance') || attr(panel, 'd2-tab-content');
+        if (activeTabs.has(pid)) {
+          panel.classList.add(activeClass);
+          panel.setAttribute('d2-is-active', '');
+        } else {
+          panel.classList.remove(activeClass);
+          panel.removeAttribute('d2-is-active');
         }
       });
     }
@@ -865,7 +882,7 @@
     var style = document.createElement('style');
     style.textContent =
       '[d2-accordion-indicator]{transition:transform .3s ease,color .3s ease}' +
-      '.d2-tab-active [d2-accordion-indicator],.d2-tab-active[d2-accordion-indicator]' +
+      '[d2-is-active] [d2-accordion-indicator],[d2-is-active][d2-accordion-indicator]' +
       '{transform:rotate(45deg);color:var(--swatch--primary,currentColor)}';
     document.head.appendChild(style);
   }
