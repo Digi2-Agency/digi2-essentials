@@ -92,6 +92,10 @@ function createElement(tagName, attrs) {
         if (sel === '[d2-tab-trigger]') return node.hasAttribute('d2-tab-trigger');
         if (sel === '[d2-tab-instance]') return node.hasAttribute('d2-tab-instance');
         if (sel === '[d2-tab-scroll]') return node.hasAttribute('d2-tab-scroll');
+        if (sel === '[d2-accordion]') return node.hasAttribute('d2-accordion');
+        if (sel === '[d2-accordion-item]') return node.hasAttribute('d2-accordion-item');
+        if (sel === '[d2-accordion-trigger]') return node.hasAttribute('d2-accordion-trigger');
+        if (sel === '[d2-accordion-body]') return node.hasAttribute('d2-accordion-body');
         return false;
       }
 
@@ -495,4 +499,62 @@ test('a real link inside a trigger navigates instead of toggling the accordion',
   // Click elsewhere in the row still toggles.
   env.yearlyTrigger._listeners.click({ preventDefault() {}, target: env.yearlyTrigger });
   assert.equal(env.yearlyPanel.style.display, '', 'row click still opens the accordion');
+});
+
+test('d2-accordion desugars structure into a working accordion (no per-item ids)', () => {
+  const body = createElement('body');
+  const acc = createElement('div', { 'd2-accordion': '', 'd2-tab-animation': 'none' });
+
+  const mkItem = () => {
+    const item = createElement('div', {});
+    const trigger = createElement('div', {});
+    const bodyEl = createElement('div', {});
+    item.appendChild(trigger);
+    item.appendChild(bodyEl);
+    acc.appendChild(item);
+    return { trigger, bodyEl };
+  };
+  const one = mkItem();
+  const two = mkItem();
+  body.appendChild(acc);
+
+  const findGroup = (root, name) => {
+    let found = null;
+    (function walk(node) {
+      if (found) return;
+      if (node.getAttribute && node.getAttribute('d2-tab-group') === name) { found = node; return; }
+      (node.children || []).forEach(walk);
+    })(root);
+    return found;
+  };
+
+  const document = {
+    body,
+    readyState: 'complete',
+    addEventListener() {},
+    querySelector(selector) {
+      const m = selector.match(/\[d2-tab-group="([^"]+)"\]/);
+      return m ? findGroup(body, m[1]) : null;
+    },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  // Desugared: generated ids + accordion group attrs on the shell.
+  assert.equal(acc.getAttribute('d2-tab-mode'), 'accordion');
+  assert.ok(one.trigger.getAttribute('d2-tab-trigger'), 'trigger id generated');
+  assert.equal(one.bodyEl.getAttribute('d2-tab-instance'), one.trigger.getAttribute('d2-tab-trigger'));
+
+  // Panels start closed; click opens; opening the second closes the first.
+  assert.equal(one.bodyEl.style.display, 'none');
+  one.trigger.click();
+  assert.equal(one.bodyEl.style.display, '');
+  assert.equal(one.trigger.classList.contains('d2-tab-active'), true, 'indicator hook class set');
+  two.trigger.click();
+  assert.equal(one.bodyEl.style.display, 'none');
+  assert.equal(two.bodyEl.style.display, '');
 });

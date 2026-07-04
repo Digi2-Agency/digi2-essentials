@@ -856,6 +856,30 @@ digi2.tabs.create('faq', {
 
 **Predictive scroll (`d2-tab-scroll`)** — instead of chasing the live layout, the module precomputes the panel's **final** position and size (including a sibling panel collapsing above it) and glides straight there in one eased motion, synchronized with the animation. Manual scroll (wheel/touch) aborts the glide. The initial default-open never scrolls.
 
+### Zero-config accordion (`d2-accordion`)
+
+For repeated components (FAQ items, CMS lists) where per-item ids are a pain — **one attribute on the wrapper, done**:
+
+```html
+<div class="faq_list" d2-accordion>
+  <div class="faq_item">                <!-- item = each direct child -->
+    <div class="faq_item-trigger">      <!-- 1st child = trigger -->
+      <h3>Question?</h3>
+      <svg d2-accordion-indicator class="faq_item-indicator">…plus icon…</svg>
+    </div>
+    <div class="faq_item-body">Answer…</div>  <!-- 2nd child = panel -->
+  </div>
+  <div class="faq_item">…</div>
+</div>
+```
+
+- Ids are generated automatically; the shell desugars into the regular `d2-tab-*` API with **`mode: accordion` + `animation: height`** defaults.
+- All group attributes work on the `[d2-accordion]` element too: `d2-tab-duration`, `d2-tab-multiple`, `d2-tab-default`, `d2-tab-scroll`, `d2-tab-animation` (override the `height` default).
+- Non-standard structure? Mark parts explicitly with `d2-accordion-item` / `d2-accordion-trigger` / `d2-accordion-body`.
+- `d2-accordion="faq"` names the instance for the JS API (`digi2.tabs.get('faq')`); with no value a name is generated.
+
+**Indicator (`d2-accordion-indicator`)** — put it on the plus icon inside the trigger. While its item is open the icon rotates **45°** and takes `color: var(--swatch--primary, currentColor)` (with a 0.3 s transition). The icon must use `fill="currentColor"` for the color to apply. Styles are injected by the module — no CSS to write.
+
 ### Behavior notes
 
 - **Nested groups are isolated** — a view-switch `d2-tab-group` can wrap an accordion `d2-tab-group`; neither steals the other's triggers, panels, or `d2-tab-scroll`.
@@ -1473,6 +1497,9 @@ digi2.log('module', 'action', data)
 | `d2-form-summary` | Inside form | Summary error container |
 | `d2-password-toggle` | Button | Toggle password visibility |
 | `d2-tab-group="name"` | Div | Tabs/accordion wrapper |
+| `d2-accordion` | Div | Zero-config accordion — items from structure, ids auto-generated |
+| `d2-accordion-indicator` | Icon in trigger | Open state: rotates 45° + `var(--swatch--primary)` |
+| `d2-accordion-item/-trigger/-body` | Parts | Explicit part markers for non-standard structures |
 | `d2-tab-mode="accordion"` | Group | Accordion mode (default tabs) |
 | `d2-tab-animation="height"` | Group | Animation; `height` = smooth accordion |
 | `d2-tab-duration="0.4"` | Group | Animation duration (s) |
