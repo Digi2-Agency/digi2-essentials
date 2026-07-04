@@ -501,14 +501,14 @@ test('a real link inside a trigger navigates instead of toggling the accordion',
   assert.equal(env.yearlyPanel.style.display, '', 'row click still opens the accordion');
 });
 
-test('d2-accordion desugars structure into a working accordion (no per-item ids)', () => {
+test('d2-accordion desugars explicit item/trigger/body attributes into a working accordion', () => {
   const body = createElement('body');
   const acc = createElement('div', { 'd2-accordion': '', 'd2-tab-animation': 'none' });
 
   const mkItem = () => {
-    const item = createElement('div', {});
-    const trigger = createElement('div', {});
-    const bodyEl = createElement('div', {});
+    const item = createElement('div', { 'd2-accordion-item': '' });
+    const trigger = createElement('div', { 'd2-accordion-trigger': '' });
+    const bodyEl = createElement('div', { 'd2-accordion-body': '' });
     item.appendChild(trigger);
     item.appendChild(bodyEl);
     acc.appendChild(item);
@@ -516,6 +516,13 @@ test('d2-accordion desugars structure into a working accordion (no per-item ids)
   };
   const one = mkItem();
   const two = mkItem();
+
+  // A child WITHOUT the attributes must be ignored (no structure guessing).
+  const plain = createElement('div', {});
+  plain.appendChild(createElement('div', {}));
+  plain.appendChild(createElement('div', {}));
+  acc.appendChild(plain);
+
   body.appendChild(acc);
 
   const findGroup = (root, name) => {
@@ -548,6 +555,7 @@ test('d2-accordion desugars structure into a working accordion (no per-item ids)
   assert.equal(acc.getAttribute('d2-tab-mode'), 'accordion');
   assert.ok(one.trigger.getAttribute('d2-tab-trigger'), 'trigger id generated');
   assert.equal(one.bodyEl.getAttribute('d2-tab-instance'), one.trigger.getAttribute('d2-tab-trigger'));
+  assert.equal(plain.children[0].getAttribute('d2-tab-trigger'), null, 'unmarked child untouched');
 
   // Panels start closed; click opens; opening the second closes the first.
   assert.equal(one.bodyEl.style.display, 'none');

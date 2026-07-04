@@ -19,11 +19,11 @@
  *     <div d2-tab-instance="item-2">Content 2</div>
  *   </div>
  *
- * Zero-config accordion (no per-item ids — repeated components / CMS items):
+ * Declarative accordion (no per-item ids — repeated components / CMS items):
  *   <div d2-accordion>                 ← mode=accordion + animation=height defaults
- *     <div>                            ← item = each direct child
- *       <div>trigger…</div>            ← 1st child (or [d2-accordion-trigger])
- *       <div>body…</div>               ← 2nd child (or [d2-accordion-body])
+ *     <div d2-accordion-item>
+ *       <div d2-accordion-trigger>…</div>
+ *       <div d2-accordion-body>…</div>
  *     </div>
  *   </div>
  *   All d2-tab-* group attrs (duration/multiple/default/scroll) work here too.
@@ -871,20 +871,21 @@
   }
 
   // ---- <div d2-accordion> sugar ---------------------------------------------
-  // Structure-based accordion — NO per-item ids needed (perfect for repeated
-  // components / CMS items):
+  // Explicit attribute-based accordion — NO per-item ids needed, and NO
+  // structure guessing: every part is marked with its own attribute.
   //
   //   <div d2-accordion>                        ← container (optional name value)
-  //     <div>                                   ← item = each direct child
-  //       <div>trigger…</div>                   ← 1st child (or [d2-accordion-trigger])
-  //       <div>body…</div>                      ← next sibling (or [d2-accordion-body])
+  //     <div d2-accordion-item>
+  //       <div d2-accordion-trigger>…</div>
+  //       <div d2-accordion-body>…</div>
   //     </div>
   //   </div>
   //
   // Ids are generated per item and the element is desugared into the regular
   // d2-tab-* declarative API (mode=accordion, animation=height by default).
   // All d2-tab-* group attributes (duration, multiple, default, scroll) work
-  // on the [d2-accordion] element too and win over the defaults.
+  // on the [d2-accordion] element too and win over the defaults. Items missing
+  // a trigger or body are skipped.
   var _accCounter = 0;
   function _desugarAccordions() {
     var accs = Array.from(document.querySelectorAll('[d2-accordion]'));
@@ -902,15 +903,11 @@
       if (registry[name]) return;
 
       var items = Array.from(acc.querySelectorAll('[d2-accordion-item]'));
-      if (!items.length) items = Array.from(acc.children || []);
 
       var n = 0;
       items.forEach(function (item) {
-        var trigger = qsFirst(item, '[d2-accordion-trigger]')
-          || (item.children && item.children[0]) || null;
-        var body = qsFirst(item, '[d2-accordion-body]')
-          || (trigger && trigger.nextElementSibling)
-          || (item.children && item.children[1]) || null;
+        var trigger = qsFirst(item, '[d2-accordion-trigger]');
+        var body = qsFirst(item, '[d2-accordion-body]');
         if (!trigger || !body || trigger === body) return;
         n += 1;
         var id = name + '-' + n;
