@@ -876,6 +876,7 @@ For repeated components (FAQ items, CMS lists) where per-item ids are a pain —
 - Ids are generated automatically; the shell desugars into the regular `d2-tab-*` API with **`mode: accordion` + `animation: height`** defaults.
 - All group attributes work on the `[d2-accordion]` element too: `d2-tab-duration`, `d2-tab-multiple`, `d2-tab-default`, `d2-tab-scroll`, `d2-tab-animation` (override the `height` default).
 - An item missing `d2-accordion-trigger` or `d2-accordion-body` is skipped; unmarked children are ignored entirely.
+- **Open on load:** add `d2-accordion-open` to the item (or its trigger) you want open initially. Without `d2-tab-multiple` only the first flagged item opens. (Equivalent to `d2-tab-default="<name>-1"` when you name the accordion.)
 - `d2-accordion="faq"` names the instance for the JS API (`digi2.tabs.get('faq')`); with no value a name is generated.
 - The accordion lives in the **tabs** module — request `d2-tabs` (or `d2-accordion`, which the loader aliases to `tabs`) in your per-page modules.
 

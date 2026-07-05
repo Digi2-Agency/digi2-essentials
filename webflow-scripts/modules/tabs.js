@@ -922,6 +922,7 @@
       var items = Array.from(acc.querySelectorAll('[d2-accordion-item]'));
 
       var n = 0;
+      var openIds = [];   // items flagged d2-accordion-open (on item or trigger)
       items.forEach(function (item) {
         var trigger = qsFirst(item, '[d2-accordion-trigger]');
         var body = qsFirst(item, '[d2-accordion-body]');
@@ -930,11 +931,19 @@
         var id = name + '-' + n;
         if (!trigger.hasAttribute('d2-tab-trigger')) trigger.setAttribute('d2-tab-trigger', id);
         if (!body.hasAttribute('d2-tab-instance')) body.setAttribute('d2-tab-instance', id);
+        if (item.hasAttribute('d2-accordion-open') || trigger.hasAttribute('d2-accordion-open')) {
+          openIds.push(id);
+        }
       });
       if (!n) return;
 
       if (!acc.hasAttribute('d2-tab-mode')) acc.setAttribute('d2-tab-mode', 'accordion');
       if (!acc.hasAttribute('d2-tab-animation')) acc.setAttribute('d2-tab-animation', 'height');
+      // Open-on-load: mark item(s) with d2-accordion-open. Without d2-tab-multiple
+      // only the first flagged item opens (single-open accordion).
+      if (openIds.length && !acc.hasAttribute('d2-tab-default')) {
+        acc.setAttribute('d2-tab-default', acc.hasAttribute('d2-tab-multiple') ? openIds.join('|') : openIds[0]);
+      }
       acc.setAttribute('d2-tab-group', name);
     });
   }

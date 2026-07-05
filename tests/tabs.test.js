@@ -586,3 +586,48 @@ test('open trigger and panel get d2-is-active (tabs and accordion)', () => {
   assert.equal(env.yearlyTrigger.hasAttribute('d2-is-active'), true);
   assert.equal(env.yearlyPanel.hasAttribute('d2-is-active'), true);
 });
+
+test('d2-accordion-open opens that item on load (single-open by default)', () => {
+  const body = createElement('body');
+  const acc = createElement('div', { 'd2-accordion': '', 'd2-tab-animation': 'none' });
+
+  const mkItem = (open) => {
+    const item = createElement('div', open ? { 'd2-accordion-item': '', 'd2-accordion-open': '' } : { 'd2-accordion-item': '' });
+    const trigger = createElement('div', { 'd2-accordion-trigger': '' });
+    const bodyEl = createElement('div', { 'd2-accordion-body': '' });
+    item.appendChild(trigger);
+    item.appendChild(bodyEl);
+    acc.appendChild(item);
+    return { trigger, bodyEl };
+  };
+  mkItem(false);
+  const two = mkItem(true);   // this one flagged open
+  mkItem(false);
+  body.appendChild(acc);
+
+  const findGroup = (root, name) => {
+    let found = null;
+    (function walk(node) {
+      if (found) return;
+      if (node.getAttribute && node.getAttribute('d2-tab-group') === name) { found = node; return; }
+      (node.children || []).forEach(walk);
+    })(root);
+    return found;
+  };
+  const document = {
+    body, readyState: 'complete', addEventListener() {},
+    querySelector(selector) {
+      const m = selector.match(/\[d2-tab-group="([^"]+)"\]/);
+      return m ? findGroup(body, m[1]) : null;
+    },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  assert.equal(two.bodyEl.style.display, '', 'flagged item is open on load');
+  assert.equal(two.bodyEl.hasAttribute('d2-is-active'), true);
+});
