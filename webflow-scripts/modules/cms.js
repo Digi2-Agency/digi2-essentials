@@ -1252,7 +1252,8 @@
       if (this.options.listSelector) {
         return document.querySelector(this.options.listSelector);
       }
-      return document.querySelector('[d2-cms-list="' + this.name + '"]');
+      return document.querySelector('[d2-cms-list="' + this.name + '"]')
+          || document.querySelector('[d2-cms-instance="' + this.name + '"]');
     }
 
     _scanItems() {
@@ -2374,6 +2375,15 @@
 
   var _autoNameCounter = 0;
   function _autoInitFromDOM() {
+    // Alias: some authors name the list container with d2-cms-instance instead
+    // of d2-cms-list. Normalize to d2-cms-list up front so every downstream
+    // resolver (findList, scoped selectors, fetch matching, target buttons)
+    // keys off one attribute uniformly.
+    var aliased = document.querySelectorAll('[d2-cms-instance]:not([d2-cms-list])');
+    for (var a = 0; a < aliased.length; a++) {
+      var av = attr(aliased[a], 'd2-cms-instance');
+      if (av != null && av !== '') aliased[a].setAttribute('d2-cms-list', av);
+    }
     var nodes = document.querySelectorAll('[d2-cms-list]');
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];

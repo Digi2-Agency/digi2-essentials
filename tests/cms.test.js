@@ -754,3 +754,34 @@ test('d2-cms-toggle button hides/shows items and swaps its own label', async () 
   assert.equal(toggle.textContent, 'Ukryj sprzedane', 'label swaps back to the hide action');
   assert.equal(toggle.hasAttribute('d2-cms-toggle-active'), false, 'active attribute cleared');
 });
+
+test('d2-cms-instance is an alias for d2-cms-list so target buttons resolve and sort', async () => {
+  const env = createEnvironment();
+  const sortBtn = createElement('button', {
+    'd2-cms-sort': 'price',
+    'd2-cms-sort-dir': 'asc',
+    'd2-cms-target': 'list',
+  });
+  // List container named via d2-cms-instance (NOT d2-cms-list) — the burano bug.
+  const list = createElement('div', { 'd2-cms-instance': 'list' });
+  const cheap = createItem({ name: 'B', price: '100' });
+  const pricey = createItem({ name: 'A', price: '900' });
+  list.appendChild(pricey);
+  list.appendChild(cheap);
+  env.body.appendChild(sortBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Instance must be discovered and the alias normalized onto d2-cms-list.
+  assert.equal(list.getAttribute('d2-cms-list'), 'list', 'instance name normalized to d2-cms-list');
+
+  // Clicking the target button must actually sort (ascending by price).
+  dispatchDocument(env, 'click', sortBtn);
+  await flushTimers();
+
+  assert.equal(list.children[0], cheap, 'cheapest item sorts first');
+  assert.equal(list.children[1], pricey, 'pricier item sorts second');
+  assert.equal(sortBtn.getAttribute('d2-cms-sort-active'), 'asc', 'sort button reflects active asc state');
+});
