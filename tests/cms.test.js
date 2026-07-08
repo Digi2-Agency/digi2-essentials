@@ -661,3 +661,96 @@ test('sort label with d2-cms-target updates next to two lists; sort-active honor
   assert.equal(optDesc.hasAttribute('d2-cms-sort-active'), true, 'desc option marked active');
   assert.equal(optAsc.hasAttribute('d2-cms-sort-active'), false, 'asc option NOT marked active');
 });
+
+test('d2-cms-count input sets the exact visible count; steppers adjust it', async () => {
+  const env = createEnvironment();
+  const input = createElement('input', {
+    'd2-cms-count': '',
+    'd2-cms-target': 'products',
+  });
+  input.value = '';
+  const plus = createElement('button', {
+    'd2-cms-count-step': '1',
+    'd2-cms-target': 'products',
+  });
+  const minus = createElement('button', {
+    'd2-cms-count-step': '-1',
+    'd2-cms-target': 'products',
+  });
+  const list = createElement('div', { 'd2-cms-list': 'products' });
+  const items = [];
+  for (let i = 0; i < 5; i++) {
+    const it = createItem({ title: 'Item ' + i });
+    items.push(it);
+    list.appendChild(it);
+  }
+  env.body.appendChild(input);
+  env.body.appendChild(plus);
+  env.body.appendChild(minus);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Type "2" and commit -> exactly 2 items visible, rest hidden.
+  input.value = '2';
+  dispatchDocument(env, 'change', input);
+  await flushTimers();
+
+  const visibleCount = () => items.filter((it) => it.style.display !== 'none').length;
+  assert.equal(visibleCount(), 2, 'typing 2 reveals exactly 2 items');
+  assert.equal(input.value, '2', 'input mirrors the applied count');
+
+  // Increment -> 3 visible.
+  dispatchDocument(env, 'click', plus);
+  await flushTimers();
+  assert.equal(visibleCount(), 3, 'stepper +1 reveals a third item');
+  assert.equal(input.value, '3', 'input reflects the stepped count');
+
+  // Decrement twice -> 1 visible.
+  dispatchDocument(env, 'click', minus);
+  dispatchDocument(env, 'click', minus);
+  await flushTimers();
+  assert.equal(visibleCount(), 1, 'two -1 steps leave a single item');
+  assert.equal(input.value, '1', 'input reflects the decremented count');
+});
+
+test('d2-cms-toggle button hides/shows items and swaps its own label', async () => {
+  const env = createEnvironment();
+  const toggle = createElement('button', {
+    'd2-cms-toggle': 'status:Sprzedane',
+    'd2-cms-target': 'offers',
+    'd2-cms-toggle-hide': 'Ukryj sprzedane',
+    'd2-cms-toggle-show': 'Pokaz sprzedane',
+  }, 'Ukryj sprzedane');
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const available = createItem({ status: 'Dostepne' });
+  const sold = createItem({ status: 'Sprzedane' });
+  list.appendChild(available);
+  list.appendChild(sold);
+  env.body.appendChild(toggle);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Initial: everything shown, label describes the hide action.
+  assert.equal(sold.style.display, '', 'sold item starts visible');
+  assert.equal(toggle.textContent, 'Ukryj sprzedane', 'label starts on the hide action');
+  assert.equal(toggle.hasAttribute('d2-cms-toggle-active'), false);
+
+  // First click -> sold hidden, label flips to the show action.
+  dispatchDocument(env, 'click', toggle);
+  await flushTimers();
+  assert.equal(sold.style.display, 'none', 'sold item hidden after first click');
+  assert.equal(available.style.display, '', 'available item stays visible');
+  assert.equal(toggle.textContent, 'Pokaz sprzedane', 'label swaps to the show action');
+  assert.equal(toggle.hasAttribute('d2-cms-toggle-active'), true, 'toggle marked active while hiding');
+
+  // Second click -> sold shown again, label back to the hide action.
+  dispatchDocument(env, 'click', toggle);
+  await flushTimers();
+  assert.equal(sold.style.display, '', 'sold item visible again after second click');
+  assert.equal(toggle.textContent, 'Ukryj sprzedane', 'label swaps back to the hide action');
+  assert.equal(toggle.hasAttribute('d2-cms-toggle-active'), false, 'active attribute cleared');
+});

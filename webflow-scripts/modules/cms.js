@@ -294,6 +294,7 @@
       this._userInitiatedSort = false; // true once the user has clicked a sort button
       this._filters = {};             // { key: Set<value> }
       this._rangeFilters = {};        // { field: { min, max } } — numeric range
+      this._excludes = {};            // { key: Set<value> } — hide/show toggle exclusions
       this._visibleCount = 0;
 
       // Webflow server-side pagination bridge: when pagination is enabled on
@@ -391,6 +392,9 @@
           this._filters[k] = new Set(values);
         }
       }
+      // A [d2-cms-toggle] button carrying d2-cms-toggle-default="hidden" starts
+      // with its exclusion applied, so the list loads already hiding those items.
+      this._initToggleDefaults();
       if (this.options.defaultSort && this.options.defaultSort.field) {
         var dsOrder = this.options.defaultSort.order;
         this._sort = {
@@ -421,6 +425,13 @@
       }
 
       this._visibleCount = this.options.perPage;
+      // A [d2-cms-count] input with an initial numeric value seeds the starting
+      // visible count; otherwise the input just mirrors perPage on load.
+      var countInput = this._buttonsForName('[d2-cms-count]')[0];
+      if (countInput) {
+        var iv = parseInt(countInput.value, 10);
+        if (!isNaN(iv) && iv > 0) this._visibleCount = iv;
+      }
       this._setupSentinel();
       this._cacheEmptyElements();
       this._render();
@@ -785,6 +796,116 @@
         self._render();
         if (typeof self.options.onLoadMore === 'function') {
           self.options.onLoadMore(total, total);
+        }
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API — explicit visible count ([d2-cms-count] input + steppers)
+    // -----------------------------------------------------------------------
+    // Reveal exactly `n` matching items (clamped to [0, total matching]).
+    // Fetches more server-paginated pages when needed, just like loadMore.
+    setVisibleCount(n) {
+      var self = this;
+      var target = Math.max(0, Math.floor(Number(n)) || 0);
+      // Optimistically clamp to what's already loaded so rapid successive calls
+      // (holding a stepper, before the async fetch/render resolves) chain off
+      // the updated count instead of a stale _visibleCount.
+      self._visibleCount = Math.min(target, self._countMatching());
+      return this._ensureLoaded(target).then(function () {
+        var matchingTotal = self._countMatching();
+        self._visibleCount = Math.min(target, matchingTotal);
+        self._render();
+        if (typeof self.options.onLoadMore === 'function') {
+          self.options.onLoadMore(self._visibleCount, matchingTotal);
+        }
+        _log('setVisibleCount', { visible: self._visibleCount, total: matchingTotal });
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Public API — hide/show exclusion toggle ([d2-cms-toggle] button)
+    // -----------------------------------------------------------------------
+    // Toggle the exclusion of `values` under `key`. When active, items whose
+    // `key` field contains any of the values are hidden. Passing mode
+    // 'add' | 'remove' | 'toggle' forces a direction (default 'toggle').
+    toggleExclude(key, values, mode) {
+      if (!key || !Array.isArray(values) || !values.length) return;
+      if (!this._excludes[key]) this._excludes[key] = new Set();
+      var set = this._excludes[key];
+      var m = mode || 'toggle';
+      if (m === 'toggle') {
+        var allActive = values.every(function (v) { return set.has(String(v)); });
+        m = allActive ? 'remove' : 'add';
+      }
+      for (var i = 0; i < values.length; i++) {
+        var v = String(values[i]);
+        if (m === 'remove') set.delete(v);
+        else set.add(v);
+      }
+      if (set.size === 0) delete this._excludes[key];
+      this._visibleCount = this.options.perPage;
+      this._render();
+      this._fireFilter();
+      this._ensureAllForFilter();
+    }
+
+    // Seed exclusions from any [d2-cms-toggle-default="hidden"] button so the
+    // first render already hides those items. Runs once during _init.
+    _initToggleDefaults() {
+      var self = this;
+      var btns = this._toggleButtons();
+      btns.forEach(function (btn) {
+        var def = (attr(btn, 'd2-cms-toggle-default') || '').trim().toLowerCase();
+        if (def !== 'hidden' && def !== 'hide' && def !== 'active') return;
+        var parsed = parseFilterAttr(attr(btn, 'd2-cms-toggle'));
+        if (!parsed) return;
+        if (!self._excludes[parsed.key]) self._excludes[parsed.key] = new Set();
+        parsed.values.forEach(function (v) { self._excludes[parsed.key].add(String(v)); });
+      });
+    }
+
+    _toggleButtons() {
+      return this._buttonsForName('[d2-cms-toggle]');
+    }
+
+    // Push the current visible count into any [d2-cms-count] inputs targeting
+    // this list. Skips the input the user is actively editing so typing isn't
+    // clobbered mid-keystroke.
+    _syncCountInputs() {
+      var self = this;
+      var inputs = this._buttonsForName('[d2-cms-count]');
+      inputs.forEach(function (input) {
+        if (input === document.activeElement) return;
+        var val = String(self._visibleCount);
+        if (input.value !== val) input.value = val;
+      });
+    }
+
+    // Reflect hide/show toggle buttons: swap their label to describe the NEXT
+    // action and mark [d2-cms-toggle-active] when the exclusion is on.
+    //   inactive (items shown)  → label = d2-cms-toggle-hide ("Ukryj sprzedane")
+    //   active   (items hidden) → label = d2-cms-toggle-show ("Pokaż sprzedane")
+    _reflectToggleButtons() {
+      var self = this;
+      var btns = this._toggleButtons();
+      btns.forEach(function (btn) {
+        var parsed = parseFilterAttr(attr(btn, 'd2-cms-toggle'));
+        if (!parsed) return;
+        var set = self._excludes[parsed.key];
+        var active = !!set && parsed.values.every(function (v) { return set.has(String(v)); });
+
+        if (active) btn.setAttribute('d2-cms-toggle-active', '');
+        else btn.removeAttribute('d2-cms-toggle-active');
+
+        var hideText = attr(btn, 'd2-cms-toggle-hide');
+        var showText = attr(btn, 'd2-cms-toggle-show');
+        var next = active ? showText : hideText;
+        // Only manage text when the author supplied both labels — otherwise the
+        // button keeps its static content and only gets the active attribute.
+        if (hideText != null && showText != null && next != null
+            && btn.textContent !== next) {
+          btn.textContent = next;
         }
       });
     }
@@ -1172,11 +1293,13 @@
     _applyFilters() {
       var filterKeys = Object.keys(this._filters);
       var rangeKeys = Object.keys(this._rangeFilters);
+      var excludeKeys = Object.keys(this._excludes);
       var mode = this.options.filterMatchMode === 'OR' ? 'OR' : 'AND';
       var hasTag = filterKeys.length > 0;
       var hasRange = rangeKeys.length > 0;
+      var hasExclude = excludeKeys.length > 0;
 
-      if (!hasTag && !hasRange) {
+      if (!hasTag && !hasRange && !hasExclude) {
         for (var i = 0; i < this.items.length; i++) this.items[i]._match = true;
         return;
       }
@@ -1217,7 +1340,25 @@
           }
         }
 
-        item._match = tagMatch && rangeMatch;
+        // Exclude filters — a hide/show toggle. When active, an item whose
+        // field value contains ANY excluded value is hidden regardless of the
+        // tag/range clauses above (e.g. "hide sold": status contains "sold").
+        var excludeMatch = true;
+        if (hasExclude) {
+          for (var ei = 0; ei < excludeKeys.length; ei++) {
+            var ek = excludeKeys[ei];
+            var eraw = item.fields[ek];
+            if (eraw == null) continue;
+            var evals = String(eraw).split(',').map(function (v) { return v.trim(); });
+            var excluded = false;
+            for (var ev of self._excludes[ek]) {
+              if (evals.indexOf(String(ev)) !== -1) { excluded = true; break; }
+            }
+            if (excluded) { excludeMatch = false; break; }
+          }
+        }
+
+        item._match = tagMatch && rangeMatch && excludeMatch;
       }
     }
 
@@ -1683,6 +1824,12 @@
 
       // Filter-label elements (custom dropdown trigger text for filters)
       this._reflectFilterLabels();
+
+      // Hide/show exclusion toggle buttons — swap label + active attribute
+      this._reflectToggleButtons();
+
+      // [d2-cms-count] number inputs — mirror the current visible count
+      this._syncCountInputs();
     }
 
     // For each <select> whose options carry d2-cms-sort, find the option that
@@ -2273,6 +2420,8 @@
     var loadBtn = target.closest('[d2-cms-load-more], [d2-cms-loadcount]');
     var dirBtn = target.closest('[d2-cms-direction]');
     var clearBtn = target.closest('[d2-cms-clear]');
+    var toggleBtn = target.closest('[d2-cms-toggle]');
+    var stepBtn = target.closest('[d2-cms-count-step]');
 
     // Checkbox/radio inputs drive filters via the 'change' event — let the
     // browser toggle `checked` natively and skip the click path here.
@@ -2281,7 +2430,7 @@
       filterBtn = null;
     }
 
-    var btn = sortBtn || filterBtn || loadBtn || dirBtn || clearBtn;
+    var btn = sortBtn || filterBtn || loadBtn || dirBtn || clearBtn || toggleBtn || stepBtn;
     if (!btn) return;
 
     var names = _resolveTargetNames(btn);
@@ -2356,6 +2505,24 @@
         });
         _resetRangeSlidersFor(names);   // snap slider handles back to full extent
       }
+    } else if (toggleBtn) {
+      // Hide/show switch — one button flips an exclusion on/off and swaps its
+      // own label. d2-cms-toggle="status:sprzedane" hides sold items when on.
+      var tParsed = parseFilterAttr(attr(toggleBtn, 'd2-cms-toggle'));
+      if (tParsed) {
+        instances.forEach(function (cms) {
+          cms.toggleExclude(tParsed.key, tParsed.values, 'toggle');
+        });
+      }
+    } else if (stepBtn) {
+      // Increment/decrement the visible count. d2-cms-count-step="1" / "-1"
+      // (empty → 1). Steps relative to the current visible count.
+      var stepRaw = (attr(stepBtn, 'd2-cms-count-step') || '').trim();
+      var step = parseInt(stepRaw, 10);
+      if (isNaN(step) || step === 0) step = 1;
+      instances.forEach(function (cms) {
+        cms.setVisibleCount(cms._visibleCount + step);
+      });
     }
 
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the
@@ -2380,6 +2547,24 @@
   document.addEventListener('change', function (e) {
     var target = e.target;
     if (!target) return;
+
+    // ---- <input d2-cms-count> — set exact visible count ----
+    // Typing a number (committed on Enter/blur) reveals that many items.
+    // Clamped to the input's optional min/max (default min 1).
+    if (target.tagName === 'INPUT' && target.hasAttribute('d2-cms-count')) {
+      var cnames = _resolveTargetNames(target);
+      var cinstances = _instancesForTargetNames(cnames);
+      if (!cinstances.length) return;
+      var n = parseInt(target.value, 10);
+      if (isNaN(n)) return;
+      var cmin = parseInt(attr(target, 'd2-cms-count-min'), 10);
+      var cmax = parseInt(attr(target, 'd2-cms-count-max'), 10);
+      if (isNaN(cmin)) cmin = 1;
+      if (n < cmin) n = cmin;
+      if (!isNaN(cmax) && n > cmax) n = cmax;
+      cinstances.forEach(function (cms) { cms.setVisibleCount(n); });
+      return;
+    }
 
     // ---- <input type="checkbox|radio" d2-cms-filter="key:value"> ----
     // Checkbox → toggle the value for its key (multi-select semantics).
