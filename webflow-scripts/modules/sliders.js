@@ -837,7 +837,15 @@
 
         var list = Array.prototype.slice.call(src.querySelectorAll('[d2-slide]'));
         if (!list.length) {
-          list = Array.prototype.slice.call(src.children).filter(function (el) {
+          // Webflow: the attribute may sit on the Collection List WRAPPER —
+          // descend into its .w-dyn-items child so each ITEM becomes a slide
+          // (not the whole items container as one giant slide).
+          var root = src;
+          for (var c = 0; c < src.children.length; c++) {
+            var ch = src.children[c];
+            if (ch.classList && ch.classList.contains('w-dyn-items')) { root = ch; break; }
+          }
+          list = Array.prototype.slice.call(root.children).filter(function (el) {
             return el.tagName === 'IMG' || (el.querySelector && el.querySelector('img'));
           });
         }

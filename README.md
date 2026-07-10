@@ -988,6 +988,7 @@ Feed a slider with images from a Webflow Collection List — no custom scripts. 
 
 - Items are **cloned, not moved** — one source can feed several sliders with the same name (e.g. a grid view and a list view sharing one slug-named source).
 - Items taken: `[d2-slide]` descendants of the source; otherwise its direct children that are/contain an `<img>` (skips `w-dyn-empty` junk). Each clone gets `d2-slide` automatically.
+- **Nested collection lists work** — put the attribute on the nested list (wrapper or items element; the module descends into `.w-dyn-items` automatically) inside each parent item and bind the name to the parent's slug. Mind Webflow's nested-list item limit (typically 5) — for larger galleries use a flat helper Collection List elsewhere on the page with the same slug-bound source name.
 - `d2-slider-feed-position="start|end"` — where they land relative to existing slides (default `start`).
 - The move happens **before the slider initializes**, so infinite clones and positions include the fed slides; the source is hidden afterwards.
 - The source must be in the DOM at init (Webflow renders CMS lists server-side, so that's the normal case). Feeding an already-running slider is intentionally skipped.
