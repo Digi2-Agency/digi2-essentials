@@ -842,7 +842,10 @@
           });
         }
         for (var k = 0; k < list.length; k++) {
-          var el = list[k];
+          // CLONE (don't move): the same source can feed several sliders —
+          // e.g. a grid view and a list view sharing one slug-named source.
+          var el = list[k].cloneNode(true);
+          el.removeAttribute('id');
           if (!el.hasAttribute('d2-slide')) el.setAttribute('d2-slide', '');
           if (ref) track.insertBefore(el, ref);
           else track.appendChild(el);

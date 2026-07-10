@@ -986,7 +986,8 @@ Feed a slider with images from a Webflow Collection List — no custom scripts. 
 </div>
 ```
 
-- Items moved: `[d2-slide]` descendants of the source; otherwise its direct children that are/contain an `<img>` (skips `w-dyn-empty` junk). Each gets `d2-slide` automatically.
+- Items are **cloned, not moved** — one source can feed several sliders with the same name (e.g. a grid view and a list view sharing one slug-named source).
+- Items taken: `[d2-slide]` descendants of the source; otherwise its direct children that are/contain an `<img>` (skips `w-dyn-empty` junk). Each clone gets `d2-slide` automatically.
 - `d2-slider-feed-position="start|end"` — where they land relative to existing slides (default `start`).
 - The move happens **before the slider initializes**, so infinite clones and positions include the fed slides; the source is hidden afterwards.
 - The source must be in the DOM at init (Webflow renders CMS lists server-side, so that's the normal case). Feeding an already-running slider is intentionally skipped.
