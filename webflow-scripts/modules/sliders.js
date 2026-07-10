@@ -146,15 +146,45 @@
       this._buildDots();
       this._attachListeners();
       this.goTo(this._currentIndex, false);
+      this._setupResnap();
 
       if (this.options.autoplay) {
         this.play();
       }
     }
 
+    // Re-apply the current position from a fresh measurement. A slider that
+    // initializes inside a hidden panel (grid/list tab, accordion, modal)
+    // measures slide width 0 and parks the track at translate(0) — which shows
+    // a head CLONE and makes the first click jump two slides. When the panel
+    // becomes visible (container size 0 → real) or the viewport resizes, we
+    // silently re-snap the track to the stored position.
+    _setupResnap() {
+      var self = this;
+      this._resnap = function () {
+        if (!self.trackEl) return;
+        // Still hidden / unmeasurable — wait for a real size.
+        if (self._getSlideSize() <= self.options.gap) return;
+        if (self.options.infinite) self._slideToPos(self._pos, false);
+        else self._slideTo(self._currentIndex, false);
+      };
+      if (typeof ResizeObserver !== 'undefined') {
+        this._ro = new ResizeObserver(function () { self._resnap(); });
+        this._ro.observe(this.containerEl);
+      }
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('resize', this._resnap);
+      }
+    }
+
     destroy() {
       this.pause();
       if (this._snapTimer) { clearTimeout(this._snapTimer); this._snapTimer = null; }
+      if (this._ro) { this._ro.disconnect(); this._ro = null; }
+      if (this._resnap && typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('resize', this._resnap);
+      }
+      this._resnap = null;
       this.containerEl = null;
       this.trackEl = null;
       this.slides = [];
