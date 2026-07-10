@@ -135,6 +135,15 @@
         this.options.infinite = false;
       }
 
+      // Nothing to navigate (single slide / fewer than one view): hide the
+      // arrows + dots and disable dragging — the track is static.
+      this._static = this._realCount <= this.options.slidesPerView;
+      if (this._static) {
+        if (this.prevBtn) this.prevBtn.style.display = 'none';
+        if (this.nextBtn) this.nextBtn.style.display = 'none';
+        if (this.dotsContainer) this.dotsContainer.style.display = 'none';
+      }
+
       _log('init → ' + this.name, {
         slides: this._realCount,
         infinite: this.options.infinite,
@@ -331,6 +340,7 @@
       }
 
       function onStart(e) {
+        if (self._static) return;          // single slide — nothing to drag
         self._isDragging = true;
         self._startPos = getPos(e);
         self._prevTranslate = self._currentTranslate;
@@ -338,11 +348,28 @@
         self.containerEl.style.cursor = 'grabbing';
       }
 
+      // Clamp the live drag to the track's real range so the track can't be
+      // flung into the void ("nothing visible"). Beyond the edge only a small
+      // rubber-band give remains (quarter of the overflow, max half a slide).
+      function clampDrag(px) {
+        var size = self._getSlideSize();
+        if (size <= self.options.gap) return px;   // unmeasurable — don't clamp
+        var max = 0;
+        var min = self.options.infinite
+          ? -(self.slides.length - 1) * size       // last slide incl. clones
+          : -self._getMaxIndex() * size;
+        var over = 0;
+        if (px > max) { over = px - max; px = max; }
+        else if (px < min) { over = px - min; px = min; }
+        var give = Math.max(-size / 2, Math.min(size / 2, over * 0.25));
+        return px + give;
+      }
+
       function onMove(e) {
         if (!self._isDragging) return;
         var current = getPos(e);
         var diff = current - self._startPos;
-        self._currentTranslate = self._prevTranslate + diff;
+        self._currentTranslate = clampDrag(self._prevTranslate + diff);
         self._setTranslate(self._currentTranslate);
       }
 
