@@ -795,7 +795,69 @@
     return o;
   }
 
+  // ---- CMS feed: pull slides from a Collection List --------------------------
+  // Tag a (hidden) collection list with d2-slider-source="name" — its items
+  // are moved into the track of the slider marked d2-slider-feed="name"
+  // BEFORE that slider initializes, so clones/positions include them.
+  //
+  //   <div d2-slider-source="{{slug}}" class="hidden">   ← CMS list with images
+  //     <div class="w-dyn-item"><img src="…"></div>
+  //   </div>
+  //   <div d2-slider d2-slider-feed="{{slug}}"> <div d2-slider-track>…</div> </div>
+  //
+  // Bind both names to a CMS field (e.g. slug) to pair source↔slider per item.
+  // Items taken: [d2-slide] descendants; else direct children that are/contain
+  // an <img> (skips w-dyn-empty junk). Each gets d2-slide if missing.
+  //   d2-slider-feed-position="start|end"   (on the slider; default "start")
+  function _ingestFeeds() {
+    var feeds = document.querySelectorAll('[d2-slider-feed]:not([d2-slider-feed-done])');
+    for (var i = 0; i < feeds.length; i++) {
+      var slider = feeds[i];
+      var name = slider.getAttribute('d2-slider-feed');
+      if (!name) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
+
+      // Feed only BEFORE the slider initializes — injecting into a live
+      // infinite slider would desync its clones/positions. Webflow renders
+      // CMS lists server-side, so sources are present at init time.
+      if (slider.hasAttribute('d2-slider-ready')) {
+        slider.setAttribute('d2-slider-feed-done', '');
+        continue;
+      }
+
+      var track = slider.querySelector('[d2-slider-track]') || slider;
+      var pos = (slider.getAttribute('d2-slider-feed-position') || 'start').toLowerCase();
+      var ref = pos === 'end' ? null : track.firstChild;   // keeps source order
+
+      var sources = document.querySelectorAll('[d2-slider-source]');
+      var movedAny = false;
+      for (var s = 0; s < sources.length; s++) {
+        var src = sources[s];
+        if (src.getAttribute('d2-slider-source') !== name) continue;
+        if (track.contains(src)) continue;                 // never self-feed
+
+        var list = Array.prototype.slice.call(src.querySelectorAll('[d2-slide]'));
+        if (!list.length) {
+          list = Array.prototype.slice.call(src.children).filter(function (el) {
+            return el.tagName === 'IMG' || (el.querySelector && el.querySelector('img'));
+          });
+        }
+        for (var k = 0; k < list.length; k++) {
+          var el = list[k];
+          if (!el.hasAttribute('d2-slide')) el.setAttribute('d2-slide', '');
+          if (ref) track.insertBefore(el, ref);
+          else track.appendChild(el);
+          movedAny = true;
+        }
+        src.style.display = 'none';
+      }
+      // Sources may not be in the DOM yet (async CMS) — only mark done once
+      // something was ingested, so the MutationObserver rescan retries.
+      if (movedAny) slider.setAttribute('d2-slider-feed-done', '');
+    }
+  }
+
   function _autoInit() {
+    _ingestFeeds();
     var els = document.querySelectorAll('[d2-slider]:not([d2-slider-ready])');
     var nameCount = {};
     for (var i = 0; i < els.length; i++) {

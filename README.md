@@ -967,6 +967,36 @@ digi2.sliders.create('hero', {
 | `draggable` | `true` | Touch/mouse drag |
 | `dragThreshold` | `40` | px to trigger |
 
+### CMS feed (`d2-slider-source` → `d2-slider-feed`)
+
+Feed a slider with images from a Webflow Collection List — no custom scripts. Tag the (hidden) list as the **source** and the slider as the **feed target**; matching names pair them. Bind both to a CMS field (e.g. slug) to pair per item:
+
+```html
+<!-- hidden CMS list rendering the images -->
+<div d2-slider-source="{{slug}}" class="hidden w-dyn-list">
+  <div class="w-dyn-item"><img src="…"></div>
+  <div class="w-dyn-item"><img src="…"></div>
+</div>
+
+<!-- the slider that receives them -->
+<div d2-slider d2-slider-infinite d2-slider-feed="{{slug}}">
+  <div d2-slider-track>
+    <div d2-slide>…static slide…</div>
+  </div>
+</div>
+```
+
+- Items moved: `[d2-slide]` descendants of the source; otherwise its direct children that are/contain an `<img>` (skips `w-dyn-empty` junk). Each gets `d2-slide` automatically.
+- `d2-slider-feed-position="start|end"` — where they land relative to existing slides (default `start`).
+- The move happens **before the slider initializes**, so infinite clones and positions include the fed slides; the source is hidden afterwards.
+- The source must be in the DOM at init (Webflow renders CMS lists server-side, so that's the normal case). Feeding an already-running slider is intentionally skipped.
+
+### Behavior notes
+
+- **Hidden-panel init:** a slider inside a hidden tab/accordion re-snaps automatically when it becomes visible (and on window resize) — no misparked track.
+- **Drag is clamped** to the track's range with a small rubber-band — you can't fling slides out of view.
+- **Single slide:** arrows + dots are hidden and dragging is disabled when there's nothing to navigate.
+
 ### API
 
 ```js
@@ -1531,8 +1561,10 @@ digi2.log('module', 'action', data)
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |
 | `d2-slider-track` | Div | Slide track |
-| `d2-slider-prev/next` | Button | Arrow navigation |
+| `d2-slider-prev/next` | Button | Arrow navigation (auto-hidden when ≤1 view of slides) |
 | `d2-slider-dots` | Div | Dot navigation |
+| `d2-slider-source="name"` | CMS list | Its images become slides of the matching feed slider |
+| `d2-slider-feed="name"` | Slider | Receives slides from matching `d2-slider-source` (+`d2-slider-feed-position="start\|end"`) |
 | `d2-animate="preset"` | Any | Scroll animation |
 | `d2-stagger="ms"` | Parent | Stagger children |
 | `d2-delay="ms"` | Any | Animation delay |
