@@ -99,6 +99,7 @@ function createElement(tagName, attrs) {
         if (sel === '[d2-accordion-item]') return node.hasAttribute('d2-accordion-item');
         if (sel === '[d2-accordion-trigger]') return node.hasAttribute('d2-accordion-trigger');
         if (sel === '[d2-accordion-body]') return node.hasAttribute('d2-accordion-body');
+        if (sel === '[d2-tab-label]') return node.hasAttribute('d2-tab-label');
         return false;
       }
 
@@ -630,4 +631,49 @@ test('d2-accordion-open opens that item on load (single-open by default)', () =>
 
   assert.equal(two.bodyEl.style.display, '', 'flagged item is open on load');
   assert.equal(two.bodyEl.hasAttribute('d2-is-active'), true);
+});
+
+test('d2-tab-label reflects the active view; dropdown (external) triggers switch + default opens first panel', () => {
+  const body = createElement('body');
+  const group = createElement('div', { 'd2-tab-group': 'view' });
+  const listPanel = createElement('div', { 'd2-tab-instance': 'list' });
+  const gridPanel = createElement('div', { 'd2-tab-instance': 'grid' });
+  group.appendChild(listPanel);
+  group.appendChild(gridPanel);
+
+  // Dropdown OUTSIDE the group: label + two external-trigger options.
+  // (This mock's createElement ignores a text arg — set textContent manually.)
+  const label = createElement('div', { 'd2-tab-label': 'view' });
+  label.textContent = 'Widok';
+  const optList = createElement('a', { 'd2-tab-trigger': 'view:list' });
+  optList.textContent = 'Lista';
+  const optGrid = createElement('a', { 'd2-tab-trigger': 'view:grid', 'd2-tab-option-label': 'Siatka' });
+  optGrid.textContent = 'Siatka (kafelki)';
+  body.appendChild(group);
+  body.appendChild(label);
+  body.appendChild(optList);
+  body.appendChild(optGrid);
+
+  const document = {
+    body, readyState: 'complete', addEventListener() {},
+    querySelector(selector) { return selector === '[d2-tab-group="view"]' ? group : null; },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+    getComputedStyle: () => ({ display: 'block' }),
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  // Default: first panel (list) open, label shows the list option's text.
+  assert.equal(listPanel.style.display, '');
+  assert.equal(gridPanel.style.display, 'none');
+  assert.equal(label.textContent, 'Lista');
+
+  // Pick "grid" from the dropdown → switches view + label uses option-label.
+  optGrid._listeners.click({ preventDefault() {}, target: optGrid });
+  assert.equal(gridPanel.style.display, '');
+  assert.equal(listPanel.style.display, 'none');
+  assert.equal(label.textContent, 'Siatka');
 });

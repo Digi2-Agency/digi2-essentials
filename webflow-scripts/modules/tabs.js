@@ -832,6 +832,64 @@
           panel.removeAttribute('d2-is-active');
         }
       });
+
+      this._reflectLabels();
+    }
+
+    // Mirror the active tab's label onto [d2-tab-label] elements — the text of
+    // a custom dropdown toggle (like a "Sortuj według" label), so a list/grid
+    // view switch built as a Webflow dropdown shows the current view.
+    //   <div d2-tab-label="search">Widok</div>            ← toggle text
+    //   <a d2-tab-trigger="search:list" d2-tab-option-label="Lista">…</a>
+    // The option's text comes from d2-tab-option-label, else the trigger's own
+    // textContent. Label matches this group by name, or by living inside the
+    // group / a shared .w-dropdown when the attribute has no value.
+    _reflectLabels() {
+      if (!document.querySelectorAll) return;
+      var self = this;
+      var labels = document.querySelectorAll('[d2-tab-label]');
+      var activeId = null;
+      this._activeTabs.forEach(function (id) { if (activeId == null) activeId = id; });
+
+      for (var i = 0; i < labels.length; i++) {
+        var label = labels[i];
+        var want = (attr(label, 'd2-tab-label') || '').trim();
+        if (want) {
+          if (want !== this.name) continue;
+        } else {
+          // Unnamed: only claim it when a trigger of THIS group shares its
+          // scope (group element or the same .w-dropdown), so unrelated labels
+          // aren't hijacked.
+          var scope = (label.closest && label.closest('[d2-tab-label-scope], .w-dropdown')) || this.groupEl;
+          if (!scope || !this._scopeHasOwnTrigger(scope)) continue;
+        }
+        if (label._d2TabLabelDefault == null) label._d2TabLabelDefault = label.textContent;
+        var text = label._d2TabLabelDefault;
+        if (activeId != null) {
+          var trig = this._triggerForTab(activeId);
+          if (trig) text = attr(trig, 'd2-tab-option-label') || (trig.textContent || '').trim() || text;
+        }
+        if (label.textContent !== text) label.textContent = text;
+      }
+    }
+
+    // The trigger element (internal OR external / dropdown option) bound to a
+    // tab id — used to source the label's text.
+    _triggerForTab(tabId) {
+      var self = this;
+      var found = this.triggers.find(function (t) { return self._getTriggerTabId(t) === tabId; });
+      if (found) return found;
+      return this.externalTriggers.find(function (t) { return self._getExternalTriggerTabId(t) === tabId; }) || null;
+    }
+
+    _scopeHasOwnTrigger(scope) {
+      for (var i = 0; i < this.triggers.length; i++) {
+        if (scope.contains && scope.contains(this.triggers[i])) return true;
+      }
+      for (var j = 0; j < this.externalTriggers.length; j++) {
+        if (scope.contains && scope.contains(this.externalTriggers[j])) return true;
+      }
+      return false;
     }
 
     _openDefault() {
@@ -851,6 +909,11 @@
         } else if (this.options.mode === 'tabs' && this.triggers.length > 0) {
           // Auto-open first tab
           this.open(this._getTriggerTabId(this.triggers[0]));
+        } else if (this.options.mode === 'tabs' && this.panels.length > 0) {
+          // Triggers live outside the group (e.g. a dropdown of external
+          // triggers) — open the first panel so a view is shown on load.
+          var pid = attr(this.panels[0], 'd2-tab-instance') || attr(this.panels[0], 'd2-tab-content');
+          if (pid) this.open(pid);
         }
       }
       // Accordion: nothing open by default unless specified

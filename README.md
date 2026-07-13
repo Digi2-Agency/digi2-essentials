@@ -897,6 +897,33 @@ Whenever a tab/accordion panel is open the module sets **`d2-is-active`** on bot
 .faq_item:has([d2-tab-trigger][d2-is-active]) { … }
 ```
 
+### View switch as a dropdown (`d2-tab-label`)
+
+Turn a tab group (e.g. list ⇄ grid) into a Webflow-dropdown whose toggle text shows the current view — like the sort dropdown in the CMS module. The options are **external triggers** (`group:tab`) living inside the dropdown, outside the group:
+
+```html
+<!-- the two views (panels) -->
+<div d2-tab-group="view">
+  <div d2-tab-instance="list">…list…</div>
+  <div d2-tab-instance="grid">…grid…</div>
+</div>
+
+<!-- the dropdown that switches them -->
+<div class="w-dropdown">
+  <div class="w-dropdown-toggle">
+    <div d2-tab-label="view">Lista</div>            <!-- ← updates to the picked option -->
+  </div>
+  <nav class="w-dropdown-list">
+    <a d2-tab-trigger="view:list" class="w-dropdown-link">Lista</a>
+    <a d2-tab-trigger="view:grid" class="w-dropdown-link">Siatka</a>
+  </nav>
+</div>
+```
+
+- `d2-tab-label="view"` mirrors the active tab's text onto the toggle; `d2-tab-option-label="…"` on a trigger overrides the text it contributes.
+- With the toggle outside the group there are no in-group triggers, so the module **auto-opens the first panel** on load (or set `d2-tab-default="list"`).
+- An unnamed `d2-tab-label` (no value) binds to whichever group has a trigger in the same `.w-dropdown` / `[d2-tab-label-scope]`.
+
 ### Behavior notes
 
 - **Nested groups are isolated** — a view-switch `d2-tab-group` can wrap an accordion `d2-tab-group`; neither steals the other's triggers, panels, or `d2-tab-scroll`.
@@ -1559,6 +1586,7 @@ digi2.log('module', 'action', data)
 | `d2-tab-trigger="id"` | Button | Tab trigger (real links inside navigate) |
 | `d2-tab-trigger="group:id"` | Any | External tab trigger |
 | `d2-tab-instance="id"` | Div | Tab panel |
+| `d2-tab-label="group"` | Any (dropdown toggle) | Shows the active tab's text; pairs with `d2-tab-option-label` on triggers |
 | `d2-tab-display="flex\|grid"` | Panel | Display used when overriding a class-based `display:none` |
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |
