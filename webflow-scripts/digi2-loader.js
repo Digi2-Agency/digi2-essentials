@@ -602,6 +602,7 @@
         var m = name.substring(3); // "d2-popups" -> "popups"
         if (m === 'format-price' || m === 'format-number') m = 'format';
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs'; // accordion lives in tabs
+        if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns'; // singular/parts → module
         _pushModule(into, m);
       }
     }
@@ -614,6 +615,7 @@
         if (m === 'gtm') m = 'google';
         if (m === 'format-price' || m === 'format-number') m = 'format';
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs';
+        if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns';
         _pushModule(into, m);
       });
     }

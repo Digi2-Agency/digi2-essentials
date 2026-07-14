@@ -77,6 +77,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
+| `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
 Total (all modules): **167.6 KB min** / **49.7 KB** gzipped.
@@ -534,6 +535,45 @@ A popup is two halves: the **structure + attributes** you build in the Designer,
 
 ---
 
+## Dropdowns
+
+Own the open/close of a custom dropdown instead of relying on Webflow's built-in interaction (which can leave the menu open after a selection). Works on a plain structure **and** on a Webflow Dropdown element — just put `d2-dropdown` on the wrapper.
+
+```html
+<div class="w-dropdown" d2-dropdown>
+  <div class="w-dropdown-toggle" d2-dropdown-toggle>
+    <div d2-tab-label="view">Wyświetl według</div>
+  </div>
+  <nav class="w-dropdown-list" d2-dropdown-list>
+    <a d2-tab-trigger="view:list" class="w-dropdown-link">Lista</a>
+    <a d2-tab-trigger="view:grid" class="w-dropdown-link">Siatka</a>
+  </nav>
+</div>
+```
+
+- **Closes on select** by default — the option's own handler still runs (tab switch, filter, link), the module only collapses the menu. Pairs perfectly with `d2-tab-trigger`, `d2-cms-sort`, `d2-cms-filter` options.
+- Also closes on **outside click** and **Esc**.
+- Parts: `d2-dropdown-toggle` / `d2-dropdown-list` (fall back to `.w-dropdown-toggle` / `.w-dropdown-list`, so an existing Webflow dropdown works with just `d2-dropdown` on the wrapper).
+- State for CSS: wrapper gets `[d2-dropdown-open]` + `.is-open`; on a Webflow dropdown the native `w--open` classes are synced too.
+
+| Attribute | On | Purpose |
+|---|---|---|
+| `d2-dropdown` | wrapper | Enable the module on this dropdown |
+| `d2-dropdown-toggle` | toggle | The click target (optional — defaults to `.w-dropdown-toggle`) |
+| `d2-dropdown-list` | menu | The panel (optional — defaults to `.w-dropdown-list`) |
+| `d2-dropdown-hover` | wrapper | Open on hover (also honors Webflow's `data-hover="true"`) |
+| `d2-dropdown-keep-open` | wrapper | Don't auto-close after selecting an item |
+| `d2-dropdown-item` | item | Extra "counts as a selectable option" marker (a/button/`.w-dropdown-link` already count) |
+
+```js
+digi2.dropdowns.open('#my-dropdown')   // or an element
+digi2.dropdowns.close('#my-dropdown')
+digi2.dropdowns.toggle('#my-dropdown')
+digi2.dropdowns.closeAll()
+```
+
+---
+
 ## Cookies
 
 ```js
@@ -921,6 +961,7 @@ Turn a tab group (e.g. list ⇄ grid) into a Webflow-dropdown whose toggle text 
 ```
 
 - The label keeps its **authored placeholder** on load (e.g. "Wyświetl według") and only swaps to the option text **after the user picks one** — the default-open never changes it.
+- To make the menu **collapse after a pick**, add the [dropdowns module](#dropdowns) (`d2-dropdown` on the wrapper) — Webflow's own dropdown can stay open otherwise.
 - `d2-tab-option-label="…"` on a trigger overrides the text it contributes (handy when the option has an icon or a longer label).
 - `d2-tab-label-static` on the label → keep the placeholder forever (never swap), for a fixed "Wyświetl według" that just opens the menu.
 - **Default view:** set `d2-tab-default="list"` (or `grid`) on the `d2-tab-group` element. Without it, the module auto-opens the first panel (since the triggers live outside the group).
@@ -1615,6 +1656,9 @@ digi2.log('module', 'action', data)
 | `d2-filter-category="cat"` | Div | Item categories |
 | `d2-copy="text"` | Button | Copy to clipboard |
 | `d2-copy-target="#id"` | Button | Copy element content |
+| `d2-dropdown` | Wrapper | Custom dropdown (open/close, close-on-select) |
+| `d2-dropdown-toggle/-list` | Parts | Toggle button / menu (default `.w-dropdown-*`) |
+| `d2-dropdown-keep-open` | Wrapper | Don't close after selecting |
 | `d2-format-price` | Any | Format number as price (nbsp separators) |
 | `d2-format-break` | On format element | Allow wrapping (regular spaces) |
 | `d2-cms-list="name"` | Div | CMS list — full reference in [CMS List](#attribute-reference) |
