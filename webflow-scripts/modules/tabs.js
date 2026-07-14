@@ -312,6 +312,7 @@
         e.preventDefault();
         var tabId = getTabId();
         if (!tabId) return;
+        self._userSwitched = true;   // a real click — labels may now reflect it
         if (self.options.mode === 'accordion') {
           self.toggle(tabId);
         } else {
@@ -839,14 +840,17 @@
     // Mirror the active tab's label onto [d2-tab-label] elements — the text of
     // a custom dropdown toggle (like a "Sortuj według" label), so a list/grid
     // view switch built as a Webflow dropdown shows the current view.
-    //   <div d2-tab-label="search">Widok</div>            ← toggle text
+    //   <div d2-tab-label="search">Wyświetl według</div>   ← placeholder text
     //   <a d2-tab-trigger="search:list" d2-tab-option-label="Lista">…</a>
+    // Behavior:
+    //   - the authored text stays as a PLACEHOLDER until the user actually
+    //     picks an option (the default-open on load does NOT change it);
+    //   - add d2-tab-label-static to keep the placeholder forever (never swap).
     // The option's text comes from d2-tab-option-label, else the trigger's own
     // textContent. Label matches this group by name, or by living inside the
     // group / a shared .w-dropdown when the attribute has no value.
     _reflectLabels() {
       if (!document.querySelectorAll) return;
-      var self = this;
       var labels = document.querySelectorAll('[d2-tab-label]');
       var activeId = null;
       this._activeTabs.forEach(function (id) { if (activeId == null) activeId = id; });
@@ -857,17 +861,22 @@
         if (want) {
           if (want !== this.name) continue;
         } else {
-          // Unnamed: only claim it when a trigger of THIS group shares its
-          // scope (group element or the same .w-dropdown), so unrelated labels
-          // aren't hijacked.
           var scope = (label.closest && label.closest('[d2-tab-label-scope], .w-dropdown')) || this.groupEl;
           if (!scope || !this._scopeHasOwnTrigger(scope)) continue;
         }
         if (label._d2TabLabelDefault == null) label._d2TabLabelDefault = label.textContent;
-        var text = label._d2TabLabelDefault;
+        var def = label._d2TabLabelDefault;
+
+        // Static, or user hasn't picked yet → keep the authored placeholder.
+        if ((label.hasAttribute && label.hasAttribute('d2-tab-label-static')) || !this._userSwitched) {
+          if (label.textContent !== def) label.textContent = def;
+          continue;
+        }
+
+        var text = def;
         if (activeId != null) {
           var trig = this._triggerForTab(activeId);
-          if (trig) text = attr(trig, 'd2-tab-option-label') || (trig.textContent || '').trim() || text;
+          if (trig) text = attr(trig, 'd2-tab-option-label') || (trig.textContent || '').trim() || def;
         }
         if (label.textContent !== text) label.textContent = text;
       }

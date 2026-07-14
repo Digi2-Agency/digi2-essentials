@@ -666,14 +666,52 @@ test('d2-tab-label reflects the active view; dropdown (external) triggers switch
   });
   vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
 
-  // Default: first panel (list) open, label shows the list option's text.
+  // Default: first panel (list) open, but the label keeps its PLACEHOLDER
+  // ("Widok") — the default-open must NOT change it.
   assert.equal(listPanel.style.display, '');
   assert.equal(gridPanel.style.display, 'none');
-  assert.equal(label.textContent, 'Lista');
+  assert.equal(label.textContent, 'Widok', 'placeholder stays until a user picks');
 
   // Pick "grid" from the dropdown → switches view + label uses option-label.
   optGrid._listeners.click({ preventDefault() {}, target: optGrid });
   assert.equal(gridPanel.style.display, '');
   assert.equal(listPanel.style.display, 'none');
   assert.equal(label.textContent, 'Siatka');
+
+  // Picking "list" now updates it too (user already engaged).
+  optList._listeners.click({ preventDefault() {}, target: optList });
+  assert.equal(label.textContent, 'Lista');
+});
+
+test('d2-tab-label-static keeps the placeholder even after a selection', () => {
+  const body = createElement('body');
+  const group = createElement('div', { 'd2-tab-group': 'view2', 'd2-tab-default': 'grid' });
+  const listPanel = createElement('div', { 'd2-tab-instance': 'list' });
+  const gridPanel = createElement('div', { 'd2-tab-instance': 'grid' });
+  group.appendChild(listPanel); group.appendChild(gridPanel);
+
+  const label = createElement('div', { 'd2-tab-label': 'view2', 'd2-tab-label-static': '' });
+  label.textContent = 'Wyświetl według';
+  const optList = createElement('a', { 'd2-tab-trigger': 'view2:list' }); optList.textContent = 'Lista';
+  body.appendChild(group); body.appendChild(label); body.appendChild(optList);
+
+  const document = {
+    body, readyState: 'complete', addEventListener() {},
+    querySelector(s) { return s === '[d2-tab-group="view2"]' ? group : null; },
+    querySelectorAll(s) { return body.querySelectorAll(s); },
+  };
+  const window = { digi2: { log() {} }, location: { hash: '' }, addEventListener() {} };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+    getComputedStyle: () => ({ display: 'block' }),
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  // d2-tab-default="grid" opens the grid view…
+  assert.equal(gridPanel.style.display, '');
+  assert.equal(listPanel.style.display, 'none');
+  // …and the static label never changes.
+  optList._listeners.click({ preventDefault() {}, target: optList });
+  assert.equal(listPanel.style.display, '');
+  assert.equal(label.textContent, 'Wyświetl według');
 });

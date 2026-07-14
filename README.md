@@ -911,7 +911,7 @@ Turn a tab group (e.g. list ⇄ grid) into a Webflow-dropdown whose toggle text 
 <!-- the dropdown that switches them -->
 <div class="w-dropdown">
   <div class="w-dropdown-toggle">
-    <div d2-tab-label="view">Lista</div>            <!-- ← updates to the picked option -->
+    <div d2-tab-label="view">Wyświetl według</div>  <!-- placeholder until a pick -->
   </div>
   <nav class="w-dropdown-list">
     <a d2-tab-trigger="view:list" class="w-dropdown-link">Lista</a>
@@ -920,8 +920,10 @@ Turn a tab group (e.g. list ⇄ grid) into a Webflow-dropdown whose toggle text 
 </div>
 ```
 
-- `d2-tab-label="view"` mirrors the active tab's text onto the toggle; `d2-tab-option-label="…"` on a trigger overrides the text it contributes.
-- With the toggle outside the group there are no in-group triggers, so the module **auto-opens the first panel** on load (or set `d2-tab-default="list"`).
+- The label keeps its **authored placeholder** on load (e.g. "Wyświetl według") and only swaps to the option text **after the user picks one** — the default-open never changes it.
+- `d2-tab-option-label="…"` on a trigger overrides the text it contributes (handy when the option has an icon or a longer label).
+- `d2-tab-label-static` on the label → keep the placeholder forever (never swap), for a fixed "Wyświetl według" that just opens the menu.
+- **Default view:** set `d2-tab-default="list"` (or `grid`) on the `d2-tab-group` element. Without it, the module auto-opens the first panel (since the triggers live outside the group).
 - An unnamed `d2-tab-label` (no value) binds to whichever group has a trigger in the same `.w-dropdown` / `[d2-tab-label-scope]`.
 
 ### Behavior notes
@@ -1586,7 +1588,9 @@ digi2.log('module', 'action', data)
 | `d2-tab-trigger="id"` | Button | Tab trigger (real links inside navigate) |
 | `d2-tab-trigger="group:id"` | Any | External tab trigger |
 | `d2-tab-instance="id"` | Div | Tab panel |
-| `d2-tab-label="group"` | Any (dropdown toggle) | Shows the active tab's text; pairs with `d2-tab-option-label` on triggers |
+| `d2-tab-label="group"` | Any (dropdown toggle) | Placeholder until a pick, then shows the chosen tab's text; pairs with `d2-tab-option-label` |
+| `d2-tab-label-static` | On a `d2-tab-label` | Keep the placeholder forever (never swap) |
+| `d2-tab-default="id"` | Group | Default open view/panel on load |
 | `d2-tab-display="flex\|grid"` | Panel | Display used when overriding a class-based `display:none` |
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |
