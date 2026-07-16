@@ -1470,7 +1470,7 @@ Bounds auto-detect from item values (override with `d2-cms-range-min/max` or `d2
 | `d2-cms-loadcount="6\|all"` | button | Reveal N items (or everything) per click |
 | `d2-cms-target="name"` or `"a\|b"` | sort/filter/load-more/display/empty/label elements | Target list(s) by name. Optional only when the element is nested inside `[d2-cms-list]`, OR when there is exactly one list on the page — **with two+ lists, controls outside a list require it** |
 | `d2-cms-empty` | any element | Shown when 0 items match |
-| `d2-cms-display="visible\|matching\|total\|hidden\|remaining"` | any element | Module writes the matching count into this element's textContent |
+| `d2-cms-display="visible\|matching\|total\|hidden\|remaining"` | any element | Module writes the matching count into this element's textContent. With a pipe target (`d2-cms-target="a\|b"`) the counter is **shared**: only the currently VISIBLE list writes to it, and it hands over automatically on tab switches — one counter for several tabbed lists |
 | `d2-cms-display-format="{visible} of {matching}"` | any element | Template with `{visible}`, `{matching}`, `{total}`, `{hidden}`, `{remaining}` placeholders — takes precedence over `d2-cms-display` |
 | `d2-cms-sort-active="asc\|desc"` | button | (Set by module) Reflects current sort. A button with explicit `d2-cms-sort-dir` is marked only when the direction matches too — dropdown options highlight correctly |
 | `d2-cms-filter-active` | button | (Set by module) Reflects active filter |
