@@ -877,6 +877,7 @@ Everything configurable from the group element — no JS call needed:
 | `d2-tab-animation` | `none` \| `fade` \| `slide-up` \| `slide-down` \| `zoom` \| `height` | `height` = smooth max-height grow/collapse (classic accordion feel) |
 | `d2-tab-duration` | seconds | Animation duration |
 | `d2-tab-multiple` | present / `"false"` | Accordion: allow several panels open at once. Omit for "opening one closes the rest" |
+| `d2-tab-active-class` | class name | Custom class for the active trigger + panel (default `d2-tab-active`; the `d2-is-active` attribute is always set too) |
 | `d2-tab-default` | `id` or `a\|b` | Panel(s) open on load |
 | `d2-tab-scroll` | *(empty)* \| `start` \| `center` \| `end` | On open, glide the page so the panel lands at that viewport position (default `center`). Works on the group element **or** any row inside it |
 
@@ -1632,6 +1633,7 @@ digi2.log('module', 'action', data)
 | `d2-tab-label="group"` | Any (dropdown toggle) | Placeholder until a pick, then shows the chosen tab's text; pairs with `d2-tab-option-label` |
 | `d2-tab-label-static` | On a `d2-tab-label` | Keep the placeholder forever (never swap) |
 | `d2-tab-default="id"` | Group | Default open view/panel on load |
+| `d2-tab-active-class="is-active"` | Group | Custom active class on trigger + panel |
 | `d2-tab-display="flex\|grid"` | Panel | Display used when overriding a class-based `display:none` |
 | `d2-slider="name"` | Div | Slider container |
 | `d2-slide` | Div | Slide item |

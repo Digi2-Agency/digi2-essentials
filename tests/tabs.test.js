@@ -715,3 +715,22 @@ test('d2-tab-label-static keeps the placeholder even after a selection', () => {
   assert.equal(listPanel.style.display, '');
   assert.equal(label.textContent, 'Wyświetl według');
 });
+
+test('d2-tab-active-class puts a custom class on the active trigger and panel', () => {
+  const env = createEnvironment();
+  // set the attribute on the declarative group BEFORE the module auto-inits
+  const groupEl = env.window ? null : null;
+  // createEnvironment builds group with d2-tab-group="pricing" — add attr via trigger's parent
+  env.monthlyTrigger.parentElement.setAttribute('d2-tab-active-class', 'is-active');
+  loadTabsModule(env);
+
+  // tabs mode auto-opens the first tab with the custom class
+  assert.equal(env.monthlyTrigger.classList.contains('is-active'), true);
+  assert.equal(env.monthlyPanel.classList.contains('is-active'), true);
+  assert.equal(env.monthlyTrigger.classList.contains('d2-tab-active'), false, 'default class not used');
+
+  env.yearlyTrigger.click();
+  assert.equal(env.monthlyTrigger.classList.contains('is-active'), false);
+  assert.equal(env.yearlyTrigger.classList.contains('is-active'), true);
+  assert.equal(env.yearlyPanel.classList.contains('is-active'), true);
+});

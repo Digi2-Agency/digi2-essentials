@@ -1049,6 +1049,10 @@
       }
       var dur = parseFloat(attr(group, 'd2-tab-duration'));
       if (!isNaN(dur)) o.animationDuration = dur;
+      // d2-tab-active-class="is-active" → custom class on the active trigger
+      // and panel (default d2-tab-active; d2-is-active attr is always set too)
+      var ac = (attr(group, 'd2-tab-active-class') || '').trim();
+      if (ac) o.activeClass = ac;
       // d2-tab-scroll            → scroll opened panel into view (centered)
       // d2-tab-scroll="start"    → override position (start|center|end)
       // Accept it on the group element OR on a descendant OWNED by this group
