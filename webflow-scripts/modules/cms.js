@@ -1721,7 +1721,18 @@
      * OR is nested inside `[d2-cms-list="<name>"]`. If neither is set and this
      * is the only registered list, the orphan element is claimed automatically.
      */
+    // The list is "visible" when it actually renders (hidden tab panels
+    // collapse to 0×0). Used to decide who owns SHARED counters.
+    _isListVisible() {
+      var el = this.listEl;
+      if (!el) return false;
+      if (!el.getBoundingClientRect) return true;
+      var r = el.getBoundingClientRect();
+      return (r.width > 0 || r.height > 0);
+    }
+
     _updateDisplayElements(counts) {
+      this._lastCounts = counts;   // re-applied on tab switches (tabs:change)
       var name = this.name;
       var scopedSel = '[d2-cms-list="' + name + '"] [d2-cms-display]:not([d2-cms-target]), '
         + '[d2-cms-list="' + name + '"] [d2-cms-display-format]:not([d2-cms-target])';
@@ -1734,8 +1745,15 @@
           .concat(this._orphansBySelector('[d2-cms-display-format]'));
       }
 
+      var visible = this._isListVisible();
+
       for (var i = 0; i < els.length; i++) {
         var el = els[i];
+        // A SHARED counter (pipe target, e.g. "products-a|products-b") shows
+        // the ACTIVE list's numbers: only the currently visible list may
+        // write to it — a hidden tab's list keeps its hands off.
+        var tgt = attr(el, 'd2-cms-target');
+        if (tgt && tgt.indexOf('|') !== -1 && !visible) continue;
         var format = attr(el, 'd2-cms-display-format');
         var kind = attr(el, 'd2-cms-display');
         var text;
@@ -3178,4 +3196,20 @@
     _rangeRegistry.forEach(function (s) { s.refresh(); });
     _autoInitRangeSliders();
   };
+
+  // Tab switches change which list is visible — let the now-visible list
+  // rewrite SHARED (pipe-target) counters with its own numbers. The tabs
+  // module emits 'tabs:change' after opening a panel.
+  if (window.digi2 && typeof window.digi2.on === 'function') {
+    window.digi2.on('tabs:change', function () {
+      setTimeout(function () {
+        for (var k in registry) {
+          var inst = registry[k];
+          if (inst && inst._lastCounts && inst._isListVisible()) {
+            inst._updateDisplayElements(inst._lastCounts);
+          }
+        }
+      }, 0);
+    });
+  }
 })();

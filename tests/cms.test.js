@@ -785,3 +785,41 @@ test('d2-cms-instance is an alias for d2-cms-list so target buttons resolve and 
   assert.equal(list.children[1], pricey, 'pricier item sorts second');
   assert.equal(sortBtn.getAttribute('d2-cms-sort-active'), 'asc', 'sort button reflects active asc state');
 });
+
+test('shared (pipe-target) counter shows the VISIBLE list; tabs:change hands it over', async () => {
+  const env = createEnvironment();
+
+  // simple digi2 event bus for the test
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const counter = createElement('span', { 'd2-cms-display': 'matching', 'd2-cms-target': 'aaa|bbb' });
+
+  const listA = createElement('div', { 'd2-cms-list': 'aaa' });
+  listA.appendChild(createItem({ x: '1' }));
+  listA.appendChild(createItem({ x: '2' }));               // A: 2 items
+  const listB = createElement('div', { 'd2-cms-list': 'bbb' });
+  listB.appendChild(createItem({ x: '1' }));               // B: 1 item
+
+  // A visible, B hidden (0×0 rect)
+  listA.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  listB.getBoundingClientRect = () => ({ width: 0, height: 0 });
+
+  env.body.appendChild(counter);
+  env.body.appendChild(listA);
+  env.body.appendChild(listB);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(counter.textContent, '2', 'visible list A owns the shared counter');
+
+  // "Tab switch": A hides, B shows → tabs:change → B takes over.
+  listA.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  listB.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  env.window.digi2.emit('tabs:change', { group: 'view', tab: 'b' });
+  await flushTimers();
+
+  assert.equal(counter.textContent, '1', 'after switch list B owns the counter');
+});

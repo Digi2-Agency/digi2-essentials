@@ -377,6 +377,11 @@
       if (typeof this.options.onChange === 'function') {
         this.options.onChange(tabId, this);
       }
+
+      // Cross-module signal (e.g. cms re-owns shared counters after a switch).
+      if (window.digi2 && typeof window.digi2.emit === 'function') {
+        window.digi2.emit('tabs:change', { group: this.name, tab: tabId });
+      }
     }
 
     /**
