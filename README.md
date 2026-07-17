@@ -1417,7 +1417,10 @@ Field-scoped clear resets only that filter key / range field (unchecks its check
 
 Bounds auto-detect from item values (override with `d2-cms-range-min/max` or `d2-cms-range-default-min/max`). `d2-cms-range-displayformat="pln"` renders `1 600 000`-style values (no currency); a `0,000`-style pattern follows the browser locale instead.
 
-Add `d2-cms-range-snap` to round the **auto-detected** bounds to the nearest `d2-cms-range-step` — min floored **down**, max ceiled **up** (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). It only widens the range, so no real item is ever pushed out of reach. Explicitly set `d2-cms-range-min/max` are never snapped.
+Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two effects, both min-**down** / max-**up**:
+
+- **Auto-detected bounds** round to the step (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). Explicitly set `d2-cms-range-min/max` are never snapped.
+- **Dragging the handles** snaps the live value outward too — the min handle floors, the max handle ceils — so a handle never rounds *inward* and clips an item sitting just past it (drag min onto a `28.75` item → lands on `25`, keeps it in). Without the flag, handles round to the nearest tick (classic slider feel).
 
 ### Options
 

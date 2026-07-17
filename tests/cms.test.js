@@ -935,3 +935,48 @@ test('range-snap off leaves raw auto-detected bounds', async () => {
   assert.equal(minDisp.textContent, '7');
   assert.equal(maxDisp.textContent, '200');
 });
+
+test('range-snap: dragging handles rounds outward (min down, max up) so edge items stay included', async () => {
+  const env = createEnvironment();
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'sqm',
+    'd2-cms-range-min': '0',
+    'd2-cms-range-max': '100',
+    'd2-cms-range-step': '5',
+    'd2-cms-range-snap': '',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'snap-drag',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const list = createElement('div', { 'd2-cms-list': 'snap-drag' });
+  list.appendChild(createItem({ sqm: '28.75' }));
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // track spans 0..100 over 100px (jsdom stub). Drag min to 28.75 → floors to 25.
+  track.getBoundingClientRect = () => ({ left: 0, width: 100 });
+  minHandle._listeners = minHandle._listeners || {};
+  // Simulate a drag by invoking the pointer-value path via track click near 28.75
+  track._listeners.pointerdown({ target: track, clientX: 28.75, preventDefault() {} });
+  assert.equal(minDisp.textContent, '25');
+
+  // Drag max to 71.25 → ceils to 75.
+  track._listeners.pointerdown({ target: track, clientX: 71.25, preventDefault() {} });
+  assert.equal(maxDisp.textContent, '75');
+});

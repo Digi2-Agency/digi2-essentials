@@ -2707,7 +2707,7 @@
   //        d2-cms-range-min="100000"           <!-- optional: auto-detected -->
   //        d2-cms-range-max="2000000"          <!-- optional: auto-detected -->
   //        d2-cms-range-step="10000"           <!-- optional: default 1 -->
-  //        d2-cms-range-snap                    <!-- optional: round auto bounds to step (min↓ max↑) -->
+  //        d2-cms-range-snap                    <!-- optional: outward rounding to step — auto bounds + drag (min↓ max↑) -->
   //        d2-cms-range-format="thousands"     <!-- thousands | plain -->
   //        d2-cms-range-prefix=""              <!-- optional text before -->
   //        d2-cms-range-suffix=" PLN"          <!-- optional text after -->
@@ -3059,7 +3059,14 @@
         });
       }
 
-      var snapped = Math.round(val / this.step) * this.step;
+      // With d2-cms-range-snap, snap the live handle value outward — min floors
+      // down, max ceils up — so dragging never rounds a value inward and clips
+      // items sitting just past the handle. Without snap, round to nearest (the
+      // handle lands on the closest tick, classic slider feel).
+      var snapped = this.snap
+        ? (isMax ? Math.ceil(val / this.step) * this.step
+                 : Math.floor(val / this.step) * this.step)
+        : Math.round(val / this.step) * this.step;
       // Guard against float drift so labels don't show "419999.9999999"
       var decimals = (String(this.step).split('.')[1] || '').length;
       if (decimals) snapped = parseFloat(snapped.toFixed(decimals));
