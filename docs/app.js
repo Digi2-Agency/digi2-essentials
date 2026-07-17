@@ -16,13 +16,13 @@ function themeSet(t){
 
 /* ───────── kolory kategorii (kwadraciki) ───────── */
 var CATCOLOR = {
-  'Start': '#b9fd3b',
+  'Start': '#22c55e',
   'Listy CMS': '#8b5cf6',
   'Formularze': '#fbbf24',
   'Komponenty UI': '#38bdf8',
   'Efekty': '#fb7185',
   'Narzędzia': '#9c9c9c',
-  'Marketing': '#34d399'
+  'Marketing': '#2dd4bf'
 };
 function catOf(key){
   for(var i = 0; i < D2.categories.length; i++){
