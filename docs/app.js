@@ -1,9 +1,38 @@
-/* digi2 essentials — silnik dokumentacji (router, drzewko Webflow, kreator, szukajka) */
+/* digi2 essentials — silnik dokumentacji (router, drzewko Webflow, kreator, szukajka, motyw) */
 (function(){
 'use strict';
 var D2 = window.D2DOCS;
 
-/* ───────── ikony elementów Webflow ───────── */
+/* ───────── motyw ───────── */
+var SUN = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+var MOON = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>';
+function themeGet(){ return document.documentElement.getAttribute('data-theme') || 'dark'; }
+function themeSet(t){
+  document.documentElement.setAttribute('data-theme', t);
+  try{ localStorage.setItem('d2-docs-theme', t); }catch(e){}
+  var b = document.getElementById('themeToggle');
+  if(b) b.innerHTML = t === 'dark' ? SUN : MOON;
+}
+
+/* ───────── kolory kategorii (kwadraciki) ───────── */
+var CATCOLOR = {
+  'Start': '#b9fd3b',
+  'Listy CMS': '#8b5cf6',
+  'Formularze': '#fbbf24',
+  'Komponenty UI': '#38bdf8',
+  'Efekty': '#fb7185',
+  'Narzędzia': '#9c9c9c',
+  'Marketing': '#34d399'
+};
+function catOf(key){
+  for(var i = 0; i < D2.categories.length; i++){
+    if(D2.categories[i].items.indexOf(key) !== -1) return D2.categories[i].label;
+  }
+  return 'Start';
+}
+function dotOf(key){ return CATCOLOR[catOf(key)] || '#9c9c9c'; }
+
+/* ───────── ikony elementów Webflow (drzewko) ───────── */
 var IC = {
   section:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="2.5" y="6" width="19" height="12" rx="1.5"/></svg>',
   container:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="5" y="5.5" width="14" height="13" rx="1.5"/><path d="M2.5 4v16M21.5 4v16"/></svg>',
@@ -27,23 +56,11 @@ var IC = {
   label:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3.5 12.5v-7a2 2 0 0 1 2-2h7l8 8-9 9-8-8Z"/><circle cx="8.5" cy="8.5" r="1.2"/></svg>',
   radio:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>',
   video:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="m10.5 9.5 4 2.5-4 2.5v-5Z"/></svg>',
-  home:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m3.5 11 8.5-7 8.5 7M6 9.5V20h12V9.5"/></svg>',
-  loader:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></svg>',
   popup:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="5" y="7" width="14" height="11" rx="2"/><path d="m16 4 4 0 0 4"/></svg>',
   toast:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M6.5 17h.01M10 17h7"/></svg>',
   tabs:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 9h18M3 9V6a2 2 0 0 1 2-2h4l2 3"/><rect x="3" y="9" width="18" height="11" rx="1.5"/></svg>',
   dropdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="5" width="18" height="6" rx="1.5"/><path d="m15 7.5 1.5 1.5L18 7.5M5.5 14h9M5.5 17.5h6"/></svg>',
-  animate:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 18c3-9 6-9 8-4s5 5 8-8"/></svg>',
-  scroll:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="8" y="3" width="8" height="18" rx="4"/><path d="M12 7v4"/></svg>',
-  lazy:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M8 12h8M12 8v8" opacity=".5"/></svg>',
-  format:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M5 7h4M7 7v10M13 17l3-10 3 10M14.2 13.5h3.6"/></svg>',
-  countdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>',
-  copy:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
-  cookies:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M21 12a9 9 0 1 1-9-9c0 2 1.5 3.5 3.5 3.5A3.5 3.5 0 0 0 19 10c.6.6 2 .6 2 2Z"/><path d="M9 10h.01M14 15h.01M9.5 15.5h.01"/></svg>',
-  google:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4M12 15.5h.01"/></svg>',
-  ab:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 3v18M3 8l4 8M11 8 7 16M14 16v-8h3a2 2 0 1 1 0 4h-3h3.5a2 2 0 1 1 0 4H14Z"/></svg>',
-  filter:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z"/></svg>',
-  interactions:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m8 5 9 7-4 1 2.5 5-2.5 1L10.5 14 8 17V5Z"/></svg>'
+  countdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>'
 };
 function ico(t){ return IC[t] || IC.div; }
 
@@ -171,38 +188,42 @@ function renderSidebar(current){
       var m = D2.modules[key];
       if(!m) return;
       html += '<a class="sb-link'+(key===current?' active':'')+'" href="#/m/'+key+'">'+
-        '<span class="ic">'+ico(m.icon)+'</span>'+esc(m.short||m.name)+
-        (m.flag ? '<span class="flag">'+esc(m.flag)+'</span>' : '')+'</a>';
+        '<span class="dot" style="background:'+CATCOLOR[cat.label]+'"></span>'+esc(m.short||m.name)+'</a>';
     });
   });
   el('nav').innerHTML = html;
 }
 
 /* ───────── strona modułu ───────── */
-function anchor(id, txt){ return '<h2 id="'+id+'">'+txt+' <a class="anchor" href="#/m/'+CUR+'#'+id+'" onclick="document.getElementById(\''+id+'\').scrollIntoView();return false;">#</a></h2>'; }
-
 var CUR = 'start';
+var SEC = 0;
+
+function anchor(id, txt){
+  SEC++;
+  return '<h2 id="'+id+'"><span class="sq">'+SEC+'</span>'+txt+' <a class="anchor" href="#/m/'+CUR+'#'+id+'" onclick="document.getElementById(\''+id+'\').scrollIntoView();return false;">#</a></h2>';
+}
 
 function pageModule(key){
   var m = D2.modules[key];
   if(!m){ location.hash = '#/'; return; }
   var c = '';
   var tocItems = [];
+  SEC = 0;
 
-  c += '<div class="crumb">'+esc(m.cat||'Moduł')+'</div>';
-  c += '<div class="page-head"><div class="page-ic">'+ico(m.icon)+'</div><div>';
-  c += '<h1>'+esc(m.name)+'</h1><div class="page-meta">';
-  if(m.flag) c += '<span class="badge flag">'+esc(m.flag)+'</span>';
-  if(m.size) c += '<span class="badge">'+esc(m.size)+'</span>';
-  c += m.auto ? '<span class="badge ok">działa bez JS — same atrybuty</span>' : '<span class="badge js">wymaga inicjalizacji w JS</span>';
-  c += '</div></div></div>';
+  c += '<div class="crumb"><a href="#/">digi2 essentials</a><span class="sep">›</span><span class="here">'+esc(m.short||m.name)+'</span></div>';
+  c += '<h1>'+esc(m.name)+'</h1>';
+  c += '<div class="page-meta">';
+  if(m.flag) c += '<span class="flag-chip" data-copy="'+esc(m.flag).replace(/"/g,'&quot;')+'" style="cursor:pointer" title="Kliknij, aby skopiować">'+esc(m.flag)+'</span>';
+  if(m.size) c += '<span class="meta-txt">'+esc(m.size)+'</span>';
+  c += '<span class="meta-txt">'+(m.auto ? 'działa bez JS' : 'wymaga create() w JS')+'</span>';
+  c += '</div>';
   c += '<p class="lead">'+m.desc+'</p>';
   if(m.warn) c += '<div class="warn">'+m.warn+'</div>';
 
   /* instalacja */
   tocItems.push(['instalacja','Instalacja']);
   c += anchor('instalacja','Instalacja');
-  c += '<p class="sec-desc">Dodaj tag loadera w <b>Site Settings → Custom Code → Head</b> (raz na cały site) i włącz moduł flagą <code>'+esc(m.flag||'')+'</code>. Loader dociągnie tylko włączone moduły.</p>';
+  c += '<p class="sec-desc">Dodaj tag loadera w <b>Site Settings → Custom Code → Head</b> (raz na cały site) i włącz moduł flagą'+(m.flag?' <code>'+esc(m.flag)+'</code>':'')+'. Loader dociągnie tylko włączone moduły.</p>';
   c += codeBlock(m.install || loaderScript([m.flag]), 'html', 'Site Settings → Head');
   if(m.installNote) c += '<p class="note">'+m.installNote+'</p>';
 
@@ -211,8 +232,8 @@ function pageModule(key){
     tocItems.push(['kreator','Kreator']);
     c += anchor('kreator','Kreator konfiguracji');
     c += '<p class="sec-desc">Ustaw opcje po lewej — po prawej na żywo buduje się drzewko elementów Webflow z atrybutami do wklejenia'+(m.kreator.hasJs?' oraz kod do Custom Code':'')+'. Kliknięcie atrybutu kopiuje go do schowka.</p>';
-    c += '<div class="kreator"><div class="kr-head"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="m12 3 1.9 5.6L20 10l-6.1 1.4L12 17l-1.9-5.6L4 10l6.1-1.4L12 3ZM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16Z"/></svg></div>'+
-      '<div><b>Kreator — '+esc(m.short||m.name)+'</b><br><span>wyklikaj konfigurację, sklej z drzewka</span></div></div>'+
+    c += '<div class="kreator"><div class="kr-head"><span class="kicker">Kreator</span>'+
+      '<b>'+esc(m.short||m.name)+'</b><span class="sub">wyklikaj konfigurację, sklej z drzewka</span></div>'+
       '<div class="kr-grid"><div class="kr-form" id="krForm"></div><div class="kr-out" id="krOut"></div></div></div>';
   }
 
@@ -220,7 +241,7 @@ function pageModule(key){
   if(m.structures && m.structures.length){
     tocItems.push(['struktura','Struktura w Webflow']);
     c += anchor('struktura','Struktura w Webflow');
-    c += '<p class="sec-desc">Gotowe wzorce — dokładnie tak powinno wyglądać drzewko w Nawigatorze Webflow. Fioletowe pigułki to custom attributes (Element Settings → Custom attributes).</p>';
+    c += '<p class="sec-desc">Gotowe wzorce — dokładnie tak powinno wyglądać drzewko w Nawigatorze Webflow. Zielone chipy to custom attributes (Element Settings → Custom attributes).</p>';
     if(m.structures.length > 1){
       c += '<div class="struct-tabs">';
       m.structures.forEach(function(s, i){
@@ -246,7 +267,7 @@ function pageModule(key){
     c += '<div class="attr-table"><div class="attr-row head"><div>Atrybut</div><div>Gdzie w Webflow</div><div>Co robi</div></div>';
     m.attrs.forEach(function(a){
       c += '<div class="attr-row" data-attr="'+esc(a.a)+'" data-search="'+esc((a.a+' '+(a.d||'')+' '+(a.el||'')).toLowerCase())+'">';
-      c += '<div class="col-a">'+chip(a.a, a.v)+(a.req?'<span class="req">wymagany</span>':'')+(a.set?'<span class="set">ustawia moduł</span>':'')+'</div>';
+      c += '<div class="col-a">'+chip(a.a, a.v)+(a.req?'<span class="tag-req">wymagany</span>':'')+(a.set?'<span class="tag-set">ustawia moduł</span>':'')+'</div>';
       c += '<div class="el">'+esc(a.el||'—')+'</div>';
       c += '<div class="d">'+a.d+(a.n?'<span class="n">'+a.n+'</span>':'')+'</div>';
       c += '</div>';
@@ -367,16 +388,17 @@ function mountKreator(m){
 
   function renderOut(){
     var r = K.build(st);
+    var n = 0;
     var h = '';
-    h += '<div class="kr-out-label">1 · Skrypt w Site Settings → Head</div>';
+    n++; h += '<div class="kr-out-label"><span class="sq">'+n+'</span>Skrypt w Site Settings → Head</div>';
     h += codeBlock(r.script || loaderScript([m.flag]), 'html', 'head');
     if(r.tree){
-      h += '<div class="kr-out-label">2 · Drzewko elementów w Webflow</div>';
+      n++; h += '<div class="kr-out-label"><span class="sq">'+n+'</span>Drzewko elementów w Webflow</div>';
       h += tree(r.tree, 'Navigator — Twoja konfiguracja');
       h += '<details class="kr-details"><summary>Pokaż jako listę kroków</summary>'+stepsFromTree(r.tree)+'</details>';
     }
     if(r.js){
-      h += '<div class="kr-out-label">'+(r.tree?'3':'2')+' · Kod w Page Settings → przed &lt;/body&gt;</div>';
+      n++; h += '<div class="kr-out-label"><span class="sq">'+n+'</span>Kod w Page Settings → przed &lt;/body&gt;</div>';
       h += codeBlock(r.js, 'js', 'custom code');
     }
     if(r.note) h += '<p class="note">'+r.note+'</p>';
@@ -391,34 +413,45 @@ function mountKreator(m){
 /* ───────── strona startowa ───────── */
 function pageStart(){
   var m = D2.start;
-  var c = '<div class="hero"><div class="crumb">digi2 essentials</div>'+
-    '<h1>Atrybuty, które robią robotę w Webflow.</h1>'+
+  SEC = 0;
+  var c = '<div class="hero"><div class="crumb">digi2 essentials<span class="sep">·</span><span class="here">dokumentacja</span></div>'+
+    '<h1>Funkcje bez kodu dla stron w Webflow.</h1>'+
     '<p class="lead">'+m.lead+'</p></div>';
 
+  c += '<div class="dash">Zacznij od instalacji <span class="arr">↓</span></div>';
+
   /* builder instalacji */
-  c += '<h2 id="builder">Kreator instalacji</h2>';
+  c += anchor('builder','Kreator instalacji');
   c += '<p class="sec-desc">Zaznacz moduły, których potrzebujesz — tag loadera składa się sam. Wklej go raz w <b>Site Settings → Custom Code → Head</b>.</p>';
-  c += '<div class="builder"><div class="builder-head"><b>Wybierz moduły</b><span style="font-size:12px;color:var(--text-3)">loader dociągnie tylko to, co zaznaczysz</span></div><div class="builder-grid" id="bGrid"></div>'+
-    '<div class="gtm-row" id="gtmRow"><label style="font-size:12.5px;font-weight:700">ID kontenera GTM:</label><input id="gtmId" type="text" placeholder="GTM-XXXXXXX" value="GTM-XXXXXXX"></div>'+
+  c += '<div class="builder"><div class="builder-head"><b>Wybierz moduły</b><span>loader dociągnie tylko to, co zaznaczysz</span></div><div class="builder-grid" id="bGrid"></div>'+
+    '<div class="gtm-row" id="gtmRow"><label>ID kontenera GTM:</label><input id="gtmId" type="text" placeholder="GTM-XXXXXXX" value="GTM-XXXXXXX"></div>'+
     '<div class="out" id="bOut"></div></div>';
 
   /* kroki */
-  c += '<h2 id="jak">Jak to działa</h2><div class="steps">';
+  c += anchor('jak','Jak to działa');
+  c += '<div class="steps">';
   m.steps.forEach(function(s, i){
-    c += '<div class="step"><div class="num">'+(i+1)+'</div><div><h3>'+esc(s.t)+'</h3><p>'+s.d+'</p></div></div>';
+    c += '<div class="step"><span class="sq">'+(i+1)+'</span><div><h3>'+esc(s.t)+'</h3><p>'+s.d+'</p></div></div>';
   });
   c += '</div>';
 
   c += '<p class="note">'+m.responsiveNote+'</p>';
 
-  /* kafelki modułów */
-  c += '<h2 id="moduly">Moduły</h2><div class="tiles">';
+  c += '<div class="dash">Wybierz moduł <span class="arr">↓</span></div>';
+
+  /* lista modułów — wiersze */
+  c += anchor('moduly','Moduły');
+  c += '<div class="modlist">';
   D2.categories.forEach(function(cat){
-    cat.items.forEach(function(key){
-      if(key === 'start') return;
+    var items = cat.items.filter(function(k){ return k !== 'start' && D2.modules[k]; });
+    if(!items.length) return;
+    c += '<div class="modcat">'+esc(cat.label)+'</div>';
+    items.forEach(function(key){
       var mm = D2.modules[key];
-      c += '<a class="tile" href="#/m/'+key+'"><div class="ti"><div class="ic">'+ico(mm.icon)+'</div><b>'+esc(mm.short||mm.name)+'</b></div>'+
-        '<p>'+esc(mm.tagline||'')+'</p>'+(mm.flag?'<span class="fl">'+esc(mm.flag)+'</span>':'')+'</a>';
+      c += '<a class="modrow" href="#/m/'+key+'">'+
+        '<span class="nm"><span class="dot" style="background:'+CATCOLOR[cat.label]+'"></span>'+esc(mm.short||mm.name)+'</span>'+
+        '<span class="ds">'+esc(mm.tagline||'')+(mm.flag?'<span class="fl">'+esc(mm.flag)+'</span>':'')+'</span>'+
+        '<span class="arr">→</span></a>';
     });
   });
   c += '</div>';
@@ -504,7 +537,7 @@ document.addEventListener('click', function(e){
   copyText(t.getAttribute('data-copy'), t);
   var lbl = t.querySelector('span:last-child');
   if(t.classList.contains('copy-btn') && lbl){
-    var old = lbl.textContent; lbl.textContent = 'Skopiowano!';
+    var old = lbl.textContent; lbl.textContent = 'Skopiowano';
     setTimeout(function(){ lbl.textContent = old; }, 1300);
   }
 });
@@ -545,6 +578,10 @@ el('overlay').addEventListener('click', function(){
 });
 
 /* ───────── boot ───────── */
+themeSet(themeGet());
+el('themeToggle').addEventListener('click', function(){
+  themeSet(themeGet() === 'dark' ? 'light' : 'dark');
+});
 el('footVer').textContent = ' · ' + D2.version;
 buildIndex();
 bindSearch();
