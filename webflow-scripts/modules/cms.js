@@ -423,6 +423,9 @@
       // A [d2-cms-toggle] button carrying d2-cms-toggle-default="hidden" starts
       // with its exclusion applied, so the list loads already hiding those items.
       this._initToggleDefaults();
+      // A filter option carrying d2-cms-filter-default seeds its value on load,
+      // so the list opens already filtered (e.g. one investment preselected).
+      this._initFilterDefaults();
       if (this.options.defaultSort && this.options.defaultSort.field) {
         var dsOrder = this.options.defaultSort.order;
         this._sort = {
@@ -895,6 +898,26 @@
 
     _toggleButtons() {
       return this._buttonsForName('[d2-cms-toggle]');
+    }
+
+    // Seed filters from any [d2-cms-filter] option that also carries
+    // [d2-cms-filter-default]. Presence = on; ="false"/"off"/"0" opts out (so
+    // the attribute can be CMS-bound and only certain rows enable it). Resolves
+    // the same spec a click would, so trailing-colon + value/data-value and
+    // d2-cms-filter-value forms all work. Active state, checked sync and
+    // [d2-cms-filter-label] follow automatically on first render.
+    _initFilterDefaults() {
+      var self = this;
+      var btns = this._buttonsForName('[d2-cms-filter]');
+      btns.forEach(function (btn) {
+        if (!btn.hasAttribute('d2-cms-filter-default')) return;
+        var def = (attr(btn, 'd2-cms-filter-default') || '').trim().toLowerCase();
+        if (def === 'false' || def === 'off' || def === '0') return;
+        var spec = filterSpecFor(btn);
+        if (!spec) return;
+        if (!self._filters[spec.key]) self._filters[spec.key] = new Set();
+        spec.values.forEach(function (v) { self._filters[spec.key].add(String(v)); });
+      });
     }
 
     // Push the current visible count into any [d2-cms-count] inputs targeting

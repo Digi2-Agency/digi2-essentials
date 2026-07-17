@@ -1388,6 +1388,14 @@ Two distinct tools:
 - With **more than one list on the page**, labels/controls outside a list **must** carry `d2-cms-target` — otherwise they're ambiguous and ignored.
 - Labels are scoped to their `.w-dropdown` (or a `[d2-cms-sort-scope]` wrapper), so table-header sort buttons elsewhere don't hijack a dropdown's text. `d2-cms-sort-option-label="…"` overrides the text an option contributes.
 - Checkboxes / radios carrying `d2-cms-filter="key:value"` sync their `checked` state automatically (also when cleared programmatically).
+- **Preselect a filter on load** — add `d2-cms-filter-default` to the option that should start active; the list opens already filtered, the option gets `d2-cms-filter-active`, its `checked` syncs, and `d2-cms-filter-label` shows the selection:
+
+  ```html
+  <input type="radio" d2-cms-filter="investment:" data-value="Bernardyńska 4"
+         d2-cms-filter-default d2-cms-target="apartments">
+  ```
+
+  Presence turns it on; `d2-cms-filter-default="false"` (or `off`/`0`) opts out, so the attribute can be CMS-bound and only certain rows enable it. Works with every filter form (`key:value`, trailing-colon + `value`/`data-value`, and `d2-cms-filter-value`). Multiple defaults across keys all apply. To let users get back to the full list, pair it with a `d2-cms-clear` button.
 
 ### Clear buttons
 

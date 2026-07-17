@@ -980,3 +980,65 @@ test('range-snap: dragging handles rounds outward (min down, max up) so edge ite
   track._listeners.pointerdown({ target: track, clientX: 71.25, preventDefault() {} });
   assert.equal(maxDisp.textContent, '75');
 });
+
+test('d2-cms-filter-default seeds a filter on load (one investment preselected)', async () => {
+  const env = createEnvironment();
+
+  // Radio options in a dropdown, trailing-colon form with data-value (like toscom)
+  const optA = createElement('input', {
+    type: 'radio', 'data-value': 'Bernardyńska 4',
+    'd2-cms-filter': 'investment:', 'd2-cms-filter-default': '',
+    'd2-cms-target': 'apts',
+  });
+  const optB = createElement('input', {
+    type: 'radio', 'data-value': 'Wielka 16',
+    'd2-cms-filter': 'investment:', 'd2-cms-target': 'apts',
+  });
+  const label = createElement('div', { 'd2-cms-filter-label': 'investment', 'd2-cms-target': 'apts' });
+
+  const list = createElement('div', { 'd2-cms-list': 'apts' });
+  const item1 = createItem({ investment: 'Bernardyńska 4' });
+  const item2 = createItem({ investment: 'Wielka 16' });
+  list.appendChild(item1);
+  list.appendChild(item2);
+
+  env.body.appendChild(optA);
+  env.body.appendChild(optB);
+  env.body.appendChild(label);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Only the Bernardyńska item is visible; its option is marked active and the
+  // label tracks the selection. (checked-sync needs real input.type/.checked,
+  // which the DOM stub doesn't model — covered in-browser.)
+  assert.equal(item1.style.display, '');
+  assert.equal(item2.style.display, 'none');
+  assert.equal(optA.hasAttribute('d2-cms-filter-active'), true);
+  assert.equal(optB.hasAttribute('d2-cms-filter-active'), false);
+  assert.equal(label.textContent, 'Bernardyńska 4');
+});
+
+test('d2-cms-filter-default="false" opts out (nothing preselected)', async () => {
+  const env = createEnvironment();
+  const optA = createElement('input', {
+    type: 'radio', 'data-value': 'Bernardyńska 4',
+    'd2-cms-filter': 'investment:', 'd2-cms-filter-default': 'false',
+    'd2-cms-target': 'apts2',
+  });
+  const list = createElement('div', { 'd2-cms-list': 'apts2' });
+  const item1 = createItem({ investment: 'Bernardyńska 4' });
+  const item2 = createItem({ investment: 'Wielka 16' });
+  list.appendChild(item1);
+  list.appendChild(item2);
+  env.body.appendChild(optA);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(item1.style.display, '');
+  assert.equal(item2.style.display, '');
+  assert.equal(optA.hasAttribute('d2-cms-filter-active'), false);
+});
