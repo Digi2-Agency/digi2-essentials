@@ -1417,6 +1417,8 @@ Field-scoped clear resets only that filter key / range field (unchecks its check
 
 Bounds auto-detect from item values (override with `d2-cms-range-min/max` or `d2-cms-range-default-min/max`). `d2-cms-range-displayformat="pln"` renders `1 600 000`-style values (no currency); a `0,000`-style pattern follows the browser locale instead.
 
+Add `d2-cms-range-snap` to round the **auto-detected** bounds to the nearest `d2-cms-range-step` — min floored **down**, max ceiled **up** (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). It only widens the range, so no real item is ever pushed out of reach. Explicitly set `d2-cms-range-min/max` are never snapped.
+
 ### Options
 
 | Option | Default | Description |

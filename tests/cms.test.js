@@ -863,3 +863,75 @@ test('CMS-bindable filter forms: d2-cms-filter-value and trailing-colon with dat
   assert.equal(itP.style.display, '');
   assert.equal(itW.style.display, 'none');
 });
+
+test('range-snap rounds auto-detected bounds to step: min down, max up', async () => {
+  const env = createEnvironment();
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '5',
+    'd2-cms-range-snap': '',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'snap-list',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const list = createElement('div', { 'd2-cms-list': 'snap-list' });
+  list.appendChild(createItem({ price: '7' }));
+  list.appendChild(createItem({ price: '207.25' }));
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // 7 floored to nearest 5 → 5 ; 207.25 ceiled to nearest 5 → 210
+  assert.equal(minDisp.textContent, '5');
+  assert.equal(maxDisp.textContent, '210');
+});
+
+test('range-snap off leaves raw auto-detected bounds', async () => {
+  const env = createEnvironment();
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '5',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'nosnap-list',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const list = createElement('div', { 'd2-cms-list': 'nosnap-list' });
+  list.appendChild(createItem({ price: '7' }));
+  list.appendChild(createItem({ price: '200' }));
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '7');
+  assert.equal(maxDisp.textContent, '200');
+});

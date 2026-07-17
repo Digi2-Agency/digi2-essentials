@@ -2707,6 +2707,7 @@
   //        d2-cms-range-min="100000"           <!-- optional: auto-detected -->
   //        d2-cms-range-max="2000000"          <!-- optional: auto-detected -->
   //        d2-cms-range-step="10000"           <!-- optional: default 1 -->
+  //        d2-cms-range-snap                    <!-- optional: round auto bounds to step (min↓ max↑) -->
   //        d2-cms-range-format="thousands"     <!-- thousands | plain -->
   //        d2-cms-range-prefix=""              <!-- optional text before -->
   //        d2-cms-range-suffix=" PLN"          <!-- optional text after -->
@@ -2776,6 +2777,14 @@
       if (!this.track || !this.minHandle || !this.maxHandle) return;
 
       this.step = parseFloat(attr(wrapper, 'd2-cms-range-step')) || 1;
+      // Optional: snap AUTO-DETECTED bounds to the nearest step multiple —
+      // min floored down, max ceiled up. Gives "nice" round ends (e.g. 5→210
+      // instead of 7→207.25) without ever excluding a real item: min only
+      // ever moves lower, max only ever moves higher. Explicit
+      // d2-cms-range-min/-max are respected as-is and never snapped.
+      // Presence = on; set ="false" to keep off explicitly.
+      this.snap = wrapper.hasAttribute('d2-cms-range-snap')
+        && attr(wrapper, 'd2-cms-range-snap') !== 'false';
       // `displayformat` is the preferred name; `format` kept as alias.
       // Keyword modes:
       //   thousands (default) — "1,600,000" / "23.1"   (locale, natural decimals)
@@ -2893,8 +2902,10 @@
           }
         }
         if (isFinite(lo) && isFinite(hi)) {
-          if (min == null) min = lo;
-          if (max == null) max = hi;
+          // Snap only the sides we auto-detect: min down, max up to a step
+          // multiple. Sides fixed via attr keep their exact author value.
+          if (min == null) min = this.snap ? Math.floor(lo / this.step) * this.step : lo;
+          if (max == null) max = this.snap ? Math.ceil(hi / this.step) * this.step : hi;
         }
       }
       if (min == null) min = 0;
