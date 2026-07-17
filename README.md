@@ -1469,6 +1469,7 @@ Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two eff
 | `d2-cms-field="{name}"` | element inside item | Field value — read from this element's `.textContent` |
 | `d2-cms-field-{name}="value"` | item element | Inline field value from the attribute itself (no hidden span needed), e.g. `d2-cms-field-price="1468620"` |
 | `d2-cms-field-type="number\|text\|date"` | on `[d2-cms-field]` | Optional. Forces the comparator type. Without it, type is auto-detected (numbers-as-numbers, dates-as-dates, else alphabetical) |
+| `d2-cms-field-type="Apartamenty"` | item element | **`type` is also a valid inline field name.** On the item element, `d2-cms-field-type` is read as a normal field literally called `type` (e.g. property type), so `d2-cms-filter="type:Lokale"` works. Only the `d2-cms-field-type-{name}` form is reserved for declaring an inline field's comparator type |
 | `d2-cms-sort="field"` | button | Click toggles sort by this field — first click = asc (A→Z / 0→9), then desc, then asc again |
 | `d2-cms-sort-dir="asc\|desc"` | sort button/option | Forces a fixed direction (no toggle) — use for explicit dropdown options |
 | `d2-cms-sort-type="number\|text\|date"` | button | Override auto-detection of value type |

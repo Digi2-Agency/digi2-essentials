@@ -1042,3 +1042,23 @@ test('d2-cms-filter-default="false" opts out (nothing preselected)', async () =>
   assert.equal(item2.style.display, '');
   assert.equal(optA.hasAttribute('d2-cms-filter-active'), false);
 });
+
+test('bare d2-cms-field-type is a real field named "type" (filter type:Lokale matches)', async () => {
+  const env = createEnvironment();
+  const trigger = createElement('button', { 'd2-cms-filter': 'type:Lokale', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const apart = createElement('div', { 'd2-cms-item': '', 'd2-cms-field-type': 'Apartamenty' });
+  const lokal = createElement('div', { 'd2-cms-item': '', 'd2-cms-field-type': 'Lokale' });
+  list.appendChild(apart);
+  list.appendChild(lokal);
+  env.body.appendChild(trigger);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', trigger);
+
+  assert.equal(lokal.style.display, '');      // Lokale stays visible
+  assert.equal(apart.style.display, 'none');  // Apartamenty filtered out
+});

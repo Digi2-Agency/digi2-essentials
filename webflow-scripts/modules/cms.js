@@ -137,7 +137,11 @@
         var an = itemEl.attributes[a].name;               // DOM lowercases attr names
         if (an.indexOf(PFX) !== 0) continue;
         var suffix = an.slice(PFX.length);
-        if (!suffix || suffix === 'type' || suffix.indexOf('type-') === 0) continue; // reserved
+        // `d2-cms-field-type-<name>="number"` declares a field's value type and
+        // is reserved. A bare `d2-cms-field-type` is NOT reserved — it is a real
+        // field literally named "type" (e.g. property type "Apartamenty"/"Lokale"),
+        // so only the `type-` form is skipped here.
+        if (!suffix || suffix.indexOf('type-') === 0) continue; // reserved: type-<name>
         if (suffix in fields) continue;                   // nested element wins
         fields[suffix] = String(itemEl.attributes[a].value || '').trim();
         var it = itemEl.getAttribute(PFX + 'type-' + suffix);
