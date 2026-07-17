@@ -100,6 +100,7 @@
       { a: 'd2-tab-group', v: 'nazwa', el: 'Div (kontener grupy)', req: true, d: 'Grupa tabów — triggery i panele żyją w środku (albo celują z zewnątrz po nazwie).' },
       { a: 'd2-tab-trigger', v: 'panel lub grupa:panel', el: 'Button / Link', req: true, d: 'Klik otwiera panel o tym id; składnia <code>grupa:panel</code> działa spoza grupy.', n: 'alias: <code>d2-tab</code>' },
       { a: 'd2-tab-instance', v: 'id panelu', el: 'Div (panel)', req: true, d: 'Panel z treścią — id musi odpowiadać triggerowi.', n: 'alias: <code>d2-tab-content</code>' },
+      { a: 'd2-tab-target', v: 'nazwa grupy', el: 'trigger poza grupą', d: 'Wskazuje grupę dla zewnętrznego triggera — alternatywa dla składni <code>grupa:panel</code>.', n: 'alias: <code>d2-tab-group-trigger</code>' },
       { a: 'd2-tab-mode', v: 'tabs | accordion', el: 'kontener grupy', d: 'Tryb pracy (domyślnie tabs — jeden otwarty).' },
       { a: 'd2-tab-multiple', v: '', el: 'kontener grupy', d: 'Akordeon: pozwala trzymać otwartych kilka paneli.' },
       { a: 'd2-tab-animation', v: 'none | fade | slide-up | slide-down | zoom | height', el: 'kontener grupy', d: 'Animacja przełączania; <code>height</code> = płynne rozwijanie (najlepsze dla akordeonów).' },
@@ -112,7 +113,7 @@
       { a: 'd2-tab-option-label', v: 'tekst', el: 'trigger', d: 'Własny tekst do etykiety zamiast treści triggera.' },
       { a: 'd2-tab-label-static', v: '', el: 'element z d2-tab-label', d: 'Blokuje podmianę tekstu etykiety na stałe.' },
       { a: 'd2-tab-label-scope', v: '', el: 'wrapper', d: 'Zakres wiązania bezimiennej etykiety z triggerami.' },
-      { a: 'd2-is-active', v: '', el: 'trigger + panel', set: true, d: 'Obecny na aktywnych elementach — hook do stylowania.' },
+      { a: 'd2-is-active', v: '', el: 'trigger + panel', set: true, d: 'Obecny na aktywnych elementach — hook do stylowania.', n: 'moduł dodaje też klasę <code>d2-tab-active</code> (podmienisz przez d2-tab-active-class)' },
       { a: 'd2-accordion', v: '', el: 'Div (kontener)', d: 'Skrót: grupa w trybie akordeonu.' },
       { a: 'd2-accordion-item', v: '', el: 'Div pozycji', d: 'Pojedyncza pozycja akordeonu.' },
       { a: 'd2-accordion-trigger', v: '', el: 'nagłówek pozycji', d: 'Klik otwiera/zamyka tę pozycję.' },
@@ -255,7 +256,11 @@
       { a: 'd2-slider-feed-position', v: 'start | end', el: 'kontener', d: 'Gdzie wstawić slajdy z feedu względem istniejących.' },
       { a: 'd2-slider-source', v: 'nazwa', el: 'ukryta Collection List', d: 'Źródło obrazów dla d2-slider-feed.' },
       { a: 'd2-slide-active', v: '', el: 'slajd', set: true, d: 'Obecny na widocznych slajdach — hook CSS.' },
-      { a: 'd2-dot-active', v: '', el: 'kropka', set: true, d: 'Obecny na aktywnej kropce.' }
+      { a: 'd2-dot-active', v: '', el: 'kropka', set: true, d: 'Obecny na aktywnej kropce.' },
+      { a: 'd2-dot', v: 'indeks', el: 'kropka', set: true, d: 'Na generowanych kropkach — wartość to numer slajdu.' },
+      { a: 'd2-slider-ready', v: '', el: 'kontener', set: true, d: 'Obecny po inicjalizacji slidera — hook CSS.' },
+      { a: 'd2-slide-clone', v: '', el: 'slajd', set: true, d: 'Oznacza klony tworzone dla pętli nieskończonej.' },
+      { a: 'd2-slider-feed-done', v: '', el: 'kontener', set: true, d: 'Obecny po przeniesieniu slajdów z listy źródłowej (feed).' }
     ],
 
     api: {
@@ -309,6 +314,7 @@
       { a: 'd2-interaction-backdrop', v: 'on | off (responsywnie)', el: 'target lub trigger', d: 'Przyciemnione tło pod elementem.' },
       { a: 'd2-interaction-backdrop-blur', v: 'np. 8px', el: 'target lub trigger', d: 'Rozmycie tła.' },
       { a: 'd2-interaction-backdrop-color', v: 'kolor CSS', el: 'target lub trigger', d: 'Kolor przyciemnienia (domyślnie rgba(0,0,0,.3)).' },
+      { a: 'data-d2-backdrop', v: '', el: 'element tła', set: true, d: 'Marker automatycznie tworzonego backdropu — hook CSS.' },
       { a: 'data-d2-visible', v: 'true | false', el: 'target', set: true, d: 'Stan widoczności — hook do CSS.' },
       { a: 'd2-active', v: '', el: 'trigger', set: true, d: 'Obecny, gdy target widoczny.' }
     ],
@@ -593,10 +599,12 @@
 
     attrs: [
       { a: 'd2-copy', v: 'tekst lub #selektor', el: 'Button / Link', req: true, d: 'Tekst do skopiowania; wartość od <code>#</code> = kopiuje treść elementu.' },
-      { a: 'd2-copy-target', v: '#selektor', el: 'ten przycisk', d: 'Jawne wskazanie elementu do skopiowania (ma pierwszeństwo).' }
+      { a: 'd2-copy-target', v: '#selektor', el: 'ten przycisk', d: 'Jawne wskazanie elementu do skopiowania (ma pierwszeństwo).' },
+      { a: 'd2-copy-original', v: 'tekst', el: 'ten przycisk', set: true, d: 'Moduł przechowuje tu oryginalną etykietę na czas feedbacku „Skopiowano”.' }
     ],
 
     api: {
+      desc: 'Podczas feedbacku przycisk dostaje klasę <code>d2-copy-success</code> (konfigurowalna opcją feedbackClass).',
       code: "digi2.copy.init({\n  feedbackText: '✓ Skopiowano!',\n  feedbackDuration: 1500,\n  showToast: true,             // jeśli moduł toasts aktywny\n  onCopy: function (tekst) { }\n});\ndigi2.copy.text('SAVE20');\ndigi2.copy.fromElement('#email');"
     }
   };
@@ -644,7 +652,8 @@
     ],
 
     attrs: [
-      { a: 'd2-gtm', v: 'GTM-XXXXXXX', el: 'tag <script> loadera', req: true, d: 'ID kontenera GTM — włącza moduł i ładowanie kontenera.' }
+      { a: 'd2-gtm', v: 'GTM-XXXXXXX', el: 'tag <script> loadera', req: true, d: 'ID kontenera GTM — włącza moduł i ładowanie kontenera.' },
+      { a: 'd2-google', v: '', el: 'tag <script> loadera', d: 'Ładuje moduł bez kontenera GTM — sam Consent Mode (gdy GTM wstrzykujesz w inny sposób).' }
     ],
 
     api: {
@@ -704,18 +713,23 @@
     ],
 
     attrs: [
-      { a: 'd2-cms / d2-forms / d2-popups / …', v: '', el: 'tag <script> loadera', d: 'Flagi modułów — pełna lista w kreatorze na stronie startowej.' },
+      { a: 'd2-cms / d2-forms / d2-popups / …', v: '', el: 'tag <script> loadera lub <digi2-module>', d: 'Flagi modułów — pełna lista w kreatorze na stronie startowej.', n: 'aliasy: <code>d2-accordion</code> → tabs, <code>d2-dropdown</code> → dropdowns, <code>d2-format-price</code> / <code>d2-format-number</code> → format' },
       { a: 'd2-gtm', v: 'GTM-XXXXXXX', el: 'tag <script> loadera', d: 'Włącza moduł google i ładuje kontener GTM.' },
       { a: 'd2-ab-tests', v: 'nazwaConfigu', el: 'tag <script> loadera', d: 'Włącza moduł A/B testów.' },
       { a: 'd2-debug-mode', v: '', el: 'tag <script> loadera', d: 'Logowanie akcji wszystkich modułów w konsoli.' },
-      { a: 'd2-modules', v: 'np. forms popups', el: '<digi2-module> lub dowolny element', d: 'Lista modułów do dociągnięcia na tej stronie.' },
+      { a: 'd2-modules', v: 'np. forms popups, cookies', el: '<digi2-module> lub dowolny element', d: 'Deklaracja per podstrona w formie listy — nazwy bez prefiksu <code>d2-</code> (prefiks też przejdzie, a <code>gtm</code> mapuje się na google).', n: 'alias markera elementu: <code>d2-module</code>' },
       { a: 'd2-static-width', v: '', el: 'dowolny element', d: 'Blokuje szerokość elementu na jego naturalnym maksimum (koniec ze skaczącym layoutem).' }
     ],
 
     api: {
       desc: 'Składnia responsywna działa w większości atrybutów: <code>wartość;wartość@maxPx</code> (np. <code>left;up@911</code>).',
       code: "digi2.onReady(function () {\n  // wszystkie moduły załadowane i zainicjalizowane\n});\n\ndigi2.on('module:loaded', function (nazwa) {});\ndigi2.on('responsive:change', function (szerokosc) {});\ndigi2.emit('moj-event', { cokolwiek: 1 });\n\ndigi2.modules.check('forms');            // true / false\ndigi2.modules.require('forms').then(function () {});  // dociągnij na żądanie\n\ndigi2.attr(el, 'd2-animation-direction', 'up'); // odczyt wartości responsywnej"
-    }
+    },
+
+    examples: [
+      { title: 'Moduły tylko na jednej podstronie (<digi2-module>)', desc: 'Loader w Head zostaje bez flag; deklarację wklejasz w Page Settings → Custom Code albo w Embed w treści strony. Loader skanuje deklaracje od razu i ponownie po załadowaniu DOM, więc pozycja w body nie przeszkadza.', code: '<!-- Site Settings → Head (loader bez flag) -->\n<script\n  src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@main/dist/digi2-loader.min.js"\n></script>\n\n<!-- Podstrona: element deklaracji z flagami -->\n<digi2-module d2-forms d2-popups></digi2-module>\n\n<!-- to samo w formie listy (nazwy bez prefiksu d2-) -->\n<div d2-modules="forms popups, cookies"></div>\n\n<!-- flagi z wartością też działają -->\n<digi2-module d2-gtm="GTM-XXXXXXX"></digi2-module>' },
+      { title: 'Starszy build standalone (dist/digi2.min.js)', desc: 'Jednoplikowy build zawierający rdzeń digi2 (system eventów) i moduł popups — utrzymywany dla starszych wdrożeń. W nowych projektach używaj loadera z flagami.', code: '<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@main/dist/digi2.min.js"></script>' }
+    ]
   };
 
 })(window.D2DOCS.modules);

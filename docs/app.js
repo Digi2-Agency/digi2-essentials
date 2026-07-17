@@ -227,6 +227,18 @@ function pageModule(key){
   c += codeBlock(m.install || loaderScript([m.flag]), 'html', 'Site Settings → Head');
   if(m.installNote) c += '<p class="note">'+m.installNote+'</p>';
 
+  /* wariant per podstrona */
+  if(m.flag){
+    var flagBare = m.flag.replace(/^d2-/,'').replace(/=.*$/,'');
+    if(flagBare === 'gtm') flagBare = 'google';
+    if(flagBare === 'ab-tests') flagBare = 'ab-tests';
+    var perPage = '<!-- Site Settings → Head: loader zostaje bez flag -->\n<script\n  src="'+D2.cdn+'"\n><\/script>\n\n<!-- Ta podstrona → Page Settings → Custom Code (albo Embed) -->\n<digi2-module '+m.flag+'></digi2-module>';
+    if(m.flag.indexOf('=') === -1) perPage += '\n\n<!-- albo forma listowa (nazwy bez prefiksu d2-) -->\n<div d2-modules="'+flagBare+'"></div>';
+    c += '<h3>Wariant: moduł tylko na wybranej podstronie</h3>';
+    c += '<p class="sec-desc">Gdy moduł jest potrzebny na jednej stronie, nie włączaj go globalnie — loader w Head zostaje bez flag, a na stronie kładziesz element deklaracji <code>&lt;digi2-module&gt;</code>. Loader skanuje deklaracje od razu i ponownie po załadowaniu DOM, więc Embed w treści też działa.</p>';
+    c += codeBlock(perPage, 'html', 'per podstrona');
+  }
+
   /* kreator */
   if(m.kreator){
     tocItems.push(['kreator','Kreator']);

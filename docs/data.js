@@ -16,7 +16,7 @@ window.D2DOCS = {
   start: {
     lead: 'Biblioteka modułów dla Webflow sterowana atrybutami <code>d2-*</code>. Wklejasz jeden skrypt, dodajesz atrybuty na elementach w Designerze — sortowanie, filtry, formularze, popupy i animacje działają bez pisania kodu.',
     steps: [
-      { t: 'Wklej loader z flagami modułów', d: 'Jeden tag <b>&lt;script&gt;</b> w Site Settings → Custom Code → Head. Flagi (np. <code>d2-cms</code>, <code>d2-forms</code>) mówią loaderowi, które moduły dociągnąć — reszta w ogóle się nie ładuje.' },
+      { t: 'Wklej loader z flagami modułów', d: 'Jeden tag <b>&lt;script&gt;</b> w Site Settings → Custom Code → Head. Flagi (np. <code>d2-cms</code>, <code>d2-forms</code>) mówią loaderowi, które moduły dociągnąć — reszta w ogóle się nie ładuje. Moduł możesz też włączyć tylko na wybranej podstronie elementem <code>&lt;digi2-module&gt;</code> — szczegóły na stronie <a href="#/m/loader">Loader i flagi</a>.' },
       { t: 'Dodaj atrybuty na elementach', d: 'W Designerze zaznacz element → panel Settings (D) → <b>Custom attributes</b> → dodaj atrybut z dokumentacji (np. <code>d2-cms-list="produkty"</code>). Drzewka na stronach modułów pokazują dokładnie, który atrybut idzie na który element.' },
       { t: 'Doszlifuj w JS tylko tam, gdzie trzeba', d: 'Większość modułów działa bez kodu. Popupy, walidacja formularzy czy filtry z opcjami wymagają jednego wywołania <code>digi2.moduł.create(...)</code> w <code>digi2.onReady()</code> — kreator na stronie modułu wygeneruje go za Ciebie.' },
       { t: 'Debugowanie', d: 'Dodaj flagę <code>d2-debug-mode</code> na tagu loadera — każdy moduł zacznie logować swoje akcje w konsoli z prefiksem <code>[digi2.moduł]</code>.' }
@@ -210,6 +210,7 @@ window.D2DOCS = {
       { a: 'd2-cms-load-more', v: '', el: 'Button', d: 'Klik dokłada kolejne <i>per-page</i> itemów.' },
       { a: 'd2-cms-loadcount', v: 'liczba | all', el: 'Button', d: 'Klik dokłada konkretną liczbę itemów albo wszystkie.' },
       { a: 'd2-cms-load-more-done', v: '', el: 'przycisk load-more', set: true, d: 'Moduł ustawia, gdy nie ma już czego dokładać (przycisk też znika).' },
+      { a: 'd2-cms-sentinel', v: 'nazwa listy', el: 'niewidoczny div', set: true, d: 'Strażnik infinite scrolla — moduł wstawia go sam za listą.' },
       { a: 'd2-cms-sort', v: 'pole', el: 'Button / Link / opcja', d: 'Klik sortuje po polu: 1. klik rosnąco, 2. malejąco, 3. czyści.', n: 'z <code>d2-cms-sort-dir</code> kierunek jest stały' },
       { a: 'd2-cms-sort-dir', v: 'asc | desc', el: 'lista lub przycisk sortowania', d: 'Na liście: domyślny kierunek. Na przycisku: wymusza kierunek bez przełączania.' },
       { a: 'd2-cms-sort-type', v: 'number | text | date', el: 'przycisk sortowania', d: 'Wymusza typ porównywania dla tego pola.' },
@@ -225,6 +226,8 @@ window.D2DOCS = {
       { a: 'd2-cms-filter-field', v: 'pole', el: 'Select (Form)', d: 'Natywny select jako filtr — pusta opcja czyści.' },
       { a: 'd2-cms-filter-match', v: 'AND | OR', el: 'Collection List', d: 'Jak łączyć różne pola filtrów (domyślnie AND; w obrębie pola zawsze OR).' },
       { a: 'd2-cms-filter-label', v: 'pole', el: 'Text', d: 'Moduł wpisuje tu aktywną wartość filtra danego pola.' },
+      { a: 'd2-cms-filter-option-label', v: 'tekst', el: 'opcja filtra', d: 'Własny tekst, który opcja wnosi do etykiety filtra (zamiast swojej treści).' },
+      { a: 'd2-cms-filter-scope', v: '', el: 'wrapper', d: 'Ogranicza, które opcje mogą aktualizować etykietę filtra (zamiast .w-dropdown).' },
       { a: 'd2-cms-filter-active', v: '', el: 'kontrolka filtra', set: true, d: 'Obecny na aktywnym filtrze — hook do stylowania.' },
       { a: 'd2-cms-clear', v: 'puste | all | pole', el: 'Button / Link', d: 'Czyści filtry (puste), filtry + sortowanie (<code>all</code>) albo jedno pole.' },
       { a: 'd2-cms-empty', v: '', el: 'Div', d: 'Pokazywany, gdy filtry nie zwracają żadnego itemu (w Designerze daj Display: none).' },
@@ -254,6 +257,7 @@ window.D2DOCS = {
       { a: 'd2-cms-range-fill', v: '', el: 'Div w torze', d: 'Wypełnienie między uchwytami (pozycjonowane przez moduł).' },
       { a: 'd2-cms-range-handle', v: 'min | max', el: 'Div w torze', req: true, d: 'Przeciągalny uchwyt — potrzebne oba.' },
       { a: 'd2-cms-range-dragging', v: '', el: 'uchwyt', set: true, d: 'Obecny podczas przeciągania — hook CSS.' },
+      { a: 'd2-cms-range-active', v: '', el: 'wrapper suwaka', set: true, d: 'Obecny, gdy filtr zakresu jest zawężony — hook CSS.' },
       { a: 'd2-cms-hidden-class', v: 'klasa', el: 'Collection List', d: 'Ukrywanie klasą CSS zamiast display:none.' },
       { a: 'd2-cms-hide-pagination', v: 'false', el: 'Collection List', d: 'Zostawia natywną paginację Webflow widoczną (domyślnie jest chowana).' },
       { a: 'd2-cms-group-by', v: 'pole', el: 'Collection List', d: 'Trwałe grupowanie — sortowanie użytkownika działa wewnątrz grup.' },
@@ -434,14 +438,15 @@ window.D2DOCS = {
       { a: 'd2-form-success', v: '', el: 'Div / ikona', d: 'Element stanu „poprawnie” — pokazywany, gdy pole ma wartość i przechodzi walidację.' },
       { a: 'd2-form-error-required', v: '', el: 'Div przy inpucie', d: 'Wariant per-reguła: pokazywany tylko, gdy pada reguła <code>required</code>.', n: 'analogicznie d2-form-error-email itd.' },
       { a: 'd2-form-summary', v: '', el: 'Div nad przyciskiem', d: 'Kontener na zbiorczą listę błędów (tryb errorDisplay: summary).' },
-      { a: 'd2-consent-master', v: 'grupa', el: 'Checkbox', d: 'Checkbox „zaznacz wszystkie” — steruje zgodami z tą samą grupą, pokazuje stan częściowy.' },
+      { a: 'd2-consent-master', v: 'grupa', el: 'Checkbox', d: 'Checkbox „zaznacz wszystkie” — steruje zgodami z tą samą grupą, pokazuje stan częściowy.', n: 'przy stanie częściowym wizual dostaje klasę <code>d2-consent-indeterminate</code>' },
       { a: 'd2-consent-item', v: 'grupa', el: 'Checkbox zgody', d: 'Zgoda należąca do grupy mastera — zmiany aktualizują master w obie strony.' },
       { a: 'd2-form-data-*', v: 'wartość', el: 'karta / dowolny kontener', d: 'Context capture: klik w kontener wstrzykuje <code>*</code> jako ukryte pole formularza, np. <code>d2-form-data-product="M23"</code>.', n: 'działa w capture phase — przed otwarciem popupu' },
       { a: 'd2-form-data-target', v: 'nazwa formularza', el: 'ten sam kontener', d: 'Do którego formularza trafiają dane (bez niego: do wszystkich).' },
       { a: 'd2-form-data-prefix', v: 'prefiks', el: 'ten sam kontener', d: 'Doklejany do nazw wstrzykiwanych pól.' },
       { a: 'd2-password-toggle', v: 'selektor (opc.)', el: 'Button przy haśle', d: 'Przełącza widoczność pola hasła (bez wartości szuka inputa obok).' },
       { a: 'd2-password-show', v: 'tekst', el: 'ten przycisk', d: 'Etykieta, gdy hasło ukryte.' },
-      { a: 'd2-password-hide', v: 'tekst', el: 'ten przycisk', d: 'Etykieta, gdy hasło widoczne.' }
+      { a: 'd2-password-hide', v: 'tekst', el: 'ten przycisk', d: 'Etykieta, gdy hasło widoczne.' },
+      { a: 'd2-pw', v: 'visible', el: 'input hasła', set: true, d: 'Ustawiany na inpucie, gdy hasło jest odsłonięte — hook CSS i marker dla przełącznika.' }
     ],
 
     api: {
