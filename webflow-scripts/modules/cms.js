@@ -252,6 +252,34 @@
     return { key: key, values: values, value: values[0] };
   }
 
+  // Element-aware filter spec. Webflow binds the WHOLE attribute value to a
+  // CMS field, so `d2-cms-filter="investment:{{Name}}"` is not authorable on
+  // CMS-generated controls. Two split forms solve it:
+  //   d2-cms-filter="investment"  + d2-cms-filter-value="{{Name}}"  (CMS-bound attr)
+  //   d2-cms-filter="investment:" + value/data-value on the input   (trailing colon;
+  //     picks up the input's own value — Webflow radios carry data-value)
+  // The classic "key:value" form keeps working unchanged.
+  function filterSpecFor(el) {
+    var raw = attr(el, 'd2-cms-filter');
+    if (!raw) return null;
+
+    var explicit = attr(el, 'd2-cms-filter-value');
+    if (explicit != null && explicit !== '') {
+      var key = raw.replace(/:\s*$/, '').trim();
+      if (key.indexOf(':') !== -1) return parseFilterAttr(raw);   // full form wins
+      return parseFilterAttr(key + ':' + explicit);
+    }
+
+    if (/:\s*$/.test(raw)) {
+      var k = raw.replace(/:\s*$/, '').trim();
+      var v = (el.getAttribute && (el.getAttribute('value') || el.getAttribute('data-value'))) || '';
+      if (!k || !v || v === 'on') return null;
+      return parseFilterAttr(k + ':' + v);
+    }
+
+    return parseFilterAttr(raw);
+  }
+
   // ---------------------------------------------------------------------------
   // CMSList (internal)
   // ---------------------------------------------------------------------------
@@ -1793,7 +1821,7 @@
       // Filter buttons (and <input type="checkbox|radio"> carrying d2-cms-filter)
       var filterBtns = this._buttonsForName('[d2-cms-filter]');
       filterBtns.forEach(function (btn) {
-        var parsed = parseFilterAttr(attr(btn, 'd2-cms-filter'));
+        var parsed = filterSpecFor(btn);
         if (!parsed) return;
         // Multi-value trigger is "active" only when ALL its values are applied
         var set = self._filters[parsed.key];
@@ -2034,7 +2062,7 @@
       var candidates = this._buttonsForName('[d2-cms-filter]');
       for (var i = 0; i < candidates.length; i++) {
         if (scope && !scope.contains(candidates[i])) continue;
-        var parsed = parseFilterAttr(attr(candidates[i], 'd2-cms-filter'));
+        var parsed = filterSpecFor(candidates[i]);
         if (!parsed) continue;
         if (key && parsed.key !== key) continue;
         // Multi-value triggers match if ANY of their values equals the lookup
@@ -2485,7 +2513,7 @@
       instance.sort(field, forced || undefined, order);
       _syncSortFrom(instance, mirrors);
     } else if (filterBtn) {
-      var parsed = parseFilterAttr(attr(filterBtn, 'd2-cms-filter'));
+      var parsed = filterSpecFor(filterBtn);
       if (parsed) {
         instance._batchFilter(parsed.key, parsed.values, 'toggle');
         _syncFiltersFrom(instance, mirrors);
@@ -2603,7 +2631,7 @@
     //            key before adding to keep state clean).
     if (target.tagName === 'INPUT' && target.hasAttribute('d2-cms-filter')
         && (target.type === 'checkbox' || target.type === 'radio')) {
-      var fparsed = parseFilterAttr(attr(target, 'd2-cms-filter'));
+      var fparsed = filterSpecFor(target);
       if (!fparsed) return;
       var fnames = _resolveTargetNames(target);
       var finstances = _instancesForTargetNames(fnames);

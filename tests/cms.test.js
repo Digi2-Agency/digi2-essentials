@@ -823,3 +823,43 @@ test('shared (pipe-target) counter shows the VISIBLE list; tabs:change hands it 
 
   assert.equal(counter.textContent, '1', 'after switch list B owns the counter');
 });
+
+test('CMS-bindable filter forms: d2-cms-filter-value and trailing-colon with data-value', async () => {
+  const env = createEnvironment();
+
+  // Form 1: static key + CMS-bound value attribute (a button)
+  const btnW16 = createElement('button', {
+    'd2-cms-filter': 'investment', 'd2-cms-filter-value': 'Wielka 16', 'd2-cms-target': 'offers',
+  });
+  // Form 2: trailing colon + value from the input's data-value (Webflow radio)
+  const radioP18 = createElement('input', {
+    type: 'radio', 'd2-cms-filter': 'investment:', 'data-value': 'Partynicka 18', 'd2-cms-target': 'offers',
+  });
+  radioP18.type = 'radio';
+  radioP18.checked = false;
+
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const itW = createItem({ investment: 'Wielka 16' });
+  const itP = createItem({ investment: 'Partynicka 18' });
+  list.appendChild(itW);
+  list.appendChild(itP);
+  env.body.appendChild(btnW16);
+  env.body.appendChild(radioP18);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Button (form 1) filters by its bound value.
+  dispatchDocument(env, 'click', btnW16);
+  assert.equal(itW.style.display, '');
+  assert.equal(itP.style.display, 'none');
+  assert.equal(btnW16.hasAttribute('d2-cms-filter-active'), true);
+  dispatchDocument(env, 'click', btnW16);   // toggle off
+
+  // Radio (form 2) — change event, value read from data-value.
+  radioP18.checked = true;
+  dispatchDocument(env, 'change', radioP18);
+  assert.equal(itP.style.display, '');
+  assert.equal(itW.style.display, 'none');
+});

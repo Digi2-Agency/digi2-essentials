@@ -1462,6 +1462,8 @@ Bounds auto-detect from item values (override with `d2-cms-range-min/max` or `d2
 | `d2-cms-sort-label` | any element | Swaps its text to the active sort option's text (custom dropdown toggle); restores the original when sort clears. Scoped to its `.w-dropdown` / `[d2-cms-sort-scope]` |
 | `d2-cms-sort-option-label="…"` | sort option | Overrides the text this option contributes to `d2-cms-sort-label` |
 | `d2-cms-filter="key:value"` | button / checkbox / radio | Toggle a filter. Composites: `key:a\|b` (both values), `key:a&b` (AND) |
+| `d2-cms-filter="key"` + `d2-cms-filter-value="…"` | CMS-generated control | Split form for CMS lists — Webflow binds whole attribute values only, so bind the **value** attribute to a CMS field and keep the key static |
+| `d2-cms-filter="key:"` (trailing colon) | input (radio/checkbox) | Value read from the input's own `value` / `data-value` attribute (Webflow radios carry `data-value`) |
 | `d2-cms-filter-field="key"` | `<select>` | Native select drives the filter; empty option clears the key |
 | `d2-cms-filter-label="key"` | any element | Swaps its text to the active filter value(s); empty attr tracks any key |
 | `d2-cms-clear` / `="all"` / `="key"` / `="key\|key2"` | button | Clear filters: everything / + sort / only the named field(s) — see [Clear buttons](#clear-buttons) |
