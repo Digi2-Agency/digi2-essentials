@@ -508,7 +508,8 @@
       { a: 'd2-format-prefix', v: 'tekst', el: 'ten element', d: 'Tekst przed liczbą.' },
       { a: 'd2-format-suffix', v: 'tekst', el: 'ten element', d: 'Tekst po liczbie.', n: 'gdy Webflow utnie spację — dodaj d2-format-space' },
       { a: 'd2-format-space', v: '', el: 'ten element', d: 'Wymusza spację przed sufiksem.' },
-      { a: 'd2-format-break', v: '', el: 'ten element', d: 'Zwykłe spacje zamiast niełamliwych (liczba może się zawinąć).' }
+      { a: 'd2-format-break', v: '', el: 'ten element', d: 'Zwykłe spacje zamiast niełamliwych (liczba może się zawinąć).' },
+      { a: 'd2-format-sum-1 … -9', v: 'liczba (bind z CMS)', el: 'Text', d: 'Tekst elementu = suma wartości wszystkich atrybutów d2-format-sum-* (np. metraż tarasu + balkonu). Puste/nienumeryczne części są pomijane; gdy żadna nie jest liczbą, zostaje tekst wpisany w Designerze.', n: 'miejsca dziesiętne z najdokładniejszej części — nadpisz przez <code>d2-format-decimals</code>; łączy się z <code>d2-format-unit</code>/<code>-price</code>' }
     ],
 
     api: {
@@ -713,7 +714,7 @@
     ],
 
     attrs: [
-      { a: 'd2-cms / d2-forms / d2-popups / …', v: '', el: 'tag <script> loadera lub <digi2-module>', d: 'Flagi modułów — pełna lista w kreatorze na stronie startowej.', n: 'aliasy: <code>d2-accordion</code> → tabs, <code>d2-dropdown</code> → dropdowns, <code>d2-format-price</code> / <code>d2-format-number</code> → format' },
+      { a: 'd2-cms / d2-forms / d2-popups / …', v: '', el: 'tag <script> loadera lub <digi2-module>', d: 'Flagi modułów — pełna lista w kreatorze na stronie startowej.', n: 'aliasy: <code>d2-accordion</code> → tabs, <code>d2-dropdown</code> → dropdowns, <code>d2-format-*</code> (price/number/sum) → format' },
       { a: 'd2-gtm', v: 'GTM-XXXXXXX', el: 'tag <script> loadera', d: 'Włącza moduł google i ładuje kontener GTM.' },
       { a: 'd2-ab-tests', v: 'nazwaConfigu', el: 'tag <script> loadera', d: 'Włącza moduł A/B testów.' },
       { a: 'd2-debug-mode', v: '', el: 'tag <script> loadera', d: 'Logowanie akcji wszystkich modułów w konsoli.' },

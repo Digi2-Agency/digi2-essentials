@@ -265,3 +265,78 @@ test('d2-format-break opts back into regular, wrappable spaces', async () => {
   assert.equal(price.textContent, '1 468 620', 'regular spaces when opted out');
   assert.equal(/ /.test(price.textContent), false, 'no non-breaking spaces remain');
 });
+
+test('d2-format-sum-* sets element text to the sum of its attribute values', async () => {
+  const env = createEnvironment();
+  const total = createElement('div', {
+    'd2-format-sum-1': '28.75',
+    'd2-format-sum-2': '1.5',
+  }, '0');
+  env.body.appendChild(total);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(total.textContent, '30,25');
+});
+
+test('sum skips blank parts and keeps decimals from the parsed ones', async () => {
+  const env = createEnvironment();
+  // Polish-comma value + a blank CMS binding (no balcony)
+  const total = createElement('div', {
+    'd2-format-sum-1': '28,75',
+    'd2-format-sum-2': '',
+    'd2-format-unit': 'm²',
+  }, '0');
+  env.body.appendChild(total);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(total.textContent, nb('28,75 m²'));
+});
+
+test('sum with no parsable parts leaves the authored fallback text alone', async () => {
+  const env = createEnvironment();
+  const total = createElement('div', {
+    'd2-format-sum-1': '',
+    'd2-format-sum-2': '',
+  }, '—');
+  env.body.appendChild(total);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(total.textContent, '—');
+});
+
+test('explicit d2-format-decimals overrides the inferred sum decimals', async () => {
+  const env = createEnvironment();
+  const total = createElement('div', {
+    'd2-format-sum-1': '28.75',
+    'd2-format-sum-2': '1.5',
+    'd2-format-decimals': '0',
+  }, '0');
+  env.body.appendChild(total);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(total.textContent, '30');
+});
+
+test('sum composes with d2-format-price styling', async () => {
+  const env = createEnvironment();
+  const total = createElement('div', {
+    'd2-format-sum-1': '422934',
+    'd2-format-sum-2': '15000',
+    'd2-format-price': '',
+    'd2-format-currency': 'PLN',
+  }, '0');
+  env.body.appendChild(total);
+
+  loadFormatModule(env);
+  await flushTimers();
+
+  assert.equal(total.textContent, nb('437 934 PLN'));
+});

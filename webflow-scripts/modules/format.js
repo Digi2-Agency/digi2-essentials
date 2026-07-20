@@ -16,6 +16,15 @@
  *   mid-number. Opt into regular, wrappable spaces with d2-format-break:
  *   <div d2-format-price d2-format-break>1468620</div>         -> 1 468 620 (regular spaces)
  *
+ *   Sums — element text becomes the sum of its d2-format-sum-* values:
+ *   <div d2-format-sum-1="28.75" d2-format-sum-2="1.5">0</div>  -> 30,25
+ *   <div d2-format-sum-1="28.75" d2-format-sum-2="1.5" d2-format-unit="m²">…
+ *   Bind the values to CMS fields (e.g. terrace + balcony area). Blank or
+ *   non-numeric parts are skipped; when NO part parses, the element's own
+ *   text is left untouched (your authored fallback). Decimals default to
+ *   the widest fraction among the parts (28.75+1 -> 29,75) — override with
+ *   d2-format-decimals. Combine with d2-format-price for price styling.
+ *
  * Uwaga: Webflow przycina spacje na krańcach wartości atrybutu, więc
  *   d2-format-suffix=" zł/m²"  ->  "zł/m²" (bez odstępu). Dlatego użyj:
  *     d2-format-unit="zł/m²"   (jednostka zawsze poprzedzona spacją), albo
@@ -177,17 +186,69 @@
     };
   }
 
+  // ---- d2-format-sum-* — element text = sum of its attribute values -------
+  // <div d2-format-sum-1="28.75" d2-format-sum-2="1.5">0</div> -> "30,25"
+  // Any suffix after "d2-format-sum-" names a part (bare d2-format-sum works
+  // too); values parse with the same loose rules as displayed numbers, so
+  // CMS-bound "28,75" is fine. Parts that don't parse are skipped — a blank
+  // balcony field simply adds nothing.
+  function sumAttrNames(el) {
+    var attrs = el && el.attributes;
+    var names = [];
+    if (!attrs) return names;
+    if (typeof attrs.length === 'number') {
+      for (var i = 0; i < attrs.length; i++) {
+        if (attrs[i] && attrs[i].name) names.push(attrs[i].name);
+      }
+    } else {
+      // Plain-object attribute maps (non-DOM harnesses)
+      for (var key in attrs) {
+        if (Object.prototype.hasOwnProperty.call(attrs, key)) names.push(key);
+      }
+    }
+    return names.filter(function (name) {
+      return name === 'd2-format-sum' || name.indexOf('d2-format-sum-') === 0;
+    });
+  }
+
+  // Returns null when the element has no sum attributes at all. `decimals`
+  // is the widest fraction among the parsed parts, so 28.75 + 1 renders
+  // with 2 decimals instead of getting truncated to "29".
+  function sumInfo(el) {
+    var names = sumAttrNames(el);
+    if (!names.length) return null;
+    var sum = 0;
+    var any = false;
+    var decimals = 0;
+    for (var i = 0; i < names.length; i++) {
+      var parsed = parseNumber(attr(el, names[i]));
+      if (isNaN(parsed)) continue;
+      any = true;
+      sum += parsed;
+      var frac = String(parsed).split('.')[1];
+      if (frac && frac.length > decimals) decimals = frac.length;
+    }
+    return { hasValue: any, sum: sum, decimals: decimals };
+  }
+
   function formatElement(el) {
     if (!el) return;
 
+    var sum = sumInfo(el);
     var mode = el.hasAttribute('d2-format-price') || hasClass(el, 'format-price') || hasClass(el, 'format_price')
       ? 'price'
       : (attr(el, 'd2-format-number') || '').trim().toLowerCase();
 
-    if (!mode) return;
+    if (!mode && !sum) return;
+    // No part parsed → keep the element's authored text as the fallback.
+    if (sum && !sum.hasValue) return;
 
-    var raw = el.textContent;
-    var options = optionsFromElement(el, mode);
+    var options = optionsFromElement(el, mode || 'number');
+    if (sum && integerOrNull(attr(el, 'd2-format-decimals')) == null) {
+      options.decimals = sum.decimals;
+    }
+
+    var raw = sum ? sum.sum : el.textContent;
     var formatted = mode === 'price'
       ? formatPrice(raw, options)
       : formatNumber(raw, options);
@@ -196,9 +257,18 @@
     el.textContent = formatted;
   }
 
+  // querySelectorAll can't wildcard attribute NAMES, so sum elements are
+  // discovered via the bare attribute and numbered parts 1–9. Parts with
+  // other suffixes still count toward the sum once the element is found.
+  var SUM_SELECTOR = (function () {
+    var parts = ['[d2-format-sum]'];
+    for (var i = 1; i <= 9; i++) parts.push('[d2-format-sum-' + i + ']');
+    return parts.join(', ');
+  })();
+
   function refresh(root) {
     var scope = root && root.querySelectorAll ? root : document;
-    var els = scope.querySelectorAll('[d2-format-price], [d2-format-number="price"], .format-price, .format_price');
+    var els = scope.querySelectorAll('[d2-format-price], [d2-format-number="price"], .format-price, .format_price, ' + SUM_SELECTOR);
     for (var i = 0; i < els.length; i++) formatElement(els[i]);
   }
 

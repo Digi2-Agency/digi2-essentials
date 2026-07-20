@@ -1555,6 +1555,21 @@ Optional overrides:
 | `d2-format-decimals="2"` | Fraction digits (default 0) |
 | `d2-format-break` | Opt out of non-breaking spaces |
 
+### Sums (`d2-format-sum-*`)
+
+Element text becomes the sum of its `d2-format-sum-*` attribute values — bind each part to a CMS field (e.g. terrace + balcony area):
+
+```html
+<div d2-format-sum-1="28.75" d2-format-sum-2="1.5" d2-format-unit="m²">0</div>
+<!-- → 30,25 m² -->
+```
+
+- Parts that are blank or non-numeric are **skipped** — an empty balcony field simply adds nothing. When *no* part parses, the element keeps its authored text (your fallback).
+- Decimals default to the **widest fraction among the parts** (`28.75 + 1` → `29,75`); override with `d2-format-decimals`. Polish-comma values (`28,75`) parse fine.
+- Composes with the rest of the module: add `d2-format-price` / `d2-format-currency` / `d2-format-unit` etc. to style the result.
+- Discovery covers the bare `d2-format-sum` plus numbered parts `-1` … `-9`; other suffixes still count toward the sum once the element matches.
+- Loader flag alias: any `d2-format-*` flag (including `d2-format-sum`) loads the format module.
+
 The module observes added/changed DOM, so Webflow CMS items loaded later are formatted automatically — and the CMS module re-formats after every render (sort / filter / load-more), including prices inside hidden accordion panels.
 
 ```js

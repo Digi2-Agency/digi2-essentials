@@ -619,7 +619,7 @@
         // not a module flag
       } else if (name.indexOf('d2-') === 0) {
         var m = name.substring(3); // "d2-popups" -> "popups"
-        if (m === 'format-price' || m === 'format-number') m = 'format';
+        if (m.indexOf('format-') === 0) m = 'format'; // format-price/-number/-sum → format
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs'; // accordion lives in tabs
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns'; // singular/parts → module
         _pushModule(into, m);
@@ -632,7 +632,7 @@
         if (!raw) return;
         var m = raw.replace(/^d2-/, '');
         if (m === 'gtm') m = 'google';
-        if (m === 'format-price' || m === 'format-number') m = 'format';
+        if (m.indexOf('format-') === 0) m = 'format'; // format-price/-number/-sum → format
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs';
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns';
         _pushModule(into, m);
