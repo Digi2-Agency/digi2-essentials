@@ -43,10 +43,14 @@
  *     d2-lightbox-backdrop       — clicking this closes (clicking the modal root itself also closes)
  *   d2-lightbox-loop="false"     — on the modal root: stop at the ends instead of wrapping.
  *
- * Built-in variants — d2-lightbox-variant on the trigger or any of its
- * ancestors (CMS item, section, body):
+ * Built-in variants — set once where the module is imported, via the value of
+ * the d2-lightbox flag:
+ *   <script d2-lightbox="thumbs" src=".../digi2-loader.min.js"></script>
+ *   <digi2-module d2-lightbox="counter"></digi2-module>
  *   "counter" (default)          — bottom shows "1 / 4"
  *   "thumbs"                     — bottom shows a clickable thumbnail strip instead
+ * d2-lightbox-variant on a trigger or any of its ancestors (CMS item, section,
+ * body) overrides the page default for that gallery.
  * Counter, thumbs and drag are all disabled for single-photo galleries.
  * Triggers get cursor: zoom-in, close/prev/next/thumb slots cursor: pointer
  * (one injected stylesheet, override in your own CSS if needed).
@@ -279,6 +283,19 @@
     styleEl.setAttribute('d2-lightbox-global-styles', '');
     styleEl.textContent = GLOBAL_CSS;
     parent.appendChild(styleEl);
+  }
+
+  // Page-wide default variant — the VALUE of the d2-lightbox flag where the
+  // module is imported: <script d2-lightbox="thumbs" src="…"> or a
+  // <digi2-module d2-lightbox="thumbs"> declaration. Never read from triggers
+  // (there the value is a gallery name).
+  var pageVariant = null;
+  function readPageVariant() {
+    var el = document.querySelector(
+      'script[d2-lightbox], digi2-module[d2-lightbox], digi2-modules[d2-lightbox], [d2-module][d2-lightbox]'
+    );
+    var v = el ? String(el.getAttribute('d2-lightbox') || '').toLowerCase() : '';
+    pageVariant = (v === 'thumbs' || v === 'counter') ? v : null;
   }
 
   function styleBtn(btn, extra) {
@@ -562,13 +579,15 @@
     state.loop = attr(modal, 'd2-lightbox-loop') !== 'false';
     state.display = modal.getAttribute('d2-lightbox-modal') || 'flex';
 
-    // Built-in bottom UI: "counter" (default) or "thumbs", read from the
-    // trigger or any ancestor (CMS item, section, body).
-    state.variant = 'counter';
+    // Built-in bottom UI: the import flag's value sets the page default
+    // ("counter" when absent); d2-lightbox-variant on the trigger or any
+    // ancestor (CMS item, section, body) overrides it per gallery.
+    state.variant = pageVariant || 'counter';
     if (variantSource && variantSource.closest) {
       var vEl = variantSource.closest('[d2-lightbox-variant]');
-      if (vEl && String(attr(vEl, 'd2-lightbox-variant') || '').toLowerCase() === 'thumbs') {
-        state.variant = 'thumbs';
+      if (vEl) {
+        var v = String(attr(vEl, 'd2-lightbox-variant') || '').toLowerCase();
+        if (v === 'thumbs' || v === 'counter') state.variant = v;
       }
     }
 
@@ -873,6 +892,7 @@
   function refresh() {
     hideModals();
     injectGlobalStyles();
+    readPageVariant();
   }
 
   if (document.readyState === 'loading') {

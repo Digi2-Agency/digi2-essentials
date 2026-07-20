@@ -733,3 +733,61 @@ test('global cursor stylesheet is injected once on load', () => {
   env.window.digi2.lightbox.refresh();
   assert.equal(env.body.querySelectorAll('[d2-lightbox-global-styles]').length, 1, 'no duplicates on refresh');
 });
+
+test('d2-lightbox="thumbs" on the import tag sets the page-wide default variant', () => {
+  const env = createEnvironment();
+  env.body.appendChild(createElement('script', { 'd2-lightbox': 'thumbs', src: 'digi2-loader.min.js' }));
+  loadLightboxModule(env);
+
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/pv1.jpg', null, group);
+  addThumb(env, 'https://x/pv2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-thumbs]').style.display, '', 'thumbs by page default');
+  assert.equal(modal.querySelector('[d2-lightbox-counter]').style.display, 'none');
+  assert.equal(modal.querySelector('[d2-lightbox-thumbs]').querySelectorAll('[d2-lightbox-thumb]').length, 2);
+});
+
+test('d2-lightbox-variant on an ancestor overrides the page default from the import tag', () => {
+  const env = createEnvironment();
+  env.body.appendChild(createElement('script', { 'd2-lightbox': 'thumbs', src: 'digi2-loader.min.js' }));
+  loadLightboxModule(env);
+
+  const group = createElement('div', { 'd2-lightbox-group': '', 'd2-lightbox-variant': 'counter' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/ov1.jpg', null, group);
+  addThumb(env, 'https://x/ov2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-counter]').style.display, '', 'per-gallery counter override wins');
+  assert.equal(modal.querySelector('[d2-lightbox-thumbs]').style.display, 'none');
+});
+
+test('digi2-module declaration and unknown flag values behave sanely', () => {
+  const env = createEnvironment();
+  env.body.appendChild(createElement('digi2-module', { 'd2-lightbox': 'thumbs' }));
+  loadLightboxModule(env);
+
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/dm1.jpg', null, group);
+  addThumb(env, 'https://x/dm2.jpg', null, group);
+  env.dispatchDoc('click', first);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-thumbs]').style.display, '', 'declaration element works');
+
+  // an unknown value falls back to the counter default
+  const env2 = createEnvironment();
+  env2.body.appendChild(createElement('script', { 'd2-lightbox': 'foo', src: 'digi2-loader.min.js' }));
+  loadLightboxModule(env2);
+  const g2 = createElement('div', { 'd2-lightbox-group': '' });
+  env2.body.appendChild(g2);
+  const f2 = addThumb(env2, 'https://x/u1.jpg', null, g2);
+  addThumb(env2, 'https://x/u2.jpg', null, g2);
+  env2.dispatchDoc('click', f2);
+  assert.equal(builtin(env2).querySelector('[d2-lightbox-counter]').style.display, '');
+  assert.equal(builtin(env2).querySelector('[d2-lightbox-thumbs]').style.display, 'none');
+});

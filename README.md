@@ -1664,17 +1664,24 @@ Extra slots: `d2-lightbox-current` / `d2-lightbox-total` (separate numbers) and 
 
 ### Built-in variants, single-photo behavior & cursors
 
-The built-in modal has two bottom-bar variants, picked with `d2-lightbox-variant` on the trigger or any ancestor (CMS item, section, `body`):
+The built-in modal has two bottom-bar variants. Pick the page default **where you import the module** — as the value of the `d2-lightbox` flag:
+
+```html
+<script d2-lightbox="thumbs" src=".../digi2-loader.min.js"></script>
+<!-- or per page: -->
+<digi2-module d2-lightbox="thumbs"></digi2-module>
+```
 
 | Variant | Bottom bar |
 |---|---|
-| `counter` (default) | "1 / 4" counter |
+| `counter` (default, bare `d2-lightbox` flag) | "1 / 4" counter |
 | `thumbs` | clickable thumbnail strip — squares that jump to the photo |
 
+A single gallery can override the page default with `d2-lightbox-variant` on the trigger or any ancestor (CMS item, section, `body`):
+
 ```html
-<div d2-cms-item d2-lightbox-variant="thumbs">
+<div d2-cms-item d2-lightbox-variant="counter">   <!-- this gallery: counter, rest of page: thumbs -->
   <img d2-lightbox src="...">
-  ...
 </div>
 ```
 

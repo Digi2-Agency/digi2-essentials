@@ -20,6 +20,7 @@
  *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
  *   d2-format   →  modules/format.js    Number and price formatting
  *   d2-lightbox →  modules/lightbox.js  Image lightbox — custom Designer modal or built-in fallback
+ *                                       Optional value picks the built-in bottom UI: d2-lightbox="thumbs" | "counter"
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
