@@ -19,6 +19,7 @@
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
  *   d2-format   →  modules/format.js    Number and price formatting
+ *   d2-lightbox →  modules/lightbox.js  Image lightbox — custom Designer modal or built-in fallback
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
@@ -457,6 +458,7 @@
     cms: 'cms',
     interactions: 'interactions',
     abTests: 'ab-tests',
+    lightbox: 'lightbox',
   };
 
   function createProxy(namespace, moduleName) {
@@ -620,6 +622,7 @@
       } else if (name.indexOf('d2-') === 0) {
         var m = name.substring(3); // "d2-popups" -> "popups"
         if (m.indexOf('format-') === 0) m = 'format'; // format-price/-number/-sum → format
+        if (m.indexOf('lightbox-') === 0) m = 'lightbox'; // lightbox-modal/-group → lightbox
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs'; // accordion lives in tabs
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns'; // singular/parts → module
         _pushModule(into, m);
@@ -633,6 +636,7 @@
         var m = raw.replace(/^d2-/, '');
         if (m === 'gtm') m = 'google';
         if (m.indexOf('format-') === 0) m = 'format'; // format-price/-number/-sum → format
+        if (m.indexOf('lightbox-') === 0) m = 'lightbox'; // lightbox-modal/-group → lightbox
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs';
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns';
         _pushModule(into, m);

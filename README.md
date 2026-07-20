@@ -77,10 +77,11 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
+| `d2-lightbox` | lightbox | 9.6 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **167.6 KB min** / **49.7 KB** gzipped.
+Total (all modules): **177.2 KB min** / **52.9 KB** gzipped.
 
 ---
 
@@ -1594,6 +1595,71 @@ digi2.copy.fromElement('#selector')
 ```
 
 Auto-shows "Copied!" feedback on the button + toast notification (if toasts module loaded).
+
+---
+
+## Lightbox
+
+Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, arrow keys and swipe navigate, body scroll locks, adjacent images preload. The gallery UI is either **your own modal built in the Designer** or, when the page has none, a **built-in dark modal** injected automatically (zero setup).
+
+```html
+<!-- zero-config: each CMS item is its own gallery -->
+<div d2-cms-item>
+  <img src="photo-1.jpg" d2-lightbox alt="Taras">
+  <img src="photo-2.jpg" d2-lightbox alt="Salon">
+</div>
+```
+
+### Triggers & full-size sources
+
+`d2-lightbox` marks the clickable element — an `<img>` or a wrapper around one. The full-size URL is resolved in order:
+
+1. `d2-lightbox-src="URL"` on the trigger (bind it to a CMS image field),
+2. a (hidden) full-size twin `<img d2-lightbox-full>` inside the trigger,
+3. the trigger's own `src` (or its first inner `<img>`).
+
+Captions come from `d2-lightbox-caption` on the trigger, falling back to the image `alt`.
+
+### Grouping — which photos form one gallery
+
+1. **Named**: `d2-lightbox="rzuty"` — all triggers sharing the name, anywhere on the page.
+2. **Container**: bare triggers inside the nearest `[d2-lightbox-group]`.
+3. **CMS item**: bare triggers inside the nearest `[d2-cms-item]` — inside a digi2 CMS list every item is its own gallery with zero config.
+4. **Page-wide**: remaining bare triggers form one gallery.
+
+Infinite-slider clones (`[d2-slide-clone]`) are skipped and duplicate URLs deduped.
+
+### Custom modal (Designer-built)
+
+Build the modal in Webflow and leave it visible — the module hides it on load. The attribute value sets the display used when open (default `flex`).
+
+```html
+<div d2-lightbox-modal="flex">
+  <div d2-lightbox-backdrop></div>          <!-- click closes -->
+  <img d2-lightbox-image>                   <!-- required slot -->
+  <a d2-lightbox-close>✕</a>
+  <a d2-lightbox-prev>‹</a>                 <!-- auto-hidden for 1-photo galleries -->
+  <a d2-lightbox-next>›</a>
+  <div d2-lightbox-counter="{current} z {total}"></div>
+  <div d2-lightbox-caption></div>           <!-- hidden when caption is empty -->
+</div>
+```
+
+Extra slots: `d2-lightbox-current` / `d2-lightbox-total` (separate numbers). Clicking the modal root itself also closes. `d2-lightbox-loop="false"` on the modal stops navigation at the ends instead of wrapping. Without a custom modal the built-in one is used — its elements carry `.d2-lb-*` classes if you want to restyle it with CSS.
+
+### API & events
+
+```js
+digi2.lightbox.open(triggerEl)          // same as a click
+digi2.lightbox.open('rzuty', 1)         // named gallery at index 1
+digi2.lightbox.open([{ src: '/a.jpg', caption: 'Taras' }, { src: '/b.jpg' }])
+digi2.lightbox.next() / .prev() / .close() / .isOpen()
+digi2.lightbox.refresh()                // re-hide custom modals added later
+
+digi2.on('lightbox:open',   ({ index, total }) => {})
+digi2.on('lightbox:change', ({ index, total, src }) => {})
+digi2.on('lightbox:close',  () => {})
+```
 
 ---
 

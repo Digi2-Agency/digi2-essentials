@@ -269,6 +269,67 @@
     }
   };
 
+  /* ════════════════════════ LIGHTBOX ════════════════════════ */
+  M.lightbox = {
+    name: 'Lightbox — galeria zdjęć',
+    short: 'Lightbox',
+    cat: 'Komponenty UI',
+    flag: 'd2-lightbox',
+    icon: 'lightbox',
+    size: '9,6 KB min',
+    auto: true,
+    tagline: 'Klik w zdjęcie otwiera pełnoekranową galerię — własny modal z Webflow albo wbudowany fallback.',
+    desc: 'Kliknięcie elementu z <code>d2-lightbox</code> otwiera pełnoekranową galerię ze strzałkami, licznikiem, klawiaturą (Esc / strzałki) i swipe na mobile. Wygląd budujesz sam w Designerze jako element <code>d2-lightbox-modal</code> ze slotami (obraz, zamknięcie, nawigacja, licznik, podpis) — a jeśli na stronie nie ma własnego modala, moduł wstrzykuje wbudowany ciemny lightbox i wszystko działa bez konfiguracji. Wewnątrz listy CMS każdy <code>d2-cms-item</code> jest osobną galerią (zero konfiguracji), klony sliderów są pomijane, duplikaty URL sklejane.',
+
+    structures: [
+      { title: 'Zdjęcia w rozwiniętym itemie CMS', desc: 'Każdy item Collection List to osobna galeria — klik w miniaturę otwiera zdjęcia tylko tego mieszkania. Pełnowymiarowy plik wskazujesz przez d2-lightbox-src (bind z CMS) albo ukrytego bliźniaka img z d2-lightbox-full.', tree: [
+        { l: 'Collection Item', t: 'div', a: [['d2-cms-item']], c: [
+          { l: 'Image — miniatura', t: 'img', a: [['d2-lightbox']], n: 'klikalna; src = pełny rozmiar' },
+          { l: 'Div — wrapper z bliźniakiem', t: 'div', a: [['d2-lightbox']], c: [
+            { l: 'Image — miniatura', t: 'img' },
+            { l: 'Image — pełny rozmiar (ukryty)', t: 'img', a: [['d2-lightbox-full']], n: 'display:none — jego src trafia do galerii' }
+          ]}
+        ]}
+      ]},
+      { title: 'Własny modal w Designerze', desc: 'Zostaw go widocznego w Designerze — moduł chowa go przy starcie. Wartość d2-lightbox-modal = display po otwarciu (domyślnie flex).', tree: [
+        { l: 'Div — modal (fixed, full-screen)', t: 'div', a: [['d2-lightbox-modal', 'flex']], c: [
+          { l: 'Div — tło (klik zamyka)', t: 'div', a: [['d2-lightbox-backdrop']] },
+          { l: 'Image — aktualne zdjęcie', t: 'img', a: [['d2-lightbox-image']], n: 'wymagany slot' },
+          { l: 'Link — zamknij', t: 'link', a: [['d2-lightbox-close']] },
+          { l: 'Link — poprzednie', t: 'link', a: [['d2-lightbox-prev']], n: 'auto-ukryty przy 1 zdjęciu' },
+          { l: 'Link — następne', t: 'link', a: [['d2-lightbox-next']] },
+          { l: 'Text — licznik', t: 'text', a: [['d2-lightbox-counter', '{current} z {total}']] },
+          { l: 'Text — podpis', t: 'text', a: [['d2-lightbox-caption']], n: 'ukrywany, gdy pusty' }
+        ]}
+      ]},
+      { title: 'Nazwane galerie', desc: 'Triggery z tą samą nazwą tworzą jedną galerię niezależnie od położenia w DOM.', tree: [
+        { l: 'Image — rzut 2D', t: 'img', a: [['d2-lightbox', 'rzuty']] },
+        { l: 'Image — rzut 3D', t: 'img', a: [['d2-lightbox', 'rzuty']] }
+      ]}
+    ],
+
+    attrs: [
+      { a: 'd2-lightbox', v: '(puste) lub nazwa galerii', el: 'Image / wrapper', req: true, d: 'Klikalny trigger galerii. Bez wartości grupuje się po kontenerze (<code>d2-lightbox-group</code> → <code>d2-cms-item</code> → cała strona); z wartością — po nazwie.' },
+      { a: 'd2-lightbox-src', v: 'URL', el: 'trigger', d: 'Pełnowymiarowy plik do pokazania (bindowalny z pola CMS) — ma pierwszeństwo.' },
+      { a: 'd2-lightbox-full', v: '—', el: 'img w triggerze', d: 'Ukryty bliźniak pełnowymiarowy — jego <code>src</code> trafia do galerii zamiast miniatury.' },
+      { a: 'd2-lightbox-caption', v: 'tekst', el: 'trigger', d: 'Podpis zdjęcia (fallback: <code>alt</code> obrazka).' },
+      { a: 'd2-lightbox-group', v: '—', el: 'kontener', d: 'Zawęża galerię do triggerów wewnątrz tego elementu.' },
+      { a: 'd2-lightbox-modal', v: 'flex | grid | block', el: 'modal (własny)', d: 'Własny modal budowany w Designerze; wartość = display po otwarciu (domyślnie flex). Moduł chowa go przy starcie strony.' },
+      { a: 'd2-lightbox-image', v: '—', el: 'img w modalu', req: true, d: 'Slot na aktualne zdjęcie (moduł ustawia src + alt, zdejmuje srcset).' },
+      { a: 'd2-lightbox-close', v: '—', el: 'w modalu', d: 'Klik zamyka. Klik w tło (<code>d2-lightbox-backdrop</code> lub sam root modala) też zamyka; Esc również.' },
+      { a: 'd2-lightbox-prev / -next', v: '—', el: 'w modalu', d: 'Nawigacja; auto-ukrywane przy galerii z 1 zdjęciem. Działają też strzałki klawiatury i swipe.' },
+      { a: 'd2-lightbox-counter', v: 'szablon', el: 'w modalu', d: 'Tekst licznika; szablon z tokenami, np. <code>{current} z {total}</code> (domyślnie <code>{current} / {total}</code>).' },
+      { a: 'd2-lightbox-current / -total', v: '—', el: 'w modalu', d: 'Osobne sloty na numer bieżący / liczbę zdjęć.' },
+      { a: 'd2-lightbox-backdrop', v: '—', el: 'w modalu', d: 'Jawny obszar tła — klik zamyka galerię.' },
+      { a: 'd2-lightbox-loop', v: 'false', el: 'modal', d: 'Wyłącza zapętlenie — nawigacja zatrzymuje się na końcach.' }
+    ],
+
+    api: {
+      desc: 'Eventy: <code>lightbox:open</code>, <code>lightbox:change</code>, <code>lightbox:close</code> (przez <code>digi2.on</code>). Body dostaje blokadę scrolla na czas otwarcia; sąsiednie zdjęcia są preloadowane.',
+      code: "digi2.lightbox.open(el);            // otwórz od triggera (jak klik)\ndigi2.lightbox.open('rzuty', 1);    // nazwana galeria, od 2. zdjęcia\ndigi2.lightbox.open([\n  { src: '/a.jpg', caption: 'Taras' },\n  { src: '/b.jpg' }\n]);\ndigi2.lightbox.next();  digi2.lightbox.prev();\ndigi2.lightbox.close();\ndigi2.lightbox.isOpen();            // true / false\n\ndigi2.on('lightbox:change', function (d) {\n  console.log(d.index + 1, '/', d.total, d.src);\n});"
+    }
+  };
+
   /* ════════════════════════ INTERACTIONS ════════════════════════ */
   M.interactions = {
     name: 'Interactions — pokaż / ukryj',
