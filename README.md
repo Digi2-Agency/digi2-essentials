@@ -77,11 +77,11 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
-| `d2-lightbox` | lightbox | 12.6 KB | Image lightbox — custom Designer modal or built-in fallback |
+| `d2-lightbox` | lightbox | 15.3 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **180.2 KB min** / **53.8 KB** gzipped.
+Total (all modules): **182.9 KB min** / **54.5 KB** gzipped.
 
 ---
 
@@ -1660,7 +1660,27 @@ Build the modal in Webflow and leave it visible — the module hides it on load.
 </div>
 ```
 
-Extra slots: `d2-lightbox-current` / `d2-lightbox-total` (separate numbers). Clicking the modal root itself also closes. `d2-lightbox-loop="false"` on the modal stops navigation at the ends instead of wrapping. Without a custom modal the built-in one is used — its elements carry `.d2-lb-*` classes if you want to restyle it with CSS.
+Extra slots: `d2-lightbox-current` / `d2-lightbox-total` (separate numbers) and `d2-lightbox-thumbs` — a container the module fills with one clickable `<img d2-lightbox-thumb="i">` per photo (click jumps to it; the active thumb carries `d2-is-active` — style both in your CSS). Clicking the modal root itself also closes. `d2-lightbox-loop="false"` on the modal stops navigation at the ends instead of wrapping. Without a custom modal the built-in one is used — its elements carry `.d2-lb-*` classes if you want to restyle it with CSS.
+
+### Built-in variants, single-photo behavior & cursors
+
+The built-in modal has two bottom-bar variants, picked with `d2-lightbox-variant` on the trigger or any ancestor (CMS item, section, `body`):
+
+| Variant | Bottom bar |
+|---|---|
+| `counter` (default) | "1 / 4" counter |
+| `thumbs` | clickable thumbnail strip — squares that jump to the photo |
+
+```html
+<div d2-cms-item d2-lightbox-variant="thumbs">
+  <img d2-lightbox src="...">
+  ...
+</div>
+```
+
+The thumb strip reuses the small image each trigger already displays (falling back to the full-size file), so it costs no extra bandwidth. With a **single photo** every navigation affordance disappears: no arrows, no "1 / 1" counter, no thumbs, and dragging is disabled.
+
+An injected stylesheet (no `!important`, override freely) gives triggers `cursor: zoom-in` (magnifier) and close/prev/next/thumb slots `cursor: pointer`.
 
 ### API & events
 

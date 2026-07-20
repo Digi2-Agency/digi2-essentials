@@ -276,10 +276,10 @@
     cat: 'Komponenty UI',
     flag: 'd2-lightbox',
     icon: 'lightbox',
-    size: '12,6 KB min',
+    size: '15,3 KB min',
     auto: true,
-    tagline: 'Klik w zdjęcie otwiera pełnoekranową galerię — własny modal z Webflow albo wbudowany fallback.',
-    desc: 'Kliknięcie elementu z <code>d2-lightbox</code> (alias: <code>d2-lightbox-item</code>) otwiera pełnoekranową galerię ze strzałkami, licznikiem, klawiaturą (Esc / strzałki) oraz przeciąganiem lewo-prawo myszką lub palcem (obraz podąża za ruchem, poniżej progu wraca na miejsce). Wygląd budujesz sam w Designerze jako element <code>d2-lightbox-modal</code> ze slotami (obraz, zamknięcie, nawigacja, licznik, podpis) — a jeśli na stronie nie ma własnego modala, moduł wstrzykuje wbudowany ciemny lightbox z ✕ w prawym górnym rogu i wszystko działa bez konfiguracji. Element z samym <code>d2-lightbox-src="URL"</code> / <code>d2-lightbox-image="URL"</code> też jest klikalny i otwiera ten URL. Natywne lightboxy Webflow (<code>.w-lightbox</code>) są automatycznie przejmowane — otwierają się w d2-lightbox z zachowaniem webflowowych grup, więc wszystkie galerie wyglądają tak samo (wideo zostaje natywne; <code>d2-lightbox-skip</code> wyłącza przejęcie na danym linku). Wewnątrz listy CMS każdy <code>d2-cms-item</code> jest osobną galerią (zero konfiguracji), klony sliderów są pomijane, duplikaty URL sklejane.',
+    tagline: 'Klik w zdjęcie otwiera pełnoekranową galerię — własny modal z Webflow albo wbudowany fallback (licznik lub kwadraciki).',
+    desc: 'Kliknięcie elementu z <code>d2-lightbox</code> (alias: <code>d2-lightbox-item</code>) otwiera pełnoekranową galerię ze strzałkami, licznikiem, klawiaturą (Esc / strzałki) oraz przeciąganiem lewo-prawo myszką lub palcem (obraz podąża za ruchem, poniżej progu wraca na miejsce). Wbudowany modal ma dwa warianty dołu (<code>d2-lightbox-variant</code>): licznik „1 / 4" (domyślny) albo klikalne kwadraciki-miniaturki przewijające do zdjęcia. Triggery dostają kursor lupy (zoom-in), przyciski pointer; przy jednym zdjęciu znikają strzałki, licznik i kwadraciki, a przeciąganie jest wyłączone. Wygląd budujesz sam w Designerze jako element <code>d2-lightbox-modal</code> ze slotami (obraz, zamknięcie, nawigacja, licznik, podpis) — a jeśli na stronie nie ma własnego modala, moduł wstrzykuje wbudowany ciemny lightbox z ✕ w prawym górnym rogu i wszystko działa bez konfiguracji. Element z samym <code>d2-lightbox-src="URL"</code> / <code>d2-lightbox-image="URL"</code> też jest klikalny i otwiera ten URL. Natywne lightboxy Webflow (<code>.w-lightbox</code>) są automatycznie przejmowane — otwierają się w d2-lightbox z zachowaniem webflowowych grup, więc wszystkie galerie wyglądają tak samo (wideo zostaje natywne; <code>d2-lightbox-skip</code> wyłącza przejęcie na danym linku). Wewnątrz listy CMS każdy <code>d2-cms-item</code> jest osobną galerią (zero konfiguracji), klony sliderów są pomijane, duplikaty URL sklejane.',
 
     structures: [
       { title: 'Zdjęcia w rozwiniętym itemie CMS', desc: 'Każdy item Collection List to osobna galeria — klik w miniaturę otwiera zdjęcia tylko tego mieszkania. Pełnowymiarowy plik wskazujesz przez d2-lightbox-src (bind z CMS) albo ukrytego bliźniaka img z d2-lightbox-full.', tree: [
@@ -305,6 +305,12 @@
       { title: 'Nazwane galerie', desc: 'Triggery z tą samą nazwą tworzą jedną galerię niezależnie od położenia w DOM.', tree: [
         { l: 'Image — rzut 2D', t: 'img', a: [['d2-lightbox', 'rzuty']] },
         { l: 'Image — rzut 3D', t: 'img', a: [['d2-lightbox', 'rzuty']] }
+      ]},
+      { title: 'Wariant z kwadracikami (wbudowany modal)', desc: 'd2-lightbox-variant="thumbs" na itemie/sekcji — na dole modala pojawiają się klikalne miniaturki zamiast licznika.', tree: [
+        { l: 'Collection Item', t: 'div', a: [['d2-cms-item'], ['d2-lightbox-variant', 'thumbs']], c: [
+          { l: 'Image — zdjęcie 1', t: 'img', a: [['d2-lightbox']] },
+          { l: 'Image — zdjęcie 2', t: 'img', a: [['d2-lightbox']] }
+        ]}
       ]}
     ],
 
@@ -323,7 +329,9 @@
       { a: 'd2-lightbox-current / -total', v: '—', el: 'w modalu', d: 'Osobne sloty na numer bieżący / liczbę zdjęć.' },
       { a: 'd2-lightbox-backdrop', v: '—', el: 'w modalu', d: 'Jawny obszar tła — klik zamyka galerię.' },
       { a: 'd2-lightbox-loop', v: 'false', el: 'modal', d: 'Wyłącza zapętlenie — nawigacja zatrzymuje się na końcach.' },
-      { a: 'd2-lightbox-skip', v: '—', el: 'link .w-lightbox', d: 'Zostawia ten natywny lightbox Webflowowi (bez przejęcia przez moduł).' }
+      { a: 'd2-lightbox-skip', v: '—', el: 'link .w-lightbox', d: 'Zostawia ten natywny lightbox Webflowowi (bez przejęcia przez moduł).' },
+      { a: 'd2-lightbox-variant', v: 'thumbs | counter', el: 'trigger lub przodek (item CMS, sekcja, body)', d: 'Dół wbudowanego modala: <code>thumbs</code> = klikalne kwadraciki-miniaturki (klik przewija do zdjęcia), <code>counter</code> (domyślny) = licznik „1 / 4". Miniaturki używają małych wariantów obrazków, które triggery już wyświetlają.' },
+      { a: 'd2-lightbox-thumbs', v: '—', el: 'kontener we własnym modalu', d: 'Moduł wypełnia go klikalnymi miniaturkami <code>&lt;img d2-lightbox-thumb="i"&gt;</code>; aktywna dostaje <code>d2-is-active</code> — obie stylujesz w CSS.' }
     ],
 
     api: {

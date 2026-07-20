@@ -37,8 +37,19 @@
  *                                  e.g. d2-lightbox-counter="{current} z {total}"
  *     d2-lightbox-current/-total — separate number slots
  *     d2-lightbox-caption        — element that receives the caption (hidden when empty)
+ *     d2-lightbox-thumbs         — container the module fills with clickable thumbnail
+ *                                  <img d2-lightbox-thumb="i"> elements; the active one
+ *                                  carries d2-is-active (style it in CSS)
  *     d2-lightbox-backdrop       — clicking this closes (clicking the modal root itself also closes)
  *   d2-lightbox-loop="false"     — on the modal root: stop at the ends instead of wrapping.
+ *
+ * Built-in variants — d2-lightbox-variant on the trigger or any of its
+ * ancestors (CMS item, section, body):
+ *   "counter" (default)          — bottom shows "1 / 4"
+ *   "thumbs"                     — bottom shows a clickable thumbnail strip instead
+ * Counter, thumbs and drag are all disabled for single-photo galleries.
+ * Triggers get cursor: zoom-in, close/prev/next/thumb slots cursor: pointer
+ * (one injected stylesheet, override in your own CSS if needed).
  *
  * Native Webflow lightboxes: when this module is on the page it takes over
  * clicks on .w-lightbox links — they open in THIS lightbox (Webflow "group"
@@ -91,10 +102,11 @@
     open: false,
     modal: null,        // active modal root element
     slots: null,        // resolved slot elements of the active modal
-    items: [],          // [{ src, caption }]
+    items: [],          // [{ src, caption, thumb }]
     index: 0,
     loop: true,
     display: 'flex',
+    variant: 'counter', // built-in bottom UI: 'counter' | 'thumbs'
     savedOverflow: '',
     lastFocus: null,
   };
@@ -128,6 +140,15 @@
     if (c != null) return c;
     var img = trigger.tagName === 'IMG' ? trigger : (trigger.querySelector ? trigger.querySelector('img') : null);
     return (img && img.getAttribute && img.getAttribute('alt')) || '';
+  }
+
+  // Thumbnail strip source — prefer the small variant the trigger already
+  // displays (currentSrc picks the responsive srcset candidate) over the
+  // full-size gallery file.
+  function resolveThumb(trigger) {
+    var img = trigger.tagName === 'IMG' ? trigger : (trigger.querySelector ? trigger.querySelector('img') : null);
+    if (!img) return null;
+    return img.currentSrc || (img.getAttribute && img.getAttribute('src')) || null;
   }
 
   // ---------------------------------------------------------------------------
@@ -184,7 +205,7 @@
       if (!src || seen[src]) return;
       seen[src] = true;
       if (src === clickedSrc) index = items.length;
-      items.push({ src: src, caption: resolveCaption(t) });
+      items.push({ src: src, caption: resolveCaption(t), thumb: resolveThumb(t) || src });
     });
     return { items: items, index: index };
   }
@@ -216,6 +237,7 @@
       current: toArray(modal.querySelectorAll('[d2-lightbox-current]')),
       total: toArray(modal.querySelectorAll('[d2-lightbox-total]')),
       caption: toArray(modal.querySelectorAll('[d2-lightbox-caption]')),
+      thumbs: toArray(modal.querySelectorAll('[d2-lightbox-thumbs]')),
     };
   }
 
@@ -227,11 +249,37 @@
   var BUILTIN_CSS = '' +
     '.d2-lb-btn{transition:background .15s ease,opacity .15s ease;}' +
     '.d2-lb-btn:hover{background:rgba(255,255,255,0.22)!important;}' +
+    '.d2-lb-thumbs{display:flex;}' +
+    '.d2-lb-thumbs [d2-lightbox-thumb]{width:52px;height:52px;object-fit:cover;border-radius:4px;' +
+    'opacity:.55;border:2px solid transparent;transition:opacity .15s ease,border-color .15s ease;}' +
+    '.d2-lb-thumbs [d2-lightbox-thumb]:hover{opacity:.85;}' +
+    '.d2-lb-thumbs [d2-lightbox-thumb][d2-is-active]{opacity:1;border-color:#fff;}' +
     '@media (max-width:600px){' +
     '.d2-lb-prev{left:4px!important;}.d2-lb-next{right:4px!important;}' +
     '.d2-lb-close{top:8px!important;right:8px!important;}' +
-    '.d2-lb-img{max-width:100vw!important;max-height:78vh!important;border-radius:0!important;}' +
+    '.d2-lb-img{max-width:100vw!important;max-height:74vh!important;border-radius:0!important;}' +
+    '.d2-lb-thumbs [d2-lightbox-thumb]{width:40px;height:40px;}' +
     '}';
+
+  // Page-wide styles, injected on load (independent of which modal is used):
+  // triggers advertise themselves with a zoom-in cursor, control slots get a
+  // pointer. Override freely in your own CSS — this carries no !important.
+  var GLOBAL_CSS = '' +
+    '[d2-lightbox],[d2-lightbox-item],[d2-lightbox-src],[d2-lightbox-image],' +
+    '.w-lightbox:not([d2-lightbox-skip]){cursor:zoom-in;}' +
+    '[d2-lightbox-modal] [d2-lightbox],[d2-lightbox-modal] [d2-lightbox-item],' +
+    '[d2-lightbox-modal] [d2-lightbox-src],[d2-lightbox-modal] [d2-lightbox-image]{cursor:inherit;}' +
+    '[d2-lightbox-close],[d2-lightbox-prev],[d2-lightbox-next],[d2-lightbox-thumb]{cursor:pointer;}';
+
+  function injectGlobalStyles() {
+    if (document.querySelector('[d2-lightbox-global-styles]')) return;
+    var parent = document.head || document.body;
+    if (!parent) return;
+    var styleEl = document.createElement('style');
+    styleEl.setAttribute('d2-lightbox-global-styles', '');
+    styleEl.textContent = GLOBAL_CSS;
+    parent.appendChild(styleEl);
+  }
 
   function styleBtn(btn, extra) {
     Object.assign(btn.style, {
@@ -337,10 +385,25 @@
     Object.assign(caption.style, { fontSize: '14px', opacity: '0.85', marginBottom: '4px' });
     bar.appendChild(caption);
 
+    var thumbs = doc.createElement('div');
+    thumbs.setAttribute('d2-lightbox-thumbs', '');
+    thumbs.classList.add('d2-lb-thumbs');
+    // display comes from the .d2-lb-thumbs class (flex); inline none hides it.
+    Object.assign(thumbs.style, {
+      display: 'none',
+      justifyContent: 'center',
+      flexWrap: 'wrap',
+      gap: '8px',
+      margin: '6px auto 0',
+      maxWidth: '92vw',
+      pointerEvents: 'auto',
+    });
+    bar.appendChild(thumbs);
+
     var counter = doc.createElement('div');
     counter.setAttribute('d2-lightbox-counter', '');
     counter.classList.add('d2-lb-counter');
-    Object.assign(counter.style, { fontSize: '12px', opacity: '0.6', letterSpacing: '0.04em' });
+    Object.assign(counter.style, { fontSize: '12px', opacity: '0.6', letterSpacing: '0.04em', marginTop: '6px' });
     bar.appendChild(counter);
 
     root.appendChild(bar);
@@ -392,21 +455,45 @@
       img.style.opacity = '1';
     }
 
+    // Single-photo galleries drop every navigation affordance: arrows,
+    // counter ("1 / 1" is noise), thumbnails and dragging.
+    var multi = total > 1;
+    var isBuiltin = state.modal && state.modal.hasAttribute && state.modal.hasAttribute('d2-lightbox-default');
+    // In the built-in modal the variant picks the bottom UI; a custom modal
+    // shows whichever slots its author placed.
+    var counterVisible = multi && !(isBuiltin && state.variant === 'thumbs');
+    var thumbsVisible = multi && (!isBuiltin || state.variant === 'thumbs');
+
     var tpl;
     slots.counter.forEach(function (el) {
       tpl = attr(el, 'd2-lightbox-counter') || '{current} / {total}';
       el.textContent = tpl.replace('{current}', String(index + 1)).replace('{total}', String(total));
+      el.style.display = counterVisible ? '' : 'none';
     });
-    slots.current.forEach(function (el) { el.textContent = String(index + 1); });
-    slots.total.forEach(function (el) { el.textContent = String(total); });
+    slots.current.forEach(function (el) {
+      el.textContent = String(index + 1);
+      el.style.display = multi ? '' : 'none';
+    });
+    slots.total.forEach(function (el) {
+      el.textContent = String(total);
+      el.style.display = multi ? '' : 'none';
+    });
 
     slots.caption.forEach(function (el) {
       el.textContent = item.caption || '';
       el.style.display = item.caption ? '' : 'none';
     });
 
-    // With a single photo the arrows are dead weight — hide them.
-    var navDisplay = total > 1 ? '' : 'none';
+    slots.thumbs.forEach(function (el) {
+      el.style.display = thumbsVisible ? '' : 'none';
+      toArray(el.querySelectorAll('[d2-lightbox-thumb]')).forEach(function (th) {
+        var i = parseInt(th.getAttribute('d2-lightbox-thumb'), 10);
+        if (i === index) th.setAttribute('d2-is-active', '');
+        else th.removeAttribute('d2-is-active');
+      });
+    });
+
+    var navDisplay = multi ? '' : 'none';
     slots.prev.forEach(function (el) { el.style.display = navDisplay; });
     slots.next.forEach(function (el) { el.style.display = navDisplay; });
 
@@ -422,6 +509,21 @@
     _emit('lightbox:change', { index: index, total: total, src: item.src });
   }
 
+  // Fill every [d2-lightbox-thumbs] container with one clickable thumb <img>
+  // per gallery item. Rebuilt on each open — the gallery changes between opens.
+  function populateThumbs() {
+    state.slots.thumbs.forEach(function (c) {
+      while (c.firstChild) c.removeChild(c.firstChild);
+      state.items.forEach(function (item, i) {
+        var th = document.createElement('img');
+        th.setAttribute('d2-lightbox-thumb', String(i));
+        th.setAttribute('src', item.thumb || item.src);
+        th.setAttribute('alt', item.caption || '');
+        c.appendChild(th);
+      });
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Open / close / navigation
   // ---------------------------------------------------------------------------
@@ -429,15 +531,18 @@
   function open(target, startIndex) {
     var items = [];
     var index = typeof startIndex === 'number' ? startIndex : 0;
+    var variantSource = null;
 
     if (Array.isArray(target)) {
       items = target.filter(function (it) { return it && it.src; }).map(function (it) {
-        return { src: it.src, caption: it.caption || '' };
+        return { src: it.src, caption: it.caption || '', thumb: it.thumb || it.src };
       });
     } else if (typeof target === 'string') {
       var named = allTriggers().filter(function (el) { return groupName(el) === target; });
+      variantSource = named[0] || null;
       items = buildItems(named, null).items;
     } else if (target) {
+      variantSource = target;
       var built = buildItems(membersFor(target), resolveSrc(target));
       items = built.items;
       if (typeof startIndex !== 'number') index = built.index;
@@ -457,6 +562,16 @@
     state.loop = attr(modal, 'd2-lightbox-loop') !== 'false';
     state.display = modal.getAttribute('d2-lightbox-modal') || 'flex';
 
+    // Built-in bottom UI: "counter" (default) or "thumbs", read from the
+    // trigger or any ancestor (CMS item, section, body).
+    state.variant = 'counter';
+    if (variantSource && variantSource.closest) {
+      var vEl = variantSource.closest('[d2-lightbox-variant]');
+      if (vEl && String(attr(vEl, 'd2-lightbox-variant') || '').toLowerCase() === 'thumbs') {
+        state.variant = 'thumbs';
+      }
+    }
+
     if (!state.open) {
       state.savedOverflow = document.body ? document.body.style.overflow : '';
       if (document.body) document.body.style.overflow = 'hidden';
@@ -467,6 +582,7 @@
     if (!modal.hasAttribute('role')) modal.setAttribute('role', 'dialog');
     if (!modal.hasAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
 
+    populateThumbs();
     modal.style.display = state.display;
     wireDrag(modal);
     show(index);
@@ -490,13 +606,13 @@
   }
 
   function next() {
-    if (!state.open) return;
+    if (!state.open || state.items.length <= 1) return;
     if (!state.loop && state.index >= state.items.length - 1) return;
     show(state.index + 1);
   }
 
   function prev() {
-    if (!state.open) return;
+    if (!state.open || state.items.length <= 1) return;
     if (!state.loop && state.index <= 0) return;
     show(state.index - 1);
   }
@@ -521,7 +637,8 @@
   var lastTouchAt = 0;
 
   function dragStart(x, y, fromTouch) {
-    if (!state.open) return;
+    // Single-photo galleries have nowhere to drag to — leave the mouse alone.
+    if (!state.open || state.items.length <= 1) return;
     drag.active = true;
     drag.fromTouch = fromTouch;
     drag.moved = false;
@@ -660,7 +777,7 @@
       c.items.forEach(function (it) {
         if (!it || !it.url || it.type === 'video' || seen[it.url]) return;
         seen[it.url] = true;
-        items.push({ src: it.url, caption: it.caption || '' });
+        items.push({ src: it.url, caption: it.caption || '', thumb: it.thumbnailUrl || it.url });
       });
     });
     if (!items.length) return null;
@@ -713,6 +830,13 @@
       if (prevEl && state.modal.contains(prevEl)) { e.preventDefault(); prev(); return; }
       var nextEl = t.closest('[d2-lightbox-next]');
       if (nextEl && state.modal.contains(nextEl)) { e.preventDefault(); next(); return; }
+      var thumbEl = t.closest('[d2-lightbox-thumb]');
+      if (thumbEl && state.modal.contains(thumbEl)) {
+        e.preventDefault();
+        var ti = parseInt(thumbEl.getAttribute('d2-lightbox-thumb'), 10);
+        if (!isNaN(ti)) show(ti);
+        return;
+      }
       var backdrop = t.closest('[d2-lightbox-backdrop]');
       if ((backdrop && state.modal.contains(backdrop)) || t === state.modal) { e.preventDefault(); close(); return; }
       if (state.modal.contains(t)) return; // clicks on other modal content do nothing
@@ -746,10 +870,15 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', hideModals);
-  } else {
+  function refresh() {
     hideModals();
+    injectGlobalStyles();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', refresh);
+  } else {
+    refresh();
   }
 
   // ---------------------------------------------------------------------------
@@ -761,7 +890,7 @@
     next: next,
     prev: prev,
     isOpen: function () { return state.open; },
-    refresh: hideModals,
+    refresh: refresh,
     _state: state, // exposed for tests/debugging — not a public contract
   };
 })();

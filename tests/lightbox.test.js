@@ -37,6 +37,14 @@ function createElement(tagName, attrs, textContent) {
       this.children.push(child);
       return child;
     },
+    get firstChild() { return this.children[0] || null; },
+    removeChild(child) {
+      const i = this.children.indexOf(child);
+      if (i !== -1) this.children.splice(i, 1);
+      child.parentNode = null;
+      child.parentElement = null;
+      return child;
+    },
     contains(node) {
       if (node === this) return true;
       return this.children.some((child) => child.contains && child.contains(node));
@@ -609,4 +617,119 @@ test('malformed w-json config is ignored without crashing', () => {
   const ev = env.dispatchDoc('click', link);
   assert.equal(ev.defaultPrevented, false);
   assert.equal(lb(env).isOpen(), false);
+});
+
+test('single-photo gallery hides the counter and disables dragging', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  env.dispatchDoc('click', addThumb(env, 'https://x/solo2.jpg'));
+
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-counter]').style.display, 'none', 'no "1 / 1" noise');
+
+  const img = modal.querySelector('[d2-lightbox-image]');
+  modal._listeners.mousedown({ screenX: 300, screenY: 100, button: 0 });
+  env.dispatchDoc('mousemove', env.body, { screenX: 200, screenY: 100 });
+  assert.ok(!img.style.transform, 'image does not follow the drag');
+  env.dispatchDoc('mouseup', env.body, { screenX: 200, screenY: 100 });
+  assert.equal(lb(env)._state.index, 0);
+
+  env.dispatchDoc('click', modal);
+  assert.equal(lb(env).isOpen(), false, 'backdrop click still closes (no stale suppression)');
+});
+
+test('d2-lightbox-variant="thumbs" swaps the counter for a clickable thumb strip', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '', 'd2-lightbox-variant': 'thumbs' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/v1.jpg', null, group);
+  addThumb(env, 'https://x/v2.jpg', null, group);
+  addThumb(env, 'https://x/v3.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  const strip = modal.querySelector('[d2-lightbox-thumbs]');
+  assert.equal(strip.style.display, '', 'thumb strip is visible');
+  assert.equal(modal.querySelector('[d2-lightbox-counter]').style.display, 'none', 'counter replaced by thumbs');
+
+  const ths = strip.querySelectorAll('[d2-lightbox-thumb]');
+  assert.equal(ths.length, 3);
+  assert.equal(ths[0].hasAttribute('d2-is-active'), true);
+
+  env.dispatchDoc('click', ths[2]);
+  assert.equal(lb(env)._state.index, 2, 'clicking a thumb jumps to it');
+  assert.equal(modal.querySelector('[d2-lightbox-image]').getAttribute('src'), 'https://x/v3.jpg');
+  assert.equal(ths[2].hasAttribute('d2-is-active'), true);
+  assert.equal(ths[0].hasAttribute('d2-is-active'), false);
+  assert.equal(lb(env).isOpen(), true, 'thumb click does not close');
+});
+
+test('default variant keeps the counter and hides the built-in thumb strip', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/c1.jpg', null, group);
+  addThumb(env, 'https://x/c2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-counter]').style.display, '');
+  assert.equal(modal.querySelector('[d2-lightbox-thumbs]').style.display, 'none');
+});
+
+test('custom modal [d2-lightbox-thumbs] container is populated regardless of variant', () => {
+  const env = createEnvironment();
+  const modal = createElement('div', { 'd2-lightbox-modal': '' });
+  modal.appendChild(createElement('img', { 'd2-lightbox-image': '' }));
+  const container = createElement('div', { 'd2-lightbox-thumbs': '' });
+  modal.appendChild(container);
+  env.body.appendChild(modal);
+  loadLightboxModule(env);
+
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/ct1.jpg', null, group);
+  addThumb(env, 'https://x/ct2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const ths = container.querySelectorAll('[d2-lightbox-thumb]');
+  assert.equal(ths.length, 2);
+  assert.equal(container.style.display, '');
+
+  env.dispatchDoc('click', ths[1]);
+  assert.equal(lb(env)._state.index, 1);
+
+  // re-open with a different gallery → strip is rebuilt, not appended to
+  lb(env).close();
+  env.dispatchDoc('click', addThumb(env, 'https://x/ct3.jpg'));
+  assert.equal(container.querySelectorAll('[d2-lightbox-thumb]').length, 1);
+});
+
+test('thumb strip uses the displayed thumbnail while the gallery shows the full-size file', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '', 'd2-lightbox-variant': 'thumbs' });
+  env.body.appendChild(group);
+  const a = addThumb(env, 'https://x/mini1.jpg', { 'd2-lightbox-src': 'https://x/full1.jpg' }, group);
+  addThumb(env, 'https://x/mini2.jpg', { 'd2-lightbox-src': 'https://x/full2.jpg' }, group);
+
+  env.dispatchDoc('click', a);
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-image]').getAttribute('src'), 'https://x/full1.jpg');
+  const ths = modal.querySelectorAll('[d2-lightbox-thumb]');
+  assert.equal(ths[0].getAttribute('src'), 'https://x/mini1.jpg');
+  assert.equal(ths[1].getAttribute('src'), 'https://x/mini2.jpg');
+});
+
+test('global cursor stylesheet is injected once on load', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const styleEl = env.body.querySelector('[d2-lightbox-global-styles]');
+  assert.ok(styleEl, 'stylesheet element exists');
+  assert.ok(styleEl.textContent.includes('zoom-in'), 'triggers get the magnifier cursor');
+  assert.ok(styleEl.textContent.includes('[d2-lightbox-close]'), 'close slot gets a pointer');
+  env.window.digi2.lightbox.refresh();
+  assert.equal(env.body.querySelectorAll('[d2-lightbox-global-styles]').length, 1, 'no duplicates on refresh');
 });
