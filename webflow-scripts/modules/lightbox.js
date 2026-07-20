@@ -336,7 +336,9 @@
       justifyContent: 'center',
       background: 'rgba(10,10,12,0.94)',
       zIndex: '99990',
-      cursor: 'zoom-out',
+      // No magnifier inside the open gallery — zoom-in belongs to the page
+      // triggers only; controls get their pointer from the global stylesheet.
+      cursor: 'default',
       userSelect: 'none',
       webkitUserSelect: 'none',
     });

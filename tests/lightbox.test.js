@@ -182,6 +182,9 @@ test('clicking a trigger injects and opens the built-in modal with the image', (
   assert.equal(lb(env).isOpen(), true);
   // caption falls back to the img alt
   assert.equal(modal.querySelector('[d2-lightbox-caption]').textContent, 'Taras');
+  // no magnifier inside the open gallery — that cursor belongs to page triggers
+  assert.equal(modal.style.cursor, 'default');
+  assert.equal(modal.querySelector('[d2-lightbox-image]').style.cursor, 'default');
 });
 
 test('custom [d2-lightbox-modal] is hidden on load and preferred over the built-in', () => {
