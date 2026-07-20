@@ -2803,6 +2803,20 @@
       }
       if (!this.track || !this.minHandle || !this.maxHandle) return;
 
+      // The max display sits at the track's right edge, so when its width is
+      // locked by a bare d2-static-width (on itself or a wrapper) the value
+      // must stay right-anchored — otherwise shorter values drift left,
+      // leaving a gap against the edge. Default the anchor to "right" here;
+      // an explicit d2-static-width="left|center|right" is respected as-is.
+      if (this.maxDisplay && typeof this.maxDisplay.closest === 'function') {
+        var sw = this.maxDisplay.closest('[d2-static-width]');
+        if (sw && !attr(sw, 'd2-static-width')) {
+          sw.setAttribute('d2-static-width', 'right');
+          var swApi = typeof window !== 'undefined' && window.digi2 && window.digi2.staticWidth;
+          if (swApi && typeof swApi.apply === 'function') swApi.apply(sw);
+        }
+      }
+
       this.step = parseFloat(attr(wrapper, 'd2-cms-range-step')) || 1;
       // Optional: snap AUTO-DETECTED bounds to the nearest step multiple —
       // min floored down, max ceiled up. Gives "nice" round ends (e.g. 5→210

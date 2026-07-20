@@ -1430,6 +1430,8 @@ Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two eff
 - **Auto-detected bounds** round to the step (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). Explicitly set `d2-cms-range-min/max` are never snapped.
 - **Dragging the handles** snaps the live value outward too — the min handle floors, the max handle ceils — so a handle never rounds *inward* and clips an item sitting just past it (drag min onto a `28.75` item → lands on `25`, keeps it in). Without the flag, handles round to the nearest tick (classic slider feel).
 
+Displays pair well with the loader's `d2-static-width` (locks the element's width to its widest observed value so the layout doesn't shift while dragging). The attribute value picks the edge the content anchors to when shorter than the locked box: `d2-static-width="right"` / `"center"` (default left; flex containers get `justify-content` instead of `text-align`). A bare `d2-static-width` on the **max** display — or on a wrapper around it — is auto-anchored `right` by the CMS module, so the value stays glued to the track's right edge instead of drifting left as it gets shorter.
+
 ### Options
 
 | Option | Default | Description |

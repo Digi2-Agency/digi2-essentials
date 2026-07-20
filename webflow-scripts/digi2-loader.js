@@ -519,6 +519,12 @@
   // The lock tracks the max observed width — if content later needs more
   // space, min-width is bumped up; it never shrinks.
   //
+  // The attribute value picks which edge the content stays anchored to when
+  // it's narrower than the locked box: d2-static-width="right" | "center"
+  // (default/empty = left, the browser's natural flow). Without an anchor
+  // the spare space always lands on the right, which visually detaches
+  // right-side labels (e.g. a range slider's max value) from their edge.
+  //
   // API:
   //   digi2.staticWidth.apply(el)   re-measure + lock a single element
   //   digi2.staticWidth.refresh()   scan the DOM + (re)apply to all marked elements
@@ -529,6 +535,19 @@
     var natural = el.getBoundingClientRect().width;
     var next = Math.max(current, natural);
     if (next > 0) el.style.minWidth = next + 'px';
+    var anchor = (el.getAttribute('d2-static-width') || '').toLowerCase();
+    if (anchor === 'right' || anchor === 'center' || anchor === 'left') {
+      // Flex containers ignore text-align for element children — anchor via
+      // justify-content there instead.
+      var display = '';
+      try { display = window.getComputedStyle(el).display || ''; } catch (e) {}
+      if (display.indexOf('flex') !== -1) {
+        el.style.justifyContent =
+          anchor === 'right' ? 'flex-end' : anchor === 'center' ? 'center' : 'flex-start';
+      } else {
+        el.style.textAlign = anchor;
+      }
+    }
   }
 
   function _initStaticWidth() {

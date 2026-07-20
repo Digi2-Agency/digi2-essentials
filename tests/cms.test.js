@@ -1062,3 +1062,78 @@ test('bare d2-cms-field-type is a real field named "type" (filter type:Lokale ma
   assert.equal(lokal.style.display, '');      // Lokale stays visible
   assert.equal(apart.style.display, 'none');  // Apartamenty filtered out
 });
+
+test('range max display with bare d2-static-width gets right-anchored automatically', async () => {
+  const env = createEnvironment();
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-min': '0',
+    'd2-cms-range-max': '2000',
+    'd2-cms-range-step': '10',
+    'd2-cms-target': 'offers-list',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisplay = createElement('div', {
+    'd2-cms-range-display': 'min',
+    'd2-static-width': '',
+  });
+  // Max display nested inside a static-width wrapper (value + unit label)
+  const maxWrap = createElement('div', { 'd2-static-width': '' });
+  const maxDisplay = createElement('div', { 'd2-cms-range-display': 'max' });
+  maxWrap.appendChild(maxDisplay);
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(minDisplay);
+  range.appendChild(track);
+  range.appendChild(maxWrap);
+
+  const list = createElement('div', { 'd2-cms-list': 'offers-list' });
+  list.appendChild(createItem({ price: '40' }));
+  list.appendChild(createItem({ price: '1500' }));
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Wrapper around the max display anchors right; min display stays untouched
+  assert.equal(maxWrap.getAttribute('d2-static-width'), 'right');
+  assert.equal(minDisplay.getAttribute('d2-static-width'), '');
+});
+
+test('explicit d2-static-width anchor on the max display is respected as-is', async () => {
+  const env = createEnvironment();
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-min': '0',
+    'd2-cms-range-max': '2000',
+    'd2-cms-target': 'offers-list',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const maxDisplay = createElement('div', {
+    'd2-cms-range-display': 'max',
+    'd2-static-width': 'center',
+  });
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(maxDisplay);
+
+  const list = createElement('div', { 'd2-cms-list': 'offers-list' });
+  list.appendChild(createItem({ price: '40' }));
+  env.body.appendChild(range);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(maxDisplay.getAttribute('d2-static-width'), 'center');
+});

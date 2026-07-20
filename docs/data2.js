@@ -718,7 +718,7 @@
       { a: 'd2-ab-tests', v: 'nazwaConfigu', el: 'tag <script> loadera', d: 'Włącza moduł A/B testów.' },
       { a: 'd2-debug-mode', v: '', el: 'tag <script> loadera', d: 'Logowanie akcji wszystkich modułów w konsoli.' },
       { a: 'd2-modules', v: 'np. forms popups, cookies', el: '<digi2-module> lub dowolny element', d: 'Deklaracja per podstrona w formie listy — nazwy bez prefiksu <code>d2-</code> (prefiks też przejdzie, a <code>gtm</code> mapuje się na google).', n: 'alias markera elementu: <code>d2-module</code>' },
-      { a: 'd2-static-width', v: '', el: 'dowolny element', d: 'Blokuje szerokość elementu na jego naturalnym maksimum (koniec ze skaczącym layoutem).' }
+      { a: 'd2-static-width', v: 'puste | left | center | right', el: 'dowolny element', d: 'Blokuje szerokość elementu na jego naturalnym maksimum (koniec ze skaczącym layoutem). Wartość wybiera krawędź, do której klei się treść krótsza niż zablokowane pudełko (domyślnie lewa).', n: 'wyświetlacz <code>d2-cms-range-display="max"</code> dostaje kotwicę <code>right</code> automatycznie' }
     ],
 
     api: {
