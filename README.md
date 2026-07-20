@@ -77,11 +77,11 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
-| `d2-lightbox` | lightbox | 15.3 KB | Image lightbox — custom Designer modal or built-in fallback |
+| `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **182.9 KB min** / **54.5 KB** gzipped.
+Total (all modules): **185.1 KB min** / **55.2 KB** gzipped.
 
 ---
 
@@ -1687,7 +1687,7 @@ A single gallery can override the page default with `d2-lightbox-variant` on the
 
 The thumb strip reuses the small image each trigger already displays (falling back to the full-size file), so it costs no extra bandwidth. With a **single photo** every navigation affordance disappears: no arrows, no "1 / 1" counter, no thumbs, and dragging is disabled.
 
-An injected stylesheet (no `!important`, override freely) gives triggers `cursor: zoom-in` (magnifier) and close/prev/next/thumb slots `cursor: pointer`.
+An injected stylesheet (no `!important`, override freely) gives triggers `cursor: zoom-in` (magnifier) and close/prev/next/thumb slots `cursor: pointer`. Hovering a trigger also shows a **floating magnifier badge** centered over it — one fixed-position element placed by the module, so it works on `<img>` triggers (which can't hold children) and on CMS items rendered later, without touching your markup. Disable it with `d2-lightbox-icon="false"` on the trigger or any ancestor (section, `body`). The built-in modal's close/prev/next buttons use centered SVG icons (no font-dependent glyphs), styleable via `.d2-lb-*`.
 
 ### API & events
 

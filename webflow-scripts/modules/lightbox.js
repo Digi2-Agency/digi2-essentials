@@ -54,6 +54,10 @@
  * Counter, thumbs and drag are all disabled for single-photo galleries.
  * Triggers get cursor: zoom-in, close/prev/next/thumb slots cursor: pointer
  * (one injected stylesheet, override in your own CSS if needed).
+ * Hovering a trigger also shows a floating magnifier badge centered over it
+ * (works for <img> triggers and CMS-rendered items — nothing is inserted into
+ * your markup). Disable it with d2-lightbox-icon="false" on the trigger or
+ * any ancestor (section, body).
  *
  * Native Webflow lightboxes: when this module is on the page it takes over
  * clicks on .w-lightbox links — they open in THIS lightbox (Webflow "group"
@@ -250,9 +254,22 @@
   // (a tiny injected stylesheet adds hover/mobile polish on top).
   // ---------------------------------------------------------------------------
 
+  // Icons are inline SVG data-URIs painted as centered backgrounds — text
+  // glyphs (×, ‹, ›) sit off-center depending on the page's font metrics.
+  function svgUrl(svg) {
+    return 'url("data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg) + '")';
+  }
+  var SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">';
+  var X_SVG = SVG_OPEN + '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>';
+  var PREV_SVG = SVG_OPEN + '<polyline points="14 5 7 12 14 19"/></svg>';
+  var NEXT_SVG = SVG_OPEN + '<polyline points="10 5 17 12 10 19"/></svg>';
+  var ZOOM_SVG = SVG_OPEN.replace('stroke-width="2"', 'stroke-width="1.6"') +
+    '<circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/>' +
+    '<line x1="11" y1="8.2" x2="11" y2="13.8"/><line x1="8.2" y1="11" x2="13.8" y2="11"/></svg>';
+
   var BUILTIN_CSS = '' +
-    '.d2-lb-btn{transition:background .15s ease,opacity .15s ease;}' +
-    '.d2-lb-btn:hover{background:rgba(255,255,255,0.22)!important;}' +
+    '.d2-lb-btn{transition:background-color .15s ease,opacity .15s ease;}' +
+    '.d2-lb-btn:hover{background-color:rgba(255,255,255,0.22)!important;}' +
     '.d2-lb-thumbs{display:flex;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]{width:52px;height:52px;object-fit:cover;border-radius:4px;' +
     'opacity:.55;border:2px solid transparent;transition:opacity .15s ease,border-color .15s ease;}' +
@@ -298,21 +315,18 @@
     pageVariant = (v === 'thumbs' || v === 'counter') ? v : null;
   }
 
-  function styleBtn(btn, extra) {
+  function styleBtn(btn, iconUrl, extra) {
     Object.assign(btn.style, {
       position: 'absolute',
       width: '44px',
       height: '44px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: '#fff',
       background: 'rgba(255,255,255,0.1)',
+      backgroundImage: iconUrl,
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'center',
+      backgroundSize: '20px 20px',
       border: '0',
       borderRadius: '999px',
-      fontSize: '28px',
-      lineHeight: '1',
-      fontFamily: 'inherit',
       cursor: 'pointer',
       padding: '0',
       zIndex: '2',
@@ -364,8 +378,7 @@
     close.setAttribute('aria-label', 'Zamknij');
     close.classList.add('d2-lb-btn');
     close.classList.add('d2-lb-close');
-    close.textContent = '×'; // ×
-    styleBtn(close, { top: '16px', right: '16px' });
+    styleBtn(close, svgUrl(X_SVG), { top: '16px', right: '16px' });
     root.appendChild(close);
 
     var prev = doc.createElement('button');
@@ -374,8 +387,7 @@
     prev.setAttribute('aria-label', 'Poprzednie');
     prev.classList.add('d2-lb-btn');
     prev.classList.add('d2-lb-prev');
-    prev.textContent = '‹'; // ‹
-    styleBtn(prev, { left: '12px', top: '50%', transform: 'translateY(-50%)' });
+    styleBtn(prev, svgUrl(PREV_SVG), { left: '12px', top: '50%', transform: 'translateY(-50%)' });
     root.appendChild(prev);
 
     var next = doc.createElement('button');
@@ -384,8 +396,7 @@
     next.setAttribute('aria-label', 'Następne');
     next.classList.add('d2-lb-btn');
     next.classList.add('d2-lb-next');
-    next.textContent = '›'; // ›
-    styleBtn(next, { right: '12px', top: '50%', transform: 'translateY(-50%)' });
+    styleBtn(next, svgUrl(NEXT_SVG), { right: '12px', top: '50%', transform: 'translateY(-50%)' });
     root.appendChild(next);
 
     var bar = doc.createElement('div');
@@ -603,6 +614,7 @@
     if (!modal.hasAttribute('role')) modal.setAttribute('role', 'dialog');
     if (!modal.hasAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
 
+    hideHoverIcon();
     populateThumbs();
     modal.style.display = state.display;
     wireDrag(modal);
@@ -828,6 +840,90 @@
     open(gallery.items, gallery.index);
     _log('native w-lightbox intercepted', { items: gallery.items.length, index: gallery.index });
   }, true);
+
+  // ---------------------------------------------------------------------------
+  // Hover magnifier badge — one floating element centered over the hovered
+  // trigger. Positioned from the trigger's rect, so it works for <img>
+  // triggers (which can't hold children) and CMS items rendered later, and
+  // never touches the page's own markup. Opt out with
+  // d2-lightbox-icon="false" on the trigger or any ancestor.
+  // ---------------------------------------------------------------------------
+
+  var hoverIcon = null;
+  var iconTrigger = null;
+
+  function ensureHoverIcon() {
+    if (hoverIcon || !document.body) return hoverIcon;
+    var el = document.createElement('div');
+    el.setAttribute('d2-lightbox-hover-icon', '');
+    el.classList.add('d2-lb-hover-icon');
+    Object.assign(el.style, {
+      position: 'fixed',
+      left: '0',
+      top: '0',
+      width: '44px',
+      height: '44px',
+      borderRadius: '999px',
+      background: 'rgba(10,10,12,0.55)',
+      backgroundImage: svgUrl(ZOOM_SVG),
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'center',
+      backgroundSize: '55%',
+      opacity: '0',
+      transition: 'opacity .15s ease',
+      pointerEvents: 'none',
+      zIndex: '99980',
+    });
+    document.body.appendChild(el);
+    hoverIcon = el;
+    return el;
+  }
+
+  function showHoverIcon(trigger) {
+    if (state.open || !trigger.getBoundingClientRect) return;
+    var rect = trigger.getBoundingClientRect();
+    if (!rect || rect.width < 28 || rect.height < 28) { hideHoverIcon(); return; }
+    var el = ensureHoverIcon();
+    if (!el) return;
+    var size = Math.min(44, rect.width - 8, rect.height - 8);
+    Object.assign(el.style, {
+      width: size + 'px',
+      height: size + 'px',
+      left: (rect.left + rect.width / 2 - size / 2) + 'px',
+      top: (rect.top + rect.height / 2 - size / 2) + 'px',
+      opacity: '1',
+    });
+    iconTrigger = trigger;
+  }
+
+  function hideHoverIcon() {
+    if (hoverIcon) hoverIcon.style.opacity = '0';
+    iconTrigger = null;
+  }
+
+  document.addEventListener('mouseover', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var trigger = t.closest(TRIGGER_SELECTOR) || t.closest('.w-lightbox');
+    if (!trigger || trigger === iconTrigger) return;
+    if (trigger.closest('[d2-lightbox-modal]')) return;
+    if (trigger.hasAttribute && trigger.hasAttribute('d2-lightbox-skip')) return;
+    if (trigger.closest('[d2-lightbox-icon="false"]')) return;
+    showHoverIcon(trigger);
+  });
+
+  document.addEventListener('mouseout', function (e) {
+    if (!iconTrigger) return;
+    var to = e.relatedTarget;
+    if (to && iconTrigger.contains && iconTrigger.contains(to)) return; // still inside
+    hideHoverIcon();
+  });
+
+  // The fixed-position badge would drift out of place on scroll/resize.
+  if (window.addEventListener) {
+    window.addEventListener('scroll', hideHoverIcon, { passive: true });
+    window.addEventListener('resize', hideHoverIcon);
+  }
 
   // ---------------------------------------------------------------------------
   // Wiring — delegated clicks, keyboard

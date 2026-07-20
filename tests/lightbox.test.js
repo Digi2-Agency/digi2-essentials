@@ -794,3 +794,53 @@ test('digi2-module declaration and unknown flag values behave sanely', () => {
   assert.equal(builtin(env2).querySelector('[d2-lightbox-counter]').style.display, '');
   assert.equal(builtin(env2).querySelector('[d2-lightbox-thumbs]').style.display, 'none');
 });
+
+test('built-in controls use centered SVG icon backgrounds instead of text glyphs', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  env.dispatchDoc('click', addThumb(env, 'https://x/svg1.jpg'));
+
+  const modal = builtin(env);
+  ['[d2-lightbox-close]', '[d2-lightbox-prev]', '[d2-lightbox-next]'].forEach((sel) => {
+    const btn = modal.querySelector(sel);
+    assert.equal(btn.textContent, '', sel + ' has no font-dependent glyph');
+    assert.ok(String(btn.style.backgroundImage).includes('data:image/svg'), sel + ' has an SVG icon');
+    assert.equal(btn.style.backgroundPosition, 'center', sel + ' icon is centered');
+  });
+});
+
+test('hover magnifier badge appears centered over a trigger, hides on mouseout and on open', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const thumb = addThumb(env, 'https://x/h1.jpg');
+  thumb.getBoundingClientRect = () => ({ left: 100, top: 50, width: 200, height: 150 });
+
+  env.dispatchDoc('mouseover', thumb);
+  const icon = env.body.querySelector('[d2-lightbox-hover-icon]');
+  assert.ok(icon, 'badge element is injected');
+  assert.equal(icon.style.opacity, '1');
+  assert.equal(icon.style.left, '178px'); // 100 + 200/2 - 44/2
+  assert.equal(icon.style.top, '103px');  // 50 + 150/2 - 44/2
+  assert.ok(String(icon.style.backgroundImage).includes('data:image/svg'));
+
+  env.dispatchDoc('mouseout', thumb, { relatedTarget: env.body });
+  assert.equal(icon.style.opacity, '0');
+
+  env.dispatchDoc('mouseover', thumb);
+  assert.equal(icon.style.opacity, '1');
+  env.dispatchDoc('click', thumb); // opening the gallery hides the badge
+  assert.equal(icon.style.opacity, '0');
+  assert.equal(lb(env).isOpen(), true);
+});
+
+test('d2-lightbox-icon="false" on an ancestor disables the hover badge', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const zone = createElement('div', { 'd2-lightbox-icon': 'false' });
+  env.body.appendChild(zone);
+  const thumb = addThumb(env, 'https://x/h2.jpg', null, zone);
+  thumb.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 150 });
+
+  env.dispatchDoc('mouseover', thumb);
+  assert.equal(env.body.querySelector('[d2-lightbox-hover-icon]'), null, 'badge is never created');
+});
