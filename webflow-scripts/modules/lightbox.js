@@ -40,6 +40,12 @@
  *     d2-lightbox-backdrop       — clicking this closes (clicking the modal root itself also closes)
  *   d2-lightbox-loop="false"     — on the modal root: stop at the ends instead of wrapping.
  *
+ * Native Webflow lightboxes: when this module is on the page it takes over
+ * clicks on .w-lightbox links — they open in THIS lightbox (Webflow "group"
+ * media lists are respected and merged in DOM order), so native and d2
+ * galleries look identical. Video items stay native (this module is
+ * image-only). Add d2-lightbox-skip to a .w-lightbox link to leave it alone.
+ *
  * Behavior: Esc closes, arrow keys navigate, drag/swipe left-right with the
  * mouse or a finger (the image follows the drag), body scroll is locked while
  * open, adjacent images are preloaded.
@@ -610,6 +616,80 @@
   document.addEventListener('mouseup', function (e) {
     if (drag.active && !drag.fromTouch) dragEnd(e.screenX, e.screenY);
   });
+
+  // ---------------------------------------------------------------------------
+  // Native Webflow lightbox takeover — .w-lightbox links open in this lightbox
+  // so every gallery on the page looks the same. The listener runs in the
+  // CAPTURE phase and stops propagation, so it beats webflow.js regardless of
+  // whether that bound on the elements or via delegation.
+  // ---------------------------------------------------------------------------
+
+  function parseNativeConfig(link) {
+    var script = link.querySelector ? link.querySelector('.w-json') : null;
+    if (!script) return null;
+    try {
+      var cfg = JSON.parse(script.textContent || '');
+      return (cfg && cfg.items && cfg.items.length) ? cfg : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function nativeGallery(link) {
+    var cfg = parseNativeConfig(link);
+    if (!cfg) return null;
+    var first = cfg.items[0];
+    // Video lightboxes stay native — this module renders images only.
+    if (!first || !first.url || first.type === 'video') return null;
+
+    var links = [link];
+    if (cfg.group) {
+      links = toArray(document.querySelectorAll('.w-lightbox')).filter(function (l) {
+        if (l === link) return true;
+        if (l.hasAttribute && l.hasAttribute('d2-lightbox-skip')) return false;
+        var c = parseNativeConfig(l);
+        return !!c && c.group === cfg.group;
+      });
+    }
+
+    var seen = {};
+    var items = [];
+    links.forEach(function (l) {
+      var c = l === link ? cfg : parseNativeConfig(l);
+      if (!c) return;
+      c.items.forEach(function (it) {
+        if (!it || !it.url || it.type === 'video' || seen[it.url]) return;
+        seen[it.url] = true;
+        items.push({ src: it.url, caption: it.caption || '' });
+      });
+    });
+    if (!items.length) return null;
+
+    var index = 0;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].src === first.url) { index = i; break; }
+    }
+    return { items: items, index: index };
+  }
+
+  document.addEventListener('click', function (e) {
+    if (drag.suppressClick) return; // the bubble handler clears it
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var link = t.closest('.w-lightbox');
+    if (!link) return;
+    if (link.closest('[d2-lightbox-modal]')) return;
+    if (link.hasAttribute && link.hasAttribute('d2-lightbox-skip')) return;
+
+    var gallery = nativeGallery(link);
+    if (!gallery) return; // no parsable image items → let Webflow handle it
+
+    e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    open(gallery.items, gallery.index);
+    _log('native w-lightbox intercepted', { items: gallery.items.length, index: gallery.index });
+  }, true);
 
   // ---------------------------------------------------------------------------
   // Wiring — delegated clicks, keyboard

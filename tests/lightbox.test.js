@@ -543,3 +543,70 @@ test('small mouse drag snaps back without navigating', () => {
   assert.equal(lb(env)._state.index, 0, 'below-threshold drag stays put');
   assert.equal(lb(env).isOpen(), true);
 });
+
+// Native Webflow lightbox link: a.w-lightbox with a .w-json config script.
+function addNativeLink(env, cfg, extraAttrs, parent) {
+  const link = createElement('a', Object.assign({ class: 'w-lightbox', href: '#' }, extraAttrs || {}));
+  link.appendChild(createElement('img', { src: 'https://x/thumb.jpg' }));
+  link.appendChild(createElement('script', { type: 'application/json', class: 'w-json' }, JSON.stringify(cfg)));
+  (parent || env.body).appendChild(link);
+  return link;
+}
+
+test('native .w-lightbox click is taken over and opens the d2 lightbox', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const link = addNativeLink(env, { items: [{ url: 'https://x/native1.jpg', type: 'image', caption: 'Salon' }] });
+
+  const ev = env.dispatchDoc('click', link.children[0]); // click lands on the thumb img
+  assert.equal(ev.defaultPrevented, true, 'Webflow default is prevented');
+  assert.equal(lb(env).isOpen(), true);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-image]').getAttribute('src'), 'https://x/native1.jpg');
+  assert.equal(builtin(env).querySelector('[d2-lightbox-caption]').textContent, 'Salon');
+});
+
+test('native Webflow groups merge in DOM order, start at the clicked link, dedupe URLs', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  addNativeLink(env, { items: [{ url: 'https://x/g1.jpg', type: 'image' }], group: 'apart' });
+  const second = addNativeLink(env, { items: [{ url: 'https://x/g2.jpg', type: 'image' }], group: 'apart' });
+  addNativeLink(env, { items: [{ url: 'https://x/g3.jpg', type: 'image' }], group: 'apart' });
+  addNativeLink(env, { items: [{ url: 'https://x/g1.jpg', type: 'image' }], group: 'apart' }); // duplicate URL
+  addNativeLink(env, { items: [{ url: 'https://x/inny.jpg', type: 'image' }], group: 'other' });
+
+  env.dispatchDoc('click', second.children[0]);
+  assert.deepEqual(srcs(env), ['https://x/g1.jpg', 'https://x/g2.jpg', 'https://x/g3.jpg']);
+  assert.equal(lb(env)._state.index, 1, 'gallery starts at the clicked link');
+});
+
+test('d2-lightbox-skip leaves a native link to Webflow', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const link = addNativeLink(env, { items: [{ url: 'https://x/skip.jpg', type: 'image' }] }, { 'd2-lightbox-skip': '' });
+
+  const ev = env.dispatchDoc('click', link.children[0]);
+  assert.equal(ev.defaultPrevented, false);
+  assert.equal(lb(env).isOpen(), false);
+});
+
+test('video-first native lightboxes stay native', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const link = addNativeLink(env, { items: [{ url: 'https://x/embed', type: 'video', html: '<iframe></iframe>' }] });
+
+  const ev = env.dispatchDoc('click', link.children[0]);
+  assert.equal(ev.defaultPrevented, false);
+  assert.equal(lb(env).isOpen(), false);
+});
+
+test('malformed w-json config is ignored without crashing', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const link = createElement('a', { class: 'w-lightbox', href: '#' });
+  link.appendChild(createElement('script', { type: 'application/json', class: 'w-json' }, 'not valid json {'));
+  env.body.appendChild(link);
+
+  const ev = env.dispatchDoc('click', link);
+  assert.equal(ev.defaultPrevented, false);
+  assert.equal(lb(env).isOpen(), false);
+});

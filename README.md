@@ -77,11 +77,11 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
-| `d2-lightbox` | lightbox | 11.4 KB | Image lightbox — custom Designer modal or built-in fallback |
+| `d2-lightbox` | lightbox | 12.6 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **179.0 KB min** / **53.4 KB** gzipped.
+Total (all modules): **180.2 KB min** / **53.8 KB** gzipped.
 
 ---
 
@@ -1635,6 +1635,14 @@ Captions come from `d2-lightbox-caption` on the trigger, falling back to the ima
 4. **Page-wide**: remaining bare triggers form one gallery.
 
 Infinite-slider clones (`[d2-slide-clone]`) are skipped and duplicate URLs deduped.
+
+### Native Webflow lightboxes are taken over
+
+When the module is on the page, clicks on native Webflow lightbox links (`.w-lightbox`) open in **this** lightbox instead — so native and d2 galleries look identical. Webflow media groups are respected: all links sharing a `group` merge into one gallery in DOM order, starting at the clicked link; URLs are deduped. Interception happens in the capture phase, so it wins regardless of how webflow.js bound its handlers. Video items stay native (the module is image-only), malformed configs are left alone, and `d2-lightbox-skip` on a link opts it out:
+
+```html
+<a href="#" class="w-lightbox" d2-lightbox-skip>…stays a native Webflow lightbox…</a>
+```
 
 ### Custom modal (Designer-built)
 
