@@ -9,7 +9,12 @@
  * Triggers (clickable thumbs — delegated, so CMS-rendered items just work):
  *   d2-lightbox                  — makes the element (an <img> or a wrapper) open the gallery.
  *                                  Optional value = gallery name: d2-lightbox="penthouse".
+ *   d2-lightbox-item             — alias for d2-lightbox (same semantics, same optional name).
  *   d2-lightbox-src="URL"        — full-size image URL override (bindable to a CMS field).
+ *                                  Also works STANDALONE: any element with just this attribute
+ *                                  is clickable and opens that URL.
+ *   d2-lightbox-image="URL"      — standalone URL trigger too (outside a modal); inside a
+ *                                  [d2-lightbox-modal] the same attribute is the image slot.
  *   img[d2-lightbox-full]        — alternative: a (hidden) full-size twin <img> inside the
  *                                  trigger; its src is used instead of the thumb's.
  *   d2-lightbox-caption="text"   — caption for this image (fallback: the img's alt).
@@ -35,8 +40,9 @@
  *     d2-lightbox-backdrop       — clicking this closes (clicking the modal root itself also closes)
  *   d2-lightbox-loop="false"     — on the modal root: stop at the ends instead of wrapping.
  *
- * Behavior: Esc closes, arrow keys navigate, swipe left/right on touch, body
- * scroll is locked while open, adjacent images are preloaded.
+ * Behavior: Esc closes, arrow keys navigate, drag/swipe left-right with the
+ * mouse or a finger (the image follows the drag), body scroll is locked while
+ * open, adjacent images are preloaded.
  *
  * API:
  *   window.digi2.lightbox.open(triggerEl | 'groupName' | [{src, caption}], index?)
@@ -102,7 +108,7 @@
   }
 
   function resolveSrc(trigger) {
-    var explicit = attr(trigger, 'd2-lightbox-src');
+    var explicit = attr(trigger, 'd2-lightbox-src') || attr(trigger, 'd2-lightbox-image');
     if (explicit) return explicit;
     var full = trigger.querySelector ? trigger.querySelector('img[d2-lightbox-full]') : null;
     if (full) return imgSrc(full);
@@ -122,10 +128,16 @@
   // Gallery grouping
   // ---------------------------------------------------------------------------
 
+  // A trigger is d2-lightbox / d2-lightbox-item (with or without a name), or a
+  // bare URL attribute (d2-lightbox-src / d2-lightbox-image with a value).
+  // d2-lightbox-image doubles as the modal's image slot — modal internals are
+  // excluded from trigger matching, so the two roles never collide.
+  var TRIGGER_SELECTOR = '[d2-lightbox], [d2-lightbox-item], [d2-lightbox-src], [d2-lightbox-image]';
+
   // Group identity uses the RAW attribute value — the responsive "a;b@911"
   // syntax makes no sense for gallery names.
   function groupName(trigger) {
-    return trigger.getAttribute('d2-lightbox') || '';
+    return trigger.getAttribute('d2-lightbox') || trigger.getAttribute('d2-lightbox-item') || '';
   }
 
   function isSliderClone(el) {
@@ -133,7 +145,7 @@
   }
 
   function allTriggers() {
-    return toArray(document.querySelectorAll('[d2-lightbox]')).filter(function (el) {
+    return toArray(document.querySelectorAll(TRIGGER_SELECTOR)).filter(function (el) {
       // Never treat modal internals as triggers, skip infinite-slider clones.
       return !isSliderClone(el) && !(el.closest && el.closest('[d2-lightbox-modal]'));
     });
@@ -254,6 +266,8 @@
       background: 'rgba(10,10,12,0.94)',
       zIndex: '99990',
       cursor: 'zoom-out',
+      userSelect: 'none',
+      webkitUserSelect: 'none',
     });
 
     var img = doc.createElement('img');
@@ -448,7 +462,7 @@
     if (!modal.hasAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
 
     modal.style.display = state.display;
-    wireTouch(modal);
+    wireDrag(modal);
     show(index);
 
     if (!modal.hasAttribute('tabindex')) modal.setAttribute('tabindex', '-1');
@@ -482,10 +496,133 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Wiring — delegated clicks, keyboard, touch
+  // Drag / swipe — mouse and touch share one state machine. The image follows
+  // the drag; past the threshold the release navigates, otherwise it snaps back.
+  // ---------------------------------------------------------------------------
+  var DRAG_NAV_PX = 50;   // horizontal distance that triggers prev/next
+  var DRAG_MOVED_PX = 8;  // movement past this suppresses the trailing click
+
+  var drag = {
+    active: false,
+    fromTouch: false,
+    moved: false,
+    suppressClick: false,
+    x0: 0, y0: 0, dx: 0, dy: 0,
+    img: null,
+    prevTransform: '',
+    prevTransition: '',
+  };
+  var lastTouchAt = 0;
+
+  function dragStart(x, y, fromTouch) {
+    if (!state.open) return;
+    drag.active = true;
+    drag.fromTouch = fromTouch;
+    drag.moved = false;
+    drag.suppressClick = false;
+    drag.x0 = x; drag.y0 = y;
+    drag.dx = 0; drag.dy = 0;
+    drag.img = state.slots && state.slots.image;
+    if (drag.img) {
+      drag.prevTransform = drag.img.style.transform || '';
+      drag.prevTransition = drag.img.style.transition || '';
+      drag.img.style.transition = 'none';
+    }
+  }
+
+  function dragMove(x, y) {
+    if (!drag.active) return;
+    drag.dx = x - drag.x0;
+    drag.dy = y - drag.y0;
+    if (Math.abs(drag.dx) > DRAG_MOVED_PX || Math.abs(drag.dy) > DRAG_MOVED_PX) drag.moved = true;
+    if (drag.img && Math.abs(drag.dx) > Math.abs(drag.dy)) {
+      drag.img.style.transform = 'translateX(' + drag.dx + 'px)';
+    }
+  }
+
+  function dragEnd(x, y) {
+    if (!drag.active) return;
+    drag.active = false;
+    if (typeof x === 'number') { drag.dx = x - drag.x0; drag.dy = y - drag.y0; }
+    if (Math.abs(drag.dx) > DRAG_MOVED_PX) drag.moved = true;
+    if (drag.moved) drag.suppressClick = true; // the mouseup/touchend spawns a click — eat it
+
+    var img = drag.img;
+    drag.img = null;
+    var navigates = Math.abs(drag.dx) >= DRAG_NAV_PX && Math.abs(drag.dx) > Math.abs(drag.dy);
+
+    if (img) {
+      if (navigates) {
+        // show() swaps the image in a moment — restore styles instantly, no snap-back.
+        img.style.transition = drag.prevTransition;
+        img.style.transform = drag.prevTransform;
+      } else {
+        img.style.transition = 'transform .18s ease';
+        img.style.transform = drag.prevTransform;
+        (function (el, transition) {
+          setTimeout(function () { el.style.transition = transition; }, 200);
+        })(img, drag.prevTransition);
+      }
+    }
+
+    if (navigates) {
+      if (drag.dx < 0) next(); else prev();
+    }
+  }
+
+  function wireDrag(modal) {
+    if (modal._d2lbDragWired) return;
+    modal._d2lbDragWired = true;
+
+    modal.addEventListener('touchstart', function (e) {
+      lastTouchAt = Date.now();
+      var t = e.changedTouches && e.changedTouches[0];
+      if (t) dragStart(t.screenX, t.screenY, true);
+    }, { passive: true });
+    modal.addEventListener('touchmove', function (e) {
+      lastTouchAt = Date.now();
+      var t = e.changedTouches && e.changedTouches[0];
+      if (t) dragMove(t.screenX, t.screenY);
+    }, { passive: true });
+    modal.addEventListener('touchend', function (e) {
+      lastTouchAt = Date.now();
+      var t = e.changedTouches && e.changedTouches[0];
+      dragEnd(t ? t.screenX : undefined, t ? t.screenY : undefined);
+    }, { passive: true });
+
+    modal.addEventListener('mousedown', function (e) {
+      // Skip the compatibility mouse events some browsers emit after touch.
+      if (Date.now() - lastTouchAt < 700) return;
+      if (typeof e.button === 'number' && e.button !== 0) return;
+      if (e.preventDefault) e.preventDefault(); // no text selection while dragging
+      dragStart(e.screenX, e.screenY, false);
+    });
+    // Native image ghost-drag would swallow mousemove — kill it inside the modal.
+    modal.addEventListener('dragstart', function (e) {
+      if (e.preventDefault) e.preventDefault();
+    });
+  }
+
+  // Mouse drags may leave the modal — track move/up at the document level.
+  document.addEventListener('mousemove', function (e) {
+    if (drag.active && !drag.fromTouch) dragMove(e.screenX, e.screenY);
+  });
+  document.addEventListener('mouseup', function (e) {
+    if (drag.active && !drag.fromTouch) dragEnd(e.screenX, e.screenY);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Wiring — delegated clicks, keyboard
   // ---------------------------------------------------------------------------
 
   document.addEventListener('click', function (e) {
+    // A click generated by the end of a drag must not close/open anything.
+    if (drag.suppressClick) {
+      drag.suppressClick = false;
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
+
     var t = e.target;
     if (!t || !t.closest) return;
 
@@ -501,7 +638,7 @@
       if (state.modal.contains(t)) return; // clicks on other modal content do nothing
     }
 
-    var trigger = t.closest('[d2-lightbox]');
+    var trigger = t.closest(TRIGGER_SELECTOR);
     if (!trigger) return;
     if (trigger.closest('[d2-lightbox-modal]')) return;
     e.preventDefault();
@@ -520,24 +657,6 @@
       prev();
     }
   });
-
-  function wireTouch(modal) {
-    if (modal._d2lbTouchWired) return;
-    modal._d2lbTouchWired = true;
-    var x0 = 0, y0 = 0;
-    modal.addEventListener('touchstart', function (e) {
-      var t = e.changedTouches && e.changedTouches[0];
-      if (t) { x0 = t.screenX; y0 = t.screenY; }
-    }, { passive: true });
-    modal.addEventListener('touchend', function (e) {
-      var t = e.changedTouches && e.changedTouches[0];
-      if (!t) return;
-      var dx = t.screenX - x0;
-      var dy = t.screenY - y0;
-      if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
-      if (dx < 0) next(); else prev();
-    }, { passive: true });
-  }
 
   // Designer-built modals stay visible in the canvas; hide them on load so
   // nobody has to remember to set display:none manually.

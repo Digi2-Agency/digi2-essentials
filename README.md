@@ -77,11 +77,11 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
-| `d2-lightbox` | lightbox | 9.6 KB | Image lightbox — custom Designer modal or built-in fallback |
+| `d2-lightbox` | lightbox | 11.4 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **177.2 KB min** / **52.9 KB** gzipped.
+Total (all modules): **179.0 KB min** / **53.4 KB** gzipped.
 
 ---
 
@@ -1600,7 +1600,7 @@ Auto-shows "Copied!" feedback on the button + toast notification (if toasts modu
 
 ## Lightbox
 
-Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, arrow keys and swipe navigate, body scroll locks, adjacent images preload. The gallery UI is either **your own modal built in the Designer** or, when the page has none, a **built-in dark modal** injected automatically (zero setup).
+Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, arrow keys navigate, dragging left/right with the mouse or a finger moves between photos (the image follows the drag and snaps back below the threshold), body scroll locks, adjacent images preload. The gallery UI is either **your own modal built in the Designer** or, when the page has none, a **built-in dark modal** injected automatically (zero setup) with a close ✕ in the top-right corner.
 
 ```html
 <!-- zero-config: each CMS item is its own gallery -->
@@ -1612,11 +1612,18 @@ Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, a
 
 ### Triggers & full-size sources
 
-`d2-lightbox` marks the clickable element — an `<img>` or a wrapper around one. The full-size URL is resolved in order:
+`d2-lightbox` (or its alias `d2-lightbox-item`) marks the clickable element — an `<img>` or a wrapper around one. The full-size URL is resolved in order:
 
-1. `d2-lightbox-src="URL"` on the trigger (bind it to a CMS image field),
+1. `d2-lightbox-src="URL"` / `d2-lightbox-image="URL"` on the trigger (bind it to a CMS image field),
 2. a (hidden) full-size twin `<img d2-lightbox-full>` inside the trigger,
 3. the trigger's own `src` (or its first inner `<img>`).
+
+Both URL attributes also work **standalone** — an element that only carries `d2-lightbox-src="URL"` or `d2-lightbox-image="URL"` (outside a modal) is clickable on its own and opens that URL:
+
+```html
+<div d2-lightbox-image="https://cdn.example.com/plan.jpg">Zobacz rzut</div>
+<img d2-lightbox-item src="photo.jpg">   <!-- alias: opens its own src -->
+```
 
 Captions come from `d2-lightbox-caption` on the trigger, falling back to the image `alt`.
 

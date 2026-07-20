@@ -434,3 +434,112 @@ test('swipe left/right on the modal navigates', () => {
   modal._listeners.touchend({ changedTouches: [{ screenX: 320, screenY: 95 }] });
   assert.equal(lb(env)._state.index, 0, 'swipe right goes back');
 });
+
+test('standalone URL triggers: d2-lightbox-src and d2-lightbox-image open that URL', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const bySrc = createElement('div', { 'd2-lightbox-src': 'https://x/url1.jpg' });
+  const byImage = createElement('div', { 'd2-lightbox-image': 'https://x/url2.jpg' });
+  group.appendChild(bySrc);
+  group.appendChild(byImage);
+
+  env.dispatchDoc('click', bySrc);
+  assert.equal(lb(env).isOpen(), true);
+  assert.deepEqual(srcs(env), ['https://x/url1.jpg', 'https://x/url2.jpg']);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-image]').getAttribute('src'), 'https://x/url1.jpg');
+
+  lb(env).close();
+  env.dispatchDoc('click', byImage);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-image]').getAttribute('src'), 'https://x/url2.jpg');
+});
+
+test('d2-lightbox-image slot inside a modal is never treated as a trigger', () => {
+  const env = createEnvironment();
+  const modal = createElement('div', { 'd2-lightbox-modal': '' });
+  const slot = createElement('img', { 'd2-lightbox-image': '' });
+  modal.appendChild(slot);
+  env.body.appendChild(modal);
+  loadLightboxModule(env);
+
+  env.dispatchDoc('click', slot);
+  assert.equal(lb(env).isOpen(), false);
+});
+
+test('d2-lightbox-item is a trigger alias — an img opens its own src', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const item = createElement('div', { 'd2-cms-item': '' });
+  env.body.appendChild(item);
+  const a = createElement('img', { 'd2-lightbox-item': '', src: 'https://x/i1.jpg' });
+  const b = createElement('img', { 'd2-lightbox-item': '', src: 'https://x/i2.jpg' });
+  item.appendChild(a);
+  item.appendChild(b);
+
+  env.dispatchDoc('click', a);
+  assert.equal(lb(env).isOpen(), true);
+  assert.deepEqual(srcs(env), ['https://x/i1.jpg', 'https://x/i2.jpg']);
+});
+
+test('d2-lightbox-item shares named galleries with d2-lightbox', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const a = createElement('img', { 'd2-lightbox': 'mix', src: 'https://x/m1.jpg' });
+  const b = createElement('img', { 'd2-lightbox-item': 'mix', src: 'https://x/m2.jpg' });
+  env.body.appendChild(a);
+  env.body.appendChild(b);
+
+  env.dispatchDoc('click', b);
+  assert.deepEqual(srcs(env), ['https://x/m1.jpg', 'https://x/m2.jpg']);
+  assert.equal(lb(env)._state.index, 1);
+});
+
+test('mouse drag past the threshold navigates; the image follows the drag', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/d1.jpg', null, group);
+  addThumb(env, 'https://x/d2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  const img = modal.querySelector('[d2-lightbox-image]');
+
+  modal._listeners.mousedown({ screenX: 300, screenY: 100, button: 0 });
+  env.dispatchDoc('mousemove', env.body, { screenX: 200, screenY: 100 });
+  assert.equal(img.style.transform, 'translateX(-100px)', 'image follows the drag');
+  env.dispatchDoc('mouseup', env.body, { screenX: 180, screenY: 100 });
+
+  assert.equal(lb(env)._state.index, 1, 'drag left goes to the next image');
+  assert.equal(img.style.transform, '', 'transform is reset after the drag');
+
+  // The click spawned by that drag is suppressed — the modal must stay open…
+  env.dispatchDoc('click', modal);
+  assert.equal(lb(env).isOpen(), true, 'drag-generated click does not close');
+  // …but a genuine backdrop click afterwards closes as usual.
+  env.dispatchDoc('click', modal);
+  assert.equal(lb(env).isOpen(), false);
+});
+
+test('small mouse drag snaps back without navigating', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/s1.jpg', null, group);
+  addThumb(env, 'https://x/s2.jpg', null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+
+  modal._listeners.mousedown({ screenX: 300, screenY: 100, button: 0 });
+  env.dispatchDoc('mousemove', env.body, { screenX: 280, screenY: 100 });
+  env.dispatchDoc('mouseup', env.body, { screenX: 280, screenY: 100 });
+
+  assert.equal(lb(env)._state.index, 0, 'below-threshold drag stays put');
+  assert.equal(lb(env).isOpen(), true);
+});
