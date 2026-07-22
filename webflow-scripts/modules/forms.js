@@ -440,6 +440,7 @@
         summarySelector: '[d2-form-summary]', // selector for summary error container (errorDisplay: 'summary')
         summaryMessage: 'Please fix the following errors:', // heading text for summary
         validateOn: 'both',           // 'blur' | 'submit' | 'both'
+        liveRevalidate: true,         // re-validate an already-invalid field on every keystroke
         onValidationError: null,      // callback(fieldName, errors, inputEl)
         onSubmit: null,               // callback(data, formEl) — only fires if valid
         onReady: null,
@@ -454,7 +455,9 @@
       this._consentMasterBindings = [];
       this._boundBlurHandler = null;
       this._boundChangeHandler = null;
+      this._boundInputHandler = null;
       this._boundSubmitHandler = null;
+      this._invalidFields = {};
 
       this._init();
     }
@@ -549,6 +552,9 @@
       }
       if (this.formElement && this._boundChangeHandler) {
         this.formElement.removeEventListener('change', this._boundChangeHandler);
+      }
+      if (this.formElement && this._boundInputHandler) {
+        this.formElement.removeEventListener('input', this._boundInputHandler);
       }
       if (this.formElement && this._boundSubmitHandler) {
         this.formElement.removeEventListener('submit', this._boundSubmitHandler);
@@ -840,6 +846,22 @@
           }
         };
         this.formElement.addEventListener('change', this._boundChangeHandler);
+
+        // Live re-validation while typing — only for fields already marked
+        // invalid, so errors clear the moment the value becomes valid but
+        // never appear mid-typing on a fresh field.
+        if (this.options.liveRevalidate !== false) {
+          this._boundInputHandler = function (e) {
+            var input = e.target;
+            if (!input || !input.name) return;
+            var fieldName = input.name;
+            if (!self._resolvedValidation[fieldName]) return;
+            if (self._invalidFields[fieldName]) {
+              self._validateField(fieldName, input);
+            }
+          };
+          this.formElement.addEventListener('input', this._boundInputHandler);
+        }
       }
 
       // Submit validation — use capture phase to run BEFORE Webflow's handler
@@ -1047,6 +1069,10 @@
         parseFloat(computedStyle.opacity) < 0.1;
 
       var styleTarget = isHidden ? inputEl.closest('label') || inputEl : inputEl;
+
+      // Track invalid state for live re-validation on input
+      if (result.valid) delete this._invalidFields[fieldName];
+      else this._invalidFields[fieldName] = true;
 
       // Apply/remove error indicators
       if (result.valid) {

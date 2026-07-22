@@ -633,3 +633,60 @@ test('forms.setField sets a field on a registered form', () => {
   const form = env.master.parentElement;
   assert.equal(form.querySelector('input[name="source"]').value, 'pricing-page');
 });
+
+test('liveRevalidate clears a field error while typing, without blur', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+
+  const form = env.master.closest('form');
+  const name = createElement('input', { type: 'text', name: 'NAME' });
+  form.appendChild(name);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false,
+    clickIdTracking: false,
+    gaClientId: false,
+    pageMeta: false,
+    autoValidation: false,
+    validation: { NAME: { required: true, minLength: 2 } },
+  });
+
+  // blur na pustym polu → błąd
+  name.dispatchEvent({ type: 'focusout', bubbles: true });
+  assert.equal(name.classList.contains('d2-error'), true);
+
+  // za krótka wartość wpisana bez blura → błąd zostaje
+  name.value = 'J';
+  name.dispatchEvent({ type: 'input', bubbles: true });
+  assert.equal(name.classList.contains('d2-error'), true);
+
+  // poprawna wartość → błąd znika od razu, bez focusout
+  name.value = 'Jan';
+  name.dispatchEvent({ type: 'input', bubbles: true });
+  assert.equal(name.classList.contains('d2-error'), false);
+  assert.equal(name.getAttribute('d2-error'), null);
+});
+
+test('liveRevalidate does not flag a fresh field mid-typing', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+
+  const form = env.master.closest('form');
+  const name = createElement('input', { type: 'text', name: 'NAME' });
+  form.appendChild(name);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false,
+    clickIdTracking: false,
+    gaClientId: false,
+    pageMeta: false,
+    autoValidation: false,
+    validation: { NAME: { required: true, minLength: 2 } },
+  });
+
+  // pole nigdy nie było oznaczone jako błędne — wpisywanie
+  // niepełnej wartości nie może wywołać komunikatu
+  name.value = 'J';
+  name.dispatchEvent({ type: 'input', bubbles: true });
+  assert.equal(name.classList.contains('d2-error'), false);
+});
