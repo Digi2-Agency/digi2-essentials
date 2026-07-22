@@ -152,6 +152,23 @@ test('d2-dropdown-keep-open leaves the menu open after selecting', () => {
   assert.equal(dom.wrap.hasAttribute('d2-dropdown-open'), true);
 });
 
+test('toggle swallows the events Webflow builds its "tap" from', () => {
+  const dom = buildWebflowDropdown();
+  createEnv(dom.body);
+
+  // Webflow's dropdown toggles on a tap synthesized from mousedown/mouseup
+  // (touchstart/touchend on touch) — each must be captured and silenced on
+  // the toggle, or Webflow's own handler drifts out of phase with ours
+  // (ghost open list with w--open after our close).
+  ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach((type) => {
+    const captured = (dom.toggle._listeners[type] || []).filter((l) => l.capture);
+    assert.equal(captured.length, 1, `${type} capture listener registered`);
+    let stopped = false;
+    captured[0].fn({ stopImmediatePropagation() { stopped = true; } });
+    assert.equal(stopped, true, `${type} is stopped before Webflow hears it`);
+  });
+});
+
 test('outside click and Escape close the dropdown', () => {
   const dom = buildWebflowDropdown();
   const outside = createElement('div', {});

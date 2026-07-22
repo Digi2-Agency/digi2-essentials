@@ -78,10 +78,10 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
 | `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
-| `d2-dropdowns` | dropdowns | 3.2 KB | Custom dropdowns — own open/close, close-on-select |
+| `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **185.1 KB min** / **55.2 KB** gzipped.
+Total (all modules): **185.9 KB min** / **55.4 KB** gzipped.
 
 ---
 

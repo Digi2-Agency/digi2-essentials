@@ -103,6 +103,28 @@
   function toggle(wrap) { (wrap.hasAttribute(OPEN) ? close : open)(wrap); }
   function closeAll(except) { _open.slice().forEach(function (w) { if (w !== except) close(w); }); }
 
+  // Snap the Webflow classes/inline styles back to OUR state. Webflow's own
+  // dropdown code can fire out of phase with us (its "tap" is synthesized from
+  // mousedown/mouseup, not click) and leave the list visible with w--open
+  // after we closed — this makes any outside mutation lose.
+  function _forceState(wrap) {
+    var p = wrap._d2dd;
+    if (!p || !_isWebflow(wrap)) return;
+    var on = wrap.hasAttribute(OPEN);
+    [wrap, p.toggle, p.list].forEach(function (el) {
+      if (el && el.classList && el.classList.contains('w--open') !== on) {
+        el.classList[on ? 'add' : 'remove']('w--open');
+      }
+    });
+    if (p.list && p.list.style) {
+      var d = on ? 'block' : '';
+      if (p.list.style.display !== d) p.list.style.display = d;
+      // Webflow's open/close animation can park the list transparent/shifted.
+      if (p.list.style.opacity) p.list.style.opacity = '';
+      if (p.list.style.transform) p.list.style.transform = '';
+    }
+  }
+
   function enhance(wrap) {
     if (wrap._d2ddReady) return;
     var p = _parts(wrap);
@@ -122,6 +144,17 @@
       if (wasOpen) close(wrap); else open(wrap);
     }, true);
 
+    // Webflow's dropdown reacts to a "tap" synthesized from mousedown/mouseup
+    // (touchstart/touchend on touch), NOT from click — silencing click alone
+    // still lets Webflow toggle its own state and drift out of phase with
+    // ours. Swallow those on the toggle too so Webflow never hears them.
+    ['mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend'].forEach(function (type) {
+      p.toggle.addEventListener(type, function (e) {
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        else if (e.stopPropagation) e.stopPropagation();
+      }, true);
+    });
+
     var hover = wrap.hasAttribute('d2-dropdown-hover') || wrap.getAttribute('data-hover') === 'true';
     if (hover) {
       wrap.addEventListener('mouseenter', function () { open(wrap); });
@@ -139,6 +172,15 @@
     }
 
     close(wrap);   // start collapsed
+
+    // State guard: if Webflow (or anything else) flips w--open / inline
+    // styles behind our back, snap them back to our state.
+    if (typeof MutationObserver !== 'undefined') {
+      var guard = new MutationObserver(function () { _forceState(wrap); });
+      [wrap, p.toggle, p.list].forEach(function (el) {
+        if (el) guard.observe(el, { attributes: true, attributeFilter: ['class', 'style'] });
+      });
+    }
   }
 
   function autoInit() {
