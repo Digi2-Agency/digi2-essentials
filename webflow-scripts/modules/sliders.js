@@ -932,9 +932,25 @@
     _startAutoObserver();
   }
 
-  if (document.readyState === 'loading' && document.addEventListener) {
-    document.addEventListener('DOMContentLoaded', _boot);
-  } else {
+  // Safety nets. When the module is injected by the loader it can execute in a
+  // window where its single _autoInit pass misses a server-rendered [d2-slider]
+  // (present in the HTML but not seen by that pass), and then no later DOM
+  // mutation fires the observer to catch it — so the slider never initializes.
+  // Re-scan on full load and after short delays. _autoInit (+ _ingestFeeds) is
+  // idempotent — already-initialized sliders (d2-slider-ready) and consumed
+  // feeds (d2-slider-feed-done) are skipped — so extra passes are safe no-ops.
+  function _bootWithRetries() {
     _boot();
+    if (typeof window !== 'undefined' && window.addEventListener) {
+      window.addEventListener('load', function () { _startAutoObserver(); _autoInit(); });
+    }
+    setTimeout(function () { _startAutoObserver(); _autoInit(); }, 300);
+    setTimeout(function () { _startAutoObserver(); _autoInit(); }, 1500);
+  }
+
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', _bootWithRetries);
+  } else {
+    _bootWithRetries();
   }
 })();
