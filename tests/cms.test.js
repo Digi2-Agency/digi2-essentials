@@ -1137,3 +1137,108 @@ test('explicit d2-static-width anchor on the max display is respected as-is', as
 
   assert.equal(maxDisplay.getAttribute('d2-static-width'), 'center');
 });
+
+test('d2-cms-apply defers filtering: clicks stage a draft, Apply commits it to the list', async () => {
+  const env = createEnvironment();
+  const filterBtn = createElement('button', {
+    'd2-cms-filter': 'status:Dostępne',
+    'd2-cms-target': 'offers',
+  });
+  const applyBtn = createElement('button', { 'd2-cms-apply': '', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const available = createItem({ status: 'Dostępne' });
+  const sold = createItem({ status: 'Sprzedane' });
+  list.appendChild(available);
+  list.appendChild(sold);
+  env.body.appendChild(filterBtn);
+  env.body.appendChild(applyBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // Click the filter — the DRAFT changes (button reflects active) but the list
+  // stays frozen: the sold item is still visible until Apply.
+  dispatchDocument(env, 'click', filterBtn);
+  assert.equal(filterBtn.getAttribute('d2-cms-filter-active'), '', 'draft reflected on the control');
+  assert.equal(applyBtn.getAttribute('d2-cms-apply-pending'), '', 'button flags a pending change');
+  assert.equal(available.style.display, '', 'list unchanged before Apply');
+  assert.equal(sold.style.display, '', 'sold NOT hidden yet — filtering is deferred');
+
+  // Apply — now the committed state hides the sold item and clears pending.
+  dispatchDocument(env, 'click', applyBtn);
+  assert.equal(available.style.display, '');
+  assert.equal(sold.style.display, 'none', 'sold hidden after Apply');
+  assert.equal(applyBtn.hasAttribute('d2-cms-apply-pending'), false, 'pending cleared on Apply');
+});
+
+test('d2-cms-apply: native checkbox ticks immediately but the list waits for Apply', async () => {
+  const env = createEnvironment();
+  const checkbox = createElement('input', {
+    'd2-cms-filter': 'status:Dostępne',
+    'd2-cms-target': 'offers',
+  });
+  checkbox.type = 'checkbox';
+  const applyBtn = createElement('button', { 'd2-cms-apply': '', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const available = createItem({ status: 'Dostępne' });
+  const sold = createItem({ status: 'Sprzedane' });
+  list.appendChild(available);
+  list.appendChild(sold);
+  env.body.appendChild(checkbox);
+  env.body.appendChild(applyBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // The browser ticks the box natively, THEN fires 'change'.
+  checkbox.checked = true;
+  dispatchDocument(env, 'change', checkbox);
+  assert.equal(checkbox.checked, true, 'tick preserved (draft)');
+  assert.equal(sold.style.display, '', 'list frozen — sold still visible until Apply');
+
+  dispatchDocument(env, 'click', applyBtn);
+  assert.equal(sold.style.display, 'none', 'sold hidden after Apply');
+});
+
+test('d2-cms-apply-count previews the draft result count live (and d2-cms-apply-empty overrides 0)', async () => {
+  const env = createEnvironment();
+  const keep = createElement('button', {
+    'd2-cms-filter': 'status:Dostępne',
+    'd2-cms-target': 'offers',
+  });
+  const none = createElement('button', {
+    'd2-cms-filter': 'status:Nieistniejące',
+    'd2-cms-target': 'offers',
+  });
+  const applyBtn = createElement('button', {
+    'd2-cms-apply': '',
+    'd2-cms-target': 'offers',
+    'd2-cms-apply-count': 'Pokaż {count} wyników',
+    'd2-cms-apply-empty': 'Brak wyników',
+  });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  list.appendChild(createItem({ status: 'Dostępne' }));
+  list.appendChild(createItem({ status: 'Dostępne' }));
+  list.appendChild(createItem({ status: 'Sprzedane' }));
+  env.body.appendChild(keep);
+  env.body.appendChild(none);
+  env.body.appendChild(applyBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  // No draft filters yet → all 3 match.
+  assert.equal(applyBtn.textContent, 'Pokaż 3 wyników', 'initial preview = full set');
+
+  // Draft "status:Dostępne" → 2 match, list still frozen but the button previews 2.
+  dispatchDocument(env, 'click', keep);
+  assert.equal(applyBtn.textContent, 'Pokaż 2 wyników', 'live preview follows the draft');
+
+  // Add a value that matches nothing → 0 → empty override text.
+  dispatchDocument(env, 'click', keep);   // toggle Dostępne back off
+  dispatchDocument(env, 'click', none);   // status:Nieistniejące → 0 matches
+  assert.equal(applyBtn.textContent, 'Brak wyników', 'd2-cms-apply-empty overrides the 0 case');
+});

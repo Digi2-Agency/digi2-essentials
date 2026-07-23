@@ -329,6 +329,15 @@
       this._excludes = {};            // { key: Set<value> } — hide/show toggle exclusions
       this._visibleCount = 0;
 
+      // Deferred filtering ("apply on click"): when a [d2-cms-apply] button
+      // targets this list, filter changes edit the live draft (this._filters /
+      // _rangeFilters) and only touch the controls — the list keeps rendering
+      // from the committed snapshot below until the user clicks Apply.
+      this._deferMode = false;
+      this._pendingApply = false;
+      this._committedFilters = {};       // { key: Set<value> } — snapshot the DOM renders from
+      this._committedRangeFilters = {};  // { field: { min, max } } — snapshot the DOM renders from
+
       // Webflow server-side pagination bridge: when pagination is enabled on
       // the collection list, only page 1 is in the DOM. We capture the next
       // page URL from .w-pagination-next and fetch subsequent pages on demand.
@@ -467,10 +476,32 @@
         var iv = parseInt(countInput.value, 10);
         if (!isNaN(iv) && iv > 0) this._visibleCount = iv;
       }
+      // Deferred filtering: enabled by the presence of a [d2-cms-apply] button
+      // targeting this list. Seed the committed snapshot from the seeded
+      // defaults so the first paint matches any pre-checked controls.
+      this._deferMode = this._buttonsForName('[d2-cms-apply]').length > 0;
+      this._commitFilters();
+
       this._setupSentinel();
       this._cacheEmptyElements();
       this._render();
+      this._updateApplyButtons();
       this._setupMutationWatcher();
+
+      // A live count preview (d2-cms-apply-count) must see the whole dataset, so
+      // preload the remaining server-pagination pages once, then refresh the
+      // button. Without a count preview we skip this — Apply pulls pages itself.
+      if (this._deferMode && this._nextPageUrl) {
+        var anyApplyCount = this._buttonsForName('[d2-cms-apply]').some(function (b) {
+          return b.hasAttribute('d2-cms-apply-count');
+        });
+        if (anyApplyCount) {
+          var selfC = this;
+          this._ensureAllLoaded().then(function () {
+            if (selfC.listEl) selfC._updateApplyButtons();
+          });
+        }
+      }
 
       // Safety net: some external renderers (Webflow CMS delayed hydrate,
       // third-party CMS plugins) inject items after initial DOM-ready. Do a
@@ -661,9 +692,7 @@
         }
       }
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     addFilter(key, value) {
@@ -671,9 +700,7 @@
       if (!this._filters[key]) this._filters[key] = new Set();
       this._filters[key].add(String(value));
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     removeFilter(key, value) {
@@ -685,9 +712,7 @@
         if (this._filters[key].size === 0) delete this._filters[key];
       }
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     toggleFilter(key, value) {
@@ -702,9 +727,7 @@
       this._filters = {};
       this._rangeFilters = {};
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     // Numeric range filter. Either bound may be null/undefined to leave
@@ -720,9 +743,7 @@
         max: hasMax ? Number(max) : null,
       };
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     clearRange(field) {
@@ -733,9 +754,7 @@
         this._rangeFilters = {};
       }
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     // Whenever a filter mutates, make sure the full server-paginated dataset
@@ -749,6 +768,111 @@
       this._ensureAllLoaded().then(function () {
         if (!self.listEl) return;
         self._render();
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Deferred filtering ("apply on click")
+    //
+    // Every filter mutation ends by calling _afterFilterMutation(). In the
+    // normal (immediate) mode it renders straight away. In defer mode — turned
+    // on by a [d2-cms-apply] button targeting the list — it instead leaves the
+    // change in the live draft, reflects it on the controls, and waits for
+    // applyFilters() to commit the whole batch to the list in one shot.
+    // -----------------------------------------------------------------------
+    _afterFilterMutation() {
+      if (this._deferMode) {
+        this._pendingApply = true;
+        this._reflectDraft();
+        return;
+      }
+      this._render();
+      this._fireFilter();
+      this._ensureAllForFilter();
+    }
+
+    // Copy the live draft into the committed snapshot the DOM renders from.
+    _commitFilters() {
+      this._committedFilters = {};
+      for (var k in this._filters) {
+        if (Object.prototype.hasOwnProperty.call(this._filters, k)) {
+          this._committedFilters[k] = new Set(this._filters[k]);
+        }
+      }
+      this._committedRangeFilters = {};
+      for (var rk in this._rangeFilters) {
+        if (Object.prototype.hasOwnProperty.call(this._rangeFilters, rk)) {
+          var rf = this._rangeFilters[rk];
+          this._committedRangeFilters[rk] = { min: rf.min, max: rf.max };
+        }
+      }
+    }
+
+    // Public: commit the pending draft to the list. Wired to [d2-cms-apply]
+    // clicks; also safe to call directly. When nothing changed it just
+    // re-renders the same committed state.
+    applyFilters() {
+      this._commitFilters();
+      this._pendingApply = false;
+      this._visibleCount = this.options.perPage;
+      this._render();
+      this._fireFilter();
+      this._ensureAllForFilter();
+      this._updateApplyButtons();
+    }
+
+    // Reflect the draft selection on the controls (active states + checkbox
+    // ticks) and refresh the Apply button — WITHOUT rendering the list.
+    _reflectDraft() {
+      this._reflectButtonStates();
+      this._updateApplyButtons();
+    }
+
+    // Count how many items the DRAFT selection would show. Uses the same
+    // per-item matcher as the render (_matchItem) so the Apply-button preview
+    // can never disagree with what Apply produces. Accurate only once every
+    // server page is loaded (see _init's preload for the count-preview case).
+    _countDraftMatches() {
+      var n = 0;
+      for (var i = 0; i < this.items.length; i++) {
+        if (this._matchItem(this.items[i], this._filters, this._rangeFilters)) n++;
+      }
+      return n;
+    }
+
+    // Refresh [d2-cms-apply] buttons: toggle the d2-cms-apply-pending hook (for
+    // styling "you have unapplied changes") and, when the button carries
+    // d2-cms-apply-count, rewrite its label with the live draft count.
+    //   d2-cms-apply-count="Pokaż {count} wyników"   → {count} token substituted
+    //   d2-cms-apply-count="Pokaż wyniki"            → count appended (no token)
+    //   d2-cms-apply-empty="Brak wyników"            → overrides the 0 case
+    //   [d2-cms-apply-label] child                    → only its text is rewritten
+    //                                                   (keeps icons/markup intact)
+    _updateApplyButtons() {
+      var btns = this._buttonsForName('[d2-cms-apply]');
+      if (!btns.length) return;
+      var self = this;
+      var count = null; // computed lazily, at most once, only if a button needs it
+      btns.forEach(function (btn) {
+        if (self._pendingApply) btn.setAttribute('d2-cms-apply-pending', '');
+        else btn.removeAttribute('d2-cms-apply-pending');
+
+        var tmpl = attr(btn, 'd2-cms-apply-count');
+        if (tmpl == null) return; // static button — leave the author's label alone
+        if (count === null) count = self._countDraftMatches();
+
+        var text;
+        var emptyTxt = attr(btn, 'd2-cms-apply-empty');
+        if (count === 0 && emptyTxt != null) {
+          text = emptyTxt;
+        } else if (tmpl.indexOf('{count}') !== -1) {
+          text = tmpl.replace(/\{count\}/g, String(count));
+        } else {
+          text = tmpl + ' ' + count;
+        }
+
+        var labelEl = btn.querySelector('[d2-cms-apply-label]') || btn;
+        labelEl.textContent = text;
       });
     }
 
@@ -777,9 +901,7 @@
       if (set.size === 0) delete this._filters[key];
 
       this._visibleCount = this.options.perPage;
-      this._render();
-      this._fireFilter();
-      this._ensureAllForFilter();
+      this._afterFilterMutation();
     }
 
     _fireFilter() {
@@ -880,9 +1002,13 @@
       }
       if (set.size === 0) delete this._excludes[key];
       this._visibleCount = this.options.perPage;
+      // Exclude toggles are a distinct switch, applied live even in defer mode
+      // (_matchItem reads _excludes live for both committed + draft), so render
+      // immediately and keep any Apply-button count preview honest.
       this._render();
       this._fireFilter();
       this._ensureAllForFilter();
+      this._updateApplyButtons();
     }
 
     // Seed exclusions from any [d2-cms-toggle-default="hidden"] button so the
@@ -1347,75 +1473,81 @@
     }
 
     _applyFilters() {
-      var filterKeys = Object.keys(this._filters);
-      var rangeKeys = Object.keys(this._rangeFilters);
+      // Render from the committed snapshot in defer mode, from the live draft
+      // otherwise. Exclude toggles are always live (see _matchItem).
+      var srcF = this._deferMode ? this._committedFilters : this._filters;
+      var srcR = this._deferMode ? this._committedRangeFilters : this._rangeFilters;
+      for (var i = 0; i < this.items.length; i++) {
+        this.items[i]._match = this._matchItem(this.items[i], srcF, srcR);
+      }
+    }
+
+    // Pure predicate: does `item` satisfy the given tag + range filters (plus
+    // the always-live exclude toggles)? Shared by the render (_applyFilters,
+    // committed state) and the draft counter (_countDraftMatches, live state)
+    // so the Apply-button preview can never drift from what Apply renders.
+    _matchItem(item, filters, rangeFilters) {
+      var filterKeys = Object.keys(filters);
+      var rangeKeys = Object.keys(rangeFilters);
       var excludeKeys = Object.keys(this._excludes);
       var mode = this.options.filterMatchMode === 'OR' ? 'OR' : 'AND';
       var hasTag = filterKeys.length > 0;
       var hasRange = rangeKeys.length > 0;
       var hasExclude = excludeKeys.length > 0;
 
-      if (!hasTag && !hasRange && !hasExclude) {
-        for (var i = 0; i < this.items.length; i++) this.items[i]._match = true;
-        return;
+      if (!hasTag && !hasRange && !hasExclude) return true;
+
+      // Tag filters — match against Set-based values
+      var tagMatch = true;
+      if (hasTag) {
+        var perKey = filterKeys.map(function (key) {
+          var requested = filters[key]; // Set of values
+          var rawVal = item.fields[key];
+          if (rawVal == null) return false;
+          var itemVals = String(rawVal).split(',').map(function (v) { return v.trim(); });
+          for (var v of requested) {
+            if (itemVals.indexOf(String(v)) !== -1) return true;
+          }
+          return false;
+        });
+        tagMatch = mode === 'AND'
+          ? perKey.every(function (b) { return b; })
+          : perKey.some(function (b) { return b; });
       }
 
-      var self = this;
-      for (var k = 0; k < this.items.length; k++) {
-        var item = this.items[k];
-
-        // Tag filters — match against Set-based _filters
-        var tagMatch = true;
-        if (hasTag) {
-          var perKey = filterKeys.map(function (key) {
-            var requested = self._filters[key]; // Set of values
-            var rawVal = item.fields[key];
-            if (rawVal == null) return false;
-            var itemVals = String(rawVal).split(',').map(function (v) { return v.trim(); });
-            for (var v of requested) {
-              if (itemVals.indexOf(String(v)) !== -1) return true;
-            }
-            return false;
-          });
-          tagMatch = mode === 'AND'
-            ? perKey.every(function (b) { return b; })
-            : perKey.some(function (b) { return b; });
+      // Range filters — always AND'd regardless of filterMatchMode, since
+      // "price between X and Y" only makes sense as a restrictive clause.
+      var rangeMatch = true;
+      if (hasRange) {
+        for (var ri = 0; ri < rangeKeys.length; ri++) {
+          var rk = rangeKeys[ri];
+          var rf = rangeFilters[rk];
+          var num = parseLooseNumber(item.fields[rk]);
+          if (isNaN(num)) { rangeMatch = false; break; }
+          if (rf.min != null && num < rf.min) { rangeMatch = false; break; }
+          if (rf.max != null && num > rf.max) { rangeMatch = false; break; }
         }
-
-        // Range filters — always AND'd regardless of filterMatchMode, since
-        // "price between X and Y" only makes sense as a restrictive clause.
-        var rangeMatch = true;
-        if (hasRange) {
-          for (var ri = 0; ri < rangeKeys.length; ri++) {
-            var rk = rangeKeys[ri];
-            var rf = self._rangeFilters[rk];
-            var num = parseLooseNumber(item.fields[rk]);
-            if (isNaN(num)) { rangeMatch = false; break; }
-            if (rf.min != null && num < rf.min) { rangeMatch = false; break; }
-            if (rf.max != null && num > rf.max) { rangeMatch = false; break; }
-          }
-        }
-
-        // Exclude filters — a hide/show toggle. When active, an item whose
-        // field value contains ANY excluded value is hidden regardless of the
-        // tag/range clauses above (e.g. "hide sold": status contains "sold").
-        var excludeMatch = true;
-        if (hasExclude) {
-          for (var ei = 0; ei < excludeKeys.length; ei++) {
-            var ek = excludeKeys[ei];
-            var eraw = item.fields[ek];
-            if (eraw == null) continue;
-            var evals = String(eraw).split(',').map(function (v) { return v.trim(); });
-            var excluded = false;
-            for (var ev of self._excludes[ek]) {
-              if (evals.indexOf(String(ev)) !== -1) { excluded = true; break; }
-            }
-            if (excluded) { excludeMatch = false; break; }
-          }
-        }
-
-        item._match = tagMatch && rangeMatch && excludeMatch;
       }
+
+      // Exclude filters — a hide/show toggle. When active, an item whose field
+      // value contains ANY excluded value is hidden regardless of the tag/range
+      // clauses above (e.g. "hide sold": status contains "sold").
+      var excludeMatch = true;
+      if (hasExclude) {
+        for (var ei = 0; ei < excludeKeys.length; ei++) {
+          var ek = excludeKeys[ei];
+          var eraw = item.fields[ek];
+          if (eraw == null) continue;
+          var evals = String(eraw).split(',').map(function (v) { return v.trim(); });
+          var excluded = false;
+          for (var ev of this._excludes[ek]) {
+            if (evals.indexOf(String(ev)) !== -1) { excluded = true; break; }
+          }
+          if (excluded) { excludeMatch = false; break; }
+        }
+      }
+
+      return tagMatch && rangeMatch && excludeMatch;
     }
 
     _applySort(matching) {
@@ -2505,6 +2637,7 @@
     var clearBtn = target.closest('[d2-cms-clear]');
     var toggleBtn = target.closest('[d2-cms-toggle]');
     var stepBtn = target.closest('[d2-cms-count-step]');
+    var applyBtn = target.closest('[d2-cms-apply]');
 
     // Checkbox/radio inputs drive filters via the 'change' event — let the
     // browser toggle `checked` natively and skip the click path here.
@@ -2513,7 +2646,7 @@
       filterBtn = null;
     }
 
-    var btn = sortBtn || filterBtn || loadBtn || dirBtn || clearBtn || toggleBtn || stepBtn;
+    var btn = sortBtn || filterBtn || loadBtn || dirBtn || clearBtn || toggleBtn || stepBtn || applyBtn;
     if (!btn) return;
 
     var names = _resolveTargetNames(btn);
@@ -2606,6 +2739,9 @@
       instances.forEach(function (cms) {
         cms.setVisibleCount(cms._visibleCount + step);
       });
+    } else if (applyBtn) {
+      // Deferred filtering — commit the pending draft to every targeted list.
+      instances.forEach(function (cms) { cms.applyFilters(); });
     }
 
     // Close any Webflow dropdown wrapping the clicked trigger. No-op when the

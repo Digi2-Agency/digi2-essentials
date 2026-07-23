@@ -75,13 +75,13 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-countdown` | countdown | 3.4 KB | Timer with pause/resume/reset |
 | `d2-filter` | filter | 3.5 KB | CMS filtering with animations |
 | `d2-format` | format | 2.7 KB | Number and price formatting |
-| `d2-cms` | cms | 38.5 KB | CMS list: sort, filter, scroll/load-more (DOM-based) |
+| `d2-cms` | cms | 40.3 KB | CMS list: sort, filter (immediate or deferred), scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
 | `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **186.2 KB min** / **55.5 KB** gzipped.
+Total (all modules): **188.0 KB min** / **55.9 KB** gzipped.
 
 ---
 
@@ -1409,6 +1409,44 @@ Two distinct tools:
 
 Field-scoped clear resets only that filter key / range field (unchecks its checkboxes, snaps its slider back) and leaves every other filter intact.
 
+### Deferred filtering — apply on button click
+
+By default every filter change re-renders the list immediately. Drop a **`d2-cms-apply`** button targeting the list and the list switches to **deferred mode**: checkboxes, buttons and sliders still update visually as the user picks, but the list, its counters and the `onFilter` callback only update when the **Apply** button is clicked. One click = one render for the whole basket, instead of one per tick.
+
+```html
+<!-- filters as usual -->
+<input type="checkbox" d2-cms-target="apartments" d2-cms-filter="type:Apartamenty">
+<input type="checkbox" d2-cms-target="apartments" d2-cms-filter="type:Lokale">
+<div d2-cms-range d2-cms-target="apartments" d2-cms-range-field="price"> … </div>
+
+<!-- its presence turns the whole list deferred; no flag on the list needed -->
+<button d2-cms-target="apartments" d2-cms-apply>Pokaż wyniki</button>
+```
+
+- **Nothing hits the list until Apply.** Ticks and active states (`d2-cms-filter-active`, native `checked`) reflect the *draft* instantly; the visible items, `d2-cms-count`/display elements and `onFilter` wait for the click.
+- While there is an un-applied change the button carries **`d2-cms-apply-pending`** (empty attribute) — style your "apply to see results" state off it.
+- `d2-cms-clear` also stages in deferred mode (clears the draft; commit with Apply) — consistent with everything else.
+- **Sort, load-more and the hide/show toggle (`d2-cms-toggle`) stay immediate** — they act on the already-shown results and aren't part of the filter basket.
+- Multiple lists sharing the controls (`d2-cms-target="a|b"`): point the Apply button at all of them so one click commits both.
+
+**Optional live count on the button** — add `d2-cms-apply-count` with a `{count}` token and the label previews how many items the current draft would show, before the user commits:
+
+```html
+<button d2-cms-target="apartments"
+        d2-cms-apply
+        d2-cms-apply-count="Pokaż {count} wyników"
+        d2-cms-apply-empty="Brak wyników">           <!-- optional: overrides the 0 case -->
+  <span d2-cms-apply-label>Pokaż wyniki</span>        <!-- optional: only this text is rewritten, icons survive -->
+</button>
+```
+
+- No `{count}` token in the string → the number is appended (`"Pokaż wyniki 24"`).
+- `d2-cms-apply-empty` swaps the whole label when the draft matches nothing.
+- Wrap the text in a `[d2-cms-apply-label]` child to keep an icon/markup in the button untouched; without it, the button's own text is rewritten.
+- The preview loads the full server-paginated dataset once on init so the count is exact (only when a count template is present — a plain Apply button skips that fetch).
+
+Programmatic equivalent: `list.applyFilters()` commits the current draft. In deferred mode the JS setters (`addFilter`, `filter(...)`, `setRange`, …) also stage — call `applyFilters()` to commit.
+
 ### Range sliders
 
 ```html
@@ -1484,6 +1522,11 @@ Displays pair well with the loader's `d2-static-width` (locks the element's widt
 | `d2-cms-filter-field="key"` | `<select>` | Native select drives the filter; empty option clears the key |
 | `d2-cms-filter-label="key"` | any element | Swaps its text to the active filter value(s); empty attr tracks any key |
 | `d2-cms-clear` / `="all"` / `="key"` / `="key\|key2"` | button | Clear filters: everything / + sort / only the named field(s) — see [Clear buttons](#clear-buttons) |
+| `d2-cms-apply` | button | Turns the target list **deferred**: filter picks stage a draft and only hit the list on click — see [Deferred filtering](#deferred-filtering--apply-on-button-click) |
+| `d2-cms-apply-count="Pokaż {count} wyników"` | apply button | Live label preview of the draft result count (`{count}` token; appended if no token) |
+| `d2-cms-apply-empty="Brak wyników"` | apply button | Label override when the draft matches 0 items |
+| `d2-cms-apply-label` | child of apply button | Only this child's text is rewritten by the count preview (keeps icons/markup) |
+| `d2-cms-apply-pending` | apply button | (Set by module) Present while there is an un-applied draft change — style your "apply to see results" state off it |
 | `d2-cms-range` (+ `-field`, `-step`, `-min/max`, `-displayformat`) | wrapper | Numeric range slider bound to a field — see [Range sliders](#range-sliders) |
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
 | `d2-cms-loadcount="6\|all"` | button | Reveal N items (or everything) per click |
@@ -1507,6 +1550,7 @@ list.addFilter('category', 'hats')
 list.removeFilter('category', 'hats')
 list.toggleFilter('category', 'shoes')
 list.clearFilters()
+list.applyFilters()            // deferred mode: commit the staged draft to the list
 list.loadMore()                // next perPage
 list.loadAll()
 list.reset()                   // no sort, no filters, first page
