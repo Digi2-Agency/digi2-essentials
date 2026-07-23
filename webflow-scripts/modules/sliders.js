@@ -738,6 +738,9 @@
     list: function () {
       return Object.keys(registry);
     },
+
+    // Exposed for tests — pure resolver behind d2-slider-feed-position.
+    _feedInsertIndex: _feedInsertIndex,
   };
 
   // ---------------------------------------------------------------------------
@@ -808,7 +811,26 @@
   // Bind both names to a CMS field (e.g. slug) to pair source↔slider per item.
   // Items taken: [d2-slide] descendants; else direct children that are/contain
   // an <img> (skips w-dyn-empty junk). Each gets d2-slide if missing.
-  //   d2-slider-feed-position="start|end"   (on the slider; default "start")
+  //   d2-slider-feed-position="start|end|N"   (on the slider; default "start")
+  //     N = 0-based insertion index among the EXISTING slides = how many of them
+  //     stay IN FRONT of the fed block. With 2 static slides: "1" drops the block
+  //     in the middle, "2" (= slide count) appends at the end. Clamped to range;
+  //     empty / non-numeric / <0 → "start". CMS-bindable for per-item control.
+
+  // Pure resolver for d2-slider-feed-position → an index in [0, count] where the
+  // fed block begins (count = append after the last existing slide).
+  //   "start" / "" / null / <0 / non-numeric → 0
+  //   "end"                                   → count
+  //   "N" (0-based)                           → N, clamped to [0, count]
+  function _feedInsertIndex(posRaw, count) {
+    var p = String(posRaw == null ? '' : posRaw).trim().toLowerCase();
+    if (p === 'end') return count;
+    if (p === '' || p === 'start') return 0;
+    var n = parseInt(p, 10);
+    if (isNaN(n) || n < 0) return 0;
+    return n > count ? count : n;
+  }
+
   function _ingestFeeds() {
     var feeds = document.querySelectorAll('[d2-slider-feed]:not([d2-slider-feed-done])');
     for (var i = 0; i < feeds.length; i++) {
@@ -825,8 +847,13 @@
       }
 
       var track = slider.querySelector('[d2-slider-track]') || slider;
-      var pos = (slider.getAttribute('d2-slider-feed-position') || 'start').toLowerCase();
-      var ref = pos === 'end' ? null : track.firstChild;   // keeps source order
+
+      // Existing slides present BEFORE injection. The feed-position number is a
+      // 0-based index into these (how many stay in front of the fed block), so
+      // the block can land at the start, the end, or anywhere in between.
+      var existing = Array.prototype.slice.call(track.querySelectorAll('[d2-slide]'));
+      var at = _feedInsertIndex(slider.getAttribute('d2-slider-feed-position'), existing.length);
+      var ref = at < existing.length ? existing[at] : null;   // null → append at end
 
       var sources = document.querySelectorAll('[d2-slider-source]');
       var movedAny = false;

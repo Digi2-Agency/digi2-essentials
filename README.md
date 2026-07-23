@@ -67,7 +67,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
 | `d2-tabs` | tabs | 5.8 KB | Tabs & accordions with animations |
-| `d2-sliders` | sliders | 7.5 KB | Carousel with touch/drag, autoplay |
+| `d2-sliders` | sliders | 7.8 KB | Carousel with touch/drag, autoplay, CMS feed (start/end/index) |
 | `d2-animate` | animate | 5.2 KB | 22 scroll animation presets + stagger |
 | `d2-toasts` | toasts | 4.7 KB | 5 types, 6 positions, auto-dismiss |
 | `d2-scroll` | scroll | 2.4 KB | Smooth scroll + scroll spy |
@@ -81,7 +81,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 
-Total (all modules): **185.9 KB min** / **55.4 KB** gzipped.
+Total (all modules): **186.2 KB min** / **55.5 KB** gzipped.
 
 ---
 
@@ -1061,7 +1061,7 @@ Feed a slider with images from a Webflow Collection List — no custom scripts. 
 - Items are **cloned, not moved** — one source can feed several sliders with the same name (e.g. a grid view and a list view sharing one slug-named source).
 - Items taken: `[d2-slide]` descendants of the source; otherwise its direct children that are/contain an `<img>` (skips `w-dyn-empty` junk). Each clone gets `d2-slide` automatically.
 - **Nested collection lists work** — put the attribute on the nested list (wrapper or items element; the module descends into `.w-dyn-items` automatically) inside each parent item and bind the name to the parent's slug. Mind Webflow's nested-list item limit (typically 5) — for larger galleries use a flat helper Collection List elsewhere on the page with the same slug-bound source name.
-- `d2-slider-feed-position="start|end"` — where they land relative to existing slides (default `start`).
+- `d2-slider-feed-position="start|end|N"` — where the fed block lands relative to the existing static slides (default `start`). A **number** is a 0-based index = **how many existing slides stay in front of the block**: with 2 static slides, `1` drops the collection **in the middle** (`A · …collection… · B`), `0` = start, `2` (= slide count) = end. Out-of-range / non-numeric / negative → `start`. **CMS-bindable** — bind it to a per-item number field to place (or skip, when empty → start) the gallery differently per product/apartment.
 - The move happens **before the slider initializes**, so infinite clones and positions include the fed slides; the source is hidden afterwards.
 - The source must be in the DOM at init (Webflow renders CMS lists server-side, so that's the normal case). Feeding an already-running slider is intentionally skipped.
 
