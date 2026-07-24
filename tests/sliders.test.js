@@ -126,7 +126,7 @@ function feedSlider(name, position, staticMarkers) {
   return slider;
 }
 
-function loadSliders(body) {
+function loadSliders(body, before) {
   const document = {
     readyState: 'complete',
     body,
@@ -144,6 +144,7 @@ function loadSliders(body) {
   };
   const window = {};
   window.document = document;
+  if (typeof before === 'function') before(window); // seed globals before the module loads
   const context = vm.createContext({ window, document, console, setTimeout, clearTimeout });
   vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
   return window.digi2.sliders;
@@ -340,4 +341,30 @@ test('feed() position overrides the plain feed-position attribute', () => {
   assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C1'], 'attribute end');
   S.feed('gal', { position: 'start' }); // config wins
   assert.deepEqual(trackMarkers(slider), ['C1', 'A', 'B']);
+});
+
+test('pre-init queue (window.digi2.sliderFeeds) configures the feed before init', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', undefined, ['A', 'B']);
+  body.appendChild(slider);
+
+  // Queued from a CMS embed BEFORE the module loads → drained on the first ingest.
+  loadSliders(body, (window) => {
+    window.digi2 = window.digi2 || {};
+    window.digi2.sliderFeeds = [{ name: 'gal', position: 1 }];
+  });
+  assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'C2', 'B'], 'queued position applied at init');
+});
+
+test('pre-init queue can also gate the feed off', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1']));
+  const slider = feedSlider('gal', undefined, ['A', 'B']);
+  body.appendChild(slider);
+
+  loadSliders(body, (window) => {
+    window.digi2 = { sliderFeeds: [{ name: 'gal', if: false }] };
+  });
+  assert.deepEqual(trackMarkers(slider), ['A', 'B']);
 });

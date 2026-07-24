@@ -937,7 +937,28 @@
     return out;
   }
 
+  // Pre-init feed config queued BEFORE this module loaded, e.g. from a CMS embed:
+  //   window.digi2 = window.digi2 || {};
+  //   (digi2.sliderFeeds = digi2.sliderFeeds || []).push({ name, position, if });
+  // Drained on every ingest pass so it's applied before the slider initializes —
+  // race-free regardless of load order (unlike digi2.onReady, which runs too late).
+  function _drainFeedQueue() {
+    var q = window.digi2 && window.digi2.sliderFeeds;
+    if (!q || !q.length) return;
+    for (var i = 0; i < q.length; i++) {
+      var e = q[i];
+      if (!e || e.name == null) continue;
+      var k = String(e.name);
+      var c = feedConfig[k] || {};
+      if ('position' in e) c.position = e.position;
+      if ('if' in e) c['if'] = e['if'];
+      feedConfig[k] = c;
+    }
+    q.length = 0; // consumed
+  }
+
   function _ingestFeeds() {
+    _drainFeedQueue();
     var feeds = document.querySelectorAll('[d2-slider-feed]:not([d2-slider-feed-done])');
     for (var i = 0; i < feeds.length; i++) {
       var slider = feeds[i];
