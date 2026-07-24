@@ -667,6 +667,7 @@
   // Register module
   // ---------------------------------------------------------------------------
   var registry = {};
+  var feedConfig = {}; // { feedName: { position, if } } — JS overrides for the CMS feed
 
   window.digi2.sliders = {
     create: function (name, options) {
@@ -739,10 +740,56 @@
       return Object.keys(registry);
     },
 
+    /**
+     * Configure the CMS feed for a source NAME from a script — an alternative
+     * to the d2-slider-feed-position / -if attributes (handy when the value is
+     * computed, or Webflow can't bind the field you need).
+     *
+     *   digi2.sliders.feed('rzuty', { position: 1 });      // 1 static · feed · rest
+     *   digi2.sliders.feed('rzuty', { position: 'end' });
+     *   digi2.sliders.feed('rzuty', { if: false });         // skip the feed
+     *   digi2.sliders.feed('rzuty', { position: 'off' });   // also skips
+     *
+     * The feed runs BEFORE a slider initializes, so this re-feeds any matching
+     * [d2-slider-feed="name"] that hasn't started yet (undoing a prior inject so
+     * the new position applies). Call it early — before the slider is ready. A
+     * slider that already initialized can't be repositioned without a rebuild;
+     * destroy() + re-create it, or set the config before init.
+     *
+     * @param {string} name    The d2-slider-feed / d2-slider-source value
+     * @param {object} config  { position?: 'start'|'end'|'off'|number, if?: boolean }
+     * @returns {object} the sliders API (chainable)
+     */
+    feed: function (name, config) {
+      if (name == null) return this;
+      var key = String(name);
+      feedConfig[key] = Object.assign(feedConfig[key] || {}, config || {});
+
+      var all = document.querySelectorAll('[d2-slider-feed]');
+      for (var i = 0; i < all.length; i++) {
+        var sl = all[i];
+        if (sl.getAttribute('d2-slider-feed') !== key) continue;
+        if (sl.hasAttribute('d2-slider-ready')) {
+          _log('feed() ignored — "' + key + '" already initialized; destroy() to reposition');
+          continue;
+        }
+        // Undo a prior inject so the new position/gate applies cleanly.
+        var track = sl.querySelector('[d2-slider-track]') || sl;
+        var fed = Array.prototype.slice.call(track.querySelectorAll('[d2-slider-fed]'));
+        for (var f = 0; f < fed.length; f++) {
+          if (fed[f].parentNode) fed[f].parentNode.removeChild(fed[f]);
+        }
+        sl.removeAttribute('d2-slider-feed-done');
+      }
+      _ingestFeeds();
+      return this;
+    },
+
     // Exposed for tests — pure resolvers behind the feed attributes.
     _feedInsertIndex: _feedInsertIndex,
     _feedTruthy: _feedTruthy,
     _feedSuffixPosition: _feedSuffixPosition,
+    _feedPositionOff: _feedPositionOff,
   };
 
   // ---------------------------------------------------------------------------
@@ -833,6 +880,15 @@
              s === 'null' || s === 'undefined');
   }
 
+  // Explicit "don't feed" keywords for d2-slider-feed-position, so a single
+  // bound Option/Text field can switch the feed OFF as well as place it —
+  // Webflow can't bind a Switch to a custom attribute, but an Option field can.
+  // Empty / absent stays "start" (back-compat); use an explicit "off" to skip.
+  function _feedPositionOff(v) {
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    return s === 'off' || s === 'none' || s === 'false' || s === 'no';
+  }
+
   // Pure resolver for d2-slider-feed-position → an index in [0, count] where the
   // fed block begins (count = append after the last existing slide).
   //   "start" / "" / null / <0 / non-numeric → 0
@@ -888,10 +944,13 @@
       var name = slider.getAttribute('d2-slider-feed');
       if (!name) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
 
-      // Conditional feed: d2-slider-feed-if gates injection on a truthy value
-      // (bind a CMS Switch). Absent attribute = always feed (back-compat).
-      if (slider.hasAttribute('d2-slider-feed-if') &&
-          !_feedTruthy(slider.getAttribute('d2-slider-feed-if'))) {
+      // JS config (digi2.sliders.feed(name, {...})) overrides the attributes.
+      var cfg = feedConfig[name] || null;
+
+      // Conditional feed. Gate priority: cfg.if → d2-slider-feed-if attribute.
+      var gate = (cfg && cfg.if !== undefined) ? cfg.if
+        : (slider.hasAttribute('d2-slider-feed-if') ? slider.getAttribute('d2-slider-feed-if') : undefined);
+      if (gate !== undefined && !_feedTruthy(gate)) {
         slider.setAttribute('d2-slider-feed-done', '');
         continue;
       }
@@ -911,14 +970,28 @@
       // the block can land at the start, the end, or anywhere in between.
       var existing = Array.prototype.slice.call(track.querySelectorAll('[d2-slide]'));
 
-      // CMS-driven position: d2-slider-feed-position-N="<Switch>" picks where (or
-      // whether) the block lands. Any such attribute overrides the plain
-      // feed-position; all of them false = skip the feed for this item.
-      var suffixPos = _feedSuffixPosition(_attrPairs(slider), existing.length);
-      if (suffixPos === -1) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
-      var at = (suffixPos != null)
-        ? suffixPos
-        : _feedInsertIndex(slider.getAttribute('d2-slider-feed-position'), existing.length);
+      // Where (or whether) the block lands. Priority: JS config position →
+      // suffixed boolean form (d2-slider-feed-position-N) → plain
+      // d2-slider-feed-position (a Number/Option field binds straight to it;
+      // "off"/"none" switches the feed off for this item).
+      var at;
+      if (cfg && cfg.position !== undefined) {
+        if (_feedPositionOff(cfg.position)) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
+        at = _feedInsertIndex(cfg.position, existing.length);
+      } else {
+        var suffixPos = _feedSuffixPosition(_attrPairs(slider), existing.length);
+        if (suffixPos === -1) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
+        if (suffixPos != null) {
+          at = suffixPos;
+        } else {
+          var posAttr = slider.getAttribute('d2-slider-feed-position');
+          if (posAttr != null && _feedPositionOff(posAttr)) {
+            slider.setAttribute('d2-slider-feed-done', '');
+            continue;
+          }
+          at = _feedInsertIndex(posAttr, existing.length);
+        }
+      }
       var ref = at < existing.length ? existing[at] : null;   // null → append at end
 
       var sources = document.querySelectorAll('[d2-slider-source]');
@@ -948,6 +1021,7 @@
           var el = list[k].cloneNode(true);
           el.removeAttribute('id');
           if (!el.hasAttribute('d2-slide')) el.setAttribute('d2-slide', '');
+          el.setAttribute('d2-slider-fed', ''); // marker so feed() can undo a re-position
           if (ref) track.insertBefore(el, ref);
           else track.appendChild(el);
           movedAny = true;

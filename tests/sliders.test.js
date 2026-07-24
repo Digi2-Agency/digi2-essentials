@@ -77,6 +77,11 @@ function el(tag, attrs) {
       }
       return c;
     },
+    removeChild(c) {
+      node.children = node.children.filter((x) => x !== c);
+      if (c) c.parentNode = null;
+      return c;
+    },
     get firstChild() {
       return node.children[0] || null;
     },
@@ -286,4 +291,53 @@ test('a truthy feed-position-N overrides the plain feed-position', () => {
 
   loadSliders(body);
   assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'B']);
+});
+
+// --- JS API: digi2.sliders.feed(name, config) -------------------------------
+test('feed(name, {position}) repositions the block on re-feed (no duplicates)', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', undefined, ['A', 'B', 'C']); // default → start
+  body.appendChild(slider);
+
+  const S = loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['C1', 'C2', 'A', 'B', 'C'], 'default feed at start');
+
+  S.feed('gal', { position: 1 }); // 1 static · feed · rest
+  assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'C2', 'B', 'C'], 'undoes prior inject, re-feeds at 1');
+});
+
+test('feed(name, { if: false }) skips the feed', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', undefined, ['A', 'B']);
+  body.appendChild(slider);
+
+  const S = loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['C1', 'C2', 'A', 'B']);
+  S.feed('gal', { if: false });
+  assert.deepEqual(trackMarkers(slider), ['A', 'B'], 'gate off → only static slides');
+});
+
+test('feed(name, { position: "off" }) also skips the feed', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1']));
+  const slider = feedSlider('gal', undefined, ['A', 'B']);
+  body.appendChild(slider);
+
+  const S = loadSliders(body);
+  S.feed('gal', { position: 'off' });
+  assert.deepEqual(trackMarkers(slider), ['A', 'B']);
+});
+
+test('feed() position overrides the plain feed-position attribute', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1']));
+  const slider = feedSlider('gal', 'end', ['A', 'B']); // attribute says "end"
+  body.appendChild(slider);
+
+  const S = loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C1'], 'attribute end');
+  S.feed('gal', { position: 'start' }); // config wins
+  assert.deepEqual(trackMarkers(slider), ['C1', 'A', 'B']);
 });

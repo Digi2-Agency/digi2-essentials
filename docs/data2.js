@@ -253,7 +253,7 @@
       { a: 'd2-slider-draggable', v: 'true | false', el: 'kontener', d: 'Przeciąganie myszą/palcem (domyślnie włączone).' },
       { a: 'd2-slider-speed', v: 'ms', el: 'kontener', d: 'Czas animacji przejścia (domyślnie 400).' },
       { a: 'd2-slider-feed', v: 'nazwa źródła', el: 'kontener', d: 'Zasila slajdy z listy oznaczonej d2-slider-source o tej nazwie.' },
-      { a: 'd2-slider-feed-position', v: 'start | end | N', el: 'kontener', d: 'Gdzie wstawić blok z feedu: <code>start</code> (domyślnie), <code>end</code> albo liczba <code>N</code> — ile statycznych slajdów zostaje PRZED blokiem. Przy 3 statycznych <code>"1"</code> = 1 z lewej, feed, 2 na końcu.', n: 'CMS-bindowalne per item' },
+      { a: 'd2-slider-feed-position', v: 'start | end | N | off', el: 'kontener', d: 'Gdzie wstawić blok z feedu: <code>start</code> (domyślnie), <code>end</code>, liczba <code>N</code> (ile statycznych zostaje PRZED blokiem — przy 3 statycznych <code>"1"</code> = 1 z lewej, feed, 2 na końcu) albo <code>off</code>/<code>none</code> = pomiń feed.', n: 'podepnij pole <b>Number</b> lub <b>Option</b> z CMS (Switch NIE binduje się do atrybutu); jedno pole Option {off, start, 1, end} steruje wszystkim' },
       { a: 'd2-slider-feed-position-N', v: 'true | false (Switch z CMS)', el: 'kontener', d: 'Pozycja wybierana <b>polem Switch z CMS</b> — obejście limitu Webflow (nie da się wstrzyknąć liczby, ale można podpiąć true/false). Suffix <code>N</code> to indeks jak w feed-position; feed ląduje na tym <code>N</code>, którego Switch jest włączony. Wygrywa nad zwykłym feed-position; wszystkie false = feed pominięty dla tego itemu.', n: 'remisy: wygrywa najmniejsze N' },
       { a: 'd2-slider-feed-if', v: 'true | false', el: 'kontener', d: 'Warunek feedu — dorzuca zdjęcia z kolekcji tylko, gdy wartość jest prawdziwa. Podepnij pole Switch z CMS, żeby feed działał tylko dla oznaczonych itemów. Brak atrybutu = feed zawsze.', n: 'fałsz: puste / false / 0 / no / off' },
       { a: 'd2-slider-source', v: 'nazwa', el: 'ukryta Collection List', d: 'Źródło obrazów dla d2-slider-feed.' },
@@ -267,7 +267,8 @@
 
     api: {
       desc: 'API przydaje się do sterowania i callbacków; atrybuty załatwiają resztę.',
-      code: "digi2.onReady(function () {\n  var slider = digi2.sliders.get('galeria');\n  slider.next();\n  slider.prev();\n  slider.goTo(2);\n  slider.play();   // start autoplay\n  slider.pause();\n\n  digi2.sliders.create('hero', {\n    slidesPerView: 1,\n    gap: 0,\n    infinite: true,\n    autoplay: 5000,\n    onChange: function (index) { console.log('Slajd:', index); }\n  });\n});"
+      desc: 'Feedem z CMS można sterować też ze skryptu — <code>digi2.sliders.feed(nazwa, {...})</code>. Uwaga: feed wstrzykuje slajdy PRZED inicjalizacją slidera, więc <code>get(nazwa)</code> zwraca instancję już po feedzie — pozycję ustawiasz przez <code>feed()</code> (wołaj wcześnie), a nie na instancji.',
+      code: "digi2.onReady(function () {\n  // sterowanie gotowym sliderem\n  var slider = digi2.sliders.get('galeria');\n  slider.next();  slider.prev();  slider.goTo(2);\n  slider.play();  slider.pause();\n\n  // CMS feed ze skryptu — alternatywa dla d2-slider-feed-position / -if\n  digi2.sliders.feed('rzuty', { position: 1 });      // 1 statyczny · feed · reszta\n  digi2.sliders.feed('rzuty', { position: 'end' });\n  digi2.sliders.feed('rzuty', { if: false });         // pomiń feed\n  digi2.sliders.feed('rzuty', { position: 'off' });   // też pomija\n\n  digi2.sliders.create('hero', {\n    slidesPerView: 1, gap: 0, infinite: true, autoplay: 5000,\n    onChange: function (index) { console.log('Slajd:', index); }\n  });\n});"
     }
   };
 
