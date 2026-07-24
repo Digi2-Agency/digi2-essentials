@@ -739,8 +739,9 @@
       return Object.keys(registry);
     },
 
-    // Exposed for tests — pure resolver behind d2-slider-feed-position.
+    // Exposed for tests — pure resolvers behind the feed attributes.
     _feedInsertIndex: _feedInsertIndex,
+    _feedTruthy: _feedTruthy,
   };
 
   // ---------------------------------------------------------------------------
@@ -816,6 +817,20 @@
   //     stay IN FRONT of the fed block. With 2 static slides: "1" drops the block
   //     in the middle, "2" (= slide count) appends at the end. Clamped to range;
   //     empty / non-numeric / <0 → "start". CMS-bindable for per-item control.
+  //   d2-slider-feed-if="true|false"          (on the slider; optional gate)
+  //     Only feed when the value is truthy. Bind a CMS Switch field so a slider
+  //     pulls the collection images only for flagged items. Truthy = anything
+  //     except empty / false / 0 / no / off / null. Absent attr = always feed.
+
+  // Truthy test for the CMS-bound feed gate. Webflow Switch fields render
+  // "true"/"false" text; yes/on/1 also count as true. Empty (a bound-but-false
+  // switch may resolve to "") and the explicit falses are false.
+  function _feedTruthy(v) {
+    var s = String(v == null ? '' : v).trim().toLowerCase();
+    if (s === '') return false;
+    return !(s === 'false' || s === '0' || s === 'no' || s === 'off' ||
+             s === 'null' || s === 'undefined');
+  }
 
   // Pure resolver for d2-slider-feed-position → an index in [0, count] where the
   // fed block begins (count = append after the last existing slide).
@@ -837,6 +852,14 @@
       var slider = feeds[i];
       var name = slider.getAttribute('d2-slider-feed');
       if (!name) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
+
+      // Conditional feed: d2-slider-feed-if gates injection on a truthy value
+      // (bind a CMS Switch). Absent attribute = always feed (back-compat).
+      if (slider.hasAttribute('d2-slider-feed-if') &&
+          !_feedTruthy(slider.getAttribute('d2-slider-feed-if'))) {
+        slider.setAttribute('d2-slider-feed-done', '');
+        continue;
+      }
 
       // Feed only BEFORE the slider initializes — injecting into a live
       // infinite slider would desync its clones/positions. Webflow renders

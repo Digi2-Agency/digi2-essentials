@@ -204,3 +204,32 @@ test('feed numeric position past the slide count clamps to the end (append)', ()
   loadSliders(body);
   assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C1']);
 });
+
+// --- Conditional feed (d2-slider-feed-if) ----------------------------------
+test('_feedTruthy gates the conditional feed', () => {
+  const t = loadSliders(el('body', {}))._feedTruthy;
+  ['true', 'TRUE', ' yes ', 'on', '1', 'anything'].forEach((v) => assert.equal(t(v), true, String(v)));
+  ['false', 'FALSE', '', 'no', 'off', '0', null, undefined].forEach((v) => assert.equal(t(v), false, String(v)));
+});
+
+test('feed-if truthy injects the block: 1 static · feed · 2 static (position=1)', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', '1', ['A', 'B', 'C']);
+  slider.setAttribute('d2-slider-feed-if', 'true');
+  body.appendChild(slider);
+
+  loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'C2', 'B', 'C']);
+});
+
+test('feed-if falsy skips the feed entirely — only the static slides remain', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', '1', ['A', 'B', 'C']);
+  slider.setAttribute('d2-slider-feed-if', 'false');
+  body.appendChild(slider);
+
+  loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C']);
+});
