@@ -254,6 +254,7 @@
       { a: 'd2-slider-speed', v: 'ms', el: 'kontener', d: 'Czas animacji przejścia (domyślnie 400).' },
       { a: 'd2-slider-feed', v: 'nazwa źródła', el: 'kontener', d: 'Zasila slajdy z listy oznaczonej d2-slider-source o tej nazwie.' },
       { a: 'd2-slider-feed-position', v: 'start | end | N', el: 'kontener', d: 'Gdzie wstawić blok z feedu: <code>start</code> (domyślnie), <code>end</code> albo liczba <code>N</code> — ile statycznych slajdów zostaje PRZED blokiem. Przy 3 statycznych <code>"1"</code> = 1 z lewej, feed, 2 na końcu.', n: 'CMS-bindowalne per item' },
+      { a: 'd2-slider-feed-position-N', v: 'true | false (Switch z CMS)', el: 'kontener', d: 'Pozycja wybierana <b>polem Switch z CMS</b> — obejście limitu Webflow (nie da się wstrzyknąć liczby, ale można podpiąć true/false). Suffix <code>N</code> to indeks jak w feed-position; feed ląduje na tym <code>N</code>, którego Switch jest włączony. Wygrywa nad zwykłym feed-position; wszystkie false = feed pominięty dla tego itemu.', n: 'remisy: wygrywa najmniejsze N' },
       { a: 'd2-slider-feed-if', v: 'true | false', el: 'kontener', d: 'Warunek feedu — dorzuca zdjęcia z kolekcji tylko, gdy wartość jest prawdziwa. Podepnij pole Switch z CMS, żeby feed działał tylko dla oznaczonych itemów. Brak atrybutu = feed zawsze.', n: 'fałsz: puste / false / 0 / no / off' },
       { a: 'd2-slider-source', v: 'nazwa', el: 'ukryta Collection List', d: 'Źródło obrazów dla d2-slider-feed.' },
       { a: 'd2-slide-active', v: '', el: 'slajd', set: true, d: 'Obecny na widocznych slajdach — hook CSS.' },

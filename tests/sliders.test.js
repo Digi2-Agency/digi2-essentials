@@ -80,6 +80,9 @@ function el(tag, attrs) {
     get firstChild() {
       return node.children[0] || null;
     },
+    get attributes() {
+      return Object.keys(node.attrs).map((name) => ({ name, value: node.attrs[name] }));
+    },
     contains(other) {
       if (other === node) return true;
       return node.children.some((ch) => ch.contains && ch.contains(other));
@@ -232,4 +235,55 @@ test('feed-if falsy skips the feed entirely — only the static slides remain', 
 
   loadSliders(body);
   assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C']);
+});
+
+// --- CMS-driven position via suffixed booleans (d2-slider-feed-position-N) ---
+test('_feedSuffixPosition resolves suffixed boolean positions', () => {
+  const s = loadSliders(el('body', {}));
+  const f = s._feedSuffixPosition;
+  const P = (obj) => Object.keys(obj).map((name) => ({ name, value: obj[name] }));
+
+  assert.equal(f(P({ 'd2-slider': '' }), 3), null, 'no suffixed attrs → null (use feed-position)');
+  assert.equal(f(P({ 'd2-slider-feed-position-1': 'true' }), 3), 1, 'the truthy suffix picks the index');
+  assert.equal(f(P({ 'd2-slider-feed-position-1': 'false', 'd2-slider-feed-position-2': 'true' }), 3), 2,
+    'only the truthy suffix counts');
+  assert.equal(f(P({ 'd2-slider-feed-position-1': 'true', 'd2-slider-feed-position-2': 'true' }), 3), 1,
+    'smallest N breaks ties');
+  assert.equal(f(P({ 'd2-slider-feed-position-1': 'false', 'd2-slider-feed-position-2': 'false' }), 3), -1,
+    'present but all false → skip');
+  assert.equal(f(P({ 'd2-slider-feed-position-9': 'true' }), 3), 3, 'clamped to the slide count');
+});
+
+test('feed-position-N boolean drops the block at the chosen index (CMS Switch)', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', undefined, ['A', 'B', 'C']);
+  slider.setAttribute('d2-slider-feed-position-1', 'true');   // Switch = on
+  body.appendChild(slider);
+
+  loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'C2', 'B', 'C']);
+});
+
+test('feed-position-N all false → the feed is skipped for that item', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1', 'C2']));
+  const slider = feedSlider('gal', undefined, ['A', 'B', 'C']);
+  slider.setAttribute('d2-slider-feed-position-1', 'false');
+  slider.setAttribute('d2-slider-feed-position-2', 'false');
+  body.appendChild(slider);
+
+  loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'B', 'C']);
+});
+
+test('a truthy feed-position-N overrides the plain feed-position', () => {
+  const body = el('body', {});
+  body.appendChild(source('gal', ['C1']));
+  const slider = feedSlider('gal', 'end', ['A', 'B']); // plain says "end"
+  slider.setAttribute('d2-slider-feed-position-1', 'true'); // suffix says middle → wins
+  body.appendChild(slider);
+
+  loadSliders(body);
+  assert.deepEqual(trackMarkers(slider), ['A', 'C1', 'B']);
 });

@@ -742,6 +742,7 @@
     // Exposed for tests — pure resolvers behind the feed attributes.
     _feedInsertIndex: _feedInsertIndex,
     _feedTruthy: _feedTruthy,
+    _feedSuffixPosition: _feedSuffixPosition,
   };
 
   // ---------------------------------------------------------------------------
@@ -846,6 +847,40 @@
     return n > count ? count : n;
   }
 
+  // CMS-driven position selector: d2-slider-feed-position-N="<truthy>". Webflow
+  // can't bind a raw number into d2-slider-feed-position, but it CAN bind a
+  // Switch field into a fixed attribute — so enumerate candidate positions as
+  // suffixed attributes, each gated by its own boolean, and flip on the one you
+  // want per item. N is the same 0-based index as feed-position (how many static
+  // slides stay in front). The truthy suffix wins (smallest N breaks ties).
+  //   Returns: null  → no suffixed attributes (caller uses feed-position)
+  //            -1    → suffixed attributes exist but none is truthy → skip feed
+  //            index → the chosen insertion index (clamped to [0, count])
+  function _feedSuffixPosition(pairs, count) {
+    var found = false;
+    var best = null;
+    for (var i = 0; i < pairs.length; i++) {
+      var m = /^d2-slider-feed-position-(\d+)$/.exec(pairs[i].name);
+      if (!m) continue;
+      found = true;
+      if (_feedTruthy(pairs[i].value)) {
+        var n = parseInt(m[1], 10);
+        if (best === null || n < best) best = n;
+      }
+    }
+    if (!found) return null;
+    if (best === null) return -1;
+    return _feedInsertIndex(String(best), count);
+  }
+
+  // Collect an element's attributes as {name, value} pairs (DOM-agnostic).
+  function _attrPairs(elm) {
+    var out = [];
+    var a = elm && elm.attributes;
+    if (a) for (var i = 0; i < a.length; i++) out.push({ name: a[i].name, value: a[i].value });
+    return out;
+  }
+
   function _ingestFeeds() {
     var feeds = document.querySelectorAll('[d2-slider-feed]:not([d2-slider-feed-done])');
     for (var i = 0; i < feeds.length; i++) {
@@ -875,7 +910,15 @@
       // 0-based index into these (how many stay in front of the fed block), so
       // the block can land at the start, the end, or anywhere in between.
       var existing = Array.prototype.slice.call(track.querySelectorAll('[d2-slide]'));
-      var at = _feedInsertIndex(slider.getAttribute('d2-slider-feed-position'), existing.length);
+
+      // CMS-driven position: d2-slider-feed-position-N="<Switch>" picks where (or
+      // whether) the block lands. Any such attribute overrides the plain
+      // feed-position; all of them false = skip the feed for this item.
+      var suffixPos = _feedSuffixPosition(_attrPairs(slider), existing.length);
+      if (suffixPos === -1) { slider.setAttribute('d2-slider-feed-done', ''); continue; }
+      var at = (suffixPos != null)
+        ? suffixPos
+        : _feedInsertIndex(slider.getAttribute('d2-slider-feed-position'), existing.length);
       var ref = at < existing.length ? existing[at] : null;   // null → append at end
 
       var sources = document.querySelectorAll('[d2-slider-source]');
