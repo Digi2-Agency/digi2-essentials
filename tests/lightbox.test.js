@@ -117,10 +117,16 @@ function createEnvironment() {
     createElement,
   };
 
+  const rafQueue = [];
   const window = { digi2: { log() {} } };
   window.document = document;
+  // Controllable rAF: queued, not auto-run — a test drains it with flushRaf().
+  window.requestAnimationFrame = (fn) => { rafQueue.push(fn); return rafQueue.length; };
+  window.cancelAnimationFrame = () => {};
 
   const env = {
+    rafQueue,
+    flushRaf() { const fns = rafQueue.splice(0); fns.forEach((fn) => fn()); },
     context: vm.createContext({
       window,
       document,
@@ -881,4 +887,23 @@ test('slides get a white backing by default; d2-lightbox-bg overrides it', () =>
   env.dispatchDoc('click', a);
   assert.equal(builtin(env).querySelector('[d2-lightbox-image]').style.background, '#111',
     'd2-lightbox-bg on an ancestor overrides the backing');
+});
+
+test('hover badge follows a moving trigger (slider swipe) via the rAF loop', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const thumb = addThumb(env, 'https://x/s1.jpg');
+
+  // Slide starts here.
+  thumb.getBoundingClientRect = () => ({ left: 100, top: 50, width: 200, height: 150 });
+  env.dispatchDoc('mouseover', thumb);
+  const icon = env.body.querySelector('[d2-lightbox-hover-icon]');
+  assert.equal(icon.style.left, '178px', 'badge centred on the start position');
+
+  // Slider swipes the track left — the trigger's rect moves; no scroll event fires.
+  thumb.getBoundingClientRect = () => ({ left: 40, top: 50, width: 200, height: 150 });
+  env.flushRaf(); // one animation frame
+
+  assert.equal(icon.style.left, '118px', 'badge rode along with the slide (40 + 100 - 22)');
+  assert.equal(icon.style.opacity, '1', 'still visible while following');
 });

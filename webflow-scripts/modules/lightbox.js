@@ -1010,6 +1010,7 @@
 
   var hoverIcon = null;
   var iconTrigger = null;
+  var hoverRaf = 0;
 
   function ensureHoverIcon() {
     if (hoverIcon || !document.body) return hoverIcon;
@@ -1038,12 +1039,23 @@
     return el;
   }
 
-  function showHoverIcon(trigger) {
-    if (state.open || !trigger.getBoundingClientRect) return;
+  // Re-read the hovered trigger's current rect and place the badge over it.
+  // Returns false when the trigger is gone, too small, or scrolled off-screen —
+  // the caller then hides the badge. Reading the rect every frame is what lets
+  // the badge ride along when the trigger MOVES (a slider swipe transforms the
+  // track — no scroll/resize event fires, so a one-shot position would stall).
+  function positionHoverIcon() {
+    var trigger = iconTrigger;
+    if (!trigger || !trigger.getBoundingClientRect || state.open) return false;
     var rect = trigger.getBoundingClientRect();
-    if (!rect || rect.width < 28 || rect.height < 28) { hideHoverIcon(); return; }
+    if (!rect || rect.width < 28 || rect.height < 28) return false;
+    var vh = window.innerHeight || 0;
+    var vw = window.innerWidth || 0;
+    // Only cull off-screen when the viewport size is actually known (in tests it
+    // isn't — keep the badge so the positioning assertions still hold).
+    if (vh && vw && (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw)) return false;
     var el = ensureHoverIcon();
-    if (!el) return;
+    if (!el) return false;
     var size = Math.min(44, rect.width - 8, rect.height - 8);
     Object.assign(el.style, {
       width: size + 'px',
@@ -1052,12 +1064,32 @@
       top: (rect.top + rect.height / 2 - size / 2) + 'px',
       opacity: '1',
     });
+    return true;
+  }
+
+  function followHoverIcon() {
+    hoverRaf = 0;
+    if (!iconTrigger) return;
+    if (!positionHoverIcon()) { hideHoverIcon(); return; }
+    if (window.requestAnimationFrame) hoverRaf = window.requestAnimationFrame(followHoverIcon);
+  }
+
+  function showHoverIcon(trigger) {
+    if (state.open || !trigger.getBoundingClientRect) return;
     iconTrigger = trigger;
+    if (!positionHoverIcon()) { hideHoverIcon(); return; }
+    // Follow the trigger while hovering (catches slider swipes, momentum,
+    // scroll). Bounded to hover duration; stops on mouseout / open.
+    if (window.requestAnimationFrame && !hoverRaf) {
+      hoverRaf = window.requestAnimationFrame(followHoverIcon);
+    }
   }
 
   function hideHoverIcon() {
     if (hoverIcon) hoverIcon.style.opacity = '0';
     iconTrigger = null;
+    if (hoverRaf && window.cancelAnimationFrame) window.cancelAnimationFrame(hoverRaf);
+    hoverRaf = 0;
   }
 
   document.addEventListener('mouseover', function (e) {
@@ -1078,10 +1110,16 @@
     hideHoverIcon();
   });
 
-  // The fixed-position badge would drift out of place on scroll/resize.
+  // The rAF loop keeps the badge glued to a MOVING trigger. Scroll/resize also
+  // move it — reposition (or hide when it leaves the viewport). This is the
+  // fallback path when requestAnimationFrame isn't available; with rAF running
+  // it's harmless (the loop already repositions every frame).
   if (window.addEventListener) {
-    window.addEventListener('scroll', hideHoverIcon, { passive: true });
-    window.addEventListener('resize', hideHoverIcon);
+    var onViewportChange = function () {
+      if (iconTrigger && !positionHoverIcon()) hideHoverIcon();
+    };
+    window.addEventListener('scroll', onViewportChange, { passive: true, capture: true });
+    window.addEventListener('resize', onViewportChange);
   }
 
   // ---------------------------------------------------------------------------
