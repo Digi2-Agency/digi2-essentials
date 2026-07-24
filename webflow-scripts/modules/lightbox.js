@@ -115,6 +115,8 @@
     loop: true,
     display: 'flex',
     variant: 'counter', // built-in bottom UI: 'counter' | 'thumbs'
+    track: null,        // built-in modal: { viewport, track, slides:[img,img,img] }
+    imageBg: '',        // background painted behind photos (fills transparent PNGs)
     savedOverflow: '',
     lastFocus: null,
   };
@@ -275,10 +277,12 @@
     'opacity:.55;border:2px solid transparent;transition:opacity .15s ease,border-color .15s ease;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]:hover{opacity:.85;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb][d2-is-active]{opacity:1;border-color:#fff;}' +
+    '.d2-lb-viewport{touch-action:pan-y;}' +
     '@media (max-width:600px){' +
     '.d2-lb-prev{left:4px!important;}.d2-lb-next{right:4px!important;}' +
     '.d2-lb-close{top:8px!important;right:8px!important;}' +
-    '.d2-lb-img{max-width:100vw!important;max-height:74vh!important;border-radius:0!important;}' +
+    '.d2-lb-viewport{width:100vw!important;height:74vh!important;}' +
+    '.d2-lb-img{border-radius:0!important;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]{width:40px;height:40px;}' +
     '}';
 
@@ -357,20 +361,62 @@
       webkitUserSelect: 'none',
     });
 
-    var img = doc.createElement('img');
-    img.setAttribute('d2-lightbox-image', '');
-    img.setAttribute('alt', '');
-    img.classList.add('d2-lb-img');
-    Object.assign(img.style, {
-      maxWidth: '92vw',
-      maxHeight: '84vh',
-      objectFit: 'contain',
-      borderRadius: '4px',
-      boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
-      cursor: 'default',
-      transition: 'opacity .18s ease',
+    // Sliding carousel: a clipped viewport holds a 3-slide track (prev, current,
+    // next). Dragging moves the whole track so the neighbouring photos are
+    // really there on either side — they travel in instead of the single image
+    // snapping back and swapping its src. The track re-centres invisibly after
+    // each step so it can always slide one more in either direction.
+    var viewport = doc.createElement('div');
+    viewport.classList.add('d2-lb-viewport');
+    Object.assign(viewport.style, {
+      position: 'relative',
+      width: '92vw',
+      height: '84vh',
+      overflow: 'hidden',
     });
-    root.appendChild(img);
+
+    var track = doc.createElement('div');
+    track.classList.add('d2-lb-track');
+    Object.assign(track.style, {
+      display: 'flex',
+      width: '300%',
+      height: '100%',
+      transform: 'translateX(-33.3333%)',
+      willChange: 'transform',
+    });
+
+    var slides = [];
+    for (var si = 0; si < 3; si++) {
+      var slide = doc.createElement('div');
+      slide.classList.add('d2-lb-slide');
+      Object.assign(slide.style, {
+        flex: '0 0 33.3333%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+      });
+      var simg = doc.createElement('img');
+      if (si === 1) simg.setAttribute('d2-lightbox-image', ''); // slot for resolveSlots compat
+      simg.setAttribute('alt', '');
+      simg.classList.add('d2-lb-img');
+      Object.assign(simg.style, {
+        maxWidth: '100%',
+        maxHeight: '100%',
+        objectFit: 'contain',
+        borderRadius: '4px',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.55)',
+        cursor: 'default',
+        userSelect: 'none',
+        webkitUserDrag: 'none',
+      });
+      slide.appendChild(simg);
+      track.appendChild(slide);
+      slides.push(simg);
+    }
+    viewport.appendChild(track);
+    root.appendChild(viewport);
+    root._d2lbTrack = { viewport: viewport, track: track, slides: slides };
 
     var close = doc.createElement('button');
     close.setAttribute('type', 'button');
@@ -457,11 +503,67 @@
   // Rendering the current image into the active modal's slots
   // ---------------------------------------------------------------------------
 
+  function wrap(i, total) {
+    if (total <= 0) return 0;
+    return ((i % total) + total) % total;
+  }
+
+  // Built-in modal: paint the three track slides (prev, current, next) around
+  // `index` and snap the track back to centre with no transition — so the next
+  // drag/step can travel one image either way from a fresh centre.
+  function paintTrack(index) {
+    var t = state.track;
+    if (!t) return;
+    var total = state.items.length;
+    var order = [wrap(index - 1, total), index, wrap(index + 1, total)];
+    t.track.style.transition = 'none';
+    t.track.style.transform = 'translateX(-33.3333%)';
+    for (var i = 0; i < 3; i++) {
+      var img = t.slides[i];
+      var it = state.items[order[i]];
+      if (!img || !it) continue;
+      if (img.removeAttribute) { img.removeAttribute('srcset'); img.removeAttribute('sizes'); }
+      img.style.background = state.imageBg || '';
+      if (img.getAttribute('src') !== it.src) img.setAttribute('src', it.src);
+      img.setAttribute('alt', i === 1 ? (it.caption || '') : '');
+    }
+    if (t.track.offsetHeight) { /* reflow so a later transition starts clean */ }
+  }
+
+  var SLIDE_MS = 300;
+  var sliding = false;
+  var slideTimer = null;
+
+  // Built-in modal: animate the track one image left/right, then commit the new
+  // index and re-centre. dir = +1 (next) / -1 (prev).
+  function slideBuiltin(dir) {
+    var t = state.track;
+    var total = state.items.length;
+    if (!t || total <= 1 || sliding) return false;
+    if (!state.loop) {
+      if (dir > 0 && state.index >= total - 1) return false;
+      if (dir < 0 && state.index <= 0) return false;
+    }
+    sliding = true;
+    var to = dir > 0 ? '-66.6666%' : '0%';
+    t.track.style.transition = 'transform ' + SLIDE_MS + 'ms cubic-bezier(.22,.61,.36,1)';
+    t.track.style.transform = 'translateX(' + to + ')';
+    var target = wrap(state.index + dir, total);
+    clearTimeout(slideTimer);
+    slideTimer = setTimeout(function () {
+      sliding = false;
+      state.index = target;
+      paintTrack(target);
+      renderMeta(target);
+    }, SLIDE_MS + 20);
+    return true;
+  }
+
   function show(index) {
     var total = state.items.length;
     if (!total) return;
     if (state.loop) {
-      index = ((index % total) + total) % total;
+      index = wrap(index, total);
     } else {
       index = Math.max(0, Math.min(total - 1, index));
     }
@@ -470,7 +572,10 @@
     var item = state.items[index];
     var slots = state.slots;
 
-    if (slots.image) {
+    if (state.track) {
+      // Built-in sliding modal — the track owns the image rendering.
+      paintTrack(index);
+    } else if (slots.image) {
       var img = slots.image;
       // A Designer-placed slot img may carry srcset/sizes that would override
       // the src we set — strip them once we take control of the element.
@@ -478,12 +583,23 @@
         img.removeAttribute('srcset');
         img.removeAttribute('sizes');
       }
+      img.style.background = state.imageBg || '';
       img.style.opacity = '0';
       void img.offsetHeight; // force reflow so the opacity transition restarts
       img.setAttribute('src', item.src);
       img.setAttribute('alt', item.caption || '');
       img.style.opacity = '1';
     }
+
+    renderMeta(index);
+  }
+
+  // Counter / caption / thumbs / nav visibility / neighbour preload — shared by
+  // show() (instant) and slideBuiltin() (after a slide commits).
+  function renderMeta(index) {
+    var total = state.items.length;
+    var item = state.items[index];
+    var slots = state.slots;
 
     // Single-photo galleries drop every navigation affordance: arrows,
     // counter ("1 / 1" is noise), thumbnails and dragging.
@@ -589,8 +705,21 @@
     state.items = items;
     state.modal = modal;
     state.slots = resolveSlots(modal);
+    state.track = modal._d2lbTrack || null; // built-in modal → sliding track
     state.loop = attr(modal, 'd2-lightbox-loop') !== 'false';
     state.display = modal.getAttribute('d2-lightbox-modal') || 'flex';
+
+    // Background painted behind every photo so transparent PNGs (e.g. floor
+    // plans) don't vanish on the dark modal. Read d2-lightbox-bg from the
+    // trigger/ancestor or the modal; default white. "transparent"/"none" opts out.
+    var bg = '#ffffff';
+    var bgEl = (variantSource && variantSource.closest && variantSource.closest('[d2-lightbox-bg]')) ||
+      (modal.hasAttribute('d2-lightbox-bg') ? modal : null);
+    if (bgEl) {
+      var bgVal = String(attr(bgEl, 'd2-lightbox-bg') || '').trim();
+      if (bgVal) bg = (bgVal === 'none') ? 'transparent' : bgVal;
+    }
+    state.imageBg = bg;
 
     // Built-in bottom UI: the import flag's value sets the page default
     // ("counter" when absent); d2-lightbox-variant on the trigger or any
@@ -614,6 +743,8 @@
     if (!modal.hasAttribute('role')) modal.setAttribute('role', 'dialog');
     if (!modal.hasAttribute('aria-modal')) modal.setAttribute('aria-modal', 'true');
 
+    sliding = false;
+    clearTimeout(slideTimer);
     hideHoverIcon();
     populateThumbs();
     modal.style.display = state.display;
@@ -630,6 +761,11 @@
   function close() {
     if (!state.open) return;
     state.open = false;
+    sliding = false;
+    clearTimeout(slideTimer);
+    drag.active = false;
+    drag.track = null;
+    drag.img = null;
     if (state.modal) state.modal.style.display = 'none';
     if (document.body) document.body.style.overflow = state.savedOverflow || '';
     if (state.lastFocus && typeof state.lastFocus.focus === 'function') state.lastFocus.focus();
@@ -641,13 +777,15 @@
   function next() {
     if (!state.open || state.items.length <= 1) return;
     if (!state.loop && state.index >= state.items.length - 1) return;
-    show(state.index + 1);
+    if (state.track) slideBuiltin(1);
+    else show(state.index + 1);
   }
 
   function prev() {
     if (!state.open || state.items.length <= 1) return;
     if (!state.loop && state.index <= 0) return;
-    show(state.index - 1);
+    if (state.track) slideBuiltin(-1);
+    else show(state.index - 1);
   }
 
   // ---------------------------------------------------------------------------
@@ -657,13 +795,16 @@
   var DRAG_NAV_PX = 50;   // horizontal distance that triggers prev/next
   var DRAG_MOVED_PX = 8;  // movement past this suppresses the trailing click
 
+  var SNAP_EASE = 'transform ' + 220 + 'ms cubic-bezier(.22,.61,.36,1)';
+
   var drag = {
     active: false,
     fromTouch: false,
     moved: false,
     suppressClick: false,
     x0: 0, y0: 0, dx: 0, dy: 0,
-    img: null,
+    img: null,          // custom modal: the single image being dragged
+    track: null,        // built-in modal: the sliding track being dragged
     prevTransform: '',
     prevTransition: '',
   };
@@ -671,15 +812,18 @@
 
   function dragStart(x, y, fromTouch) {
     // Single-photo galleries have nowhere to drag to — leave the mouse alone.
-    if (!state.open || state.items.length <= 1) return;
+    if (!state.open || state.items.length <= 1 || sliding) return;
     drag.active = true;
     drag.fromTouch = fromTouch;
     drag.moved = false;
     drag.suppressClick = false;
     drag.x0 = x; drag.y0 = y;
     drag.dx = 0; drag.dy = 0;
-    drag.img = state.slots && state.slots.image;
-    if (drag.img) {
+    drag.track = state.track ? state.track.track : null;
+    drag.img = state.track ? null : (state.slots && state.slots.image);
+    if (drag.track) {
+      drag.track.style.transition = 'none';
+    } else if (drag.img) {
       drag.prevTransform = drag.img.style.transform || '';
       drag.prevTransition = drag.img.style.transition || '';
       drag.img.style.transition = 'none';
@@ -691,7 +835,11 @@
     drag.dx = x - drag.x0;
     drag.dy = y - drag.y0;
     if (Math.abs(drag.dx) > DRAG_MOVED_PX || Math.abs(drag.dy) > DRAG_MOVED_PX) drag.moved = true;
-    if (drag.img && Math.abs(drag.dx) > Math.abs(drag.dy)) {
+    if (Math.abs(drag.dx) <= Math.abs(drag.dy)) return; // vertical intent → ignore
+    if (drag.track) {
+      // Move the whole track so the neighbouring photos slide in from the sides.
+      drag.track.style.transform = 'translateX(calc(-33.3333% + ' + drag.dx + 'px))';
+    } else if (drag.img) {
       drag.img.style.transform = 'translateX(' + drag.dx + 'px)';
     }
   }
@@ -703,13 +851,25 @@
     if (Math.abs(drag.dx) > DRAG_MOVED_PX) drag.moved = true;
     if (drag.moved) drag.suppressClick = true; // the mouseup/touchend spawns a click — eat it
 
-    var img = drag.img;
-    drag.img = null;
     var navigates = Math.abs(drag.dx) >= DRAG_NAV_PX && Math.abs(drag.dx) > Math.abs(drag.dy);
 
+    // Built-in modal: continue the drag into a real slide, or ease back to centre.
+    if (drag.track) {
+      var tr = drag.track;
+      drag.track = null;
+      var slid = navigates ? slideBuiltin(drag.dx < 0 ? 1 : -1) : false;
+      if (!slid) {
+        tr.style.transition = SNAP_EASE;
+        tr.style.transform = 'translateX(-33.3333%)';
+      }
+      return;
+    }
+
+    // Custom modal: the single image snaps back, or navigation swaps its src.
+    var img = drag.img;
+    drag.img = null;
     if (img) {
       if (navigates) {
-        // show() swaps the image in a moment — restore styles instantly, no snap-back.
         img.style.transition = drag.prevTransition;
         img.style.transform = drag.prevTransform;
       } else {
@@ -720,7 +880,6 @@
         })(img, drag.prevTransition);
       }
     }
-
     if (navigates) {
       if (drag.dx < 0) next(); else prev();
     }

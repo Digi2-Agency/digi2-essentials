@@ -126,7 +126,7 @@ function createEnvironment() {
       document,
       navigator: { userAgent: 'node-test' },
       console,
-      setTimeout(fn) { return 0; },
+      setTimeout(fn) { if (typeof fn === 'function') fn(); return 0; }, // run slide commits synchronously
       clearTimeout() {},
       Date,
     }),
@@ -508,7 +508,7 @@ test('d2-lightbox-item shares named galleries with d2-lightbox', () => {
   assert.equal(lb(env)._state.index, 1);
 });
 
-test('mouse drag past the threshold navigates; the image follows the drag', () => {
+test('mouse drag past the threshold navigates; the track follows the drag', () => {
   const env = createEnvironment();
   loadLightboxModule(env);
   const group = createElement('div', { 'd2-lightbox-group': '' });
@@ -518,15 +518,17 @@ test('mouse drag past the threshold navigates; the image follows the drag', () =
 
   env.dispatchDoc('click', first);
   const modal = builtin(env);
-  const img = modal.querySelector('[d2-lightbox-image]');
+  const track = modal.querySelector('.d2-lb-track');
 
   modal._listeners.mousedown({ screenX: 300, screenY: 100, button: 0 });
   env.dispatchDoc('mousemove', env.body, { screenX: 200, screenY: 100 });
-  assert.equal(img.style.transform, 'translateX(-100px)', 'image follows the drag');
+  // The whole track (prev · current · next) travels with the drag, so the
+  // neighbouring photos really slide in — not a single image swapping src.
+  assert.equal(track.style.transform, 'translateX(calc(-33.3333% + -100px))', 'track follows the drag');
   env.dispatchDoc('mouseup', env.body, { screenX: 180, screenY: 100 });
 
   assert.equal(lb(env)._state.index, 1, 'drag left goes to the next image');
-  assert.equal(img.style.transform, '', 'transform is reset after the drag');
+  assert.equal(track.style.transform, 'translateX(-33.3333%)', 'track re-centres after the slide commits');
 
   // The click spawned by that drag is suppressed — the modal must stay open…
   env.dispatchDoc('click', modal);
@@ -843,4 +845,40 @@ test('d2-lightbox-icon="false" on an ancestor disables the hover badge', () => {
 
   env.dispatchDoc('mouseover', thumb);
   assert.equal(env.body.querySelector('[d2-lightbox-hover-icon]'), null, 'badge is never created');
+});
+
+test('built-in track paints prev / current / next photos as real slides', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const a = addThumb(env, 'https://x/t1.jpg', null, group);
+  addThumb(env, 'https://x/t2.jpg', null, group);
+  addThumb(env, 'https://x/t3.jpg', null, group);
+
+  env.dispatchDoc('click', a); // open at index 0 of [t1, t2, t3]
+  const imgs = builtin(env).querySelectorAll('.d2-lb-img');
+  assert.equal(imgs.length, 3, 'three slides make the neighbours real, not a single swapped image');
+  assert.equal(imgs[0].getAttribute('src'), 'https://x/t3.jpg', 'prev slide wraps to the last photo');
+  assert.equal(imgs[1].getAttribute('src'), 'https://x/t1.jpg', 'centre slide is the current photo');
+  assert.equal(imgs[2].getAttribute('src'), 'https://x/t2.jpg', 'next slide is the following photo');
+});
+
+test('slides get a white backing by default; d2-lightbox-bg overrides it', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '' });
+  env.body.appendChild(group);
+  const a = addThumb(env, 'https://x/plan1.png', null, group);
+  addThumb(env, 'https://x/plan2.png', null, group);
+
+  env.dispatchDoc('click', a);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-image]').style.background, '#ffffff',
+    'transparent PNGs (floor plans) get a white backing so they stay visible');
+  lb(env).close();
+
+  group.setAttribute('d2-lightbox-bg', '#111');
+  env.dispatchDoc('click', a);
+  assert.equal(builtin(env).querySelector('[d2-lightbox-image]').style.background, '#111',
+    'd2-lightbox-bg on an ancestor overrides the backing');
 });
