@@ -7,7 +7,7 @@ window.D2DOCS = {
     { label: 'Start', items: ['start', 'loader'] },
     { label: 'Listy CMS', items: ['cms', 'filter'] },
     { label: 'Formularze', items: ['forms'] },
-    { label: 'Komponenty UI', items: ['popups', 'toasts', 'tabs', 'dropdowns', 'sliders', 'interactions'] },
+    { label: 'Komponenty UI', items: ['popups', 'toasts', 'tabs', 'dropdowns', 'sliders', 'lightbox', 'interactions', 'floatingdock'] },
     { label: 'Efekty', items: ['animate', 'scroll', 'lazy'] },
     { label: 'Narzędzia', items: ['format', 'countdown', 'copy', 'cookies'] },
     { label: 'Marketing', items: ['google', 'abtests'] }
@@ -29,7 +29,9 @@ window.D2DOCS = {
       { key: 'tabs', label: 'Taby / akordeony', flag: 'd2-tabs' },
       { key: 'dropdowns', label: 'Dropdowny', flag: 'd2-dropdowns' },
       { key: 'sliders', label: 'Slidery', flag: 'd2-sliders' },
+      { key: 'lightbox', label: 'Lightbox', flag: 'd2-lightbox' },
       { key: 'interactions', label: 'Interakcje', flag: 'd2-interactions' },
+      { key: 'floatingdock', label: 'Floating dock', flag: 'd2-floating-dock' },
       { key: 'animate', label: 'Animacje scroll', flag: 'd2-animate' },
       { key: 'scroll', label: 'Smooth scroll', flag: 'd2-scroll' },
       { key: 'lazy', label: 'Lazy loading', flag: 'd2-lazy' },
@@ -186,6 +188,16 @@ window.D2DOCS = {
           { l: 'Text — wartość max', t: 'text', a: [['d2-cms-range-display', 'max']] }
         ]}
       ]},
+      { title: 'Odroczone filtry (Zastosuj)', desc: 'Filtry nie przebudowują listy od razu — zmiany kumulują się, a lista aktualizuje się dopiero po kliknięciu „Zastosuj”. Przycisk pokazuje na żywo, ile będzie wyników. Sama obecność przycisku d2-cms-apply włącza ten tryb.', tree: [
+        { l: 'Div — panel filtrów', t: 'div', c: [
+          { l: 'Checkbox — „2 pokoje”', t: 'checkbox', a: [['d2-cms-target', 'produkty'], ['d2-cms-filter', 'pokoje:2']] },
+          { l: 'Div — suwak ceny', t: 'div', a: [['d2-cms-range'], ['d2-cms-target', 'produkty'], ['d2-cms-range-field', 'cena']], n: '…uchwyty jak wyżej' }
+        ]},
+        { l: 'Button — „Zastosuj”', t: 'button', a: [['d2-cms-target', 'produkty'], ['d2-cms-apply'], ['d2-cms-apply-count', 'Pokaż {count} wyników'], ['d2-cms-apply-empty', 'Brak wyników']], n: 'tekst zmienia się na żywo' }
+      ]},
+      { title: 'Filtr z wartością z CMS', desc: 'Gdy nie da się skleić pole:{{Nazwa}} w jednym atrybucie — klucz w d2-cms-filter, a wartość w osobnym, bindowalnym d2-cms-filter-value.', tree: [
+        { l: 'Collection Item — przycisk filtra', t: 'button', a: [['d2-cms-target', 'produkty'], ['d2-cms-filter', 'inwestycja'], ['d2-cms-filter-value', '{{ Nazwa inwestycji }}']], n: 'wartość podpięta z pola CMS' }
+      ]},
       { title: 'Przełącznik + licznik + stepper', desc: 'Przycisk „Ukryj sprzedane / Pokaż sprzedane”, licznik wyników i input liczby widocznych itemów.', tree: [
         { l: 'Button — przełącznik', t: 'button', a: [['d2-cms-target', 'produkty'], ['d2-cms-toggle', 'status:Sprzedane'], ['d2-cms-toggle-hide', 'Ukryj sprzedane'], ['d2-cms-toggle-show', 'Pokaż sprzedane']] },
         { l: 'Text — licznik', t: 'text', a: [['d2-cms-target', 'produkty'], ['d2-cms-display-format', '{visible} z {matching}']] },
@@ -222,7 +234,9 @@ window.D2DOCS = {
       { a: 'd2-cms-sort-active', v: 'asc | desc', el: 'przycisk sortowania', set: true, d: 'Obecny na aktywnej opcji — hook do stylowania CSS.' },
       { a: 'd2-cms-direction', v: 'asc | desc | toggle', el: 'Button', d: 'Zmienia kierunek aktywnego sortowania bez zmiany pola.' },
       { a: 'd2-cms-direction-active', v: 'asc | desc', el: 'przycisk kierunku', set: true, d: 'Obecny, gdy sortowanie aktywne — hook CSS.' },
-      { a: 'd2-cms-filter', v: 'pole:wartość', el: 'Button / Checkbox / Radio', d: 'Przełącza filtr. Kilka wartości naraz: <code>pole:a|b</code>. Checkboxy i radio synchronizują stan zaznaczenia.' },
+      { a: 'd2-cms-filter', v: 'pole:wartość lub pole', el: 'Button / Checkbox / Radio', d: 'Przełącza filtr. Kilka wartości naraz: <code>pole:a|b</code>. Checkboxy i radio synchronizują stan zaznaczenia. Bez wartości (samo <code>pole</code>) wartość bierze się z <code>d2-cms-filter-value</code>.' },
+      { a: 'd2-cms-filter-value', v: 'wartość', el: 'ta sama kontrolka', d: 'Wartość filtra z osobnego, <b>bindowalnego</b> atrybutu — obejście limitu Webflow, gdy nie da się skleić <code>pole:{{Nazwa CMS}}</code> w jednym atrybucie.' },
+      { a: 'd2-cms-filter-default', v: '(puste) | false', el: 'kontrolka filtra', d: 'Ten filtr jest aktywny od załadowania strony (checkbox/radio też zostaje zaznaczony). <code>="false"</code> jawnie wyłącza.' },
       { a: 'd2-cms-filter-field', v: 'pole', el: 'Select (Form)', d: 'Natywny select jako filtr — pusta opcja czyści.' },
       { a: 'd2-cms-filter-match', v: 'AND | OR', el: 'Collection List', d: 'Jak łączyć różne pola filtrów (domyślnie AND; w obrębie pola zawsze OR).' },
       { a: 'd2-cms-filter-label', v: 'pole', el: 'Text', d: 'Moduł wpisuje tu aktywną wartość filtra danego pola.' },
@@ -230,6 +244,11 @@ window.D2DOCS = {
       { a: 'd2-cms-filter-scope', v: '', el: 'wrapper', d: 'Ogranicza, które opcje mogą aktualizować etykietę filtra (zamiast .w-dropdown).' },
       { a: 'd2-cms-filter-active', v: '', el: 'kontrolka filtra', set: true, d: 'Obecny na aktywnym filtrze — hook do stylowania.' },
       { a: 'd2-cms-clear', v: 'puste | all | pole', el: 'Button / Link', d: 'Czyści filtry (puste), filtry + sortowanie (<code>all</code>) albo jedno pole.' },
+      { a: 'd2-cms-apply', v: '', el: 'Button', d: 'Włącza <b>odroczone filtrowanie</b>: zmiany filtrów nie przebudowują listy od razu — kumulują się jako szkic, a lista aktualizuje się dopiero po kliknięciu tego przycisku.', n: 'sama obecność przycisku przełącza listę w ten tryb' },
+      { a: 'd2-cms-apply-count', v: 'szablon, np. Pokaż {count}', el: 'przycisk apply', d: 'Podgląd na żywo: przycisk pokazuje, ile wyników da szkic. Token <code>{count}</code> podstawiany (bez tokenu — liczba doklejana).' },
+      { a: 'd2-cms-apply-empty', v: 'tekst', el: 'przycisk apply', d: 'Tekst przycisku, gdy szkic daje 0 wyników (nadpisuje wariant z count).' },
+      { a: 'd2-cms-apply-label', v: '', el: 'element w przycisku apply', d: 'Tylko tekst tego dziecka jest podmieniany licznikiem (reszta przycisku, np. ikona, zostaje).' },
+      { a: 'd2-cms-apply-pending', v: '', el: 'przycisk apply', set: true, d: 'Obecny, gdy są niezatwierdzone zmiany filtrów — hook do wyróżnienia przycisku.' },
       { a: 'd2-cms-empty', v: '', el: 'Div', d: 'Pokazywany, gdy filtry nie zwracają żadnego itemu (w Designerze daj Display: none).' },
       { a: 'd2-cms-display', v: 'visible | matching | total | hidden | remaining', el: 'Text', d: 'Moduł wpisuje tu licznik: widoczne / pasujące / wszystkie / ukryte / pozostałe.' },
       { a: 'd2-cms-display-format', v: 'np. {visible} z {matching}', el: 'Text', d: 'Własny format licznika z tokenami w klamrach.' },
@@ -249,6 +268,7 @@ window.D2DOCS = {
       { a: 'd2-cms-range-default-min', v: 'liczba', el: 'wrapper suwaka', d: 'Pozycja startowa lewego uchwytu (od razu filtruje).' },
       { a: 'd2-cms-range-default-max', v: 'liczba', el: 'wrapper suwaka', d: 'Pozycja startowa prawego uchwytu.' },
       { a: 'd2-cms-range-step', v: 'liczba', el: 'wrapper suwaka', d: 'Skok dla strzałek klawiatury (domyślnie 1).' },
+      { a: 'd2-cms-range-snap', v: '(puste) | false', el: 'wrapper suwaka', d: 'Zaokrągla auto-wykryte granice do wielokrotności kroku — min w dół, max w górę (ładne, okrągłe końce, np. 5–210 zamiast 7–207,25). Nigdy nie wyklucza itemu; ręczne min/max są nietknięte.' },
       { a: 'd2-cms-range-displayformat', v: 'pln | eur | usd | thousands | wzorzec', el: 'wrapper suwaka', d: 'Format wyświetlanych liczb, np. <code>pln</code> → 1 600 000.', n: 'alias: <code>d2-cms-range-format</code>; wzorzec np. <code>0,000 PLN</code>' },
       { a: 'd2-cms-range-prefix', v: 'tekst', el: 'wrapper suwaka', d: 'Tekst przed liczbą (np. waluta z przodu).' },
       { a: 'd2-cms-range-suffix', v: 'tekst', el: 'wrapper suwaka', d: 'Tekst po liczbie (np. „ zł”).' },

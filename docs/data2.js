@@ -398,6 +398,52 @@
     }
   };
 
+  /* ════════════════════════ FLOATING DOCK ════════════════════════ */
+  M.floatingdock = {
+    name: 'Floating Dock — pływający dock',
+    short: 'Floating dock',
+    cat: 'Komponenty UI',
+    flag: 'd2-floating-dock',
+    icon: 'dock',
+    size: '3,9 KB min',
+    auto: true,
+    tagline: 'Pływający pasek z przyciskami, które wysuwają panele — klik otwiera kartę, klik obok / Esc zamyka.',
+    desc: 'Pływający dock: pasek z przyciskami, gdzie każdy przycisk wysuwa przypisaną kartę (panel z treścią, np. kontakt, telefon, mapa). Kliknięcie przycisku otwiera panel o tym samym indeksie, klik poza dockiem lub Esc zamyka, przycisk zamykający w karcie też. To jedyny moduł sterowany <b>klasami CSS</b> (a nie atrybutami <code>d2-*</code>) — dopasowany do konkretnego komponentu Webflow: przyciski i karty rozpoznaje po klasach <code>floating_dock_*</code>, parując je kolejnością. Auto-inicjalizuje każdy <code>.floating_dock</code> na stronie.',
+    installNote: 'Moduł nie używa atrybutów <code>d2-*</code> — działa na <b>klasach</b> komponentu (<code>.floating_dock</code>, <code>.floating_dock_btn</code>, <code>.floating_dock_card</code>). Przyciski i karty łączy po <b>kolejności</b>: 1. przycisk → 1. karta, 2. → 2. itd. — musi ich być tyle samo.',
+
+    structures: [
+      { title: 'Dock z trzema panelami', desc: 'Struktura klasowa: kontener .floating_dock, w nim rząd przycisków i tyle samo kart. Moduł chowa karty na starcie (wstrzykuje CSS) i wysuwa właściwą po kliknięciu przycisku o tym samym indeksie.', tree: [
+        { l: 'Div — .floating_dock', t: 'dock', n: 'Position: Fixed; klasa floating_dock', c: [
+          { l: 'Div — rząd przycisków', t: 'div', c: [
+            { l: 'Button — .floating_dock_btn', t: 'button', n: 'otwiera kartę 1' },
+            { l: 'Button — .floating_dock_btn', t: 'button', n: 'otwiera kartę 2' },
+            { l: 'Button — .floating_dock_btn', t: 'button', n: 'otwiera kartę 3' }
+          ]},
+          { l: 'Div — .floating_dock_card', t: 'div', n: 'karta 1 (np. telefon)', c: [
+            { l: 'Treść karty', t: 'text' },
+            { l: 'Button — .floating_dock_card_close_btn', t: 'button', n: 'zamyka kartę' }
+          ]},
+          { l: 'Div — .floating_dock_card', t: 'div', n: 'karta 2 (np. e-mail)' },
+          { l: 'Div — .floating_dock_card', t: 'div', n: 'karta 3 (np. formularz)' }
+        ]}
+      ]}
+    ],
+
+    attrs: [
+      { a: '.floating_dock', v: '', el: 'kontener docka (klasa, Fixed)', req: true, d: 'Root docka — moduł skanuje każdy taki element na stronie i inicjalizuje osobno.' },
+      { a: '.floating_dock_btn', v: '', el: 'Button / Link (klasa)', req: true, d: 'Przycisk otwierający — klik toggluje kartę o tym samym indeksie. Aktywny dostaje klasę <code>is-active</code>.' },
+      { a: '.floating_dock_card', v: '', el: 'Div / panel (klasa)', req: true, d: 'Karta z treścią — ukryta na starcie, wysuwana po kliknięciu przypisanego przycisku. Musi być tyle kart, ile przycisków.' },
+      { a: '.floating_dock_card_close_btn', v: '', el: 'Button w karcie (klasa)', d: 'Klik zamyka bieżącą kartę (bez przełączania na inną).' },
+      { a: 'data-d2-visible', v: 'true | false', el: 'karta', set: true, d: 'Stan widoczności karty ustawiany przez moduł — hook do animacji i CSS (<code>[data-d2-visible="false"]{opacity:0;visibility:hidden}</code>).' },
+      { a: 'd2-floating-dock-preload', v: '', el: '<style> w <head>', set: true, d: 'Znacznik stylu wstrzykiwanego przez moduł, który chowa karty zanim JS się uruchomi (bez mignięcia).' }
+    ],
+
+    api: {
+      desc: 'Auto-init na starcie wystarcza; API do sterowania programowego i własnych opcji. Namespace: <code>digi2.floatingDock</code>.',
+      code: "digi2.onReady(function () {\n  // globalne opcje dla wszystkich docków\n  digi2.floatingDock.init({\n    duration: 0.35,                              // czas animacji (s)\n    easing: 'cubic-bezier(0.16, 1, 0.3, 1)',     // krzywa (sprężysta)\n    distance: '60px',                            // dystans wysuwania karty\n    activeClass: 'is-active',                    // klasa aktywnego przycisku\n    closeOnOutside: true,                        // klik poza dockiem zamyka\n    closeOnEscape: true                          // Esc zamyka\n  });\n\n  // sterowanie konkretnym dockiem\n  var dock = digi2.floatingDock.get(document.querySelector('.floating_dock'));\n  dock.open(0);      // otwórz 1. kartę\n  dock.toggle(1);    // przełącz 2. kartę\n  dock.close();      // zamknij otwartą\n  dock.isOpen();     // true / false\n\n  digi2.floatingDock.list();   // wszystkie instancje\n});"
+    }
+  };
+
   /* ════════════════════════ ANIMATE ════════════════════════ */
   M.animate = {
     name: 'Animate — animacje scroll',

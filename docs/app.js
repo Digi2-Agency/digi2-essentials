@@ -60,7 +60,9 @@ var IC = {
   toast:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M6.5 17h.01M10 17h7"/></svg>',
   tabs:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 9h18M3 9V6a2 2 0 0 1 2-2h4l2 3"/><rect x="3" y="9" width="18" height="11" rx="1.5"/></svg>',
   dropdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="5" width="18" height="6" rx="1.5"/><path d="m15 7.5 1.5 1.5L18 7.5M5.5 14h9M5.5 17.5h6"/></svg>',
-  countdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>'
+  countdown:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2.5h6"/></svg>',
+  lightbox:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m4.5 17 4.5-4.5 3 3M14 13l2-2 3.5 3.5"/><path d="M15.5 8.5 18 6M18 6h-2.2M18 6v2.2"/></svg>',
+  dock:'<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="3" y="13.5" width="18" height="6.5" rx="3"/><circle cx="7" cy="16.75" r="1"/><circle cx="12" cy="16.75" r="1"/><circle cx="17" cy="16.75" r="1"/></svg>'
 };
 function ico(t){ return IC[t] || IC.div; }
 
