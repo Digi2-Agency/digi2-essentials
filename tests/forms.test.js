@@ -690,3 +690,30 @@ test('liveRevalidate does not flag a fresh field mid-typing', () => {
   name.dispatchEvent({ type: 'input', bubbles: true });
   assert.equal(name.classList.contains('d2-error'), false);
 });
+
+test('autoValidation gives MESSAGE no minimum length — any non-empty text passes', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+
+  const form = env.master.closest('form');
+  const message = createElement('textarea', { name: 'MESSAGE' });
+  form.appendChild(message);
+
+  env.window.digi2.forms.create('contact', {
+    utmTracking: false,
+    clickIdTracking: false,
+    gaClientId: false,
+    pageMeta: false,
+  });
+
+  // krótka wiadomość jest OK — domyślniki nie mogą narzucać minLength
+  message.value = 'Cześć';
+  message.dispatchEvent({ type: 'focusout', bubbles: true });
+  assert.equal(message.classList.contains('d2-error'), false);
+
+  // pusta nadal łapie się na required
+  message.value = '';
+  message.dispatchEvent({ type: 'focusout', bubbles: true });
+  assert.equal(message.classList.contains('d2-error'), true);
+  assert.equal(message.getAttribute('d2-error'), 'required');
+});

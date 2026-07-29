@@ -356,7 +356,7 @@
     'NAME':           { required: true, minLength: 2, letters: true },
     'EMAIL':          { required: true, email: true },
     'PHONE':          { required: true, phone: true },
-    'MESSAGE':        { required: true, minLength: 30 },
+    'MESSAGE':        { required: true },
     'CONSENT_GDPR':   { required: true },
     'CONSENT_EMAIL':  { required: true },
     'CONSENT_PHONE':  { required: true },

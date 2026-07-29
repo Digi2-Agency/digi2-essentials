@@ -653,7 +653,7 @@ digi2.forms.create('contact', {
 | `NAME` | required, minLength: 2, letters |
 | `EMAIL` | required, email |
 | `PHONE` | required, phone |
-| `MESSAGE` | required, minLength: 30 |
+| `MESSAGE` | required |
 | `CONSENT_GDPR` | required (checkbox) |
 | `CONSENT_EMAIL` | required (checkbox) |
 | `CONSENT_PHONE` | required (checkbox) |
@@ -663,8 +663,8 @@ These apply **automatically** to any field carrying one of those names (`autoVal
 **Gotcha — `validation` extends these rules, it doesn't replace them.** Your entry is merged *on top* of the defaults per field, so a rule you don't mention survives:
 
 ```js
-MESSAGE: { required: false }                    // ❌ still enforces minLength: 30
-MESSAGE: { required: false, minLength: false }  // ✅ pass false to switch a default off
+NAME: { required: false }                    // ❌ still enforces minLength: 2 + letters
+NAME: { required: false, minLength: false }  // ✅ pass false to switch a default off
 ```
 
 Same trap with the consent fields: they default to **required**, so an optional marketing consent must say so explicitly — `CONSENT_EMAIL: { required: false }`. To opt out of every default at once, set `autoValidation: false` and declare all rules yourself.
