@@ -195,6 +195,30 @@
     return isNaN(n) ? NaN : n;
   }
 
+  /**
+   * Stricter numeric test used for TYPE DETECTION only.
+   *
+   * parseLooseNumber drops every non-digit, so unit codes come back as bogus
+   * decimals ("K1.10" → 1.1, "A/4/12" → 412). Detecting those columns as
+   * numbers sorts K1.10 before K1.2, which is never what an author means.
+   *
+   * A currency or unit SUFFIX is still a number ("660 000 zł", "23.1 m²",
+   * "$1,250.50") — only a letter BEFORE the first digit disqualifies, since
+   * that's what marks a code rather than a decorated number. Authors can still
+   * force either type with d2-cms-sort-type / d2-cms-field-type.
+   */
+  function looksNumeric(v) {
+    if (v == null || v === '') return false;
+    var s = String(v).trim();
+    var firstDigit = s.search(/\d/);
+    if (firstDigit === -1) return false;
+    // Whitelist what may precede the digits: whitespace, currency symbols and
+    // sign/bracket punctuation. Anything else (any letter, incl. "Ł", "Ø") means
+    // it's a code like "K1.10", not a decorated number.
+    if (!/^[\s $€£¥₽¢₴+\-(]*$/.test(s.slice(0, firstDigit))) return false;
+    return !isNaN(parseLooseNumber(s));
+  }
+
   function detectType(values) {
     var nonEmpty = [];
     for (var i = 0; i < values.length && nonEmpty.length < 5; i++) {
@@ -202,9 +226,7 @@
     }
     if (!nonEmpty.length) return 'string';
 
-    var allNumber = nonEmpty.every(function (v) {
-      return !isNaN(parseLooseNumber(v));
-    });
+    var allNumber = nonEmpty.every(looksNumeric);
     if (allNumber) return 'number';
 
     var allDate = nonEmpty.every(function (v) {

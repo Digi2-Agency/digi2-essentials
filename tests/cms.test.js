@@ -1242,3 +1242,40 @@ test('d2-cms-apply-count previews the draft result count live (and d2-cms-apply-
   dispatchDocument(env, 'click', none);   // status:Nieistniejące → 0 matches
   assert.equal(applyBtn.textContent, 'Brak wyników', 'd2-cms-apply-empty overrides the 0 case');
 });
+
+test('unit codes like K1.10 sort naturally, not as stripped decimals', async () => {
+  const env = createEnvironment();
+  const list = createElement('div', { 'd2-cms-list': 'units', 'd2-cms-sort-by': 'name' });
+  // Deliberately in the broken order: a numeric read of "K1.10" is 1.1, which
+  // used to sort it ahead of K1.2.
+  ['K1.1', 'K1.10', 'K1.11', 'K1.2', 'K1.9'].forEach((n) => {
+    list.appendChild(createItem({ name: n }));
+  });
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const order = list.children
+    .filter((c) => c.hasAttribute('d2-cms-item'))
+    .map((c) => c.querySelector('[d2-cms-field="name"]').textContent);
+  assert.deepEqual(order, ['K1.1', 'K1.2', 'K1.9', 'K1.10', 'K1.11']);
+});
+
+test('a currency/unit suffix still counts as a number for sorting', async () => {
+  const env = createEnvironment();
+  const list = createElement('div', { 'd2-cms-list': 'prices', 'd2-cms-sort-by': 'price' });
+  // Text sorting would put "1 200 000 zł" before "90 000 zł".
+  ['90 000 zł', '1 200 000 zł', '350 000 zł'].forEach((p) => {
+    list.appendChild(createItem({ price: p }));
+  });
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const order = list.children
+    .filter((c) => c.hasAttribute('d2-cms-item'))
+    .map((c) => c.querySelector('[d2-cms-field="price"]').textContent);
+  assert.deepEqual(order, ['90 000 zł', '350 000 zł', '1 200 000 zł']);
+});
