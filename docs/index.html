@@ -201,6 +201,9 @@ details.kr-details summary:hover{color:var(--lime)}
 .attr-row>div{min-width:0}
 .attr-row:last-child{border-bottom:none}
 .attr-row.head{background:var(--bg-2);font:600 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text-3);padding:8px 16px}
+.attr-group{padding:11px 16px 9px;background:var(--bg-2);border-bottom:1px solid var(--border);border-top:1px solid var(--border);font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--chip-attr);display:flex;align-items:center;gap:8px}
+.attr-group::before{content:'';width:6px;height:6px;border-radius:1.5px;background:var(--lime);flex:none}
+.attr-table>.attr-group:first-of-type{border-top:none}
 .attr-row.flash{animation:flash 1.6s ease-out}
 @keyframes flash{0%{background:var(--lime-dim)}100%{background:transparent}}
 .attr-row .col-a{display:flex;flex-direction:column;gap:5px;align-items:flex-start}

@@ -279,8 +279,14 @@ function pageModule(key){
       c += '<div class="attr-tools"><input type="text" id="attrFilter" placeholder="Filtruj atrybuty…"><span class="cnt" id="attrCnt">'+m.attrs.length+' atrybutów</span></div>';
     }
     c += '<div class="attr-table"><div class="attr-row head"><div>Atrybut</div><div>Gdzie w Webflow</div><div>Co robi</div></div>';
+    var curGroup = null;
     m.attrs.forEach(function(a){
-      c += '<div class="attr-row" data-attr="'+esc(a.a)+'" data-search="'+esc((a.a+' '+(a.d||'')+' '+(a.el||'')).toLowerCase())+'">';
+      /* nagłówek sekcji — dzieli atrybuty wg elementu, na którym siedzą */
+      if(a.g && a.g !== curGroup){
+        curGroup = a.g;
+        c += '<div class="attr-group">'+esc(a.g)+'</div>';
+      }
+      c += '<div class="attr-row" data-attr="'+esc(a.a)+'" data-search="'+esc((a.a+' '+(a.d||'')+' '+(a.el||'')+' '+(a.g||'')).toLowerCase())+'">';
       c += '<div class="col-a">'+chip(a.a, a.v)+(a.req?'<span class="tag-req">wymagany</span>':'')+(a.set?'<span class="tag-set">ustawia moduł</span>':'')+'</div>';
       c += '<div class="el">'+esc(a.el||'—')+'</div>';
       c += '<div class="d">'+a.d+(a.n?'<span class="n">'+a.n+'</span>':'')+'</div>';
@@ -352,6 +358,16 @@ function bindAttrFilter(m){
       var show = !q || r.getAttribute('data-search').indexOf(q) !== -1;
       r.style.display = show ? '' : 'none';
       if(show) n++;
+    });
+    /* nagłówek sekcji znika, gdy filtr wyciął z niej wszystko */
+    document.querySelectorAll('.attr-group').forEach(function(h){
+      var any = false;
+      var node = h.nextElementSibling;
+      while(node && !node.classList.contains('attr-group')){
+        if(node.classList.contains('attr-row') && node.style.display !== 'none'){ any = true; break; }
+        node = node.nextElementSibling;
+      }
+      h.style.display = any ? '' : 'none';
     });
     el('attrCnt').textContent = n + (q ? ' pasujących' : ' atrybutów');
   });
