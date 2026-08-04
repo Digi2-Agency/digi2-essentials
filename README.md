@@ -1172,6 +1172,50 @@ digi2.toasts.config({ position: 'bottom-center', duration: 4000 })
 
 ---
 
+## Webflow Interactions (IX2) — `d2-webflow-interaction`
+
+Fire a Webflow interaction from any element, by the name you gave it in the
+Designer. Part of the **interactions** module (`d2-interactions`).
+
+```html
+<!-- opens the same popup the Designer button opens -->
+<button d2-webflow-interaction="Show Form Popup">Zapytaj o ofertę</button>
+```
+
+```js
+digi2.interactions.playWebflow('Show Form Popup')       // page-wide
+digi2.interactions.playWebflow('Show Form Popup', el)   // scoped — see below
+digi2.interactions.webflowInteractions()                // list every name on the page
+```
+
+### How it resolves the interaction
+
+Webflow keeps interactions in ix2: `actionLists` (each with the name typed in the
+Designer) and `events` binding a list to elements carrying `data-w-id`. There is
+**no public "play this by name" API** — `ix2.actions.playbackRequested()` needs an
+`affectedElements` map that only Webflow's own event plumbing can build, and
+firing it with an empty map silently does nothing. So the module does what a
+visitor does: it finds an element that already carries the interaction and clicks
+it.
+
+**Scoping matters on CMS lists.** An interaction bound inside a Collection List
+sits on *every* row — on one live page that was 84 identical carriers. Clicking
+"the first match" would open the popup belonging to row 1. The module therefore
+walks up from the calling element and picks the carrier under the nearest shared
+ancestor, i.e. the button in **that row**. When you call the JS API directly, pass
+the element as the second argument to get the same scoping.
+
+### Limits
+
+- Only `MOUSE_CLICK` interactions can be replayed this way. Hover/scroll ones have
+  no clickable carrier.
+- The carrier's own click handlers run too. If the Designer button also sets form
+  fields (a product name, an id), that still happens — usually what you want.
+- Needs the interaction to exist **on the current page**. A name that only lives
+  on another page logs a warning and does nothing.
+
+---
+
 ## Smooth Scroll
 
 ```html

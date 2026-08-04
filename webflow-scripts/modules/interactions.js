@@ -705,9 +705,118 @@
     return el.getAttribute(name);
   }
 
+  // ---- Webflow IX2 bridge: d2-webflow-interaction="Nazwa" -------------------
+  // Webflow stores its interactions in ix2: `actionLists` keyed by id (each with
+  // the human name you typed in the Designer) and `events` binding a list to an
+  // element that carries data-w-id. There is no public "play by name" API —
+  // ix2.actions.playbackRequested() needs an affectedElements map that only
+  // Webflow's own event plumbing knows how to build, and firing it with an empty
+  // map does nothing. So we do exactly what a visitor does: find an element that
+  // already carries that interaction and click it.
+  function _ix2Data() {
+    try {
+      var wf = window.Webflow;
+      if (!wf || typeof wf.require !== 'function') return null;
+      var ix2 = wf.require('ix2');
+      return (ix2 && ix2.store) ? (ix2.store.getState().ixData || null) : null;
+    } catch (e) { return null; }
+  }
+
+  function _actionListIdByName(data, name) {
+    var wanted = String(name == null ? '' : name).trim().toLowerCase();
+    if (!wanted || !data.actionLists) return null;
+    for (var k in data.actionLists) {
+      if (!Object.prototype.hasOwnProperty.call(data.actionLists, k)) continue;
+      var al = data.actionLists[k] || {};
+      var title = al.title || al.name || k;
+      if (String(title).trim().toLowerCase() === wanted) return k;
+    }
+    return null;
+  }
+
+  // Every element wired to this action list by a click event.
+  function _carriersFor(data, actionListId) {
+    var out = [];
+    if (!data.events) return out;
+    for (var id in data.events) {
+      if (!Object.prototype.hasOwnProperty.call(data.events, id)) continue;
+      var ev = data.events[id];
+      if (!ev || ev.eventTypeId !== 'MOUSE_CLICK') continue;
+      if (!ev.action || !ev.action.config || ev.action.config.actionListId !== actionListId) continue;
+      var target = ev.target && (ev.target.selector || ev.target.id);
+      if (!target) continue;
+      // ixData writes "pageId|elementId"; the DOM only carries the element id.
+      var ids = target.indexOf('|') >= 0 ? [target, target.split('|')[1]] : [target];
+      for (var i = 0; i < ids.length; i++) {
+        var found = document.querySelectorAll('[data-w-id="' + ids[i] + '"]');
+        for (var j = 0; j < found.length; j++) out.push(found[j]);
+      }
+    }
+    return out;
+  }
+
+  // A CMS-bound interaction sits on EVERY row, so "first match" would open the
+  // popup belonging to row 1. Walk up from the caller and take the carrier
+  // sharing the closest ancestor — i.e. the button in the caller's own row.
+  function _nearestCarrier(carriers, fromEl) {
+    if (!carriers.length) return null;
+    if (!fromEl || !fromEl.parentElement) return carriers[0];
+    var node = fromEl;
+    while (node) {
+      for (var i = 0; i < carriers.length; i++) {
+        if (carriers[i] !== fromEl && node.contains && node.contains(carriers[i])) return carriers[i];
+      }
+      if (node === document.body) break;
+      node = node.parentElement;
+    }
+    return carriers[0];
+  }
+
+  var _wfFiring = false;   // guard: a carrier may itself carry the attribute
+
+  function playWebflowInteraction(name, fromEl) {
+    var data = _ix2Data();
+    if (!data) {
+      console.warn('[digi2.interactions] Webflow IX2 not available — is this a Webflow page?');
+      return false;
+    }
+    var alId = _actionListIdByName(data, name);
+    if (!alId) {
+      console.warn('[digi2.interactions] no Webflow interaction named "' + name + '".');
+      return false;
+    }
+    var carrier = _nearestCarrier(_carriersFor(data, alId), fromEl);
+    if (!carrier) {
+      console.warn('[digi2.interactions] "' + name + '" exists but no element on this page triggers it.');
+      return false;
+    }
+    if (_wfFiring) return false;
+    _wfFiring = true;
+    try { carrier.click(); } finally {
+      setTimeout(function () { _wfFiring = false; }, 0);
+    }
+    _log('webflow interaction → ' + name, { actionListId: alId });
+    return true;
+  }
+
+  function initWebflowInteractionTriggers() {
+    var els = document.querySelectorAll('[d2-webflow-interaction]');
+    Array.prototype.forEach.call(els, function (el) {
+      if (el._d2WfInteraction) return;
+      el._d2WfInteraction = true;
+      el.addEventListener('click', function (e) {
+        var name = attr(el, 'd2-webflow-interaction');
+        if (!name) return;
+        e.preventDefault();
+        playWebflowInteraction(name, el);
+      });
+    });
+  }
+
   function autoInit() {
     rebuildInstanceRegistry();
     injectPreloadCSS();
+    initWebflowInteractionTriggers();
 
     var triggers = document.querySelectorAll('[d2-interaction-trigger]');
     var created = 0;
@@ -939,6 +1048,20 @@
     },
 
     refresh: autoInit,
+
+    /**
+     * Play a Webflow (IX2) interaction by the name given in the Designer.
+     * `fromEl` scopes the lookup so CMS rows fire their OWN carrier.
+     */
+    playWebflow: function (name, fromEl) { return playWebflowInteraction(name, fromEl || null); },
+
+    /** Names of every Webflow interaction on this page — handy for debugging. */
+    webflowInteractions: function () {
+      var data = _ix2Data();
+      if (!data || !data.actionLists) return [];
+      return Object.keys(data.actionLists)
+        .map(function (k) { var al = data.actionLists[k] || {}; return al.title || al.name || k; });
+    },
 
     // Lower-level utility — useful for custom integrations.
     Interaction: Interaction,
