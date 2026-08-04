@@ -458,6 +458,7 @@
     copy: 'copy',
     cms: 'cms',
     interactions: 'interactions',
+    webflow: 'webflow',
     abTests: 'ab-tests',
     lightbox: 'lightbox',
   };
@@ -626,6 +627,7 @@
         if (m.indexOf('lightbox-') === 0) m = 'lightbox'; // lightbox-modal/-group → lightbox
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs'; // accordion lives in tabs
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns'; // singular/parts → module
+        if (m.indexOf('webflow-') === 0) m = 'webflow'; // webflow-interaction → module
         _pushModule(into, m);
       }
     }
@@ -640,6 +642,7 @@
         if (m.indexOf('lightbox-') === 0) m = 'lightbox'; // lightbox-modal/-group → lightbox
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs';
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns';
+        if (m.indexOf('webflow-') === 0) m = 'webflow';
         _pushModule(into, m);
       });
     }

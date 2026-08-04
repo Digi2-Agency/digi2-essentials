@@ -80,6 +80,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
+| `d2-webflow` | webflow | 2.7 KB | Fire a Webflow (IX2) interaction by name from custom code |
 
 Total (all modules): **188.0 KB min** / **55.9 KB** gzipped.
 
@@ -1172,47 +1173,57 @@ digi2.toasts.config({ position: 'bottom-center', duration: 4000 })
 
 ---
 
-## Webflow Interactions (IX2) — `d2-webflow-interaction`
+## Webflow Interactions (IX2)
 
-Fire a Webflow interaction from any element, by the name you gave it in the
-Designer. Part of the **interactions** module (`d2-interactions`).
+Fire a Webflow interaction from your own markup, by the name you gave it in the
+Designer. Module: **webflow** (`d2-webflow`).
 
 ```html
-<!-- opens the same popup the Designer button opens -->
+<!-- per page -->
+<digi2-module d2-modules="webflow"></digi2-module>
+<!-- or on the loader tag: d2-webflow -->
+
 <button d2-webflow-interaction="Show Form Popup">Zapytaj o ofertę</button>
 ```
 
+Requesting the module is enough — any `d2-webflow-*` attribute also resolves to
+it, so `d2-modules="webflow-interaction"` works as well.
+
 ```js
-digi2.interactions.playWebflow('Show Form Popup')       // page-wide
-digi2.interactions.playWebflow('Show Form Popup', el)   // scoped — see below
-digi2.interactions.webflowInteractions()                // list every name on the page
+digi2.webflow.playInteraction('Show Form Popup')       // page-wide
+digi2.webflow.playInteraction('Show Form Popup', el)   // scoped — see below
+digi2.webflow.interactions()                           // every name on the page
+digi2.webflow.refresh()                                // re-scan for new triggers
 ```
 
 ### How it resolves the interaction
 
-Webflow keeps interactions in ix2: `actionLists` (each with the name typed in the
+Webflow stores interactions in ix2: `actionLists` (each with the name typed in the
 Designer) and `events` binding a list to elements carrying `data-w-id`. There is
-**no public "play this by name" API** — `ix2.actions.playbackRequested()` needs an
+**no public "play by name" API** — `ix2.actions.playbackRequested()` wants an
 `affectedElements` map that only Webflow's own event plumbing can build, and
-firing it with an empty map silently does nothing. So the module does what a
-visitor does: it finds an element that already carries the interaction and clicks
-it.
+firing it with an empty map is a silent no-op. So the module does what a visitor
+does: it finds an element already wired to that interaction and clicks it.
 
-**Scoping matters on CMS lists.** An interaction bound inside a Collection List
-sits on *every* row — on one live page that was 84 identical carriers. Clicking
-"the first match" would open the popup belonging to row 1. The module therefore
-walks up from the calling element and picks the carrier under the nearest shared
-ancestor, i.e. the button in **that row**. When you call the JS API directly, pass
-the element as the second argument to get the same scoping.
+**Scoping matters inside CMS lists.** An interaction bound in a Collection List
+sits on *every* row — on one live page that meant 84 identical carriers. Taking
+"the first match" would open the popup belonging to row 1. The module walks up
+from the calling element and picks the carrier under the nearest shared ancestor,
+i.e. the button in **that row**. Pass the element as the second argument to get
+the same scoping from JS.
+
+Triggers added later (CMS rows fetched by `d2-cms-load-mode`) are picked up
+automatically via `cms:items-added`; call `digi2.webflow.refresh()` if you inject
+markup yourself.
 
 ### Limits
 
-- Only `MOUSE_CLICK` interactions can be replayed this way. Hover/scroll ones have
-  no clickable carrier.
-- The carrier's own click handlers run too. If the Designer button also sets form
-  fields (a product name, an id), that still happens — usually what you want.
-- Needs the interaction to exist **on the current page**. A name that only lives
-  on another page logs a warning and does nothing.
+- Only `MOUSE_CLICK` interactions can be replayed — hover/scroll ones have no
+  clickable carrier.
+- The carrier's own click handlers run too. If the Designer button also fills a
+  form field (product name, id), that still happens — usually what you want.
+- The interaction must exist **on the current page**; a name that only lives on
+  another page logs a warning and does nothing.
 
 ---
 
