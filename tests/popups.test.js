@@ -498,3 +498,138 @@ test('showIfPending() is a no-op when nothing was deferred', () => {
   assert.equal(video.showIfPending(), false);
   assert.equal(video.isVisible, false);
 });
+
+// ---- video ------------------------------------------------------------------
+
+function createVideo(attrs) {
+  const v = createElement('video', attrs || {});
+  v.muted = true;
+  v.volume = 0;
+  v.currentTime = 0;
+  v.paused = true;
+  v.playCalls = 0;
+  v.play = function () { this.playCalls += 1; this.paused = false; return { catch() {} }; };
+  v.pause = function () { this.paused = true; };
+  return v;
+}
+
+function videoEnv({ videoOpt, unmuteAttrs } = {}) {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const popup = createElement('div', { id: 'popup-video', class: 'popup__overlay' });
+  const vid = createVideo({ 'data-src': 'https://cdn.test/film.mp4' });
+  popup.appendChild(vid);
+  const unmute = createElement('button', unmuteAttrs || { 'data-popup': 'unmute' });
+  popup.appendChild(unmute);
+  env.body.appendChild(popup);
+
+  const inst = env.window.digi2.popups.create('film', {
+    popupSelector: '.popup__overlay', animation: 'none', cookieName: 'video_seen',
+    video: videoOpt === undefined ? true : videoOpt,
+  });
+  return { env, inst, vid, unmute };
+}
+
+test('video: opening lazy-loads data-src and starts playback', () => {
+  const { inst, vid } = videoEnv();
+  assert.equal(vid.getAttribute('src'), null, 'nothing fetched before the popup opens');
+
+  inst.show();
+  assert.equal(vid.getAttribute('src'), 'https://cdn.test/film.mp4');
+  assert.equal(vid.playCalls, 1);
+});
+
+test('video: closing pauses, rewinds and re-mutes so the next open can autoplay', () => {
+  const { inst, vid, unmute } = videoEnv();
+  inst.show();
+  vid.muted = false;
+  vid.currentTime = 42;
+
+  inst.hide();
+  assert.equal(vid.paused, true);
+  assert.equal(vid.currentTime, 0);
+  assert.equal(vid.muted, true);
+  assert.equal(unmute.style.display, '', 'unmute button comes back');
+});
+
+test('video: the unmute button unmutes, replays and hides itself', () => {
+  const { inst, vid, unmute } = videoEnv();
+  inst.show();
+  assert.equal(unmute.style.display, '', 'shown while muted');
+
+  unmute._listeners.click();
+  assert.equal(vid.muted, false);
+  assert.equal(vid.volume, 1);
+  assert.equal(unmute.style.display, 'none');
+});
+
+test('video: cookieOnEnd writes the cookie only once the film actually finishes', () => {
+  const { env, inst, vid } = videoEnv({ videoOpt: { cookieOnEnd: true } });
+  inst.show();
+  inst._closeByUser();
+  assert.equal(env.document.cookie, '', 'dismissing early is not "watched"');
+
+  inst.show();
+  vid._listeners.ended();
+  assert.match(env.document.cookie, /video_seen=true/);
+});
+
+test('video: closeOnEnd hides the popup when playback finishes', () => {
+  const { inst, vid } = videoEnv({ videoOpt: { closeOnEnd: true } });
+  inst.show();
+  assert.equal(inst.isVisible, true);
+  vid._listeners.ended();
+  assert.equal(inst.isVisible, false);
+});
+
+test('video: autoplay:false wires everything but does not start playback', () => {
+  const { inst, vid } = videoEnv({ videoOpt: { autoplay: false } });
+  inst.show();
+  assert.equal(vid.getAttribute('src'), 'https://cdn.test/film.mp4', 'still lazy-loaded');
+  assert.equal(vid.playCalls, 0);
+});
+
+test('video: a custom unmuteSelector is honoured', () => {
+  const { inst, vid, unmute } = videoEnv({
+    videoOpt: { unmuteSelector: '.sound-on' }, unmuteAttrs: { class: 'sound-on' },
+  });
+  inst.show();
+  unmute._listeners.click();
+  assert.equal(vid.muted, false);
+});
+
+test('video: no <video> in the popup warns instead of failing silently', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    env.window.digi2.popups.create('film', {
+      popupSelector: '.popup__overlay', animation: 'none', video: true,
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /no <video> found/);
+});
+
+test('video: cookieOnEnd flips setCookieOnClose off, but an explicit value wins', () => {
+  const implied = videoEnv({ videoOpt: { cookieOnEnd: true } });
+  assert.equal(implied.inst.options.setCookieOnClose, false, 'inferred from cookieOnEnd');
+
+  // Explicit opt-in: cookie on BOTH close and end.
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const popup = createElement('div', { class: 'popup__overlay' });
+  popup.appendChild(createVideo({}));
+  env.body.appendChild(popup);
+  const inst = env.window.digi2.popups.create('film', {
+    popupSelector: '.popup__overlay', animation: 'none', cookieName: 'seen',
+    setCookieOnClose: true, video: { cookieOnEnd: true },
+  });
+  assert.equal(inst.options.setCookieOnClose, true, 'explicit setting is not overridden');
+});

@@ -404,7 +404,47 @@ digi2.popups.create('newsletter', {
 | `excludeUrls` | `[]` | URL fragments to skip — see [URL filters](#url-filters) |
 | `containsUrls` | `['/']` | URL fragments required (whitelist) — see [URL filters](#url-filters) |
 | `canShow` | `null` | `() => boolean` — veto an open. See [Sequencing](#sequencing-two-popups) |
+| `video` | `null` | `true` · selector · `{…}` — wire a `<video>` inside the popup. See [Video popups](#video-popups) |
 | `onOpen` / `onClose` | `null` | Callbacks |
+
+### Video popups
+
+`video: true` wires the first `<video>` in the popup: it plays on open, and
+pauses / rewinds / re-mutes on close so the next open can autoplay again.
+
+```html
+<div id="popup-video" class="popup__overlay">
+  <video class="popup__video" data-src="/film.mp4" controls muted playsinline preload="none"></video>
+  <button d2-popup-unmute>Włącz dźwięk</button>
+</div>
+```
+
+```js
+digi2.popups.create('film', {
+  popupSelector: '#popup-video',
+  openAfterDelay: 30,
+  cookieName: 'film_watched',
+  cookieDurationDays: 7,
+  video: { cookieOnEnd: true },     // 7 days of silence only once it's watched
+})
+```
+
+`data-src` is copied to `src` on first open, so `preload="none"` really means
+nothing is fetched until the popup appears. Autoplay needs `muted`; the unmute
+button matters most on iOS, where native controls hide during playback. It is
+found by `[d2-popup-unmute]` or `[data-popup="unmute"]`, shown while muted and
+hidden after use.
+
+| Key | Default | Description |
+|---|---|---|
+| `selector` | first `<video>` | Which element to wire |
+| `unmuteSelector` | `[d2-popup-unmute], [data-popup="unmute"]` | Unmute button |
+| `autoplay` | `true` | Play on open. A browser refusal is caught — controls still work |
+| `resetOnClose` | `true` | Pause, rewind to 0 and re-mute on close |
+| `cookieOnEnd` | `false` | Write the dismissal cookie when playback finishes. Implies `setCookieOnClose: false` unless you set it yourself |
+| `closeOnEnd` | `false` | Close the popup when playback finishes |
+
+Emits `popup:video-end` and `popup:video-unmute` on the bus.
 
 ### Sequencing two popups
 

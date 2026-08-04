@@ -247,6 +247,8 @@
   class PopupManager {
     constructor(name, options = {}) {
       this.name = name;
+      // Kept so defaults can tell "not set" from "set to the default value".
+      this._rawOptions = options || {};
 
       this.options = {
         popupSelector: '.popup__overlay',
@@ -282,6 +284,11 @@
         openOnSelectAbandon: null,        // CSS selector for a form/container — open if user focuses a <select> inside, doesn't change it to a non-default value, and then mouses out of the container
         openOnScrollSpeed: null,          // number (px/sec) or { speed, direction: 'up'|'down'|'any' } — open when scroll velocity exceeds threshold
         interceptLinks: false,            // boolean | CSS selector | { device: 'mobile'|'desktop'|'both', selector } — intercept link clicks, show popup first, navigate on close (skips #hash, mailto:, tel:, javascript:, target=_blank, modifier-key clicks)
+        // ---- Video ---------------------------------------------------------
+        // true → wire the first <video> in the popup. Or pass a selector, or
+        // { selector, unmuteSelector, autoplay, resetOnClose, cookieOnEnd,
+        //   closeOnEnd }. See _setupVideo() for what each one does.
+        video: null,
         // ---- Callbacks -----------------------------------------------------
         canShow: null,                // () => boolean — vetoes show() from any
                                       // trigger. Returning false parks the request;
@@ -296,6 +303,7 @@
       this.shown = false;
       this.isVisible = false;
       this.pendingShow = false;
+      this._video = null;
       this._animating = false;
 
       // Mobile exit-intent state
@@ -397,6 +405,101 @@
       if (this.options.openOnSelectAbandon) this._setupSelectAbandonTrigger();
       if (this.options.openOnScrollSpeed) this._setupScrollSpeedTrigger();
       if (this.options.interceptLinks) this._setupLinkInterceptTrigger();
+
+      if (this.options.video) this._setupVideo();
+    }
+
+    // ---- Video --------------------------------------------------------------
+    // A popup holding a <video> has to do four things nobody wants to rewrite
+    // per site: start on open, stop and rewind on close, survive an autoplay
+    // rejection, and (optionally) treat "watched to the end" as the real goal
+    // rather than "dismissed".
+
+    _setupVideo() {
+      var opt = this.options.video;
+      var cfg = (typeof opt === 'object' && opt !== null) ? opt : {};
+      if (typeof opt === 'string') cfg = { selector: opt };
+
+      this._video = {
+        autoplay:     cfg.autoplay !== false,
+        resetOnClose: cfg.resetOnClose !== false,
+        cookieOnEnd:  cfg.cookieOnEnd === true,
+        closeOnEnd:   cfg.closeOnEnd === true,
+      };
+
+      // "Cookie when the film ends" and "cookie when they close it" contradict
+      // each other — closing always happens first, so the end-of-film rule would
+      // never fire. Assume the intent unless the site said otherwise explicitly.
+      if (this._video.cookieOnEnd && !('setCookieOnClose' in this._rawOptions)) {
+        this.options.setCookieOnClose = false;
+      }
+
+      var el = cfg.selector
+        ? this.popupElement.querySelector(cfg.selector)
+        : this.popupElement.querySelector('video');
+
+      if (!el) {
+        console.warn('[digi2.popups] "' + this.name + '" — video: no <video> found in '
+          + this.options.popupSelector);
+        this._video = null;
+        return;
+      }
+      this._video.el = el;
+
+      // Muting is what makes autoplay legal, so an unmute affordance matters —
+      // on iOS the native controls hide during playback and there is no other
+      // way back to sound.
+      var unmuteSel = cfg.unmuteSelector || '[d2-popup-unmute], [data-popup="unmute"]';
+      var unmute = this.popupElement.querySelector(unmuteSel);
+      if (unmute) {
+        this._video.unmute = unmute;
+        var onUnmute = () => {
+          el.muted = false;
+          el.volume = 1;
+          var p = el.play();
+          if (p && p.catch) p.catch(() => {});
+          unmute.style.display = 'none';
+          _emitEvent('popup:video-unmute', { name: this.name });
+        };
+        unmute.addEventListener('click', onUnmute);
+        this._cleanupFns.push(() => unmute.removeEventListener('click', onUnmute));
+      }
+
+      var onEnded = () => {
+        _emitEvent('popup:video-end', { name: this.name });
+        if (this._video.cookieOnEnd) this._setCookie();
+        if (this._video.closeOnEnd) this.hide();
+      };
+      el.addEventListener('ended', onEnded);
+      this._cleanupFns.push(() => el.removeEventListener('ended', onEnded));
+
+      _log('video wired → ' + this.name, { cookieOnEnd: this._video.cookieOnEnd });
+    }
+
+    _videoPlay() {
+      var v = this._video;
+      if (!v || !v.el) return;
+      // preload="none" + data-src: don't fetch the file until it's actually needed.
+      var lazy = v.el.getAttribute('data-src');
+      if (!v.el.getAttribute('src') && lazy) v.el.setAttribute('src', lazy);
+      if (v.unmute) v.unmute.style.display = v.el.muted ? '' : 'none';
+      if (!v.autoplay) return;
+      try {
+        var p = v.el.play();
+        // Safari/iOS can still refuse — fall back to the native controls.
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) { /* no-op */ }
+    }
+
+    _videoStop() {
+      var v = this._video;
+      if (!v || !v.el || !v.resetOnClose) return;
+      try {
+        v.el.pause();
+        v.el.currentTime = 0;
+        v.el.muted = true;            // next open starts silent and autoplayable
+      } catch (e) { /* no-op */ }
+      if (v.unmute) v.unmute.style.display = '';
     }
 
     _canTrigger() {
@@ -528,6 +631,7 @@
 
       if (anim === ANIMATIONS.none) {
         this.popupElement.style.display = 'flex';
+        this._videoPlay();
         _emitEvent('popup:open', { name: this.name });
         if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
         return;
@@ -536,6 +640,7 @@
       this._animating = true;
       applyStyles(this.popupElement, anim.setup(dur));
       this.popupElement.style.display = 'flex';
+      this._videoPlay();
       void this.popupElement.offsetHeight; // force reflow
       applyStyles(this.popupElement, anim.in());
 
@@ -582,6 +687,8 @@
 
       _log('hide → ' + this.name);
       this.isVisible = false;
+      // Kill the sound now, not after the fade-out finishes.
+      this._videoStop();
       const anim = this._getAnimation();
       const dur = this._activeAnimationDuration;
 
