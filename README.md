@@ -400,9 +400,45 @@ digi2.popups.create('newsletter', {
 | `schedule` | `null` | `{ from, to }` or `'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'` — only show within this window. See [Scheduling](#scheduling) |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
+| `setCookieOnClose` | `true` | `false` → closing doesn't suppress the popup. See [Sequencing](#sequencing-two-popups) |
 | `excludeUrls` | `[]` | URL fragments to skip — see [URL filters](#url-filters) |
 | `containsUrls` | `['/']` | URL fragments required (whitelist) — see [URL filters](#url-filters) |
+| `canShow` | `null` | `() => boolean` — veto an open. See [Sequencing](#sequencing-two-popups) |
 | `onOpen` / `onClose` | `null` | Callbacks |
+
+### Sequencing two popups
+
+A welcome popup followed by a video popup needs two things a single popup can't
+express: don't stack them, and don't treat "closed" as "done".
+
+```js
+var welcome = digi2.popups.create('welcome', {
+  popupSelector: '#popup-welcome',
+  cookieName: 'popup_welcome_closed',
+  openOnLoad: true,
+  onClose: function () { video.showIfPending() },    // let the queued one through
+})
+
+var video = digi2.popups.create('video', {
+  popupSelector: '#popup-video',
+  cookieName: 'popup_video_watched',
+  cookieDurationDays: 7,
+  openAfterDelay: 30,
+  setCookieOnClose: false,                     // dismissing it isn't "watched"
+  canShow: function () { return !welcome.isVisible },
+})
+
+videoEl.addEventListener('ended', function () { video.markSeen() })  // now it is
+```
+
+`canShow()` returning `false` **parks** the request instead of dropping it — a
+delay trigger fires exactly once, so without this the popup would never appear
+at all. `showIfPending()` replays it and is a safe no-op otherwise.
+
+| Method | Description |
+|---|---|
+| `showIfPending()` | Replay a `show()` that `canShow()` vetoed. Returns whether it opened |
+| `markSeen()` | Write the dismissal cookie without closing — the other half of `setCookieOnClose: false` |
 
 ### 22 Animations
 
