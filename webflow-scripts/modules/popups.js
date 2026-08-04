@@ -321,6 +321,20 @@
     _init() {
       this.popupElement = document.querySelector(this.options.popupSelector);
 
+      // create() called from <head>, before the markup exists? digi2.onReady()
+      // only means "modules loaded" — the loader fetches them asynchronously and
+      // regularly finishes before <body> is parsed. Wait for the DOM and retry
+      // instead of leaving the popup permanently dead.
+      if (!this.popupElement && document.readyState === 'loading' && !this._awaitingDom) {
+        this._awaitingDom = true;
+        var self = this;
+        document.addEventListener('DOMContentLoaded', function () {
+          self._awaitingDom = false;
+          self._init();
+        }, { once: true });
+        return;
+      }
+
       // Element-level URL filters must merge BEFORE the URL gate below.
       if (this.popupElement) this._mergeUrlFilterAttributes();
 
@@ -334,6 +348,8 @@
       if (!this.popupElement) {
         console.warn(
           `[digi2.popups] "${this.name}" — element not found: ${this.options.popupSelector}`
+          + ' (if the markup exists, move this create() call to Before </body> —'
+          + ' from <head> it can run before the element is parsed)'
         );
         return;
       }

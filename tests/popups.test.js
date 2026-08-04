@@ -382,3 +382,49 @@ test('d2-popup-include whitelists subpages (skips others)', () => {
   const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
   assert.equal(inst.isVisible, false);
 });
+
+test('create() from <head> retries once the DOM is parsed instead of dying', () => {
+  const env = createEnvironment();
+  env.document.readyState = 'loading';        // still parsing <head>
+  loadPopupsModule(env);
+
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  let inst;
+  try {
+    inst = env.window.digi2.popups.create('late', {
+      popupSelector: '.popup__overlay', animation: 'none', openOnLoad: true,
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 0, 'no warning yet — it is waiting for the DOM');
+  assert.equal(inst.popupElement, null, 'markup does not exist yet');
+
+  // Markup arrives, then DOMContentLoaded fires.
+  const popup = createElement('div', { class: 'popup__overlay' });
+  env.body.appendChild(popup);
+  env.document.readyState = 'complete';
+  env.dispatchDoc('DOMContentLoaded');
+
+  assert.equal(inst.popupElement, popup, 'element picked up on the retry');
+  assert.equal(inst.isVisible, true, 'openOnLoad still honoured after the retry');
+});
+
+test('a genuinely missing element still warns, with a hint about <head>', () => {
+  const env = createEnvironment();           // readyState: 'complete'
+  loadPopupsModule(env);
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    env.window.digi2.popups.create('nope', { popupSelector: '.does-not-exist' });
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /element not found/);
+  assert.match(warnings[0], /Before <\/body>/, 'points at the usual cause');
+});
