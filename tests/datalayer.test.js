@@ -167,3 +167,20 @@ test('an unknown group name warns instead of silently doing nothing', () => {
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /unknown group\(s\): lightbxo/);
 });
+
+test('popup video reports GA4 video_complete and video_unmute', () => {
+  const env = createEnvironment();
+  env.emit('popup:video-end', { name: 'film' });
+  env.emit('popup:video-unmute', { name: 'film' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'video_complete', video_title: 'film', video_provider: 'popup' },
+    { event: 'video_unmute', video_title: 'film', video_provider: 'popup' },
+  ]);
+});
+
+test('disabling the popups group silences the video events too', () => {
+  const env = createEnvironment({ disable: 'popups' });
+  env.emit('popup:video-end', { name: 'film' });
+  assert.equal(env.dl().length, 0);
+});

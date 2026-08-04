@@ -1288,6 +1288,8 @@ own is only needed when you want the defaults.
 |---|---|---|
 | Popup opened | `view_promotion` | `promotion_name`, `creative_slot: 'popup'` |
 | Popup closed | `close_promotion` | `promotion_name` |
+| Popup video watched to the end | `video_complete` | `video_title`, `video_provider: 'popup'` |
+| Popup video unmuted | `video_unmute` | `video_title`, `video_provider: 'popup'` |
 | List filtered | `view_item_list` | `item_list_name`, `filters`, `filter_count`, `matching`, `total` |
 | List sorted | `view_item_list` | `item_list_name`, `sort_field`, `sort_direction` |
 | More rows loaded | `view_item_list` | `item_list_name`, `loaded` |
@@ -1299,10 +1301,13 @@ own is only needed when you want the defaults.
 | A/B variant clicked | `select_promotion` | `promotion_id`, `creative_name` |
 
 `view_promotion`, `view_item_list`, `select_item`, `select_content`,
-`generate_lead` and `select_promotion` are GA4 recommended events, so they land
-in standard reports. `close_promotion`, `form_error` and `experiment_impression`
-have no GA4 equivalent — they're custom names in the same snake_case style and
-GA4 reports them as-is.
+`generate_lead`, `select_promotion` and `video_complete` are GA4 recommended
+events, so they land in standard reports. `close_promotion`, `form_error`,
+`video_unmute` and `experiment_impression` have no GA4 equivalent — they're
+custom names in the same snake_case style and GA4 reports them as-is.
+
+Video events belong to the `popups` group, so `d2-datalayer-disable="popups"`
+silences them along with the open/close pair.
 
 Filters are flattened into one string (`rooms:1|2,status:Dostępne`) because GA4
 parameters can't hold objects. Empty values are dropped so no blank parameters

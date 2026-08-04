@@ -133,6 +133,24 @@
       };
     });
 
+    // video_complete is a GA4 recommended event, so a popup video reports the
+    // same way an embedded player would.
+    listen('popup:video-end', 'popups', function (d) {
+      return {
+        event: 'video_complete',
+        video_title: d.name,
+        video_provider: 'popup',
+      };
+    });
+
+    listen('popup:video-unmute', 'popups', function (d) {
+      return {
+        event: 'video_unmute',
+        video_title: d.name,
+        video_provider: 'popup',
+      };
+    });
+
     listen('cms:filter', 'cms', function (d) {
       var f = d.filters || {};
       var pairs = Object.keys(f).map(function (k) {
