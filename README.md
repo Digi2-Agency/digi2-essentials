@@ -1008,7 +1008,24 @@ instance.open('tab-id')
 instance.close('tab-id')      // accordion
 instance.toggle('tab-id')     // accordion
 instance.getActive()
+instance.rescan()             // wire up triggers/panels added after init
+
+digi2.tabs.rescan('faq')      // one group
+digi2.tabs.rescan()           // every group — returns how many triggers were added
 ```
+
+### Accordions inside a CMS list that loads more rows
+
+A `[d2-cms-list]` with `d2-cms-load-mode="scroll"` / `"button"` fetches further
+Webflow pagination pages **after** the page has loaded. Tabs scans the DOM once at
+startup, so those later rows would have no click handling — the list works at the
+top and goes dead further down, with their panels stuck open (nothing ever closed
+them).
+
+This is handled automatically: the CMS module emits `cms:items-added` after
+appending rows and the tabs module re-scans, attaching **only** the new triggers
+(existing ones keep their single listener, and an open panel stays open). Call
+`digi2.tabs.rescan()` yourself only when you inject rows with your own code.
 
 ---
 
@@ -1767,6 +1784,7 @@ digi2.on('loaded', fn)              // all modules loaded
 digi2.on('module:loaded', fn)       // single module (receives name)
 digi2.on('module:error', fn)        // module failed
 digi2.on('consent:updated', fn)     // consent changed
+digi2.on('cms:items-added', fn)     // a CMS list fetched extra rows ({ list, count })
 digi2.off('loaded', fn)
 digi2.emit('custom', data)
 digi2.onReady(fn)                   // alias for on('loaded')

@@ -217,6 +217,43 @@
       }
     }
 
+    /**
+     * Re-scan the group for triggers/panels added to the DOM after init.
+     * Needed because CMS lists fetch extra rows later (d2-cms-load-mode),
+     * and those rows would otherwise have no click handling at all.
+     * Only NEW nodes are wired up — existing triggers keep their single
+     * listener and any open panel stays open.
+     * Returns the number of newly attached triggers.
+     */
+    rescan() {
+      if (!this.groupEl || !this.groupEl.querySelectorAll) return 0;
+      var self = this;
+      var trig = Array.from(this.groupEl.querySelectorAll('[d2-tab-trigger], [d2-tab]'))
+        .filter(function (el) { return self._ownsElement(el); });
+      var pan = Array.from(this.groupEl.querySelectorAll('[d2-tab-instance], [d2-tab-content]'))
+        .filter(function (el) { return self._ownsElement(el); });
+
+      var knownT = new Set(this.triggers);
+      var knownP = new Set(this.panels);
+      var freshT = trig.filter(function (t) { return !knownT.has(t); });
+      var freshP = pan.filter(function (p) { return !knownP.has(p); });
+      if (!freshT.length && !freshP.length) return 0;
+
+      // Fresh panels enter the DOM with no hidden state — close them, otherwise
+      // late-loaded rows render permanently expanded.
+      freshP.forEach(function (panel) { hideElement(panel); });
+
+      this.triggers = trig;
+      this.panels = pan;
+      this.externalTriggers = this._findExternalTriggers();
+      freshT.forEach(function (trigger) {
+        self._attachTrigger(trigger, function () { return self._getTriggerTabId(trigger); });
+      });
+
+      _log('rescan → ' + this.name, { added: freshT.length, triggers: trig.length, panels: pan.length });
+      return freshT.length;
+    }
+
     destroy() {
       this.triggers = [];
       this.externalTriggers = [];
@@ -1129,7 +1166,24 @@
     },
 
     init: autoInit,
+
+    /** Re-scan one group (by name) or every group for late-added nodes. */
+    rescan: function (name) {
+      if (name) return registry[name] ? registry[name].rescan() : 0;
+      var total = 0;
+      Object.keys(registry).forEach(function (k) { total += registry[k].rescan() || 0; });
+      return total;
+    },
   };
+
+  // CMS lists fetch extra rows after startup (d2-cms-load-mode="scroll|button").
+  // Those rows carry d2-tab-trigger/-instance but arrive long after autoInit(),
+  // so without this hook only the first page of an accordion list would work.
+  if (window.digi2 && typeof window.digi2.on === 'function') {
+    window.digi2.on('cms:items-added', function () {
+      Object.keys(registry).forEach(function (k) { registry[k].rescan(); });
+    });
+  }
 
   function boot() {
     autoInit();

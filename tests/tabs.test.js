@@ -734,3 +734,80 @@ test('d2-tab-active-class puts a custom class on the active trigger and panel', 
   assert.equal(env.yearlyTrigger.classList.contains('is-active'), true);
   assert.equal(env.yearlyPanel.classList.contains('is-active'), true);
 });
+
+test('rows appended after init (CMS load-more) get wired up by rescan / cms:items-added', () => {
+  const body = createElement('body');
+  const group = createElement('div', {
+    'd2-tab-group': 'products',
+    'd2-tab-mode': 'accordion',
+    'd2-tab-animation': 'none',
+  });
+
+  const mkRow = (id) => {
+    const row = createElement('div', {});
+    const trigger = createElement('div', { 'd2-tab-trigger': id });
+    const panel = createElement('div', { 'd2-tab-instance': id });
+    row.appendChild(trigger);
+    row.appendChild(panel);
+    group.appendChild(row);
+    return { trigger, panel };
+  };
+
+  const first = mkRow('a-1');
+  const second = mkRow('a-2');
+  body.appendChild(group);
+
+  const listeners = {};
+  const document = {
+    body,
+    readyState: 'complete',
+    addEventListener() {},
+    querySelector(selector) {
+      const m = selector.match(/\[d2-tab-group="([^"]+)"\]/);
+      return m && m[1] === 'products' ? group : null;
+    },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = {
+    digi2: {
+      log() {},
+      on(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
+      emit(name, data) { (listeners[name] || []).forEach((fn) => fn(data)); },
+    },
+    location: { hash: '' },
+    addEventListener() {},
+  };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  const inst = window.digi2.tabs.get('products');
+  assert.equal(inst.triggers.length, 2, 'both initial rows registered');
+
+  // --- a row fetched later, exactly like d2-cms-load-mode does ---
+  const late = mkRow('a-3');
+  assert.equal(inst.triggers.length, 2, 'late row is invisible to tabs until a rescan');
+  late.trigger.click();
+  assert.equal(late.panel.style.display, undefined, 'late row does nothing before rescan');
+
+  const added = window.digi2.tabs.rescan('products');
+  assert.equal(added, 1, 'rescan attaches exactly the new trigger');
+  assert.equal(inst.triggers.length, 3);
+  assert.equal(late.panel.style.display, 'none', 'fresh panel is closed, not left expanded');
+
+  late.trigger.click();
+  assert.equal(late.panel.style.display, '', 'late row now opens');
+
+  // Existing triggers must keep ONE listener — a rescan must not double-bind
+  // (a doubled handler would toggle twice and cancel itself out).
+  first.trigger.click();
+  assert.equal(first.panel.style.display, '', 'first row still toggles correctly');
+
+  // --- the cms hook does the same automatically ---
+  const auto = mkRow('a-4');
+  window.digi2.emit('cms:items-added', { list: 'product-list', count: 1 });
+  assert.equal(inst.triggers.length, 4, 'cms:items-added triggers a rescan');
+  auto.trigger.click();
+  assert.equal(auto.panel.style.display, '', 'auto-wired row opens');
+});

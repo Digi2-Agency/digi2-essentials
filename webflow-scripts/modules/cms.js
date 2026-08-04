@@ -1334,6 +1334,7 @@
         // filters. Callers such as loadMore/loadAll will re-render after
         // adjusting visibleCount; that's idempotent (cheap).
         self._render();
+        self._emitItemsAdded(total);
       });
     }
 
@@ -1404,6 +1405,7 @@
           // apply _visibleCount and active filters. Callers re-render after
           // adjusting state; that second pass is idempotent.
           self._render();
+          self._emitItemsAdded(newItems.length);
           return newItems.length;
         })
         .catch(function (err) {
@@ -1422,6 +1424,19 @@
       this._filters = {};
       this._visibleCount = this.options.perPage;
       this._render();
+    }
+
+    // Tell the rest of the library that this list grew. Modules that bind to
+    // per-item elements (tabs/accordions, lightbox, …) scan the DOM once at
+    // startup, so rows fetched later would otherwise stay dead. Fire-and-forget:
+    // a missing/older loader without emit() must not break loading.
+    _emitItemsAdded(count) {
+      if (!count) return;
+      try {
+        if (window.digi2 && typeof window.digi2.emit === 'function') {
+          window.digi2.emit('cms:items-added', { list: this.name, count: count });
+        }
+      } catch (e) { /* never let a listener break the fetch pipeline */ }
     }
 
     refresh() {
