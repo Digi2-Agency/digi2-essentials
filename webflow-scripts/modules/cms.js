@@ -219,6 +219,18 @@
     return !isNaN(parseLooseNumber(s));
   }
 
+  // Date.parse() is far too liberal — it turns "A - A.M.0.2" into a real
+  // timestamp (1 Feb 2000), so a column of apartment codes got sorted as dates:
+  // "B.M.0.1" < "A.M.0.2" because 0.1 mapped to January and 0.2 to February.
+  // Require a digit-shaped date before trusting Date.parse. Text dates
+  // ("4 sierpnia 2026") still work via an explicit d2-cms-field-type="date".
+  var DATE_SHAPE = /^\s*(?:\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{4})(?:[T\s]+\d{1,2}:\d{2}(?::\d{2})?)?\s*(?:Z|[+-]\d{2}:?\d{2})?\s*$/;
+  function looksDate(v) {
+    var s = String(v).trim();
+    if (!DATE_SHAPE.test(s)) return false;
+    return !isNaN(Date.parse(s));
+  }
+
   function detectType(values) {
     var nonEmpty = [];
     for (var i = 0; i < values.length && nonEmpty.length < 5; i++) {
@@ -226,14 +238,13 @@
     }
     if (!nonEmpty.length) return 'string';
 
+    // Dates first: "2026-08-04" also parses as the number 20260804, so checking
+    // numbers first would classify every ISO date column as numeric.
+    var allDate = nonEmpty.every(looksDate);
+    if (allDate) return 'date';
+
     var allNumber = nonEmpty.every(looksNumeric);
     if (allNumber) return 'number';
-
-    var allDate = nonEmpty.every(function (v) {
-      var t = Date.parse(v);
-      return !isNaN(t);
-    });
-    if (allDate) return 'date';
 
     return 'string';
   }

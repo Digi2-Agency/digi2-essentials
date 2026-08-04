@@ -1334,3 +1334,49 @@ test('without d2-cms-filter-no-sync a select still mirrors the active filter', a
   dispatchDocument(env, 'change', shortcut);
   assert.equal(picker.value, '1', 'default behaviour: select reflects the filter');
 });
+
+test('apartment codes are not mistaken for dates (Date.parse is too liberal)', async () => {
+  const env = createEnvironment();
+  // Date.parse("A - A.M.0.2") returns a real timestamp (1 Feb 2000), so this
+  // column used to sort as dates: 0.1 -> January, 0.2 -> February, which put
+  // B.M.0.1 before A.M.0.2 regardless of the building letter.
+  const sortBtn = createElement('button', { 'd2-cms-sort': 'name', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const rows = ['C - C.M.0.1', 'A - A.M.0.2', 'B - B.M.0.1', 'A - A.M.0.1'];
+  rows.forEach((n) => list.appendChild(createItem({ name: n })));
+  env.body.appendChild(sortBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', sortBtn);
+  const order = list.children
+    .filter((el) => el.getAttribute && el.getAttribute('d2-cms-item') !== null)
+    .map((el) => el.querySelector('[d2-cms-field="name"]').textContent);
+
+  assert.deepEqual(order, ['A - A.M.0.1', 'A - A.M.0.2', 'B - B.M.0.1', 'C - C.M.0.1'],
+    'codes sort alphabetically, building letter first');
+});
+
+test('real ISO dates still sort as dates, not as the number 20260804', async () => {
+  const env = createEnvironment();
+  const sortBtn = createElement('button', { 'd2-cms-sort': 'added', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  ['2026-08-04T10:30:00Z', '2026-01-15T08:00:00Z', '2026-12-31T23:59:00Z']
+    .forEach((d) => list.appendChild(createItem({ added: d })));
+  env.body.appendChild(sortBtn);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  dispatchDocument(env, 'click', sortBtn);
+  const order = list.children
+    .filter((el) => el.getAttribute && el.getAttribute('d2-cms-item') !== null)
+    .map((el) => el.querySelector('[d2-cms-field="added"]').textContent);
+
+  assert.deepEqual(order,
+    ['2026-01-15T08:00:00Z', '2026-08-04T10:30:00Z', '2026-12-31T23:59:00Z'],
+    'chronological order');
+});
