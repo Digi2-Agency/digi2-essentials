@@ -80,7 +80,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
-| `d2-webflow` | webflow | 2.7 KB | Fire a Webflow (IX2) interaction by name from custom code |
+| `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 
 Total (all modules): **188.0 KB min** / **55.9 KB** gzipped.
 
@@ -1175,7 +1175,7 @@ digi2.toasts.config({ position: 'bottom-center', duration: 4000 })
 
 ## Webflow Interactions (IX2)
 
-Fire a Webflow interaction from your own markup, by the name you gave it in the
+Make any element fire a Webflow interaction, by the name you gave it in the
 Designer. Module: **webflow** (`d2-webflow`).
 
 ```html
@@ -1190,40 +1190,40 @@ Requesting the module is enough — any `d2-webflow-*` attribute also resolves t
 it, so `d2-modules="webflow-interaction"` works as well.
 
 ```js
-digi2.webflow.playInteraction('Show Form Popup')       // page-wide
-digi2.webflow.playInteraction('Show Form Popup', el)   // scoped — see below
-digi2.webflow.interactions()                           // every name on the page
-digi2.webflow.refresh()                                // re-scan for new triggers
+digi2.webflow.playInteraction('Show Form Popup')   // fire it from JS
+digi2.webflow.interactions()                       // every name on the page
+digi2.webflow.refresh()                            // re-scan for new triggers
 ```
 
-### How it resolves the interaction
+### How it works
 
-Webflow stores interactions in ix2: `actionLists` (each with the name typed in the
-Designer) and `events` binding a list to elements carrying `data-w-id`. There is
-**no public "play by name" API** — `ix2.actions.playbackRequested()` wants an
-`affectedElements` map that only Webflow's own event plumbing can build, and
-firing it with an empty map is a silent no-op. So the module does what a visitor
-does: it finds an element already wired to that interaction and clicks it.
+Webflow keeps interactions in ix2: `actionLists` (each carrying the name typed in
+the Designer) and `events` binding a list to elements via `data-w-id`. There is
+**no public "play by name" API** — `ix2.actions.playbackRequested()` needs an
+`affectedElements` map only Webflow's own plumbing can build, and dispatching it
+with an empty map is a silent no-op.
 
-**Scoping matters inside CMS lists.** An interaction bound in a Collection List
-sits on *every* row — on one live page that meant 84 identical carriers. Taking
-"the first match" would open the popup belonging to row 1. The module walks up
-from the calling element and picks the carrier under the nearest shared ancestor,
-i.e. the button in **that row**. Pass the element as the second argument to get
-the same scoping from JS.
+So the module doesn't fake the playback. It makes your element a **real trigger**:
+it copies the `data-w-id` that the interaction's click event points at onto your
+element, then calls `ix2.init()` so Webflow re-binds its listeners over the
+current DOM. From there Webflow drives everything — the same code path as a
+button built in the Designer, so repeat clicks and hover states behave identically.
 
-Triggers added later (CMS rows fetched by `d2-cms-load-mode`) are picked up
-automatically via `cms:items-added`; call `digi2.webflow.refresh()` if you inject
-markup yourself.
+Crucially this works even when **nothing on the page carries that interaction
+yet**, which is the normal case for a section built entirely in custom code.
+
+Re-binding is batched into one `ix2.init()` per scan, and triggers added later
+(CMS rows fetched by `d2-cms-load-mode`) are wired automatically via
+`cms:items-added`. Call `digi2.webflow.refresh()` if you inject markup yourself.
 
 ### Limits
 
-- Only `MOUSE_CLICK` interactions can be replayed — hover/scroll ones have no
-  clickable carrier.
-- The carrier's own click handlers run too. If the Designer button also fills a
-  form field (product name, id), that still happens — usually what you want.
-- The interaction must exist **on the current page**; a name that only lives on
-  another page logs a warning and does nothing.
+- Only interactions with a **click** trigger can be attached — hover/scroll ones
+  expose no id to borrow, and the module says so in the console.
+- An element that already has its own `data-w-id` is left alone (overwriting it
+  would break the interaction it already belongs to) — you'll get a warning.
+- The interaction must exist **in this site's ix2 data**; a name that only lives
+  on another page logs a warning and does nothing.
 
 ---
 

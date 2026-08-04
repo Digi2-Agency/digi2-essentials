@@ -3,33 +3,40 @@
  * Loaded automatically by digi2-loader.js when d2-webflow (or any
  * d2-webflow-* attribute) is present.
  *
- * Bridges custom code back into Webflow's own machinery — today: firing a
- * Designer interaction (IX2) by the name you gave it.
+ * Bridges custom code back into Webflow's own machinery — today: making any
+ * element fire a Designer interaction (IX2) by the name you gave it.
  *
  * Webflow setup:
  *   <button d2-webflow-interaction="Show Form Popup">Zapytaj o ofertę</button>
  *
  * API:
- *   digi2.webflow.playInteraction('Show Form Popup')       // page-wide
- *   digi2.webflow.playInteraction('Show Form Popup', el)   // scoped to el's row
- *   digi2.webflow.interactions()                           // every name on the page
- *   digi2.webflow.refresh()                                // re-scan for new triggers
+ *   digi2.webflow.playInteraction('Show Form Popup')   // fire it from JS
+ *   digi2.webflow.interactions()                       // every name on the page
+ *   digi2.webflow.refresh()                            // re-scan for new triggers
  *
- * Why a click and not an API call
- * -------------------------------
+ * How it works
+ * ------------
  * Webflow keeps interactions in ix2: `actionLists` (each carrying the name typed
- * in the Designer) and `events` binding a list to elements that carry data-w-id.
- * There is no public "play this by name" entry point — ix2.actions
- * .playbackRequested() expects an `affectedElements` map that only Webflow's own
- * event plumbing knows how to build, and dispatching it with an empty map is a
- * silent no-op (verified on a live site: the action list runs, nothing moves).
- * So this module does what a visitor does: it finds an element already wired to
- * that interaction and clicks it.
+ * in the Designer) and `events` binding a list to elements via `data-w-id`.
+ * There is no public "play by name" entry point — ix2.actions.playbackRequested()
+ * needs an `affectedElements` map only Webflow's own plumbing can build, and
+ * firing it with an empty map is a silent no-op (verified on a live site).
+ *
+ * So instead of faking the playback, we make the element a REAL trigger: copy the
+ * `data-w-id` that the interaction's click event points at onto our element and
+ * call ix2.init(), which re-binds Webflow's listeners over the current DOM. From
+ * then on Webflow drives it — same code path as a button built in the Designer,
+ * so hover states and repeat clicks behave identically.
+ *
+ * This also works when NOTHING on the page carries that interaction yet, which is
+ * the usual case for a section built entirely in custom code.
  */
 (function () {
   'use strict';
 
   if (!window.digi2) window.digi2 = {};
+
+  var ATTR = 'd2-webflow-interaction';
 
   function _log() {
     if (window.digi2 && typeof window.digi2.log === 'function') {
@@ -47,12 +54,20 @@
 
   // ---- ix2 access ----------------------------------------------------------
 
-  function ixData() {
+  function ix2() {
     try {
       var wf = window.Webflow;
       if (!wf || typeof wf.require !== 'function') return null;
-      var ix2 = wf.require('ix2');
-      return (ix2 && ix2.store) ? (ix2.store.getState().ixData || null) : null;
+      return wf.require('ix2') || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function ixData(inst) {
+    try {
+      var i = inst || ix2();
+      return (i && i.store) ? (i.store.getState().ixData || null) : null;
     } catch (e) {
       return null;
     }
@@ -70,10 +85,11 @@
     return null;
   }
 
-  // Every element on the page wired to this action list by a click event.
-  function carriersFor(data, actionListId) {
-    var out = [];
-    if (!data.events) return out;
+  // The data-w-id a click event for this action list points at. Webflow stores
+  // "pageId|elementId" in ixData but writes only the element id into the DOM,
+  // so hand back the bare id — that's what a trigger must carry.
+  function clickTargetFor(data, actionListId) {
+    if (!data.events) return null;
     for (var id in data.events) {
       if (!Object.prototype.hasOwnProperty.call(data.events, id)) continue;
       var ev = data.events[id];
@@ -81,88 +97,117 @@
       if (!ev.action || !ev.action.config || ev.action.config.actionListId !== actionListId) continue;
       var target = ev.target && (ev.target.selector || ev.target.id);
       if (!target) continue;
-      // ixData stores "pageId|elementId"; the DOM only carries the element id.
-      var ids = target.indexOf('|') >= 0 ? [target, target.split('|')[1]] : [target];
-      for (var i = 0; i < ids.length; i++) {
-        if (!ids[i]) continue;
-        var found = document.querySelectorAll('[data-w-id="' + ids[i] + '"]');
-        for (var j = 0; j < found.length; j++) out.push(found[j]);
-      }
+      return target.indexOf('|') >= 0 ? target.split('|')[1] : target;
     }
-    return out;
+    return null;
   }
 
-  // An interaction bound inside a Collection List sits on EVERY row, so taking
-  // the first match would fire the popup belonging to row 1. Walk up from the
-  // caller and take the carrier under the nearest shared ancestor — the button
-  // in the caller's own row.
-  function nearestCarrier(carriers, fromEl) {
-    if (!carriers.length) return null;
-    if (!fromEl || !fromEl.parentElement) return carriers[0];
-    var node = fromEl;
-    while (node) {
-      for (var i = 0; i < carriers.length; i++) {
-        if (carriers[i] !== fromEl && node.contains && node.contains(carriers[i])) return carriers[i];
-      }
-      if (node === document.body) break;
-      node = node.parentElement;
-    }
-    return carriers[0];
-  }
-
-  var firing = false;   // a carrier may itself carry the attribute — don't loop
-
-  function playInteraction(name, fromEl) {
+  function targetForName(name) {
     var data = ixData();
     if (!data) {
       console.warn('[digi2.webflow] Webflow IX2 not available on this page.');
-      return false;
+      return null;
     }
     var alId = actionListIdByName(data, name);
     if (!alId) {
       console.warn('[digi2.webflow] no interaction named "' + name + '" on this page.');
+      return null;
+    }
+    var guid = clickTargetFor(data, alId);
+    if (!guid) {
+      console.warn('[digi2.webflow] "' + name + '" has no click event — only click-triggered '
+        + 'interactions can be attached (hover/scroll ones have no id to borrow).');
+      return null;
+    }
+    return guid;
+  }
+
+  // Re-binding is batched: ix2.init() re-reads the whole document, so doing it
+  // once after wiring N triggers is both cheaper and avoids repeated resets.
+  var reinitQueued = false;
+  function queueReinit() {
+    if (reinitQueued) return;
+    reinitQueued = true;
+    var run = function () {
+      reinitQueued = false;
+      var i = ix2();
+      if (!i || typeof i.init !== 'function') return;
+      try {
+        i.init();
+        _log('ix2 re-initialised');
+      } catch (e) {
+        console.warn('[digi2.webflow] ix2.init() failed:', e);
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else setTimeout(run, 0);
+  }
+
+  // ---- wiring --------------------------------------------------------------
+
+  function wire(el, name) {
+    var guid = targetForName(name);
+    if (!guid) return false;
+
+    var existing = el.getAttribute('data-w-id');
+    if (existing === guid) return false;          // already wired
+    if (existing) {
+      // The element already belongs to another Webflow interaction — silently
+      // overwriting it would break that one.
+      console.warn('[digi2.webflow] element already has data-w-id="' + existing
+        + '" — not overwriting it for "' + name + '".');
       return false;
     }
-    var carrier = nearestCarrier(carriersFor(data, alId), fromEl || null);
-    if (!carrier) {
-      console.warn('[digi2.webflow] "' + name + '" exists but nothing on this page triggers it by click.');
-      return false;
-    }
-    if (firing) return false;
-    firing = true;
-    try {
-      carrier.click();
-    } finally {
-      setTimeout(function () { firing = false; }, 0);
-    }
-    _log('interaction → ' + name, { actionListId: alId });
+
+    el.setAttribute('data-w-id', guid);
+    _log('wired trigger → ' + name, { dataWId: guid });
     return true;
   }
 
-  // ---- triggers ------------------------------------------------------------
-
   function bindTriggers() {
-    var els = document.querySelectorAll('[d2-webflow-interaction]');
-    var added = 0;
+    var els = document.querySelectorAll('[' + ATTR + ']');
+    var wired = 0;
     Array.prototype.forEach.call(els, function (el) {
-      if (el._d2WebflowBound) return;
-      el._d2WebflowBound = true;
-      added += 1;
-      el.addEventListener('click', function (e) {
-        var name = attr(el, 'd2-webflow-interaction');
-        if (!name) return;
-        e.preventDefault();
-        playInteraction(name, el);
-      });
+      if (el._d2WfWired) return;
+      var name = attr(el, ATTR);
+      if (!name) return;
+      if (wire(el, name)) wired += 1;
+      el._d2WfWired = true;
     });
-    if (added) _log('bound triggers', { added: added });
-    return added;
+    if (wired) queueReinit();
+    return wired;
+  }
+
+  // Fire from JS with no trigger element of your own: borrow the id on a hidden
+  // element, let Webflow bind it, click it, then clean up.
+  function playInteraction(name) {
+    var guid = targetForName(name);
+    if (!guid) return false;
+
+    var proxy = document.createElement('div');
+    proxy.setAttribute('data-w-id', guid);
+    proxy.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;opacity:0;pointer-events:none';
+    document.body.appendChild(proxy);
+
+    var i = ix2();
+    try {
+      if (i && typeof i.init === 'function') i.init();
+      proxy.click();
+      _log('interaction → ' + name);
+    } catch (e) {
+      console.warn('[digi2.webflow] failed to play "' + name + '":', e);
+      proxy.remove();
+      return false;
+    }
+    // Leave the proxy in place for one frame so Webflow can read it, then drop it.
+    setTimeout(function () { proxy.remove(); }, 60);
+    return true;
   }
 
   // ---- public API ----------------------------------------------------------
 
   window.digi2.webflow = {
-    playInteraction: function (name, fromEl) { return playInteraction(name, fromEl || null); },
+    playInteraction: playInteraction,
 
     /** Names of every Webflow interaction available on this page. */
     interactions: function () {
@@ -178,14 +223,26 @@
     refresh: bindTriggers,
   };
 
+  // ix2 loads asynchronously — retry briefly until it's there, then bind.
+  function boot(attempt) {
+    if (ixData()) { bindTriggers(); return; }
+    if ((attempt || 0) > 20) {
+      if (document.querySelector('[' + ATTR + ']')) {
+        console.warn('[digi2.webflow] Webflow IX2 never became available — triggers not wired.');
+      }
+      return;
+    }
+    setTimeout(function () { boot((attempt || 0) + 1); }, 150);
+  }
+
   // CMS lists append rows after startup — pick up their triggers too.
   if (typeof window.digi2.on === 'function') {
     window.digi2.on('cms:items-added', function () { bindTriggers(); });
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bindTriggers);
+    document.addEventListener('DOMContentLoaded', function () { boot(0); });
   } else {
-    bindTriggers();
+    boot(0);
   }
 })();
