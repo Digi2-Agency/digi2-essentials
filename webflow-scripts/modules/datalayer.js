@@ -9,8 +9,9 @@
  * Webflow setup:
  *   <script src=".../digi2-loader.min.js" d2-datalayer d2-popups d2-cms d2-forms></script>
  *
- *   <!-- everything is on by default; switch groups off: -->
- *   <script src=".../digi2-loader.min.js" d2-datalayer="-lightbox -sliders"></script>
+ *   <!-- everything is on by default; narrow it down: -->
+ *   <script src=".../digi2-loader.min.js" d2-datalayer d2-datalayer-disable="lightbox"></script>
+ *   <script src=".../digi2-loader.min.js" d2-datalayer d2-datalayer-only="popups forms"></script>
  *
  * API:
  *   digi2.datalayer.push({ event: 'custom', … })   push through the same guard
@@ -49,31 +50,30 @@
   var GROUPS = ['popups', 'cms', 'tabs', 'forms', 'lightbox', 'ab'];
   var off = {};
 
-  // The flag's value tunes the defaults: "-lightbox -sliders" switches those off,
-  // "popups forms" (no minus) means ONLY those. Empty value = everything.
-  (function readFlag() {
-    var raw = null;
-    try {
-      if (window.digi2 && typeof window.digi2.flagValue === 'function') {
-        raw = window.digi2.flagValue('d2-datalayer');
-      }
-    } catch (e) { /* fall through */ }
-    if (raw == null) {
-      var el = document.querySelector('[d2-datalayer]');
-      var scr = document.querySelector('script[d2-datalayer]');
-      raw = (scr && scr.getAttribute('d2-datalayer')) || (el && el.getAttribute('d2-datalayer')) || '';
+  // Two explicit attributes instead of one overloaded value:
+  //   d2-datalayer-disable="lightbox sliders"   everything except these
+  //   d2-datalayer-only="popups forms"          nothing except these
+  // Both may sit on the loader tag or on a <digi2-module> declaration. If both
+  // are present, -only narrows first and -disable subtracts from that.
+  (function readConfig() {
+    function readAttr(name) {
+      var el = document.querySelector('script[' + name + ']') || document.querySelector('[' + name + ']');
+      var raw = el ? el.getAttribute(name) : null;
+      return String(raw || '').split(/[\s,]+/).filter(Boolean);
     }
-    var tokens = String(raw).split(/[\s,]+/).filter(Boolean);
-    if (!tokens.length) return;
+    var only = readAttr('d2-datalayer-only');
+    var disabled = readAttr('d2-datalayer-disable');
 
-    var negative = tokens.filter(function (t) { return t.charAt(0) === '-'; })
-      .map(function (t) { return t.slice(1); });
-    if (negative.length) {
-      negative.forEach(function (g) { off[g] = true; });
-      return;
+    if (only.length) {
+      GROUPS.forEach(function (g) { if (only.indexOf(g) === -1) off[g] = true; });
     }
-    // Allow-list form: everything not listed is off.
-    GROUPS.forEach(function (g) { if (tokens.indexOf(g) === -1) off[g] = true; });
+    disabled.forEach(function (g) { off[g] = true; });
+
+    var unknown = only.concat(disabled).filter(function (g) { return GROUPS.indexOf(g) === -1; });
+    if (unknown.length) {
+      console.warn('[digi2.datalayer] unknown group(s): ' + unknown.join(', ')
+        + '. Known: ' + GROUPS.join(', ') + '.');
+    }
   })();
 
   function on(group) { return !off[group]; }

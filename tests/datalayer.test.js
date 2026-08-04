@@ -8,11 +8,12 @@ const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'dat
 
 // Minimal harness: the module only needs an event bus, a dataLayer array and a
 // querySelector that can find the flag element.
-function createEnvironment(flagValue) {
+function createEnvironment(cfg) {
   const listeners = {};
-  const flagEl = flagValue == null ? null : {
-    getAttribute(name) { return name === 'd2-datalayer' ? flagValue : null; },
-  };
+  const attrs = cfg || {};              // { only: '…', disable: '…' }
+  const elFor = (attr, value) => (value == null ? null : {
+    getAttribute(name) { return name === attr ? value : null; },
+  });
   const window = {
     dataLayer: [],
     digi2: {
@@ -23,8 +24,10 @@ function createEnvironment(flagValue) {
   };
   const document = {
     querySelector(sel) {
-      if (sel === 'script[d2-datalayer]' || sel === '[d2-datalayer]') return flagEl;
-      return null;
+      const m = sel.match(/\[(d2-datalayer-(?:only|disable))\]/);
+      if (!m) return null;
+      const key = m[1] === 'd2-datalayer-only' ? 'only' : 'disable';
+      return elFor(m[1], attrs[key]);
     },
   };
   const context = vm.createContext({ window, document, console });
@@ -106,18 +109,18 @@ test('empty values are dropped so GA4 never gets blank params', () => {
   assert.equal(hit.index, 0);
 });
 
-test('"-group" switches one group off, everything else keeps reporting', () => {
-  const env = createEnvironment('-lightbox');
+test('d2-datalayer-disable switches a group off, everything else keeps reporting', () => {
+  const env = createEnvironment({ disable: 'lightbox' });
   env.emit('lightbox:open', { index: 1, total: 3 });
   env.emit('popup:open', { name: 'contact' });
 
   assert.equal(env.dl().length, 1, 'only the popup got through');
   assert.equal(env.dl()[0].event, 'view_promotion');
-  assert.deepEqual(env.window.digi2.datalayer.enabled().includes('lightbox'), false);
+  assert.equal(env.window.digi2.datalayer.enabled().indexOf('lightbox'), -1);
 });
 
-test('a bare list is an allow-list: only those groups report', () => {
-  const env = createEnvironment('popups forms');
+test('d2-datalayer-only limits reporting to the listed groups', () => {
+  const env = createEnvironment({ only: 'popups forms' });
   env.emit('cms:filter', { list: 'offers', filters: {}, matching: 1, total: 1 });
   env.emit('tabs:change', { group: 'g', tab: 't' });
   env.emit('popup:open', { name: 'contact' });
@@ -139,4 +142,28 @@ test('runtime disable/enable and manual push', () => {
   env.window.digi2.datalayer.push({ event: 'custom_thing', foo: 1 });
   assert.equal(env.dl()[1].event, 'custom_thing');
   assert.equal(env.window.digi2.datalayer.push({ foo: 1 }), false, 'push without event is rejected');
+});
+
+test('-only and -disable combine: only narrows, disable subtracts from that', () => {
+  const env = createEnvironment({ only: 'popups forms cms', disable: 'cms' });
+  // enabled() returns a vm-realm array — compare by value, not identity
+  assert.equal(env.window.digi2.datalayer.enabled().sort().join(','), 'forms,popups');
+
+  env.emit('cms:filter', { list: 'offers', filters: {}, matching: 1, total: 1 });
+  env.emit('popup:open', { name: 'contact' });
+  assert.equal(env.dl().length, 1, 'cms was removed even though -only listed it');
+  assert.equal(env.dl()[0].event, 'view_promotion');
+});
+
+test('an unknown group name warns instead of silently doing nothing', () => {
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    createEnvironment({ disable: 'lightbxo' });   // typo
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /unknown group\(s\): lightbxo/);
 });

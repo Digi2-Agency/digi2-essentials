@@ -629,6 +629,7 @@
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs'; // accordion lives in tabs
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns'; // singular/parts → module
         if (m.indexOf('webflow-') === 0) m = 'webflow'; // webflow-interaction → module
+        if (m.indexOf('datalayer-') === 0) m = 'datalayer'; // datalayer-only/-disable → module
         _pushModule(into, m);
       }
     }
@@ -644,6 +645,7 @@
         if (m === 'accordion' || m.indexOf('accordion-') === 0) m = 'tabs';
         if (m === 'dropdown' || m.indexOf('dropdown-') === 0) m = 'dropdowns';
         if (m.indexOf('webflow-') === 0) m = 'webflow';
+        if (m.indexOf('datalayer-') === 0) m = 'datalayer';
         _pushModule(into, m);
       });
     }

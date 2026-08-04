@@ -1184,15 +1184,27 @@ glue code. Module: **datalayer** (`d2-datalayer`).
 <script src=".../digi2-loader.min.js" d2-datalayer d2-popups d2-cms d2-forms></script>
 ```
 
-Everything reports by default. Switch groups off with a minus, or pass a bare
-list to make it an allow-list:
+Everything reports by default. Narrow it down with two explicit attributes:
 
 ```html
-<script src=".../digi2-loader.min.js" d2-datalayer="-lightbox"></script>        <!-- all but lightbox -->
-<script src=".../digi2-loader.min.js" d2-datalayer="popups forms"></script>     <!-- only these -->
+<!-- everything except the lightbox -->
+<script src=".../digi2-loader.min.js" d2-datalayer d2-datalayer-disable="lightbox"></script>
+
+<!-- nothing except these two -->
+<script src=".../digi2-loader.min.js" d2-datalayer d2-datalayer-only="popups forms"></script>
 ```
 
-Groups: `popups`, `cms`, `tabs`, `forms`, `lightbox`, `ab`.
+| Attribute | Effect |
+|---|---|
+| `d2-datalayer` | Load the module — everything reports |
+| `d2-datalayer-disable="a b"` | Everything **except** these groups |
+| `d2-datalayer-only="a b"` | **Only** these groups |
+
+Groups: `popups`, `cms`, `tabs`, `forms`, `lightbox`, `ab`. Using both is allowed —
+`-only` narrows first, then `-disable` subtracts from that. A group name that
+doesn't exist logs a warning with the valid list, instead of silently reporting
+nothing. Either attribute alone also loads the module, so `d2-datalayer` on its
+own is only needed when you want the defaults.
 
 ### Event map
 
