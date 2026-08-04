@@ -2027,7 +2027,10 @@
 
         // Sync native checkbox/radio checked state with the filter. Matters
         // when filters are changed programmatically or from another trigger.
-        if (btn.tagName === 'INPUT') {
+        // d2-cms-filter-no-sync opts a control out: use it when two controls
+        // drive the SAME field (e.g. a "1 or 2 rooms" shortcut next to a
+        // 1/2/3/4 picker) and you don't want one to visually hijack the other.
+        if (btn.tagName === 'INPUT' && !btn.hasAttribute('d2-cms-filter-no-sync')) {
           var t = btn.type;
           if ((t === 'checkbox' || t === 'radio') && btn.checked !== active) {
             btn.checked = active;
@@ -2088,6 +2091,8 @@
       var selects = document.querySelectorAll('select[d2-cms-filter-field]');
       Array.prototype.forEach.call(selects, function (sel) {
         if (_resolveTargetName(sel) !== self.name) return;
+        // Opted out — another control shares this field and must not move it.
+        if (sel.hasAttribute('d2-cms-filter-no-sync')) return;
         var key = attr(sel, 'd2-cms-filter-field');
         var set = self._filters[key];
         var val = (set && set.size) ? String(Array.from(set)[0]) : '';

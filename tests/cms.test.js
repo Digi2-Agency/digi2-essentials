@@ -1279,3 +1279,58 @@ test('a currency/unit suffix still counts as a number for sorting', async () => 
     .map((c) => c.querySelector('[d2-cms-field="price"]').textContent);
   assert.deepEqual(order, ['90 000 zł', '350 000 zł', '1 200 000 zł']);
 });
+
+test('d2-cms-filter-no-sync stops one control from hijacking another on the same field', async () => {
+  const env = createEnvironment();
+  // A "1 or 2 rooms" shortcut and a 1/2/3/4 picker both drive `rooms`.
+  const shortcut = createElement('input', { 'd2-cms-filter': 'rooms:1|2', 'd2-cms-target': 'offers' });
+  shortcut.type = 'checkbox';
+  const picker = createElement('select', {
+    'd2-cms-filter-field': 'rooms', 'd2-cms-target': 'offers', 'd2-cms-filter-no-sync': '',
+  });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const r1 = createItem({ rooms: '1' });
+  const r2 = createItem({ rooms: '2' });
+  const r3 = createItem({ rooms: '3' });
+  [r1, r2, r3].forEach((i) => list.appendChild(i));
+  env.body.appendChild(shortcut);
+  env.body.appendChild(picker);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  picker.value = '';                        // picker deliberately left on "any"
+  shortcut.checked = true;
+  dispatchDocument(env, 'change', shortcut);
+
+  // Filtering itself still works…
+  assert.equal(r1.style.display, '');
+  assert.equal(r2.style.display, '');
+  assert.equal(r3.style.display, 'none');
+  // …but the opted-out picker was NOT moved to the filter's first value.
+  assert.equal(picker.value, '', 'picker keeps its own value');
+});
+
+test('without d2-cms-filter-no-sync a select still mirrors the active filter', async () => {
+  const env = createEnvironment();
+  const shortcut = createElement('input', { 'd2-cms-filter': 'rooms:1|2', 'd2-cms-target': 'offers' });
+  shortcut.type = 'checkbox';
+  const picker = createElement('select', { 'd2-cms-filter-field': 'rooms', 'd2-cms-target': 'offers' });
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const r1 = createItem({ rooms: '1' });
+  const r3 = createItem({ rooms: '3' });
+  list.appendChild(r1);
+  list.appendChild(r3);
+  env.body.appendChild(shortcut);
+  env.body.appendChild(picker);
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  picker.value = '';
+  shortcut.checked = true;
+  dispatchDocument(env, 'change', shortcut);
+  assert.equal(picker.value, '1', 'default behaviour: select reflects the filter');
+});
