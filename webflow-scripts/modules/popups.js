@@ -177,6 +177,14 @@
     if (window.digi2.log) window.digi2.log('popups', action, data);
   }
 
+  // Fire-and-forget bus event. The datalayer module listens to these and maps
+  // them onto GA4; a page without it is unaffected.
+  function _emitEvent(name, data) {
+    try {
+      if (window.digi2 && typeof window.digi2.emit === 'function') window.digi2.emit(name, data || {});
+    } catch (e) { /* a listener must never break the module */ }
+  }
+
   // Responsive-value resolver. If `raw` is a string with the responsive
   // syntax ("value;value@maxWidth"), pick the bucket that matches the current
   // viewport. Non-strings (numbers, null, etc.) pass through untouched so
@@ -485,6 +493,7 @@
 
       if (anim === ANIMATIONS.none) {
         this.popupElement.style.display = 'flex';
+        _emitEvent('popup:open', { name: this.name });
         if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
         return;
       }
@@ -497,6 +506,7 @@
 
       this.popupElement.addEventListener('transitionend', () => {
         this._animating = false;
+        _emitEvent('popup:open', { name: this.name });
         if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
       }, { once: true });
     }
@@ -521,6 +531,7 @@
           document.body.style.overflow = this._savedOverflow || '';
         }
 
+        _emitEvent('popup:close', { name: this.name });
         if (typeof this.options.onClose === 'function') this.options.onClose(this);
 
         if (this._pendingNavigation) {

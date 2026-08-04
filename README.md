@@ -81,6 +81,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
+| `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 
 Total (all modules): **188.0 KB min** / **55.9 KB** gzipped.
 
@@ -1170,6 +1171,65 @@ digi2.toasts.config({ position: 'bottom-center', duration: 4000 })
 | `animation` | `'slide'` | slide / fade |
 | `onClick` | `null` | Callback |
 | `onDismiss` | `null` | Callback |
+
+---
+
+## DataLayer (GA4)
+
+Reports what the other modules do to `window.dataLayer`, using GA4 event names —
+so GTM sees popups, filtering, product expands and form submits with no per-site
+glue code. Module: **datalayer** (`d2-datalayer`).
+
+```html
+<script src=".../digi2-loader.min.js" d2-datalayer d2-popups d2-cms d2-forms></script>
+```
+
+Everything reports by default. Switch groups off with a minus, or pass a bare
+list to make it an allow-list:
+
+```html
+<script src=".../digi2-loader.min.js" d2-datalayer="-lightbox"></script>        <!-- all but lightbox -->
+<script src=".../digi2-loader.min.js" d2-datalayer="popups forms"></script>     <!-- only these -->
+```
+
+Groups: `popups`, `cms`, `tabs`, `forms`, `lightbox`, `ab`.
+
+### Event map
+
+| What happened | GA4 event | Key params |
+|---|---|---|
+| Popup opened | `view_promotion` | `promotion_name`, `creative_slot: 'popup'` |
+| Popup closed | `close_promotion` | `promotion_name` |
+| List filtered | `view_item_list` | `item_list_name`, `filters`, `filter_count`, `matching`, `total` |
+| List sorted | `view_item_list` | `item_list_name`, `sort_field`, `sort_direction` |
+| More rows loaded | `view_item_list` | `item_list_name`, `loaded` |
+| Product row expanded | `select_item` | `item_list_name`, `item_id` |
+| Image opened | `select_content` | `content_type: 'image'`, `item_id`, `index`, `total` |
+| Form submitted (valid) | `generate_lead` | `form_id`, `form_name` |
+| Form rejected by validation | `form_error` | `form_id`, `form_name` |
+| A/B variant shown | `experiment_impression` | `experiment_id`, `variant_id` |
+| A/B variant clicked | `select_promotion` | `promotion_id`, `creative_name` |
+
+`view_promotion`, `view_item_list`, `select_item`, `select_content`,
+`generate_lead` and `select_promotion` are GA4 recommended events, so they land
+in standard reports. `close_promotion`, `form_error` and `experiment_impression`
+have no GA4 equivalent — they're custom names in the same snake_case style and
+GA4 reports them as-is.
+
+Filters are flattened into one string (`rooms:1|2,status:Dostępne`) because GA4
+parameters can't hold objects. Empty values are dropped so no blank parameters
+reach the tag.
+
+```js
+digi2.datalayer.push({ event: 'custom', … })   // same guard, still logged
+digi2.datalayer.enabled()                      // groups currently reporting
+digi2.datalayer.disable('lightbox')            // at runtime
+digi2.datalayer.enable('lightbox')
+```
+
+> The module listens on the digi2 event bus, so it must be loaded for events to
+> be captured — anything fired before it loads is not replayed. Request it on the
+> loader tag (not per page) if you care about popups that open on load.
 
 ---
 

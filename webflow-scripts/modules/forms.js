@@ -90,6 +90,14 @@
     if (window.digi2.log) window.digi2.log('forms', action, data);
   }
 
+  // Fire-and-forget bus event. The datalayer module listens to these and maps
+  // them onto GA4; a page without it is unaffected.
+  function _emitEvent(name, data) {
+    try {
+      if (window.digi2 && typeof window.digi2.emit === 'function') window.digi2.emit(name, data || {});
+    } catch (e) { /* a listener must never break the module */ }
+  }
+
   function _escapeAttrValue(value) {
     return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
@@ -870,10 +878,13 @@
           var allValid = self.validateAll();
 
           if (!allValid) {
+            _emitEvent('form:invalid', { name: self.name, formId: self.formElement && self.formElement.id });
             e.preventDefault();
             e.stopImmediatePropagation();
             return false;
           }
+
+          _emitEvent('form:submit', { name: self.name, formId: self.formElement && self.formElement.id });
 
           // If onSubmit callback exists, prevent default and call it
           if (typeof self.options.onSubmit === 'function') {

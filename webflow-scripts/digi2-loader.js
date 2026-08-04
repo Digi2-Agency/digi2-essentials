@@ -459,6 +459,7 @@
     cms: 'cms',
     interactions: 'interactions',
     webflow: 'webflow',
+    datalayer: 'datalayer',
     abTests: 'ab-tests',
     lightbox: 'lightbox',
   };

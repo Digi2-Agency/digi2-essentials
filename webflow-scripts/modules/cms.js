@@ -101,6 +101,14 @@
     if (window.digi2.log) window.digi2.log('cms', action, data);
   }
 
+  // Fire-and-forget bus event. The datalayer module listens to these and maps
+  // them onto GA4; a page without it is unaffected.
+  function _emitEvent(name, data) {
+    try {
+      if (window.digi2 && typeof window.digi2.emit === 'function') window.digi2.emit(name, data || {});
+    } catch (e) { /* a listener must never break the module */ }
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -677,6 +685,7 @@
       this._sort = { field: field, dir: dir, order: finalOrder };
       this._render();
 
+      _emitEvent('cms:sort', { list: this.name, field: field, dir: dir });
       if (typeof this.options.onSort === 'function') {
         this.options.onSort(field, dir);
       }
@@ -938,6 +947,12 @@
     }
 
     _fireFilter() {
+      _emitEvent('cms:filter', {
+        list: this.name,
+        filters: this._filtersAsObject(),
+        matching: this.items.filter(function (i) { return i._match; }).length,
+        total: this.items.length,
+      });
       if (typeof this.options.onFilter === 'function') {
         this.options.onFilter(this._filtersAsObject());
       }
