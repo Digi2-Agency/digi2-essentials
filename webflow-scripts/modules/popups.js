@@ -255,6 +255,9 @@
         dataTagTrigger: true,         // listen for d2-show-popup="name" clicks globally
         cookieName: 'popup_clicked',
         cookieDurationDays: 1,
+        setCookieOnClose: true,       // false → closing does NOT suppress the popup;
+                                      // call instance.markSeen() when the goal is met
+                                      // (video watched to the end, offer claimed, …)
         openOnLoad: false,
         animation: 'fade',           // none | fade | slide-up | slide-down | slide-left | slide-right | zoom
         animationDuration: 0.4,
@@ -280,6 +283,10 @@
         openOnScrollSpeed: null,          // number (px/sec) or { speed, direction: 'up'|'down'|'any' } — open when scroll velocity exceeds threshold
         interceptLinks: false,            // boolean | CSS selector | { device: 'mobile'|'desktop'|'both', selector } — intercept link clicks, show popup first, navigate on close (skips #hash, mailto:, tel:, javascript:, target=_blank, modifier-key clicks)
         // ---- Callbacks -----------------------------------------------------
+        canShow: null,                // () => boolean — vetoes show() from any
+                                      // trigger. Returning false parks the request;
+                                      // showIfPending() replays it later. Use it to
+                                      // sequence popups: canShow: () => !other.isVisible
         onOpen: null,
         onClose: null,
         ...options,
@@ -288,6 +295,7 @@
       this.popupElement = null;
       this.shown = false;
       this.isVisible = false;
+      this.pendingShow = false;
       this._animating = false;
 
       // Mobile exit-intent state
@@ -493,6 +501,17 @@
         return;
       }
 
+      // A veto is not a cancellation: remember that this popup wanted to open so
+      // showIfPending() can let it through once the blocker clears (typically
+      // another popup closing). Without this the delay trigger fires once into
+      // the void and the popup never appears at all.
+      if (typeof this.options.canShow === 'function' && !this.options.canShow(this)) {
+        this.pendingShow = true;
+        _log('show deferred — canShow() returned false → ' + this.name);
+        return;
+      }
+      this.pendingShow = false;
+
       // Resolve responsive option strings (e.g. animation: 'fade;slide-up@911')
       // at show time so breakpoint changes take effect without re-create.
       this._refreshResponsiveOpts();
@@ -525,6 +544,34 @@
         _emitEvent('popup:open', { name: this.name });
         if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
       }, { once: true });
+    }
+
+    /**
+     * Replay a show() that canShow() previously vetoed. Safe to call blindly —
+     * it does nothing unless this popup actually asked to open.
+     */
+    showIfPending() {
+      if (!this.pendingShow) return false;
+      this.pendingShow = false;
+      this.show();
+      return this.isVisible;
+    }
+
+    /**
+     * Write the suppression cookie without closing anything. This is the other
+     * half of setCookieOnClose:false — the popup stays repeatable until the goal
+     * is actually met, then you call this to stop showing it.
+     */
+    markSeen() {
+      this._setCookie();
+    }
+
+    // Closing by overlay/close-button. Whether that counts as "seen" is the
+    // site's call: a promo is done once dismissed, a video popup should come
+    // back until it has actually been watched.
+    _closeByUser() {
+      if (this.options.setCookieOnClose) this._setCookie();
+      this.hide();
     }
 
     hide() {
@@ -611,8 +658,7 @@
           const trigger = e.target.closest(this.options.closeTriggerSelector);
           if (trigger) {
             e.preventDefault();
-            this._setCookie();
-            this.hide();
+            this._closeByUser();
           }
         };
         document.addEventListener('click', this._boundCloseHandler);
@@ -620,10 +666,7 @@
 
       // --- Overlay backdrop click always closes ---
       this.popupElement.addEventListener('click', (e) => {
-        if (e.target === this.popupElement) {
-          this._setCookie();
-          this.hide();
-        }
+        if (e.target === this.popupElement) this._closeByUser();
       });
     }
 

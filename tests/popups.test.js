@@ -428,3 +428,73 @@ test('a genuinely missing element still warns, with a hint about <head>', () => 
   assert.match(warnings[0], /element not found/);
   assert.match(warnings[0], /Before <\/body>/, 'points at the usual cause');
 });
+
+// ---- setCookieOnClose / canShow / showIfPending -----------------------------
+// Sequenced popups: a welcome popup that must finish before a second one may
+// appear, and a video popup that should keep coming back until actually watched.
+
+function seqEnv() {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'p-welcome' }));
+  env.body.appendChild(createElement('div', { class: 'p-video' }));
+  return env;
+}
+
+test('setCookieOnClose:false — closing does not suppress the popup', () => {
+  const env = seqEnv();
+  const video = env.window.digi2.popups.create('video', {
+    popupSelector: '.p-video', animation: 'none',
+    cookieName: 'popup_video_watched', setCookieOnClose: false,
+  });
+
+  video.show();
+  assert.equal(video.isVisible, true);
+  video._closeByUser();
+  assert.equal(video.isVisible, false);
+  assert.equal(env.document.cookie, '', 'dismissing it writes no cookie');
+
+  // …until the goal is reached.
+  video.markSeen();
+  assert.match(env.document.cookie, /popup_video_watched=true/);
+});
+
+test('setCookieOnClose defaults to true — existing behaviour is unchanged', () => {
+  const env = seqEnv();
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: 'promo_closed',
+  });
+  promo.show();
+  promo._closeByUser();
+  assert.match(env.document.cookie, /promo_closed=true/);
+});
+
+test('canShow() vetoes the open and showIfPending() replays it later', () => {
+  const env = seqEnv();
+  const welcome = env.window.digi2.popups.create('welcome', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: null,
+  });
+  const video = env.window.digi2.popups.create('video', {
+    popupSelector: '.p-video', animation: 'none', cookieName: null,
+    canShow: () => !welcome.isVisible,
+  });
+
+  welcome.show();
+  video.show();                       // blocked — welcome is on screen
+  assert.equal(video.isVisible, false);
+  assert.equal(video.pendingShow, true, 'the request is parked, not dropped');
+
+  welcome.hide();
+  assert.equal(video.showIfPending(), true);
+  assert.equal(video.isVisible, true);
+  assert.equal(video.pendingShow, false);
+});
+
+test('showIfPending() is a no-op when nothing was deferred', () => {
+  const env = seqEnv();
+  const video = env.window.digi2.popups.create('video', {
+    popupSelector: '.p-video', animation: 'none', cookieName: null,
+  });
+  assert.equal(video.showIfPending(), false);
+  assert.equal(video.isVisible, false);
+});
