@@ -649,3 +649,44 @@ test('wasSeen() reflects dismissal, so chained popups can skip what was closed',
   promo.show();
   assert.equal(promo.isVisible, true, 'show() is not gated by wasSeen()');
 });
+
+test('a throwing canShow() does not mute the popup — it opens and warns', () => {
+  const env = seqEnv();
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const video = env.window.digi2.popups.create('video', {
+      popupSelector: '.p-video', animation: 'none',
+      // classic integration typo: references an undeclared variable
+      canShow: function () { return !undeclaredPopup.isVisible; },
+    });
+    video.show();
+    assert.equal(video.isVisible, true, 'a broken veto degrades to "no veto"');
+  } finally {
+    console.warn = origWarn;
+  }
+  assert.ok(warnings.some((w) => w.includes('canShow') && w.includes('video')),
+    'the failure is reported with the popup name');
+});
+
+test('a throwing onClose() still closes the popup and writes the cookie', () => {
+  const env = seqEnv();
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const promo = env.window.digi2.popups.create('promo', {
+      popupSelector: '.p-welcome', animation: 'none', cookieName: 'promo_seen',
+      onClose: function () { missingPopup.showIfPending(); },
+    });
+    promo.show();
+    promo._closeByUser();
+    assert.equal(promo.isVisible, false, 'the popup closes despite the broken callback');
+    assert.match(env.document.cookie, /promo_seen=true/, 'the cookie is still written');
+  } finally {
+    console.warn = origWarn;
+  }
+  assert.ok(warnings.some((w) => w.includes('onClose') && w.includes('promo')),
+    'the failure is reported with the popup name');
+});

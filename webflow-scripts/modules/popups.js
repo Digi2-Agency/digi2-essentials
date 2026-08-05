@@ -185,6 +185,25 @@
     } catch (e) { /* a listener must never break the module */ }
   }
 
+  // Run a site-supplied callback without letting it take the module down with
+  // it. A typo in onClose/canShow used to throw straight through show()/hide(),
+  // which silently disabled the popup for every visitor — the only trace being
+  // an uncaught error nobody reads. Now it warns, names the callback and the
+  // popup, and carries on.
+  //   Returns `fallback` when the callback throws (or isn't a function), so a
+  //   broken canShow() can default to "allowed" rather than muting the popup.
+  function _safeCall(fn, popupName, label, arg, fallback) {
+    if (typeof fn !== 'function') return fallback;
+    try {
+      return fn(arg);
+    } catch (e) {
+      console.warn('[digi2.popups] "' + popupName + '" — ' + label + '() threw; ignoring it. '
+        + 'Fix the callback: ' + (e && e.message ? e.message : e));
+      _log(label + '() threw → ' + popupName, { error: e && e.message });
+      return fallback;
+    }
+  }
+
   // Responsive-value resolver. If `raw` is a string with the responsive
   // syntax ("value;value@maxWidth"), pick the bucket that matches the current
   // viewport. Non-strings (numbers, null, etc.) pass through untouched so
@@ -608,7 +627,9 @@
       // showIfPending() can let it through once the blocker clears (typically
       // another popup closing). Without this the delay trigger fires once into
       // the void and the popup never appears at all.
-      if (typeof this.options.canShow === 'function' && !this.options.canShow(this)) {
+      // A throwing canShow() must not mute the popup — default to letting it
+      // through, so a broken veto degrades to "no veto" instead of silence.
+      if (!_safeCall(this.options.canShow, this.name, 'canShow', this, true)) {
         this.pendingShow = true;
         _log('show deferred — canShow() returned false → ' + this.name);
         return;
@@ -633,7 +654,7 @@
         this.popupElement.style.display = 'flex';
         this._videoPlay();
         _emitEvent('popup:open', { name: this.name });
-        if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
+        _safeCall(this.options.onOpen, this.name, 'onOpen', this);
         return;
       }
 
@@ -647,7 +668,7 @@
       this.popupElement.addEventListener('transitionend', () => {
         this._animating = false;
         _emitEvent('popup:open', { name: this.name });
-        if (typeof this.options.onOpen === 'function') this.options.onOpen(this);
+        _safeCall(this.options.onOpen, this.name, 'onOpen', this);
       }, { once: true });
     }
 
@@ -712,7 +733,7 @@
         }
 
         _emitEvent('popup:close', { name: this.name });
-        if (typeof this.options.onClose === 'function') this.options.onClose(this);
+        _safeCall(this.options.onClose, this.name, 'onClose', this);
 
         if (this._pendingNavigation) {
           const target = this._pendingNavigation;
