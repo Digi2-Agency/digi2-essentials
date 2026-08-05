@@ -633,3 +633,19 @@ test('video: cookieOnEnd flips setCookieOnClose off, but an explicit value wins'
   });
   assert.equal(inst.options.setCookieOnClose, true, 'explicit setting is not overridden');
 });
+
+test('wasSeen() reflects dismissal, so chained popups can skip what was closed', () => {
+  const env = seqEnv();
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: 'promo_seen',
+  });
+  assert.equal(promo.wasSeen(), false);
+
+  promo.show();
+  promo._closeByUser();
+  assert.equal(promo.wasSeen(), true);
+
+  // show() itself still ignores the cookie — it's an explicit command.
+  promo.show();
+  assert.equal(promo.isVisible, true, 'show() is not gated by wasSeen()');
+});

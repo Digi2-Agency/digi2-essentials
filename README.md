@@ -479,6 +479,7 @@ at all. `showIfPending()` replays it and is a safe no-op otherwise.
 |---|---|
 | `showIfPending()` | Replay a `show()` that `canShow()` vetoed. Returns whether it opened |
 | `markSeen()` | Write the dismissal cookie without closing — the other half of `setCookieOnClose: false` |
+| `wasSeen()` | Already dismissed? `show()` ignores the cookie by design, so chain with `if (!other.wasSeen()) other.show()` |
 
 ### 22 Animations
 

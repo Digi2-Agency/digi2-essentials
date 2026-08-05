@@ -671,6 +671,16 @@
       this._setCookie();
     }
 
+    /**
+     * Has this visitor already dismissed (or been marked as having seen) this
+     * popup? show() deliberately ignores the cookie — it's an explicit command —
+     * so chained popups need this to avoid re-opening something already closed:
+     *   onClose: function () { if (!contact.wasSeen()) contact.show() }
+     */
+    wasSeen() {
+      return this._isCookieSet();
+    }
+
     // Closing by overlay/close-button. Whether that counts as "seen" is the
     // site's call: a promo is done once dismissed, a video popup should come
     // back until it has actually been watched.
