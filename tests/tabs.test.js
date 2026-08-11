@@ -811,3 +811,58 @@ test('rows appended after init (CMS load-more) get wired up by rescan / cms:item
   auto.trigger.click();
   assert.equal(auto.panel.style.display, '', 'auto-wired row opens');
 });
+
+test('a click during the open animation is not swallowed (accordion spam)', () => {
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  const inst = env.window.digi2.tabs.create('pricing', {
+    mode: 'accordion', allowMultiple: false, animation: 'height', animationDuration: 0.4,
+  });
+
+  // Three clicks in the same tick — every one lands mid-animation.
+  env.monthlyTrigger.click();                       // open  → starts animating
+  assert.equal(inst._activeTabs.has('monthly'), true, 'first click opens');
+
+  env.monthlyTrigger.click();                       // close → mid-animation
+  assert.equal(inst._activeTabs.has('monthly'), false, 'second click closes');
+
+  env.monthlyTrigger.click();                       // open again → mid-animation
+  assert.equal(inst._activeTabs.has('monthly'), true,
+    'third click must land — the old animation guard swallowed it and left the row dead');
+});
+
+test('spam-clicking an accordion row leaves it openable and unlocked', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  const inst = env.window.digi2.tabs.create('pricing', {
+    mode: 'accordion', allowMultiple: false, animation: 'height', animationDuration: 0.05,
+  });
+
+  for (let i = 0; i < 7; i++) env.monthlyTrigger.click();   // odd count → ends open
+  await wait(200);
+
+  assert.equal(inst._animating, false, 'animation lock is released after the burst');
+  assert.equal(inst._activeTabs.has('monthly'), true, 'the row ends up open');
+  assert.notEqual(env.monthlyPanel.style.display, 'none', 'and it is actually visible');
+});
+
+test('closing mid-open does not let the stale open callback re-inflate the panel', async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const env = createEnvironment();
+  loadTabsModule(env);
+
+  const inst = env.window.digi2.tabs.create('pricing', {
+    mode: 'accordion', allowMultiple: false, animation: 'height', animationDuration: 0.05,
+  });
+
+  env.monthlyTrigger.click();          // start opening
+  env.monthlyTrigger.click();          // close mid-animation
+  await wait(200);                     // let BOTH pending callbacks fire
+
+  assert.equal(inst._activeTabs.has('monthly'), false, 'state says closed');
+  assert.equal(env.monthlyPanel.style.display, 'none', 'the stale open callback did not re-open it');
+  assert.equal(inst._animating, false, 'lock released');
+});

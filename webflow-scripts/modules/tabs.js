@@ -364,8 +364,10 @@
      * Open a tab/panel by id.
      */
     open(tabId) {
-      if (this._animating) return;
-
+      // No animation guard here on purpose: swallowing clicks while a panel
+      // animated is what made spam-clicking an accordion leave it unopenable.
+      // Animations are per-panel and cancellable — a new one supersedes the
+      // old, so every click lands.
       var panel = this._getPanel(tabId);
       if (!panel) return;
 
@@ -644,7 +646,9 @@
       var anim = ANIMATIONS[this.options.animation] || ANIMATIONS.fade;
       if (anim === ANIMATIONS.none) { showElement(panel); done(); return; }
 
+      var run = this._beginPanelAnim(panel);
       this._animating = true;
+      this._animRun = run;
       applyStyles(panel, anim.setup(dur));
       showElement(panel);
       void panel.offsetHeight; // reflow
@@ -655,16 +659,17 @@
       function finish() {
         if (finished) return;
         finished = true;
-        self._animating = false;
+        panel.removeEventListener('transitionend', handler);
+        if (run.superseded) return;
+        self._endPanelAnim(panel, run);
         done();
       }
-      panel.addEventListener('transitionend', function handler() {
-        panel.removeEventListener('transitionend', handler);
-        finish();
-      }, { once: true });
+      function handler() { finish(); }
+      run.handler = handler;
+      panel.addEventListener('transitionend', handler);
 
       // Fallback timeout in case transitionend doesn't fire
-      setTimeout(finish, dur * 1000 + 50);
+      run.timer = setTimeout(finish, dur * 1000 + 50);
     }
 
     _hidePanel(tabId) {
@@ -703,6 +708,42 @@
       }, dur * 1000 + 50);
     }
 
+    // Per-panel animation ownership. Spam-clicking a trigger used to leave the
+    // accordion dead: a close fired mid-open, the open's pending finish() kept
+    // `_animating` true (nothing in the close path cleared it), and every later
+    // open() hit the `if (this._animating) return` guard and was swallowed —
+    // until another panel opened and reset the state.
+    //
+    // Now each run is a token on the panel. Starting a new animation supersedes
+    // the one in flight: its timer is cleared, its transitionend listener is
+    // removed, and its finish() becomes a no-op, so a late callback can neither
+    // wipe the new animation's inline styles nor release a lock it doesn't own.
+    _beginPanelAnim(panel) {
+      this._cancelPanelAnim(panel);
+      var run = { superseded: false, timer: null, handler: null };
+      if (panel) panel._d2AnimRun = run;
+      return run;
+    }
+
+    _cancelPanelAnim(panel) {
+      var run = panel && panel._d2AnimRun;
+      if (!run) return;
+      run.superseded = true;
+      if (run.timer) clearTimeout(run.timer);
+      if (run.handler && panel.removeEventListener) {
+        panel.removeEventListener('transitionend', run.handler);
+      }
+      panel._d2AnimRun = null;
+      // Only the run that took the lock may release it.
+      if (this._animRun === run) { this._animating = false; this._animRun = null; }
+    }
+
+    // Release the global lock only if this run still owns it.
+    _endPanelAnim(panel, run) {
+      if (panel && panel._d2AnimRun === run) panel._d2AnimRun = null;
+      if (this._animRun === run) { this._animating = false; this._animRun = null; }
+    }
+
     // --- max-height collapse animation (accordion "height" mode) -----------
     // Target height is measured with offsetHeight while max-height is briefly
     // lifted — NOT scrollHeight, which omits the panel's bottom padding when
@@ -710,7 +751,9 @@
     _showPanelHeight(panel, dur, onDone) {
       var self = this;
       var done = typeof onDone === 'function' ? onDone : function () {};
+      var run = this._beginPanelAnim(panel);
       this._animating = true;
+      this._animRun = run;
 
       // Measure the real rendered height (incl. padding + CSS height rules).
       showElement(panel);
@@ -737,6 +780,7 @@
 
       var finished = false;
       var timer = setTimeout(finish, dur * 1000 + 60);
+      run.timer = timer;
 
       // Lazy images inside a previously display:none panel have no intrinsic
       // size yet (mobile: the slider image drives the row height). Force them
@@ -754,6 +798,7 @@
             try { if (img.loading === 'lazy') img.loading = 'eager'; } catch (e) {}
             var onload = function () {
               img.removeEventListener('load', onload);
+              if (run.superseded) return;                   // a newer run owns the panel
               if (panel.style.display === 'none') return;   // closed meanwhile
               var grown = panel.scrollHeight + padBottom;
               if (grown <= lastKnown + 1) return;
@@ -765,6 +810,7 @@
                 panel.style.maxHeight = grown + 'px';
                 clearTimeout(timer);
                 timer = setTimeout(finish, dur * 1000 + 60);
+                run.timer = timer;
                 return;
               }
 
@@ -801,23 +847,32 @@
         finished = true;
         clearTimeout(timer);
         panel.removeEventListener('transitionend', handler);
+        // A close (or another open) took over mid-flight — leave its styles and
+        // its lock alone, otherwise this late callback re-opens a closed panel
+        // and strands `_animating` at true.
+        if (run.superseded) return;
         // Let the panel grow naturally afterwards (nested media, etc.).
         // Image load listeners stay attached — a late image triggers a smooth
         // grow (see onload above) instead of popping the row open.
         panel.style.maxHeight = 'none';
         panel.style.overflow = '';
         panel.style.transition = '';
-        self._animating = false;
+        self._endPanelAnim(panel, run);
         done();
       }
       function handler(e) {
         if (e && e.propertyName && e.propertyName !== 'max-height') return;
         finish();
       }
+      run.handler = handler;
       panel.addEventListener('transitionend', handler);
     }
 
     _hidePanelHeight(panel, dur) {
+      // Take the panel over from any in-flight open — its pending finish() is
+      // what used to strand the lock and re-inflate the panel behind us.
+      var run = this._beginPanelAnim(panel);
+      var self = this;
       var finished = false;
       panel.style.overflow = 'hidden';
       panel.style.transition = 'none';
@@ -830,17 +885,20 @@
         if (finished) return;
         finished = true;
         panel.removeEventListener('transitionend', handler);
+        if (run.superseded) return;                        // re-opened mid-collapse
         hideElement(panel);
         panel.style.maxHeight = '';
         panel.style.overflow = '';
         panel.style.transition = '';
+        self._endPanelAnim(panel, run);
       }
       function handler(e) {
         if (e && e.propertyName && e.propertyName !== 'max-height') return;
         finish();
       }
+      run.handler = handler;
       panel.addEventListener('transitionend', handler);
-      setTimeout(finish, dur * 1000 + 60);
+      run.timer = setTimeout(finish, dur * 1000 + 60);
     }
 
     _updateTriggers() {
