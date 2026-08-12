@@ -1706,6 +1706,16 @@ Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two eff
 - **Auto-detected bounds** round to the step (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). Explicitly set `d2-cms-range-min/max` are never snapped.
 - **Dragging the handles** snaps the live value outward too — the min handle floors, the max handle ceils — so a handle never rounds *inward* and clips an item sitting just past it (drag min onto a `28.75` item → lands on `25`, keeps it in). Without the flag, handles round to the nearest tick (classic slider feel).
 
+**Bounds follow the filters.** Auto-detected bounds are measured from the items that currently pass the *other* filters, and re-measured after every filter change. Switch to a "Domy" tab and the price slider runs from the cheapest to the dearest house — not from the cheapest row in the whole CMS. Works with anything that filters the list: tab triggers doubling as `d2-cms-filter` chips, dropdowns, checkboxes.
+
+- The slider's **own** field is left out of that measurement, so dragging never rescales the track under your fingers.
+- Handles keep the user's pick when it still overlaps the new scale (clamped into it), and fall back to the full extent when it doesn't — a 300–500k selection meeting a 900k–1.6M tab would otherwise pin both handles together and show nothing.
+- If the new filter combination matches nothing, the last real scale stays on screen so there's still a slider to drag back out with.
+
+**One slider over tabbed lists.** With a pipe target (`d2-cms-target="flats|houses"`) the slider drives whichever list the open tab shows: on `tabs:change` it re-measures against the newly visible list and drops its range filter from the tab you left. Same visibility rule the shared `d2-cms-display` counters use.
+
+Add `d2-cms-range-static-bounds` to opt out of all of the above — bounds are then measured once across the whole dataset (every target included) and never move.
+
 Displays pair well with the loader's `d2-static-width` (locks the element's width to its widest observed value so the layout doesn't shift while dragging). The attribute value picks the edge the content anchors to when shorter than the locked box: `d2-static-width="right"` / `"center"` (default left; flex containers get `justify-content` instead of `text-align`). A bare `d2-static-width` on the **max** display — or on a wrapper around it — is auto-anchored `right` by the CMS module, so the value stays glued to the track's right edge instead of drifting left as it gets shorter.
 
 ### Options
@@ -1766,6 +1776,7 @@ Displays pair well with the loader's `d2-static-width` (locks the element's widt
 | `d2-cms-apply-label` | child of apply button | Only this child's text is rewritten by the count preview (keeps icons/markup) |
 | `d2-cms-apply-pending` | apply button | (Set by module) Present while there is an un-applied draft change — style your "apply to see results" state off it |
 | `d2-cms-range` (+ `-field`, `-step`, `-min/max`, `-displayformat`) | wrapper | Numeric range slider bound to a field — see [Range sliders](#range-sliders) |
+| `d2-cms-range-static-bounds` | range wrapper | Bounds normally re-measure after every filter change (and follow the visible list with a pipe target) — this flag freezes them to one measurement across the whole dataset |
 | `d2-cms-load-more` | button | Reveal next `perPage` items |
 | `d2-cms-loadcount="6\|all"` | button | Reveal N items (or everything) per click |
 | `d2-cms-target="name"` or `"a\|b"` | sort/filter/load-more/display/empty/label elements | Target list(s) by name. Optional only when the element is nested inside `[d2-cms-list]`, OR when there is exactly one list on the page — **with two+ lists, controls outside a list require it** |

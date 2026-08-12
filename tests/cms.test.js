@@ -1380,3 +1380,353 @@ test('real ISO dates still sort as dates, not as the number 20260804', async () 
     ['2026-01-15T08:00:00Z', '2026-08-04T10:30:00Z', '2026-12-31T23:59:00Z'],
     'chronological order');
 });
+
+// Build a price slider + one list of flats (300/500) and houses (900/1600).
+function createFilteredRangeFixture(extraRangeAttrs) {
+  const env = createEnvironment();
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const range = createElement('div', Object.assign({
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '1',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'offers',
+  }, extraRangeAttrs || {}));
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const houseTab = createElement('a', { 'd2-cms-filter': 'type:house', 'd2-cms-target': 'offers' });
+  const flatTab = createElement('a', { 'd2-cms-filter': 'type:flat', 'd2-cms-target': 'offers' });
+
+  const list = createElement('div', { 'd2-cms-list': 'offers' });
+  const items = {
+    flatCheap: createItem({ type: 'flat', price: '300' }),
+    flatDear: createItem({ type: 'flat', price: '500' }),
+    houseCheap: createItem({ type: 'house', price: '900' }),
+    houseDear: createItem({ type: 'house', price: '1600' }),
+  };
+  Object.values(items).forEach((it) => list.appendChild(it));
+
+  env.body.appendChild(range);
+  env.body.appendChild(houseTab);
+  env.body.appendChild(flatTab);
+  env.body.appendChild(list);
+
+  return { env, track, minDisp, maxDisp, houseTab, flatTab, items };
+}
+
+test('a tab that filters the list rescales the slider to that tab\'s prices', async () => {
+  const f = createFilteredRangeFixture();
+
+  loadCmsModule(f.env);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '300', 'unfiltered: whole dataset');
+  assert.equal(f.maxDisp.textContent, '1600');
+
+  dispatchDocument(f.env, 'click', f.houseTab);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '900', 'houses tab: cheapest house');
+  assert.equal(f.maxDisp.textContent, '1600', 'houses tab: dearest house');
+
+  dispatchDocument(f.env, 'click', f.flatTab);   // houses off, flats on
+  dispatchDocument(f.env, 'click', f.houseTab);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '300', 'flats tab: cheapest flat');
+  assert.equal(f.maxDisp.textContent, '500', 'flats tab: dearest flat');
+  assert.equal(f.items.houseCheap.style.display, 'none', 'houses stay filtered out');
+});
+
+test('dragging a slider does not rescale its own track', async () => {
+  const f = createFilteredRangeFixture();
+
+  loadCmsModule(f.env);
+  await flushTimers();
+
+  // Track click at mid-point drags the min handle up to 950 — the scale itself
+  // must not follow, or the user could never drag back down.
+  f.track._listeners.pointerdown({ target: f.track, clientX: 50, preventDefault: () => {} });
+  await flushTimers();
+  assert.equal(f.minDisp.textContent, '950', 'the handle moved');
+
+  // Click at the far left: reachable only if the track still starts at 300.
+  f.track._listeners.pointerdown({ target: f.track, clientX: 0, preventDefault: () => {} });
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '300', 'own range filter is excluded from the measurement');
+  assert.equal(f.maxDisp.textContent, '1600');
+});
+
+test('a pick that misses the new tab entirely is dropped, not clamped shut', async () => {
+  const f = createFilteredRangeFixture();
+
+  loadCmsModule(f.env);
+  await flushTimers();
+
+  // Narrow to the flats end (max handle down to ~950), then switch to houses.
+  f.track._listeners.pointerdown({ target: f.track, clientX: 50, preventDefault: () => {} });
+  dispatchDocument(f.env, 'click', f.flatTab);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '300');
+  assert.equal(f.maxDisp.textContent, '500', 'rescaled to the flats');
+  assert.equal(f.items.flatCheap.style.display, '', 'both flats visible again');
+  assert.equal(f.items.flatDear.style.display, '');
+});
+
+test('rescaling under d2-cms-apply does not leave a change waiting for Apply', async () => {
+  const f = createFilteredRangeFixture();
+  const applyBtn = createElement('button', { 'd2-cms-apply': '', 'd2-cms-target': 'offers' });
+  f.env.body.appendChild(applyBtn);
+
+  loadCmsModule(f.env);
+  await flushTimers();
+
+  // Narrow to the flats end, commit it, then stage + commit the houses tab.
+  f.track._listeners.pointerdown({ target: f.track, clientX: 50, preventDefault: () => {} });
+  dispatchDocument(f.env, 'click', applyBtn);
+  dispatchDocument(f.env, 'click', f.houseTab);
+  dispatchDocument(f.env, 'click', applyBtn);
+  await flushTimers();
+
+  // 950–1600 still overlaps the houses, so the pick is kept…
+  assert.equal(f.minDisp.textContent, '950', 'the pick survives an overlapping rescale');
+  assert.equal(applyBtn.hasAttribute('d2-cms-apply-pending'), false,
+    'the rescale committed itself instead of staging a phantom change');
+  assert.equal(f.items.houseDear.style.display, '', '1600 is inside the pick');
+  assert.equal(f.items.houseCheap.style.display, 'none', '900 is below it');
+
+  // …but the track now starts at the cheapest house, so 900 is reachable.
+  f.track._listeners.pointerdown({ target: f.track, clientX: 0, preventDefault: () => {} });
+  dispatchDocument(f.env, 'click', applyBtn);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '900', 'rescaled to the houses');
+  assert.equal(f.maxDisp.textContent, '1600');
+  assert.equal(f.items.houseCheap.style.display, '', 'both houses shown again');
+});
+
+test('d2-cms-range-static-bounds keeps the bounds fixed while filters change', async () => {
+  const f = createFilteredRangeFixture({ 'd2-cms-range-static-bounds': '' });
+
+  loadCmsModule(f.env);
+  await flushTimers();
+
+  dispatchDocument(f.env, 'click', f.houseTab);
+  await flushTimers();
+
+  assert.equal(f.minDisp.textContent, '300', 'bounds span the whole dataset');
+  assert.equal(f.maxDisp.textContent, '1600');
+  assert.equal(f.items.flatCheap.style.display, 'none', 'the tab filter still applies');
+});
+
+test('three tabbed lists: the slider reads the open panel, not the one animating out', async () => {
+  const env = createEnvironment();
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '1',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'mieszkania|domy|lokale',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  track.appendChild(fill);
+  track.appendChild(createElement('button', { 'd2-cms-range-handle': 'min' }));
+  track.appendChild(createElement('button', { 'd2-cms-range-handle': 'max' }));
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+  env.body.appendChild(range);
+
+  // Panel per tab; only "mieszkania" starts open. Every panel keeps a non-zero
+  // rect throughout — the tabs module hides them only after the animation, so
+  // the flag is the only trustworthy signal.
+  const panels = {};
+  [['mieszkania', [300, 500]], ['domy', [900, 1600]], ['lokale', [2000, 2400]]]
+    .forEach(([name, prices]) => {
+      const panel = createElement('div', { 'd2-tab-instance': name });
+      const list = createElement('div', { 'd2-cms-list': name });
+      prices.forEach((p) => list.appendChild(createItem({ price: String(p) })));
+      panel.appendChild(list);
+      env.body.appendChild(panel);
+      panels[name] = panel;
+    });
+  panels.mieszkania.setAttribute('d2-is-active', '');
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '300', 'open tab only');
+  assert.equal(maxDisp.textContent, '500');
+
+  const openTab = (name) => {
+    Object.entries(panels).forEach(([n, p]) => {
+      if (n === name) p.setAttribute('d2-is-active', '');
+      else p.removeAttribute('d2-is-active');
+    });
+    env.window.digi2.emit('tabs:change', { group: 'kat', tab: name });
+  };
+
+  openTab('domy');
+  await flushTimers();
+  assert.equal(minDisp.textContent, '900', 'domy tab');
+  assert.equal(maxDisp.textContent, '1600');
+
+  openTab('lokale');
+  await flushTimers();
+  assert.equal(minDisp.textContent, '2000', 'lokale tab');
+  assert.equal(maxDisp.textContent, '2400');
+
+  openTab('mieszkania');
+  await flushTimers();
+  assert.equal(minDisp.textContent, '300', 'back to the first tab');
+  assert.equal(maxDisp.textContent, '500');
+});
+
+test('a slider shared by tabbed lists re-measures its bounds on tabs:change', async () => {
+  const env = createEnvironment();
+
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '1',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-target': 'flats|houses',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const flats = createElement('div', { 'd2-cms-list': 'flats' });
+  const flatCheap = createItem({ price: '300' });
+  const flatDear = createItem({ price: '500' });
+  flats.appendChild(flatCheap);
+  flats.appendChild(flatDear);
+
+  const houses = createElement('div', { 'd2-cms-list': 'houses' });
+  const houseCheap = createItem({ price: '900' });
+  const houseDear = createItem({ price: '1600' });
+  houses.appendChild(houseCheap);
+  houses.appendChild(houseDear);
+
+  // Tab 1 open: flats visible, houses collapsed to 0×0.
+  flats.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  houses.getBoundingClientRect = () => ({ width: 0, height: 0 });
+
+  env.body.appendChild(range);
+  env.body.appendChild(flats);
+  env.body.appendChild(houses);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '300', 'bounds come from the visible tab');
+  assert.equal(maxDisp.textContent, '500');
+
+  // Narrow the range on the flats tab, then switch to houses.
+  track._listeners.pointerdown({ target: track, clientX: 50, preventDefault: () => {} });
+  assert.equal(flatCheap.style.display, 'none', 'flats are filtered by the drag');
+
+  flats.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  houses.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  env.window.digi2.emit('tabs:change', { group: 'view', tab: 'houses' });
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '900', 'bounds follow the new tab');
+  assert.equal(maxDisp.textContent, '1600');
+  assert.equal(houseCheap.style.display, '', 'handles reset — nothing filtered out');
+  assert.equal(houseDear.style.display, '');
+  assert.equal(flatCheap.style.display, '', 'the list we left drops its range filter');
+});
+
+test('d2-cms-range-static-bounds keeps one range across every tabbed list', async () => {
+  const env = createEnvironment();
+
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const range = createElement('div', {
+    'd2-cms-range': '',
+    'd2-cms-range-field': 'price',
+    'd2-cms-range-step': '1',
+    'd2-cms-range-displayformat': 'plain',
+    'd2-cms-range-static-bounds': '',
+    'd2-cms-target': 'a-list|b-list',
+  });
+  const track = createElement('div', { 'd2-cms-range-track': '' });
+  const fill = createElement('div', { 'd2-cms-range-fill': '' });
+  const minHandle = createElement('button', { 'd2-cms-range-handle': 'min' });
+  const maxHandle = createElement('button', { 'd2-cms-range-handle': 'max' });
+  const minDisp = createElement('div', { 'd2-cms-range-display': 'min' });
+  const maxDisp = createElement('div', { 'd2-cms-range-display': 'max' });
+  track.appendChild(fill);
+  track.appendChild(minHandle);
+  track.appendChild(maxHandle);
+  range.appendChild(track);
+  range.appendChild(minDisp);
+  range.appendChild(maxDisp);
+
+  const listA = createElement('div', { 'd2-cms-list': 'a-list' });
+  listA.appendChild(createItem({ price: '300' }));
+  listA.appendChild(createItem({ price: '500' }));
+  const listB = createElement('div', { 'd2-cms-list': 'b-list' });
+  listB.appendChild(createItem({ price: '900' }));
+  listB.appendChild(createItem({ price: '1600' }));
+
+  listA.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  listB.getBoundingClientRect = () => ({ width: 0, height: 0 });
+
+  env.body.appendChild(range);
+  env.body.appendChild(listA);
+  env.body.appendChild(listB);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '300', 'bounds span both lists');
+  assert.equal(maxDisp.textContent, '1600');
+
+  listA.getBoundingClientRect = () => ({ width: 0, height: 0 });
+  listB.getBoundingClientRect = () => ({ width: 100, height: 50 });
+  env.window.digi2.emit('tabs:change', { group: 'view', tab: 'b' });
+  await flushTimers();
+
+  assert.equal(minDisp.textContent, '300', 'a tab switch leaves them alone');
+  assert.equal(maxDisp.textContent, '1600');
+});

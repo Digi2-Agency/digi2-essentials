@@ -112,6 +112,36 @@
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+  var TAB_PANEL_SEL = '[d2-tab-instance], [d2-tab-content]';
+
+  /**
+   * Is `el` inside an OPEN tabs-module panel? Walks every panel ancestor, so
+   * a list nested in tabs-within-tabs only counts as open when the whole
+   * chain is. The tabs module writes d2-is-active on panels synchronously
+   * (before it emits tabs:change), which makes this readable mid-switch —
+   * unlike display/size, which lag behind the close animation.
+   *
+   * Returns null when the question doesn't apply: no panel ancestor, or the
+   * tabs module hasn't stamped anything yet (its script may load after this
+   * one, or the panels may be plain Webflow tabs). Callers fall back to
+   * measuring the element.
+   */
+  function _tabPanelOpen(el) {
+    if (!el || typeof el.closest !== 'function') return null;
+    var panel = el.closest(TAB_PANEL_SEL);
+    if (!panel) return null;
+    var open = true;
+    while (panel) {
+      if (!panel.hasAttribute('d2-is-active')) { open = false; break; }
+      var parent = panel.parentElement;
+      panel = (parent && typeof parent.closest === 'function') ? parent.closest(TAB_PANEL_SEL) : null;
+    }
+    if (!open && !document.querySelector('[d2-tab-instance][d2-is-active], [d2-tab-content][d2-is-active]')) {
+      return null;   // nothing is flagged anywhere — the flag isn't in play
+    }
+    return open;
+  }
+
   /**
    * Read sortable/filterable field values (and optional types) from an item.
    * Each nested [d2-cms-field="name"] element contributes one field:
@@ -1545,6 +1575,33 @@
       }
     }
 
+    // Items passing every ACTIVE filter except the range on `field`. This is
+    // what a range slider measures its bounds from, so a "Domy" tab (or any
+    // other chip) rescales the price handles to the prices actually on offer
+    // there. Its own field is excluded because a slider must not narrow its
+    // own scale — dragging min up would otherwise drag the whole track up
+    // after it, and the user could never drag back down.
+    _itemsMatchingExcept(field) {
+      var srcF = this._deferMode ? this._committedFilters : this._filters;
+      var srcR = this._deferMode ? this._committedRangeFilters : this._rangeFilters;
+      var ranges = srcR;
+      if (field && Object.prototype.hasOwnProperty.call(srcR, field)) {
+        ranges = {};
+        for (var k in srcR) {
+          if (Object.prototype.hasOwnProperty.call(srcR, k) && k !== field) ranges[k] = srcR[k];
+        }
+      }
+      if (!Object.keys(srcF).length && !Object.keys(ranges).length
+          && !Object.keys(this._excludes).length) {
+        return this.items;                       // nothing filtering — whole set
+      }
+      var out = [];
+      for (var i = 0; i < this.items.length; i++) {
+        if (this._matchItem(this.items[i], srcF, ranges)) out.push(this.items[i]);
+      }
+      return out;
+    }
+
     // Pure predicate: does `item` satisfy the given tag + range filters (plus
     // the always-live exclude toggles)? Shared by the render (_applyFilters,
     // committed state) and the draft counter (_countDraftMatches, live state)
@@ -1971,11 +2028,20 @@
      * OR is nested inside `[d2-cms-list="<name>"]`. If neither is set and this
      * is the only registered list, the orphan element is claimed automatically.
      */
-    // The list is "visible" when it actually renders (hidden tab panels
-    // collapse to 0×0). Used to decide who owns SHARED counters.
+    // The list is "visible" when the tab panel holding it is open. Used to
+    // decide who owns SHARED counters and which list a shared range slider
+    // measures.
+    //
+    // Measuring the rect is the fallback, not the primary test: the tabs
+    // module only sets display:none once the CLOSE animation finishes, so a
+    // rect taken while tabs:change fires still reports the outgoing panel as
+    // visible — and two lists would look visible at once. The d2-is-active
+    // flag is written synchronously, before the event.
     _isListVisible() {
       var el = this.listEl;
       if (!el) return false;
+      var flagged = _tabPanelOpen(el);
+      if (flagged !== null) return flagged;
       if (!el.getBoundingClientRect) return true;
       var r = el.getBoundingClientRect();
       return (r.width > 0 || r.height > 0);
@@ -3094,12 +3160,24 @@
       this._defaultMin = isNaN(attrDefMin) ? null : attrDefMin;
       this._defaultMax = isNaN(attrDefMax) ? null : attrDefMax;
 
+      // Bounds track what the list is actually showing: they are measured from
+      // the items passing the other filters, and re-measured whenever those
+      // change (a tab that filters the list, a chip, a dropdown) or when a tab
+      // switch swaps which of several bound lists is visible.
+      // d2-cms-range-static-bounds opts out — bounds are then measured once
+      // across the whole dataset and never move.
+      this.dynamicBounds = !wrapper.hasAttribute('d2-cms-range-static-bounds');
+
       this.cms = null;
-      this.cmsTargets = [];
+      this.cmsTargets = [];   // lists the slider currently drives (visible ones)
+      this.allTargets = [];   // every list the slider is bound to
       this.min = 0;
       this.max = 100;
       this.currentMin = 0;
       this.currentMax = 100;
+      // True once bounds came from real item values — lets a later re-measure
+      // that finds nothing keep the last known scale instead of resetting.
+      this._measured = false;
       // True once the user has dragged or keyed the slider. Until then, a
       // background refresh (e.g. after loading more server pages) is free to
       // snap the handles to the new full extent — nothing the user set is
@@ -3129,16 +3207,35 @@
       }
     }
 
+    // Of the bound lists, the ones the slider currently speaks for. A single
+    // target always wins (nothing to choose between). With several, only the
+    // visible lists count — so a slider shared by tabbed lists measures the
+    // tab the user is looking at. Falls back to all of them when none is
+    // visible (the whole block sits in a closed panel) — otherwise the slider
+    // would collapse to its 0–100 default while off-screen.
+    _activeTargets(all) {
+      if (!this.dynamicBounds || all.length < 2) return all;
+      var visible = all.filter(function (cms) { return cms._isListVisible(); });
+      return visible.length ? visible : all;
+    }
+
     _resolveBounds() {
       var names = _resolveTargetNames(this.wrapper);
-      this.cmsTargets = _instancesForTargetNames(names);
+      this.allTargets = _instancesForTargetNames(names);
+      this.cmsTargets = this._activeTargets(this.allTargets);
       this.cms = this.cmsTargets.length ? this.cmsTargets[0] : null;
 
       var min = this._attrMin, max = this._attrMax;
       if ((min == null || max == null) && this.cmsTargets.length) {
         var lo = Infinity, hi = -Infinity;
         for (var c = 0; c < this.cmsTargets.length; c++) {
-          var items = this.cmsTargets[c].items || [];
+          var target = this.cmsTargets[c];
+          // Measure the filtered set (minus our own range) so the scale
+          // follows the tab/chips the user picked. With static bounds, or on
+          // a list too old to know the helper, fall back to every item.
+          var items = (this.dynamicBounds && typeof target._itemsMatchingExcept === 'function')
+            ? target._itemsMatchingExcept(this.field)
+            : (target.items || []);
           for (var i = 0; i < items.length; i++) {
             var v = parseLooseNumber(items[i].fields[this.field]);
             if (isNaN(v)) continue;
@@ -3151,7 +3248,14 @@
           // multiple. Sides fixed via attr keep their exact author value.
           if (min == null) min = this.snap ? Math.floor(lo / this.step) * this.step : lo;
           if (max == null) max = this.snap ? Math.ceil(hi / this.step) * this.step : hi;
+        } else if (this._measured) {
+          // The other filters match nothing right now. Keep the last real
+          // scale rather than collapsing the track to the 0–100 default —
+          // the user still needs a slider to drag back out of the dead end.
+          if (min == null) min = this.min;
+          if (max == null) max = this.max;
         }
+        if (min != null && max != null) this._measured = true;
       }
       if (min == null) min = 0;
       if (max == null) max = 100;
@@ -3185,19 +3289,74 @@
       var prevMax = this.currentMax;
       var touched = this._userTouched;
       this._resolveBounds();
-      if (!touched) {
+      if (!touched || prevMax < this.min || prevMin > this.max) {
         // Untouched slider: snap to the new full extent. This is the init
         // path where page-1 bounds get replaced by the full dataset bounds
         // after _ensureAllLoaded completes — handles must follow so the
         // narrow page-1 range doesn't stick and filter out newly-loaded rows.
+        //
+        // Same treatment when the user's pick no longer overlaps the new
+        // scale at all (a 300–500k selection meeting a 900k–1.6M tab):
+        // clamping would pin both handles to one end and show nothing, so the
+        // selection is dropped instead.
         this.currentMin = this.min;
         this.currentMax = this.max;
+        this._userTouched = false;
       } else {
         this.currentMin = Math.max(this.min, Math.min(prevMin, this.max));
         this.currentMax = Math.max(this.min, Math.min(prevMax, this.max));
       }
       this._render();
-      this._applyToCms();
+      this._applyToCms(true);
+    }
+
+    // Called after a tab switch, for sliders bound to SEVERAL lists (a pipe
+    // target across tabbed lists): the one now visible takes over. The lists
+    // left behind get their range filter dropped, since no slider represents
+    // it any more, and refresh() re-measures against the new one.
+    //
+    // A slider bound to a single list has nothing to swap — it only re-renders,
+    // because one that initialised inside a hidden panel measured its handles
+    // as 0-wide and positioned them without the centering offset. Its bounds
+    // still follow the tab, via the cms:filter path, whenever the tab filters
+    // that list.
+    syncToVisible() {
+      if (!this.track) return false;
+      if (!this.dynamicBounds || this.allTargets.length < 2) {
+        this._render();
+        return false;
+      }
+
+      var next = this._activeTargets(this.allTargets);
+      var prev = this.cmsTargets;
+      var same = next.length === prev.length && next.every(function (cms) {
+        return prev.indexOf(cms) !== -1;
+      });
+      if (same) {
+        this._render();
+        return false;
+      }
+
+      var field = this.field;
+      prev.forEach(function (cms) {
+        if (next.indexOf(cms) === -1 && typeof cms.clearRange === 'function') {
+          cms.clearRange(field);
+        }
+      });
+
+      this._userTouched = false;   // another dataset — start from its full extent
+      this.refresh();
+
+      // A list revealed for the first time may still have Webflow server pages
+      // pending, so its items only cover page 1. Pull the rest, then re-measure.
+      var pending = this.cmsTargets.filter(function (cms) { return cms._nextPageUrl; });
+      if (pending.length) {
+        var self = this;
+        Promise.all(pending.map(function (cms) { return cms._ensureAllLoaded(); })).then(function () {
+          if (self.track) self.refresh();
+        });
+      }
+      return true;
     }
 
     // Reset handles to the full extent and drop the range filter. Used by
@@ -3428,16 +3587,44 @@
       return this.prefix + body + this.suffix;
     }
 
-    _applyToCms() {
+    // `systemic` marks a write the module made on the user's behalf (handles
+    // re-fitted to a new scale), as opposed to one they dragged out.
+    _applyToCms(systemic) {
       if (!this.cmsTargets.length) return;
       var self = this;
+      var full = this.currentMin <= this.min && this.currentMax >= this.max;
       this.cmsTargets.forEach(function (cms) {
-        if (self.currentMin <= self.min && self.currentMax >= self.max) {
+        // Skip writes that change nothing. Re-measuring runs off cms:filter,
+        // so a no-op write would re-render the list and fire the event again —
+        // a slider rescaling itself into a loop.
+        var cur = cms._rangeFilters && cms._rangeFilters[self.field];
+        if (full) {
+          if (!cur) return;
+          var wasPending = cms._pendingApply;
           cms.clearRange(self.field);
-        } else {
+          if (systemic) self._commitSystemic(cms, wasPending);
+        } else if (!cur || cur.min !== self.currentMin || cur.max !== self.currentMax) {
+          var pending = cms._pendingApply;
           cms.setRange(self.field, self.currentMin, self.currentMax);
+          if (systemic) self._commitSystemic(cms, pending);
         }
       });
+    }
+
+    // In [d2-cms-apply] mode every filter write lands in a draft and waits for
+    // the Apply button. A systemic write must not: the handles already show
+    // the new state, so leaving it staged would mark Apply "pending" for a
+    // change the user never made — and keep the list filtered by a range the
+    // slider no longer displays. Commit just this field into the rendered
+    // snapshot and restore whatever pending state the draft had.
+    _commitSystemic(cms, wasPending) {
+      if (!cms._deferMode) return;
+      var live = cms._rangeFilters[this.field];
+      if (live) cms._committedRangeFilters[this.field] = { min: live.min, max: live.max };
+      else delete cms._committedRangeFilters[this.field];
+      cms._pendingApply = wasPending;
+      cms._render();
+      if (typeof cms._updateApplyButtons === 'function') cms._updateApplyButtons();
     }
   }
 
@@ -3453,11 +3640,40 @@
     var scoped = Array.isArray(fields) && fields.length;
     _rangeRegistry.forEach(function (s) {
       if (scoped && fields.indexOf(s.field) === -1) return;
-      var hit = s.cmsTargets && s.cmsTargets.some(function (cms) {
+      // Match against every bound list, not just the currently visible ones —
+      // a clear button should reset the slider whichever tab is open.
+      var bound = (s.allTargets && s.allTargets.length) ? s.allTargets : s.cmsTargets;
+      var hit = bound && bound.some(function (cms) {
         return names.indexOf(cms.name) !== -1;
       });
       if (hit && typeof s.reset === 'function') s.reset();
     });
+  }
+
+  // Re-measure every slider bound to `listName` against the list's current
+  // result set. Fired from cms:filter, so tab chips, dropdowns and checkboxes
+  // all rescale the sliders — a price slider on the "Domy" tab ends at the
+  // most expensive house, not at the most expensive row in the whole CMS.
+  //
+  // The guard keeps it to a single round: refresh() writes the range filter
+  // back to the list, which fires cms:filter again. One pass rescales every
+  // slider off the same state; re-entering would let two sliders on one list
+  // chase each other.
+  var _rescaling = false;
+  function _rescaleRangeSlidersFor(listName) {
+    if (_rescaling || !listName) return;
+    _rescaling = true;
+    try {
+      _rangeRegistry.forEach(function (s) {
+        if (!s.track || !s.dynamicBounds) return;
+        var bound = s.cmsTargets || [];
+        for (var i = 0; i < bound.length; i++) {
+          if (bound[i].name === listName) { s.refresh(); return; }
+        }
+      });
+    } finally {
+      _rescaling = false;
+    }
   }
 
   function _autoInitRangeSliders() {
@@ -3489,11 +3705,20 @@
   };
 
   // Tab switches change which list is visible — let the now-visible list
-  // rewrite SHARED (pipe-target) counters with its own numbers. The tabs
-  // module emits 'tabs:change' after opening a panel.
+  // rewrite SHARED (pipe-target) counters with its own numbers, and let
+  // sliders shared by those lists re-measure their bounds against the newly
+  // shown one. The tabs module emits 'tabs:change' after opening a panel.
   if (window.digi2 && typeof window.digi2.on === 'function') {
+    // Any filter change on a list rescales its sliders to the new result set.
+    window.digi2.on('cms:filter', function (data) {
+      _rescaleRangeSlidersFor(data && data.list);
+    });
+
     window.digi2.on('tabs:change', function () {
       setTimeout(function () {
+        _rangeRegistry.forEach(function (s) {
+          if (typeof s.syncToVisible === 'function') s.syncToVisible();
+        });
         for (var k in registry) {
           var inst = registry[k];
           if (inst && inst._lastCounts && inst._isListVisible()) {
