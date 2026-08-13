@@ -481,11 +481,40 @@ at all. `showIfPending()` replays it and is a safe no-op otherwise.
 | `markSeen()` | Write the dismissal cookie without closing — the other half of `setCookieOnClose: false` |
 | `wasSeen()` | Already dismissed? `show()` ignores the cookie by design, so chain with `if (!other.wasSeen()) other.show()` |
 
+### Repeating one popup — the `sequence` option
+
+Showing the *same* popup a few times during a visit is just an option on the
+popup itself — numbers are seconds, the first counting from arrival, each
+next one from the previous **close**:
+
+```js
+digi2.popups.create('promo', {
+  popupSelector: '#popup-promo',
+  animation: 'fade',
+  sequence: [4, { after: 60, afterPageChange: true }, 180, 180],
+})
+```
+
+Four showings: 4 s in, a minute after moving to another page, then three
+minutes after each close — and silence. Any entry may be a number or an object
+(`{ after, afterPageChange }`).
+
+This implies `setCookieOnClose: false`, because a popup that repeats can't treat
+"closed" as "done with it" — the dismissal would make every later showing skip
+and you'd see the popup exactly once. Set the flag yourself to override that;
+call `markSeen()` when the goal is genuinely met.
+
+Each popup keeps its own progress, so two popups can repeat independently. All
+the timing rules below apply — visible-time clock, surviving navigation, one
+visit per session.
+
 ### Sequences — a chain across the whole visit
 
-`openAfterDelay` starts counting at page load, so every navigation resets it —
-it can't express "and three minutes after that one is closed". `sequence()` can:
-one chain, stepping forward as the visitor moves through the site.
+For a chain of **different** popups, `digi2.popups.sequence()` is the same
+mechanism one level up. `openAfterDelay` starts counting at page load, so every
+navigation resets it — it can't express "and three minutes after that one is
+closed". A sequence can: one chain, stepping forward as the visitor moves
+through the site.
 
 ```js
 digi2.popups.sequence([
@@ -567,7 +596,8 @@ actually met.
 | After delay | `openAfterDelay: 5` |
 | Exit intent | `openOnExitIntent: true` |
 | Page views | `openAfterPageViews: 3` |
-| Chained across the visit | `digi2.popups.sequence([…])` — see [Sequences](#sequences--a-chain-across-the-whole-visit) |
+| Repeated across the visit | `sequence: [4, 60, 180]` — see [Repeating one popup](#repeating-one-popup--the-sequence-option) |
+| Chained with other popups | `digi2.popups.sequence([…])` — see [Sequences](#sequences--a-chain-across-the-whole-visit) |
 | Outside click | `openOnOutsideClick: '.card'` |
 | Element mouseleave | `openOnElementMouseLeave: '#form'` |
 | Element hover | `openOnElementHover: '.target'` |

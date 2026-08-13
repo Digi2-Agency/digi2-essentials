@@ -1,5 +1,5 @@
 <!-- ============================================================
-     SEKWENCJA POPUPU PROMO — jeden popup, cztery pokazy w trakcie wizyty
+     POPUP PROMO — jeden popup, cztery pokazy w trakcie wizyty
      4 s → (po przejściu na inną podstronę) 1 min → 3 min → 3 min → koniec
 
      GDZIE WKLEIĆ: Site Settings → Custom Code → Head Code,
@@ -7,7 +7,7 @@
      działa tak samo jak z footera.
 
      WYMAGA loadera z modułem popups:
-     <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@c14853f/dist/digi2-loader.min.js"
+     <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@<SHA>/dist/digi2-loader.min.js"
              d2-popups></script>
 
      JAK DZIAŁA ODLICZANIE
@@ -53,16 +53,6 @@
   }, 50);
 })(function () {
 
-  /* ── POPUP ───────────────────────────────────────────────────
-     Bez openAfterDelay: otwieraniem steruje sekwencja (niżej).
-     Zostawiony trigger otwierałby popup na każdej podstronie
-     obok łańcucha.
-
-     setCookieOnClose: false jest tu KLUCZOWE. Normalnie zamknięcie
-     popupu znaczy "widziałem" i moduł nie pokaże go ponownie —
-     wtedy pokazy 2–4 zostałyby pominięte. Z tą flagą zamknięcie
-     jest tylko zamknięciem, a o tym, ile razy popup wróci,
-     decyduje wyłącznie sekwencja. */
   digi2.popups.create('promo', {
     popupSelector: '#popup-promo',
     closeTriggerSelector: '#popup-promo [data-popup="close"]',
@@ -71,47 +61,35 @@
     cookieName: 'popup_promo_clicked',
     cookieDurationDays: 0,
     excludeUrls: ['/kontakt'],
-    setCookieOnClose: false,
+
+    /* Cztery pokazy. Liczby to sekundy: pierwsza liczona od wejścia na
+       stronę, każda kolejna od ZAMKNIĘCIA poprzedniego pokazu.
+       afterPageChange — pokaz czeka na wejście na inną podstronę
+       i dopiero tam zaczyna odliczać swoje `after`.
+
+       Chcesz piąty pokaz? Dopisz liczbę. Inne odstępy? Zmień liczby.
+
+       Uwaga: ta opcja sama ustawia setCookieOnClose: false — popup, który
+       ma wracać, nie może traktować zamknięcia jako "widziałem", bo
+       kolejne pokazy zostałyby pominięte. */
+    sequence: [4, { after: 60, afterPageChange: true }, 180, 180],
   });
-
-  /* ── HARMONOGRAM ─────────────────────────────────────────────
-     after — sekundy liczone od ZAMKNIĘCIA poprzedniego pokazu
-             (dla pierwszego: od wejścia na stronę)
-     afterPageChange — pokaz czeka na wejście na inną podstronę
-             i dopiero tam zaczyna odliczać swoje `after`
-
-     Cztery wpisy = cztery pokazy. Chcesz piąty? Dopisz linijkę.
-     Chcesz inne odstępy? Zmień liczby (to sekundy). */
-  digi2.popups.sequence([
-    { popup: 'promo', after: 4 },
-    { popup: 'promo', after: 60, afterPageChange: true },
-    { popup: 'promo', after: 180 },
-    { popup: 'promo', after: 180 },
-  ]);
 
   /* ── OPCJONALNIE: cisza dłuższa niż jedna wizyta ─────────────
      Domyślnie nowa sesja przeglądarki startuje sekwencję od nowa.
-     Jeśli po czwartym pokazie ma być spokój np. przez dobę, użyj
-     wersji poniżej zamiast tej powyżej — po ostatnim zamknięciu
-     zapisuje cookie, które blokuje popup przy kolejnych wizytach.
+     Jeśli po czwartym pokazie ma być spokój np. przez dobę:
 
   var promo = digi2.popups.get('promo');
-  var seq = digi2.popups.sequence([
-    { popup: 'promo', after: 4 },
-    { popup: 'promo', after: 60, afterPageChange: true },
-    { popup: 'promo', after: 180 },
-    { popup: 'promo', after: 180 },
-  ]);
-  promo.options.cookieDurationDays = 1;              // ← czas ciszy w dniach
+  promo.options.cookieDurationDays = 1;            // ← czas ciszy w dniach
   promo.options.onClose = function () {
-    if (seq.status().done) promo.markSeen();         // po ostatnim pokazie
+    if (promo.sequence.status().done) promo.markSeen();
   };
   */
 
   /* ── PODGLĄD W KONSOLI ───────────────────────────────────────
-     digi2.debug = true    → logi modułu
-     Stan łańcucha:  var seq = digi2.popups.sequence([...]); seq.status();
-     seq.reset()           → zaczyna łańcuch od nowa */
+     digi2.debug = true                     → logi modułu
+     digi2.popups.get('promo').sequence.status()   → stan łańcucha
+     digi2.popups.get('promo').sequence.reset()    → od nowa */
 
 });
 </script>

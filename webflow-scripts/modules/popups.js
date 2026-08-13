@@ -308,6 +308,14 @@
         // { selector, unmuteSelector, autoplay, resetOnClose, cookieOnEnd,
         //   closeOnEnd }. See _setupVideo() for what each one does.
         video: null,
+        // ---- Sequence ------------------------------------------------------
+        // Show THIS popup several times across the visit. Numbers are seconds
+        // between showings (the first counts from arrival), and any entry may
+        // be an object for more control:
+        //   sequence: [4, { after: 60, afterPageChange: true }, 180, 180]
+        // Implies setCookieOnClose:false — see _setupSequence. For a chain of
+        // DIFFERENT popups use digi2.popups.sequence([...]) instead.
+        sequence: null,
         // ---- Callbacks -----------------------------------------------------
         canShow: null,                // () => boolean — vetoes show() from any
                                       // trigger. Returning false parks the request;
@@ -396,6 +404,14 @@
       this.lastScrollY = window.scrollY;
 
       this._parseScheduleOption();
+
+      // A popup that repeats can't treat "closed" as "done with it": the
+      // dismissal flag would make the sequence skip every later showing, and
+      // the site would see exactly one popup. Same reasoning as video's
+      // cookieOnEnd — assume the intent, unless the site said otherwise.
+      if (this.options.sequence && !('setCookieOnClose' in this._rawOptions)) {
+        this.options.setCookieOnClose = false;
+      }
 
       _log('init → ' + this.name, this.options);
 
@@ -673,6 +689,26 @@
         _emitEvent('popup:open', { name: this.name });
         _safeCall(this.options.onOpen, this.name, 'onOpen', this);
       }, { once: true });
+    }
+
+    /**
+     * Wire the `sequence` option: this popup, repeated across the visit.
+     * Called from create() once the instance is in the registry — the chain
+     * looks popups up by name, so doing it in the constructor would find
+     * nothing and burn a tick warning about it.
+     */
+    _setupSequence() {
+      const raw = this.options.sequence;
+      if (!Array.isArray(raw) || !raw.length) return null;
+      const steps = raw.map((entry) => {
+        const step = (typeof entry === 'number') ? { after: entry } : Object.assign({}, entry);
+        step.popup = this.name;          // a create()-level sequence is about THIS popup
+        return step;
+      });
+      // Each popup gets its own storage slot, so two popups can run their own
+      // repeats without overwriting each other's progress.
+      this.sequence = new D2PopupSequence(steps, { storageKey: 'd2PopupSequence:' + this.name });
+      return this.sequence;
     }
 
     /**
@@ -1568,6 +1604,8 @@
       }
       const instance = new PopupManager(name, options);
       registry[name] = instance;
+      // After registration: the sequence resolves popups by name.
+      if (instance.options.sequence) instance._setupSequence();
       return instance;
     },
 

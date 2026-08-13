@@ -739,14 +739,15 @@ const CHAIN = [
   { popup: 'kontakt', after: 180 },
 ];
 
-// Advance the visible clock one second at a time, firing each queued tick.
+// Advance the visible clock one second at a time. Every queued tick fires each
+// second — a page may run more than one sequence, and firing just the first
+// would starve the others of half their ticks.
 function runSeconds(env, clock, seconds) {
   for (let i = 0; i < seconds; i++) {
     clock.advance(1000);
-    const pending = env.timers.find((t) => t.ms === 1000 && !t.fired);
-    if (!pending) return;
-    pending.fired = true;
-    pending.fn();
+    const due = env.timers.filter((t) => t.ms === 1000 && !t.fired);
+    if (!due.length) return;
+    due.forEach((t) => { t.fired = true; t.fn(); });
   }
 }
 
@@ -985,4 +986,80 @@ test('sequence: an excluded URL pauses the chain instead of consuming the step',
 
   runSeconds(ok.env, ok.clock, 1);
   assert.equal(promoOk.isVisible, true, 'the first step was not burned on /kontakt');
+});
+
+test('create({ sequence }) repeats one popup without a separate sequence() call', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    cookieName: 'popup_promo_clicked',
+    sequence: [4, 60, 180],
+  });
+
+  assert.equal(promo.options.setCookieOnClose, false,
+    'a repeating popup cannot treat closing as "done" — implied automatically');
+
+  runSeconds(env, clock, 4);
+  assert.equal(promo.isVisible, true, '1st showing');
+  promo._closeByUser();
+
+  runSeconds(env, clock, 61);
+  assert.equal(promo.isVisible, true, '2nd showing');
+  promo._closeByUser();
+
+  runSeconds(env, clock, 181);
+  assert.equal(promo.isVisible, true, '3rd showing');
+  promo._closeByUser();
+
+  runSeconds(env, clock, 600);
+  assert.equal(promo.isVisible, false, 'three steps, then silence');
+});
+
+test('create({ sequence }) takes objects per step and respects an explicit setCookieOnClose', () => {
+  const store = {};
+  const page1 = chainPage(store, '/');
+  const promo = page1.env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: 'popup_promo_clicked',
+    setCookieOnClose: true,                       // explicit — must not be overridden
+    sequence: [4, { after: 60, afterPageChange: true }],
+  });
+  assert.equal(promo.options.setCookieOnClose, true, 'the site had the last word');
+
+  runSeconds(page1.env, page1.clock, 4);
+  assert.equal(promo.isVisible, true);
+  promo._closeByUser();
+  assert.equal(promo.wasSeen(), true, 'closing recorded a dismissal — the flag was kept');
+
+  runSeconds(page1.env, page1.clock, 120);
+  assert.equal(promo.isVisible, false, 'step two waits for another page');
+
+  // Even once the page changes, a popup dismissed for good is skipped rather
+  // than reopened — which is exactly what the explicit flag bought.
+  page1.env.window.location.pathname = '/oferta';
+  runSeconds(page1.env, page1.clock, 120);
+  assert.equal(promo.isVisible, false, 'dismissed for good — no second showing');
+});
+
+test('two popups with their own sequences keep separate progress', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  const a = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: 'a', sequence: [4, 60],
+  });
+  const b = env.window.digi2.popups.create('oferta', {
+    popupSelector: '.p-oferta', animation: 'none', cookieName: 'b', sequence: [30],
+  });
+
+  runSeconds(env, clock, 4);
+  assert.equal(a.isVisible, true, 'A on its own schedule');
+  assert.equal(b.isVisible, false);
+  a._closeByUser();
+
+  runSeconds(env, clock, 26);
+  assert.equal(b.isVisible, true, 'B on its own');
+  b._closeByUser();
+
+  runSeconds(env, clock, 40);
+  assert.equal(a.isVisible, true, "B's chain did not consume A's step");
 });
