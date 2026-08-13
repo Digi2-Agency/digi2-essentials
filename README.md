@@ -74,8 +74,19 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 > cache. That is how every site on `@latest` sat on an eight-day-old build until
 > v1.0.0 was tagged.
 >
-> Pin a specific release (`…@v1.0.0/dist/…`) or a commit hash for a site that
-> must not move. Both are immutable, so no purge is ever needed.
+> **Purging the CDN is not the whole story.** jsDelivr serves
+> `cache-control: max-age=604800, s-maxage=43200` — 12 h at the edge, but **7 days
+> in every visitor's browser**. A purge clears the CDN; it cannot reach a browser
+> that already downloaded the file and will not ask again for a week. So on
+> `@latest` a new release reaches first-time visitors immediately and returning
+> ones up to seven days later — which shows up as "it works for you but not for
+> me". Your own browser included: hard-reload (Cmd/Ctrl+Shift+R) before
+> concluding a release is broken.
+>
+> **The fix is the URL, not the cache.** Point sites at a version
+> (`…@v1.1.0/dist/…`) and bump it on deploy: a different URL is a different
+> resource, so every browser fetches it at once. Immutable, no purge, no waiting.
+> `@latest` is fine for a site where a week's lag doesn't matter.
 
 ---
 

@@ -866,3 +866,12 @@ test('digi2.forms.restore() puts a form back immediately', () => {
   assert.equal(env.done.style.display, 'none');
   assert.equal(env.utm.value, 'google');
 });
+
+test('autoReset accepts the .w-form itself as the root, not just an ancestor', () => {
+  const env = createResetEnvironment();
+  const n = env.digi2.forms.autoReset(5, env.wrapper);   // the wrapper IS the .w-form
+  assert.equal(n, 1, 'passing the form wrapper directly arms it');
+
+  env.succeed();
+  assert.equal(env.timers.filter((t) => t.ms === 5000).length, 1);
+});

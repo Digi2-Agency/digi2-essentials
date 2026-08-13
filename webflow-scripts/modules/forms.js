@@ -1694,7 +1694,11 @@
      */
     autoReset: function (seconds, root) {
       var scope = root || document;
-      var wraps = scope.querySelectorAll('.w-form');
+      // querySelectorAll only looks INSIDE the root, so passing the .w-form
+      // itself (the obvious thing to do) would match nothing. Include it.
+      var wraps = [];
+      if (scope.classList && scope.classList.contains('w-form')) wraps.push(scope);
+      wraps = wraps.concat(Array.prototype.slice.call(scope.querySelectorAll('.w-form')));
       var n = 0;
       for (var i = 0; i < wraps.length; i++) {
         if (watchWebflowForm(wraps[i], seconds)) n++;
