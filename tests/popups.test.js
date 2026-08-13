@@ -912,3 +912,77 @@ test('sequence: setCookieOnClose:false lets a later step reopen the same popup',
   runSeconds(env, clock, 60);
   assert.equal(promo.isVisible, true, 'and it comes back for the second step');
 });
+
+test('sequence: one popup shown four times across a visit (the client setup)', () => {
+  const store = {};
+  const STEPS = [
+    { popup: 'promo', after: 4 },
+    { popup: 'promo', after: 60, afterPageChange: true },
+    { popup: 'promo', after: 180 },
+    { popup: 'promo', after: 180 },
+  ];
+  const makePromo = (env) => env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    cookieName: 'popup_promo_clicked', cookieDurationDays: 0,
+    setCookieOnClose: false,          // the popup must stay repeatable
+    excludeUrls: ['/kontakt'],
+  });
+
+  // ---- page 1 ----
+  const p1 = chainPage(store, '/');
+  const promo1 = makePromo(p1.env);
+  p1.env.window.digi2.popups.sequence(STEPS);
+
+  runSeconds(p1.env, p1.clock, 4);
+  assert.equal(promo1.isVisible, true, '1st showing — 4 s after arrival');
+  promo1._closeByUser();
+
+  runSeconds(p1.env, p1.clock, 300);
+  assert.equal(promo1.isVisible, false, '2nd showing waits for another page');
+
+  // ---- page 2 ----
+  const p2 = chainPage(store, '/oferta');
+  const promo2 = makePromo(p2.env);
+  p2.env.window.digi2.popups.sequence(STEPS);
+
+  runSeconds(p2.env, p2.clock, 59);
+  assert.equal(promo2.isVisible, false, 'the minute starts on the new page');
+  runSeconds(p2.env, p2.clock, 2);
+  assert.equal(promo2.isVisible, true, '2nd showing');
+  promo2._closeByUser();
+
+  runSeconds(p2.env, p2.clock, 181);
+  assert.equal(promo2.isVisible, true, '3rd showing — 3 min later');
+  promo2._closeByUser();
+
+  runSeconds(p2.env, p2.clock, 181);
+  assert.equal(promo2.isVisible, true, '4th showing — 3 min more');
+  promo2._closeByUser();
+
+  runSeconds(p2.env, p2.clock, 900);
+  assert.equal(promo2.isVisible, false, 'and never again this visit');
+});
+
+test('sequence: an excluded URL pauses the chain instead of consuming the step', () => {
+  const store = {};
+  const STEPS = [{ popup: 'promo', after: 4 }, { popup: 'promo', after: 60 }];
+  const makePromo = (env) => env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    setCookieOnClose: false, excludeUrls: ['/kontakt'],
+  });
+
+  const blocked = chainPage(store, '/kontakt');
+  const promoBlocked = makePromo(blocked.env);
+  blocked.env.window.digi2.popups.sequence(STEPS);
+
+  runSeconds(blocked.env, blocked.clock, 60);
+  assert.equal(promoBlocked.isVisible, false, 'excluded page shows nothing');
+
+  // Leaving the excluded page, the step is still there waiting.
+  const ok = chainPage(store, '/');
+  const promoOk = makePromo(ok.env);
+  ok.env.window.digi2.popups.sequence(STEPS);
+
+  runSeconds(ok.env, ok.clock, 1);
+  assert.equal(promoOk.isVisible, true, 'the first step was not burned on /kontakt');
+});
