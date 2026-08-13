@@ -521,6 +521,14 @@ Four showings: 4 s in, a minute after moving to another page, then three
 minutes after each close — and silence. Any entry may be a number or an object
 (`{ after, afterPageChange }`).
 
+> **Should it show to returning visitors?** Then use `cookieName: null`. A
+> dismissal cookie still on the visitor's machine — typically written by an
+> earlier version of the same popup — marks every step as already seen, so the
+> chain runs to its end without showing anything. New visitors get the full run,
+> returning ones get nothing, which reads as "it works for some people". The
+> module warns in the console when it starts a sequence on a popup whose cookie
+> is already set.
+
 This implies `setCookieOnClose: false`, because a popup that repeats can't treat
 "closed" as "done with it" — the dismissal would make every later showing skip
 and you'd see the popup exactly once. Set the flag yourself to override that;

@@ -705,6 +705,18 @@
         step.popup = this.name;          // a create()-level sequence is about THIS popup
         return step;
       });
+      // A dismissal already on record skips every step, so the popup shows
+      // nothing at all — and silently, since skipping is normally the right
+      // call. It bites returning visitors carrying a cookie an earlier config
+      // wrote, while new visitors see the full run, which reads as "works for
+      // some people".
+      if (this.wasSeen()) {
+        console.warn(`[digi2.popups] "${this.name}" has a sequence, but its dismissal cookie `
+          + `("${this.options.cookieName}") is already set — every step will be skipped and the `
+          + 'popup will not show for this visitor. Returning visitors from an older config hit '
+          + 'this. Use cookieName: null (or a new name) if it should show for everyone.');
+      }
+
       // Each popup gets its own storage slot, so two popups can run their own
       // repeats without overwriting each other's progress.
       this.sequence = new D2PopupSequence(steps, { storageKey: 'd2PopupSequence:' + this.name });

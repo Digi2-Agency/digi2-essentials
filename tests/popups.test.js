@@ -1063,3 +1063,40 @@ test('two popups with their own sequences keep separate progress', () => {
   runSeconds(env, clock, 40);
   assert.equal(a.isVisible, true, "B's chain did not consume A's step");
 });
+
+test('sequence: a stale cookie from an older config silences the whole chain', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  // A returning visitor still carrying the cookie an earlier version of this
+  // popup wrote (back when closing it meant "seen for a day").
+  env.document.cookie = 'popup_promo_clicked=true';
+
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    cookieName: 'popup_promo_clicked',
+    sequence: [4, 60, 180],
+  });
+
+  runSeconds(env, clock, 300);
+  assert.equal(promo.isVisible, false,
+    'every step is skipped as "already seen" — the visitor sees nothing at all');
+  assert.equal(promo.sequence.status().done, true, 'the chain ran to the end without showing anything');
+});
+
+test('sequence: cookieName null ignores any old cookie — new and returning alike', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  env.document.cookie = 'popup_promo_clicked=true';        // same stale cookie
+
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    cookieName: null,
+    sequence: [4, 60],
+  });
+
+  runSeconds(env, clock, 4);
+  assert.equal(promo.isVisible, true, 'the returning visitor still gets it');
+  promo._closeByUser();
+  runSeconds(env, clock, 61);
+  assert.equal(promo.isVisible, true, 'and the second showing too');
+});

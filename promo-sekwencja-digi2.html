@@ -58,8 +58,11 @@
     closeTriggerSelector: '#popup-promo [data-popup="close"]',
     animation: 'fade',
     animationDuration: 0.5,
-    cookieName: 'popup_promo_clicked',
-    cookieDurationDays: 0,
+    /* cookieName: null — popup ma się pokazywać KAŻDEMU: nowym i powracającym.
+       Z nazwanym cookie powracający użytkownik, który ma na dysku cookie
+       z wcześniejszej wersji tego popupu, byłby uznany za "widział już to"
+       i sekwencja pominęłaby wszystkie cztery pokazy — nie zobaczyłby nic. */
+    cookieName: null,
     excludeUrls: ['/kontakt'],
 
     /* Cztery pokazy. Liczby to sekundy: pierwsza liczona od wejścia na
@@ -76,12 +79,18 @@
   });
 
   /* ── OPCJONALNIE: cisza dłuższa niż jedna wizyta ─────────────
-     Domyślnie nowa sesja przeglądarki startuje sekwencję od nowa.
-     Jeśli po czwartym pokazie ma być spokój np. przez dobę:
+     Domyślnie nowa sesja przeglądarki startuje sekwencję od nowa —
+     i tego chce klientka: popup dla nowych I powracających.
 
-  var promo = digi2.popups.get('promo');
-  promo.options.cookieDurationDays = 1;            // ← czas ciszy w dniach
-  promo.options.onClose = function () {
+     Jeśli kiedyś ma być odwrotnie (po czwartym pokazie spokój np. na
+     dobę), trzeba wrócić do nazwanego cookie i zapisać je po ostatnim
+     pokazie. UWAGA: od tego momentu popup przestanie się pokazywać
+     powracającym, dopóki cookie nie wygaśnie.
+
+  digi2.popups.get('promo').options.cookieName = 'popup_promo_v2';
+  digi2.popups.get('promo').options.cookieDurationDays = 1;   // czas ciszy
+  digi2.popups.get('promo').options.onClose = function () {
+    var promo = digi2.popups.get('promo');
     if (promo.sequence.status().done) promo.markSeen();
   };
   */
