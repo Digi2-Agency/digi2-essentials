@@ -53,7 +53,29 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 
 Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzipped.
 
-> **Versioning:** `@latest` is cached by jsDelivr for up to ~12–24 h. During active development pin a commit hash instead (`…digi2-essentials@<sha>/dist/…`) and bump it on deploy — changes go live instantly and are immutable.
+> **Versioning:** `@latest` follows the newest **semver tag** — so shipping means
+> tagging. A push alone changes nothing for sites on `@latest`.
+>
+> **Releasing:**
+> ```bash
+> npm run build && npm test
+> git tag -a v1.1.0 -m "…" && git push origin v1.1.0
+> # then flush the CDN for every file you changed:
+> curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/popups.min.js"
+> ```
+> Purge returns JSON with `"status": "finished"`; verify with
+> `curl -s https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/… | wc -c`
+> against the local file.
+>
+> **Why tags are not optional here:** with no semver tag in the repo, jsDelivr
+> can't resolve `latest` at all (`data.jsdelivr.com/…/resolved?specifier=latest`
+> returns `version: null`). It then pins an arbitrary commit and *no amount of
+> purging moves it* — the staleness is in version resolution, not in the file
+> cache. That is how every site on `@latest` sat on an eight-day-old build until
+> v1.0.0 was tagged.
+>
+> Pin a specific release (`…@v1.0.0/dist/…`) or a commit hash for a site that
+> must not move. Both are immutable, so no purge is ever needed.
 
 ---
 
