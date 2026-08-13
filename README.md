@@ -952,6 +952,39 @@ Toggle-only elements inside the input wrapper — visibility only, no text injec
 
 Use `d2-form-error` (toggle, keeps your icon) for badges; use `d2-form-error-text` when you want the message text. Found as a sibling in the field's wrapper. Text inputs flip on blur, checkboxes/selects on change. Start `display:none`; when shown the inline display is cleared so your CSS controls layout.
 
+### Coming back from "Thank you"
+
+Webflow's success state is terminal: it hides the `<form>` and leaves
+`.w-form-done` up until the page reloads. On anything people submit more than
+once — a booking widget, "report another", a form inside a popup that reopens —
+that's the wrong resting state. Put the form back after N seconds:
+
+```html
+<div class="w-form" d2-form-reset="30">   <!-- seconds; a bare attribute = 30 -->
+```
+
+Or without touching the markup:
+
+```js
+digi2.forms.autoReset(30)                          // every .w-form on the page
+digi2.forms.create('contact', { resetAfterSuccess: 30 })
+digi2.forms.restore('#contact-form')               // right now, e.g. from a popup's onOpen
+```
+
+What a restore does: clears the fields, hides the success message, brings the
+form back, and drops any validation error styling.
+
+- **Hidden tracking values survive.** `form.reset()` restores DOM defaults, and
+  for the injected `UTM_*`, `GCLID` and `IP_ADDRESS` fields that default is
+  empty — they were written by JS, not by markup. They're carried across, so the
+  next submission is still attributed.
+- **An error state is treated differently.** Only the message goes; every field
+  keeps what the visitor typed. Wiping a filled-in form because the server
+  hiccuped would be its own bug.
+- Detection watches Webflow's own show/hide (a `MutationObserver` on the
+  wrapper), so it works regardless of how the form was submitted. Without
+  `MutationObserver` the feature no-ops rather than guessing.
+
 ### Auto-Injected Hidden Inputs
 
 | Input name | Source |
@@ -1017,6 +1050,9 @@ digi2.forms.list()
 digi2.forms.validate(value, rules)      // standalone
 digi2.forms.addRule('name', fn)         // custom rule
 digi2.forms.initConsentMasters()        // re-scan consent master checkboxes
+digi2.forms.autoReset(30, root)         // leave the success state after 30 s
+digi2.forms.restore(formOrWrapper)      // put one form back right now
+digi2.forms.refreshResets(root)         // re-scan [d2-form-reset] after injecting markup
 
 var form = digi2.forms.get('contact')
 form.validateAll()

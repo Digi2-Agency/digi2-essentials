@@ -450,6 +450,8 @@
         validateOn: 'both',           // 'blur' | 'submit' | 'both'
         liveRevalidate: true,         // re-validate an already-invalid field on every keystroke
         onValidationError: null,      // callback(fieldName, errors, inputEl)
+        resetAfterSuccess: null,      // seconds — leave Webflow's "Thank you" state and
+                                      // restore the blank form (see watchWebflowForm)
         onSubmit: null,               // callback(data, formEl) — only fires if valid
         onReady: null,
         ...options,
@@ -493,6 +495,11 @@
 
       // 4. Wire consent master checkboxes
       this._setupConsentMasters();
+
+      // 4b. Optional: come back from Webflow's success state after N seconds
+      if (this.options.resetAfterSuccess) {
+        watchWebflowForm(this.formElement, this.options.resetAfterSuccess);
+      }
 
       // 5. Build validation rules (auto-detect + user overrides)
       this._resolvedValidation = this._buildValidationRules();
@@ -1674,6 +1681,39 @@
     },
 
     /**
+     * Bring Webflow forms back from their success state after `seconds`
+     * (default 30) instead of leaving "Thank you" up until a reload.
+     *
+     *   digi2.forms.autoReset()        — every .w-form on the page
+     *   digi2.forms.autoReset(15)      — after 15 s
+     *   digi2.forms.autoReset(15, el)  — only inside `el`
+     *
+     * Per form, the attribute does the same: <div class="w-form" d2-form-reset="15">
+     * Fields are cleared, hidden tracking values survive, and an ERROR state
+     * only has its message removed — what the visitor typed stays.
+     */
+    autoReset: function (seconds, root) {
+      var scope = root || document;
+      var wraps = scope.querySelectorAll('.w-form');
+      var n = 0;
+      for (var i = 0; i < wraps.length; i++) {
+        if (watchWebflowForm(wraps[i], seconds)) n++;
+      }
+      _log('autoReset armed on ' + n + ' form(s)');
+      return n;
+    },
+
+    /** Restore one form right now (takes the wrapper or the <form>). */
+    restore: function (target) {
+      return restoreWebflowForm(target);
+    },
+
+    /** Re-scan for [d2-form-reset] after injecting markup. */
+    refreshResets: function (root) {
+      bootFormResets(root);
+    },
+
+    /**
      * Initialize password toggle on all [d2-password-toggle] elements.
      * Clicking toggles the associated input between type="password" and type="text".
      *
@@ -1732,16 +1772,167 @@
     },
   };
 
+  // ---------------------------------------------------------------------------
+  // Auto-reset after a Webflow success
+  //
+  // Webflow's success state is terminal: it hides the <form> and leaves
+  // .w-form-done up until the page is reloaded. On anything people submit more
+  // than once — a booking widget, "report another", a form living inside a
+  // popup that reopens — that dead end is the wrong resting state.
+  //
+  //   <div class="w-form" d2-form-reset="30">    <!-- seconds; bare = 30 -->
+  //
+  // or for every form on the page:  digi2.forms.autoReset(30)
+  // or per registered form:         create('contact', { resetAfterSuccess: 30 })
+  //
+  // A success restores the blank form. An ERROR only clears the error message
+  // and leaves every field alone — wiping what somebody typed because the
+  // server hiccuped would be its own bug.
+  // ---------------------------------------------------------------------------
+  var DEFAULT_RESET_SECONDS = 30;
+
+  function _isShown(el) {
+    if (!el) return false;
+    if (el.style && el.style.display === 'none') return false;
+    if (el.style && el.style.display) return true;      // inline block/flex — Webflow's doing
+    if (typeof getComputedStyle === 'function') {
+      try { return getComputedStyle(el).display !== 'none'; } catch (e) { /* fall through */ }
+    }
+    return false;
+  }
+
+  // Locate Webflow's three parts from either the wrapper or the <form>.
+  function _webflowParts(el) {
+    if (!el) return {};
+    var wrapper = (el.tagName === 'FORM')
+      ? (typeof el.closest === 'function' ? el.closest('.w-form') : el.parentElement)
+      : el;
+    if (!wrapper) wrapper = el.parentElement;
+    var form = (el.tagName === 'FORM') ? el : (wrapper && wrapper.querySelector('form'));
+    return {
+      wrapper: wrapper,
+      form: form,
+      done: wrapper && wrapper.querySelector('.w-form-done'),
+      fail: wrapper && wrapper.querySelector('.w-form-fail'),
+    };
+  }
+
+  /**
+   * Put a submitted Webflow form back to its blank, ready state.
+   * Returns whether anything was restored.
+   */
+  function restoreWebflowForm(target) {
+    var parts = _webflowParts(target);
+    if (!parts.form) return false;
+
+    // form.reset() restores DOM defaults, and for the tracking fields this
+    // module injects (UTM_*, GCLID, IP_ADDRESS…) that default is empty — they
+    // were filled by JS, not by markup. Carry the values across the reset so
+    // the next submission is still attributed.
+    var carried = [];
+    var hidden = parts.form.querySelectorAll('input[type="hidden"]');
+    for (var i = 0; i < hidden.length; i++) {
+      carried.push({ el: hidden[i], value: hidden[i].value });
+    }
+
+    if (typeof parts.form.reset === 'function') parts.form.reset();
+    carried.forEach(function (item) { item.el.value = item.value; });
+
+    if (parts.done) parts.done.style.display = 'none';
+    if (parts.fail) parts.fail.style.display = 'none';
+    parts.form.style.display = '';        // Webflow hid it with an inline style
+
+    // Drop any validation state left over from the submission.
+    for (var name in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+      var inst = registry[name];
+      if (inst && inst.formElement === parts.form && typeof inst.clearErrors === 'function') {
+        inst.clearErrors();
+      }
+    }
+
+    _log('form restored after success');
+    _emitEvent('form:restored', { formId: parts.form.id || null });
+    return true;
+  }
+
+  /**
+   * Watch one Webflow form and restore it `seconds` after a success.
+   * Idempotent per wrapper — calling it twice binds one observer.
+   */
+  function watchWebflowForm(target, seconds) {
+    var parts = _webflowParts(target);
+    var wrapper = parts.wrapper;
+    if (!wrapper || !parts.form) return false;
+    if (wrapper._d2ResetBound) return true;
+    if (typeof MutationObserver !== 'function') {
+      _log('auto-reset needs MutationObserver — skipped');
+      return false;
+    }
+    wrapper._d2ResetBound = true;
+
+    var delay = (typeof seconds === 'number' && seconds > 0) ? seconds : DEFAULT_RESET_SECONDS;
+    var timer = null;
+
+    var check = function () {
+      var showingDone = _isShown(parts.done);
+      var showingFail = _isShown(parts.fail);
+      // Compare against null explicitly: a timer id of 0 is falsy, and
+      // truthiness here would arm a second timer on every mutation.
+      if ((showingDone || showingFail) && timer === null) {
+        timer = setTimeout(function () {
+          timer = null;
+          if (_isShown(parts.done)) {
+            restoreWebflowForm(parts.form);
+          } else if (parts.fail) {
+            // An error leaves the form on screen with the visitor's input in
+            // it. Only the message goes.
+            parts.fail.style.display = 'none';
+            _log('error message cleared');
+          }
+        }, delay * 1000);
+      } else if (!showingDone && !showingFail && timer !== null) {
+        // State went away on its own (resubmitted, or restored elsewhere).
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    var observer = new MutationObserver(check);
+    observer.observe(wrapper, { attributes: true, subtree: true, attributeFilter: ['style'] });
+    check();     // in case the state is already up when we bind
+    _log('auto-reset armed', { seconds: delay });
+    return true;
+  }
+
+  // Bind every [d2-form-reset] on the page. The attribute may sit on the
+  // .w-form wrapper or on the <form> itself; a bare attribute means 30 s.
+  function bootFormResets(root) {
+    var scope = root || document;
+    var nodes = scope.querySelectorAll('[d2-form-reset], [data-d2-form-reset]');
+    for (var i = 0; i < nodes.length; i++) {
+      var raw = attr(nodes[i], 'd2-form-reset');
+      if (raw == null) raw = nodes[i].getAttribute('data-d2-form-reset');
+      var secs = parseFloat(raw);
+      watchWebflowForm(nodes[i], isNaN(secs) ? DEFAULT_RESET_SECONDS : secs);
+    }
+  }
+
   function bootConsentMasters() {
     if (window.digi2 && window.digi2.forms) {
       window.digi2.forms.initConsentMasters();
     }
   }
 
-  if (document.readyState === 'loading' && document.addEventListener) {
-    document.addEventListener('DOMContentLoaded', bootConsentMasters);
-  } else {
+  function bootForms() {
     bootConsentMasters();
+    bootFormResets();
+  }
+
+  if (document.readyState === 'loading' && document.addEventListener) {
+    document.addEventListener('DOMContentLoaded', bootForms);
+  } else {
+    bootForms();
   }
 
   setupFormDataCapture();

@@ -112,6 +112,10 @@ function matches(node, selector) {
     return selector.split(',').some((part) => matches(node, part.trim()));
   }
 
+  if (selector.startsWith('.')) return node.classList.contains(selector.slice(1));
+  if (selector === 'input[type="hidden"]') return node.tagName === 'INPUT' && node.type === 'hidden';
+  if (selector === '[d2-form-reset]') return node.hasAttribute('d2-form-reset');
+  if (selector === '[data-d2-form-reset]') return node.hasAttribute('data-d2-form-reset');
   if (selector === 'form') return node.tagName === 'FORM';
   if (selector === 'label') return node.tagName === 'LABEL';
   if (selector === '[d2-form]') return node.hasAttribute('d2-form');
@@ -716,4 +720,149 @@ test('autoValidation gives MESSAGE no minimum length — any non-empty text pass
   message.dispatchEvent({ type: 'focusout', bubbles: true });
   assert.equal(message.classList.contains('d2-error'), true);
   assert.equal(message.getAttribute('d2-error'), 'required');
+});
+
+// ---------------------------------------------------------------------------
+// Auto-reset after a Webflow success
+// ---------------------------------------------------------------------------
+
+// Minimal .w-form markup plus the machinery the feature needs: a controllable
+// MutationObserver (fired manually) and captured timers.
+function createResetEnvironment({ resetAttr } = {}) {
+  const body = createElement('body');
+  const wrapperAttrs = { class: 'w-form' };
+  if (resetAttr !== undefined) wrapperAttrs['d2-form-reset'] = resetAttr;
+  const wrapper = createElement('div', wrapperAttrs);
+  wrapper.classList.add('w-form');
+
+  const form = createElement('form');
+  const name = createElement('input', { type: 'text', name: 'NAME' });
+  const utm = createElement('input', { type: 'hidden', name: 'UTM_SOURCE' });
+  utm.value = 'google';                 // injected by the module at init, not by markup
+  name.value = 'Anna';
+  form.reset = function () {
+    // Browsers restore DOM defaults: markup has no value attributes here.
+    [name, utm].forEach((el) => { el.value = ''; });
+  };
+  form.appendChild(name);
+  form.appendChild(utm);
+
+  const done = createElement('div', { class: 'w-form-done' });
+  done.classList.add('w-form-done');
+  const fail = createElement('div', { class: 'w-form-fail' });
+  fail.classList.add('w-form-fail');
+
+  wrapper.appendChild(form);
+  wrapper.appendChild(done);
+  wrapper.appendChild(fail);
+  body.appendChild(wrapper);
+
+  const observers = [];
+  const timers = [];
+  const document = {
+    body,
+    head: createElement('head'),
+    title: '',
+    referrer: '',
+    readyState: 'complete',
+    createElement,
+    querySelector(sel) { return body.querySelector(sel); },
+    querySelectorAll(sel) { return body.querySelectorAll(sel); },
+    addEventListener() {},
+  };
+
+  const context = vm.createContext({
+    window: { digi2: { log() {} }, location: { search: '', href: 'https://example.com/' } },
+    document,
+    console,
+    Event,
+    URLSearchParams,
+    getComputedStyle: () => ({ display: 'none', visibility: '', opacity: '1' }),
+    fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length - 1; },
+    clearTimeout: (id) => { if (timers[id]) timers[id].cancelled = true; },
+    MutationObserver: class {
+      constructor(cb) { this.cb = cb; observers.push(this); }
+      observe() {}
+      disconnect() {}
+    },
+  });
+
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  return {
+    context, wrapper, form, done, fail, name, utm, observers, timers,
+    digi2: context.window.digi2,
+    // Webflow's success: hide the form, show the done state, then notify.
+    succeed() {
+      form.style.display = 'none';
+      done.style.display = 'block';
+      observers.forEach((o) => o.cb([]));
+    },
+    failSubmit() {
+      fail.style.display = 'block';
+      observers.forEach((o) => o.cb([]));
+    },
+    fireTimer() {
+      const due = timers.filter((t) => !t.fired && !t.cancelled).pop();
+      if (!due) return false;
+      due.fired = true;
+      due.fn();
+      return true;
+    },
+  };
+}
+
+test('d2-form-reset restores the form after Webflow shows its success state', () => {
+  const env = createResetEnvironment({ resetAttr: '30' });
+
+  env.succeed();
+  assert.equal(env.timers.filter((t) => t.ms === 30000).length, 1, 'a 30 s timer is armed');
+  assert.equal(env.form.style.display, 'none', 'still in the success state before it fires');
+
+  env.fireTimer();
+
+  assert.equal(env.form.style.display, '', 'the form is back');
+  assert.equal(env.done.style.display, 'none', 'the thank-you is gone');
+  assert.equal(env.name.value, '', 'typed fields are cleared');
+  assert.equal(env.utm.value, 'google', 'tracking fields survive the reset');
+});
+
+test('a bare d2-form-reset defaults to 30 s', () => {
+  const env = createResetEnvironment({ resetAttr: '' });
+  env.succeed();
+  assert.equal(env.timers.filter((t) => t.ms === 30000).length, 1);
+});
+
+test('an error state only clears its message — what the visitor typed stays', () => {
+  const env = createResetEnvironment({ resetAttr: '10' });
+
+  env.failSubmit();
+  env.fireTimer();
+
+  assert.equal(env.fail.style.display, 'none', 'the error message is cleared');
+  assert.equal(env.name.value, 'Anna', 'the field is untouched — retyping would be cruel');
+});
+
+test('digi2.forms.autoReset() arms every .w-form without an attribute', () => {
+  const env = createResetEnvironment();          // no attribute at all
+  env.succeed();
+  assert.equal(env.timers.length, 0, 'nothing armed on its own');
+
+  const n = env.digi2.forms.autoReset(15);
+  assert.equal(n, 1, 'one form armed');
+
+  env.succeed();
+  assert.equal(env.timers.filter((t) => t.ms === 15000).length, 1);
+  env.fireTimer();
+  assert.equal(env.form.style.display, '', 'restored');
+});
+
+test('digi2.forms.restore() puts a form back immediately', () => {
+  const env = createResetEnvironment();
+  env.succeed();
+  assert.equal(env.digi2.forms.restore(env.form), true);
+  assert.equal(env.form.style.display, '');
+  assert.equal(env.done.style.display, 'none');
+  assert.equal(env.utm.value, 'google');
 });
