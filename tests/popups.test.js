@@ -88,10 +88,9 @@ function matchesSelector(node, selector) {
   return !!tagMatch || attrMatches.length > 0;
 }
 
-function createEnvironment() {
+function createEnvironment({ store = {}, pathname = '/' } = {}) {
   const body = createElement('body');
   const documentElement = createElement('html');
-  const store = {};
   const docListeners = {};
   const timers = [];
 
@@ -115,7 +114,7 @@ function createEnvironment() {
 
   const window = {
     digi2: { log() {} },
-    location: { href: 'https://example.com/', pathname: '/' },
+    location: { href: 'https://example.com' + pathname, pathname },
     scrollY: 0,
   };
   window.document = document;
@@ -689,4 +688,227 @@ test('a throwing onClose() still closes the popup and writes the cookie', () => 
   }
   assert.ok(warnings.some((w) => w.includes('onClose') && w.includes('promo')),
     'the failure is reported with the popup name');
+});
+
+// ---------------------------------------------------------------------------
+// Sequences — a chain of popups spread across a whole visit
+// ---------------------------------------------------------------------------
+
+// The sequence clock reads Date.now() deltas, so tests need to move time
+// themselves. Must be installed BEFORE the module runs.
+function installFakeClock(env, startAt = 1700000000000) {
+  let now = startAt;
+  const RealDate = Date;
+  function FakeDate(...args) {
+    return args.length ? new RealDate(...args) : new RealDate(now);
+  }
+  FakeDate.now = () => now;
+  FakeDate.parse = RealDate.parse;
+  FakeDate.UTC = RealDate.UTC;
+  FakeDate.prototype = RealDate.prototype;
+  env.context.Date = FakeDate;
+  return { advance(ms) { now += ms; } };
+}
+
+// One "page" of a visit: a fresh document sharing the visit's sessionStorage.
+function chainPage(store, pathname = '/') {
+  const env = createEnvironment({ store, pathname });
+  const clock = installFakeClock(env);
+  loadPopupsModule(env);
+  ['welcome', 'oferta', 'newsletter', 'kontakt']
+    .forEach((n) => env.body.appendChild(createElement('div', { class: 'p-' + n })));
+  return { env, clock };
+}
+
+// Create the four chain popups on this page — each with its own cookie, none
+// with an auto-trigger: the sequence is what opens them.
+function chainPopups(env) {
+  const made = {};
+  ['welcome', 'oferta', 'newsletter', 'kontakt'].forEach((n) => {
+    made[n] = env.window.digi2.popups.create(n, {
+      popupSelector: '.p-' + n, animation: 'none', cookieName: 'seq_' + n,
+    });
+  });
+  return made;
+}
+
+const CHAIN = [
+  { popup: 'welcome', after: 4 },
+  { popup: 'oferta', after: 60, afterPageChange: true },
+  { popup: 'newsletter', after: 180 },
+  { popup: 'kontakt', after: 180 },
+];
+
+// Advance the visible clock one second at a time, firing each queued tick.
+function runSeconds(env, clock, seconds) {
+  for (let i = 0; i < seconds; i++) {
+    clock.advance(1000);
+    const pending = env.timers.find((t) => t.ms === 1000 && !t.fired);
+    if (!pending) return;
+    pending.fired = true;
+    pending.fn();
+  }
+}
+
+test('sequence: each step opens the configured time after the previous one closed', () => {
+  const store = {};
+  const page1 = chainPage(store, '/');
+  const popups = chainPopups(page1.env);
+  page1.env.window.digi2.popups.sequence(CHAIN);
+
+  runSeconds(page1.env, page1.clock, 3);
+  assert.equal(popups.welcome.isVisible, false, 'not yet at 3 s');
+  runSeconds(page1.env, page1.clock, 2);
+  assert.equal(popups.welcome.isVisible, true, 'opens 4 s after arrival');
+
+  popups.welcome._closeByUser();
+
+  // Step two also needs a page change, so on this page it never fires.
+  runSeconds(page1.env, page1.clock, 120);
+  assert.equal(popups.oferta.isVisible, false, 'waits for another page');
+
+  // ---- the visitor navigates ----
+  const page2 = chainPage(store, '/oferta');
+  const p2 = chainPopups(page2.env);
+  page2.env.window.digi2.popups.sequence(CHAIN);
+
+  assert.equal(p2.oferta.isVisible, false, 'the minute has to pass on the new page too');
+  runSeconds(page2.env, page2.clock, 60);
+  assert.equal(p2.oferta.isVisible, true, '1 min after the welcome was closed');
+
+  p2.oferta._closeByUser();
+  runSeconds(page2.env, page2.clock, 179);
+  assert.equal(p2.newsletter.isVisible, false);
+  runSeconds(page2.env, page2.clock, 2);
+  assert.equal(p2.newsletter.isVisible, true, '3 min after the previous close');
+
+  p2.newsletter._closeByUser();
+  runSeconds(page2.env, page2.clock, 181);
+  assert.equal(p2.kontakt.isVisible, true, 'and 3 min more for the last one');
+
+  p2.kontakt._closeByUser();
+  runSeconds(page2.env, page2.clock, 600);
+  assert.equal(p2.welcome.isVisible, false, 'the chain is finished — nothing else opens');
+  assert.equal(p2.oferta.isVisible, false);
+  assert.equal(p2.newsletter.isVisible, false);
+  assert.equal(p2.kontakt.isVisible, false);
+});
+
+test('sequence: the clock pauses while the tab is in the background', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  const popups = chainPopups(env);
+  env.window.digi2.popups.sequence(CHAIN);
+
+  env.document.visibilityState = 'hidden';
+  runSeconds(env, clock, 30);
+  assert.equal(popups.welcome.isVisible, false, 'time away from the tab does not count');
+
+  env.document.visibilityState = 'visible';
+  runSeconds(env, clock, 4);
+  assert.equal(popups.welcome.isVisible, true, 'and resumes where it left off');
+});
+
+test('sequence: navigating away with a popup open counts as dismissing it', () => {
+  const store = {};
+  const page1 = chainPage(store, '/');
+  const popups = chainPopups(page1.env);
+  page1.env.window.digi2.popups.sequence(CHAIN);
+
+  runSeconds(page1.env, page1.clock, 5);
+  assert.equal(popups.welcome.isVisible, true);
+  // …and the visitor leaves without closing it.
+
+  const page2 = chainPage(store, '/oferta');
+  const p2 = chainPopups(page2.env);
+  const seq = page2.env.window.digi2.popups.sequence(CHAIN);
+
+  assert.equal(seq.status().popup, 'oferta', 'the chain moved on instead of waiting forever');
+  runSeconds(page2.env, page2.clock, 60);
+  assert.equal(p2.oferta.isVisible, true);
+});
+
+test('sequence: a step already dismissed for good is skipped, not reopened', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  const popups = chainPopups(env);
+  popups.welcome.markSeen();              // e.g. closed during an earlier visit
+  env.window.digi2.popups.sequence(CHAIN);
+
+  runSeconds(env, clock, 5);
+  assert.equal(popups.welcome.isVisible, false, 'not reopened');
+
+  // Step two takes over, still needing its page change.
+  const page2 = chainPage(store, '/oferta');
+  const p2 = chainPopups(page2.env);
+  page2.env.window.digi2.popups.sequence(CHAIN);
+  runSeconds(page2.env, page2.clock, 60);
+  assert.equal(p2.oferta.isVisible, true);
+});
+
+test('sequence: steps sharing one cookieName are reported', () => {
+  const store = {};
+  const { env } = chainPage(store, '/');
+  ['welcome', 'oferta'].forEach((n) => {
+    env.window.digi2.popups.create(n, { popupSelector: '.p-' + n, animation: 'none' });
+  });
+
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    env.window.digi2.popups.sequence([{ popup: 'welcome', after: 1 }, { popup: 'oferta', after: 1 }]);
+  } finally {
+    console.warn = origWarn;
+  }
+
+  assert.ok(warnings.some((w) => w.includes('cookieName') && w.includes('oferta')),
+    'the default shared cookie is called out');
+});
+
+test('sequence: listing the same popup twice is a repeat, not a cookie clash', () => {
+  const store = {};
+  const { env } = chainPage(store, '/');
+  const warnings = [];
+  const origWarn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+
+  env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: 'popup_promo_clicked',
+  });
+
+  try {
+    env.window.digi2.popups.sequence([
+      { popup: 'promo', after: 4 },
+      { popup: 'promo', after: 60 },
+    ]);
+  } finally {
+    console.warn = origWarn;
+  }
+
+  assert.equal(warnings.length, 0, 'one popup repeated is deliberate — no warning');
+});
+
+test('sequence: setCookieOnClose:false lets a later step reopen the same popup', () => {
+  const store = {};
+  const { env, clock } = chainPage(store, '/');
+  // Closing normally marks the popup dismissed for the rest of the page life
+  // (in memory, regardless of cookieName), and the next step would skip it as
+  // "already seen". setCookieOnClose:false is what makes a repeat work.
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-welcome', animation: 'none',
+    cookieName: 'popup_promo_clicked', setCookieOnClose: false,
+  });
+  env.window.digi2.popups.sequence([
+    { popup: 'promo', after: 4 },
+    { popup: 'promo', after: 60 },
+  ]);
+
+  runSeconds(env, clock, 4);
+  assert.equal(promo.isVisible, true, 'first showing');
+  promo._closeByUser();
+  assert.equal(promo.isVisible, false);
+
+  runSeconds(env, clock, 60);
+  assert.equal(promo.isVisible, true, 'and it comes back for the second step');
 });

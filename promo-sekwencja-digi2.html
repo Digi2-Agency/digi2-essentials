@@ -1,0 +1,122 @@
+<!-- ============================================================
+     SEKWENCJA POPUPÓW — 4 s → (inna podstrona) 1 min → 3 min → 3 min → koniec
+
+     GDZIE WKLEIĆ: Site Settings → Custom Code → Head Code,
+     PO tagu loadera. Kod czeka na moduły i na DOM, więc z <head>
+     działa tak samo jak z footera.
+
+     WYMAGA loadera z modułem popups:
+     <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@<SHA>/dist/digi2-loader.min.js"
+             d2-popups></script>
+
+     JAK DZIAŁA ODLICZANIE
+     • Krok 1 startuje 4 s po wejściu na stronę.
+     • Każdy kolejny krok liczy czas OD ZAMKNIĘCIA poprzedniego popupu —
+       dwa popupy nigdy nie nałożą się na siebie.
+     • Zegar płynie tylko wtedy, gdy karta jest aktywna. Ktoś, kto odłożył
+       kartę na godzinę, wraca do miejsca, w którym skończył.
+     • Stan przeżywa przejścia między podstronami (sessionStorage).
+       Nowa sesja przeglądarki = sekwencja od początku.
+     • Krok 2 czeka na wejście na INNĄ podstronę i dopiero wtedy odlicza
+       swoją minutę. Wyjście z podstrony z otwartym popupem liczy się jako
+       zamknięcie — łańcuch idzie dalej.
+     ============================================================ -->
+<script>
+(function (start) {
+  function hasDigi2() { return window.digi2 && typeof window.digi2.onReady === 'function'; }
+
+  function whenDom(fn) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once: true });
+    } else {
+      fn();
+    }
+  }
+
+  function go() { window.digi2.onReady(function () { whenDom(start); }); }
+
+  if (hasDigi2()) return go();
+
+  var waited = 0;
+  var timer = setInterval(function () {
+    if (hasDigi2()) { clearInterval(timer); go(); return; }
+    waited += 50;
+    if (waited >= 10000) {
+      clearInterval(timer);
+      console.warn('[promo] digi2 nie załadował się w 10 s — popupy nieaktywne. '
+        + 'W Designer Preview to normalne (Custom Code działa dopiero po publikacji). '
+        + 'Na żywej stronie sprawdź, czy loader z d2-popups stoi w Head Code PRZED tym blokiem.');
+    }
+  }, 50);
+})(function () {
+
+  /* ── KONFIGURACJA ───────────────────────────────────────────
+     Jeden wpis = jeden krok sekwencji.
+
+     id       — nazwa wewnętrzna (dowolna, musi być unikalna)
+     selector — ID sekcji popupu w Webflow
+     after    — ile sekund po zamknięciu POPRZEDNIEGO popupu
+     afterPageChange — krok czeka na wejście na inną podstronę
+                       i dopiero tam zaczyna odliczać swoje `after`
+
+     ⚠ Każdy popup ma własny cookieName (niżej budowany z `id`).
+       Wspólna nazwa cookie sprawiłaby, że zamknięcie pierwszego
+       oznacza resztę jako "widziane" i łańcuch przeskakuje na koniec. */
+  var KROKI = [
+    { id: 'promo',    selector: '#popup-promo',    after: 4 },
+    { id: 'promo2',   selector: '#popup-promo-2',  after: 60, afterPageChange: true },
+    { id: 'promo3',   selector: '#popup-promo-3',  after: 180 },
+    { id: 'promo4',   selector: '#popup-promo-4',  after: 180 },
+  ];
+
+  /* Ustawienia wspólne — jak w dotychczasowym popupie promo.
+     Świadomie BEZ openAfterDelay: otwieraniem steruje sekwencja. */
+  KROKI.forEach(function (krok) {
+    digi2.popups.create(krok.id, {
+      popupSelector: krok.selector,
+      closeTriggerSelector: krok.selector + ' [data-popup="close"]',
+      animation: 'fade',
+      animationDuration: 0.5,
+      cookieName: 'popup_' + krok.id + '_clicked',
+      cookieDurationDays: 0,        // cookie wygasa od razu — przy kolejnej
+                                    // wizycie popup może pokazać się ponownie
+      excludeUrls: ['/kontakt'],
+    });
+  });
+
+  digi2.popups.sequence(KROKI.map(function (krok) {
+    return { popup: krok.id, after: krok.after, afterPageChange: krok.afterPageChange };
+  }));
+
+  /* ── WARIANT: ten sam popup pokazywany 4 razy ───────────────
+     Jeśli zamiast czterech różnych treści ma wracać jeden popup,
+     usuń blok powyżej i użyj tego:
+
+  digi2.popups.create('promo', {
+    popupSelector: '#popup-promo',
+    closeTriggerSelector: '#popup-promo [data-popup="close"]',
+    animation: 'fade',
+    animationDuration: 0.5,
+    cookieName: 'popup_promo_clicked',
+    cookieDurationDays: 0,
+    excludeUrls: ['/kontakt'],
+    setCookieOnClose: false,     // ← bez tego zamknięcie = "widziałem"
+                                 //   i kolejne kroki zostaną pominięte
+  });
+
+  digi2.popups.sequence([
+    { popup: 'promo', after: 4 },
+    { popup: 'promo', after: 60, afterPageChange: true },
+    { popup: 'promo', after: 180 },
+    { popup: 'promo', after: 180 },
+  ]);
+  */
+
+  /* ── PODGLĄD W KONSOLI ──────────────────────────────────────
+     digi2.debug = true                        → logi modułu
+     Do ręcznego sprawdzenia stanu przypisz sekwencję do zmiennej:
+     var seq = digi2.popups.sequence(...); seq.status();
+     seq.reset() — zaczyna łańcuch od nowa bez czyszczenia sesji. */
+
+});
+</script>

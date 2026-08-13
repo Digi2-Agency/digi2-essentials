@@ -340,6 +340,9 @@
 
       // Cleanup registry for new triggers — each entry is a fn that detaches its trigger
       this._cleanupFns = [];
+      // Internal close listeners (used by sequences). Kept apart from the
+      // site's onClose so neither can silence the other.
+      this._closeHooks = [];
       this._idleTimerId = null;
       this._rageClicks = [];
       this._intersectionObserver = null;
@@ -673,6 +676,18 @@
     }
 
     /**
+     * Subscribe to this popup's close, internally. Returns an unsubscribe fn.
+     * Not part of the public API: sites use the onClose option.
+     */
+    _onCloseInternal(fn) {
+      this._closeHooks.push(fn);
+      return () => {
+        const i = this._closeHooks.indexOf(fn);
+        if (i !== -1) this._closeHooks.splice(i, 1);
+      };
+    }
+
+    /**
      * Replay a show() that canShow() previously vetoed. Safe to call blindly —
      * it does nothing unless this popup actually asked to open.
      */
@@ -734,6 +749,11 @@
 
         _emitEvent('popup:close', { name: this.name });
         _safeCall(this.options.onClose, this.name, 'onClose', this);
+        // After the site's own handler, so a sequence advancing to its next
+        // step never pre-empts an onClose that hands off to another popup.
+        this._closeHooks.slice().forEach((fn) => {
+          try { fn(this); } catch (e) { /* a hook must never break the close */ }
+        });
 
         if (this._pendingNavigation) {
           const target = this._pendingNavigation;
@@ -1275,6 +1295,271 @@
   // ---------------------------------------------------------------------------
   const registry = {};
 
+  // ---------------------------------------------------------------------------
+  // Sequence — one chain of popups spread across a whole visit
+  //
+  //   digi2.popups.sequence([
+  //     { popup: 'welcome',    after: 4 },                          // 4 s after arrival
+  //     { popup: 'oferta',     after: 60, afterPageChange: true },  // 1 min, on another page
+  //     { popup: 'newsletter', after: 180 },                        // 3 min after the last close
+  //     { popup: 'kontakt',    after: 180 },                        // 3 min more, then silence
+  //   ])
+  //
+  // Why this can't be built from openAfterDelay: that timer starts at page
+  // load, so every navigation resets it. A visit-long chain needs a clock that
+  // survives navigation (sessionStorage) and steps that start counting from
+  // the previous popup's CLOSE, not from the pageview.
+  //
+  // The clock only advances while the tab is visible — someone who leaves a
+  // tab open for an hour comes back to the step they were on, not to three
+  // popups at once.
+  //
+  // Popups in a sequence should be created WITHOUT their own auto-triggers
+  // (no openOnLoad / openAfterDelay) — the sequence is what opens them.
+  // ---------------------------------------------------------------------------
+  const SEQ_TICK_MS = 1000;
+  const SEQ_STATE_VERSION = 1;
+
+  function _seqPath() {
+    try { return window.location.pathname || '/'; } catch (e) { return '/'; }
+  }
+
+  function _seqHidden() {
+    return typeof document.visibilityState === 'string' && document.visibilityState === 'hidden';
+  }
+
+  // Accepts { popup, after, afterPageChange } or a bare popup name.
+  function _normalizeStep(step) {
+    if (!step) return null;
+    if (typeof step === 'string') step = { popup: step };
+    const name = step.popup || step.name;
+    if (!name) return null;
+    const after = parseFloat(step.after);
+    return {
+      popup: name,
+      after: isNaN(after) ? 0 : Math.max(0, after),
+      afterPageChange: step.afterPageChange === true || step.requirePageChange === true,
+    };
+  }
+
+  class D2PopupSequence {
+    constructor(steps, options = {}) {
+      this.steps = (steps || []).map(_normalizeStep).filter(Boolean);
+      this.storageKey = options.storageKey || 'd2PopupSequence';
+      this._timerId = null;
+      this._stopped = false;
+      this._warned = {};
+
+      if (!this.steps.length) {
+        console.warn('[digi2.popups] sequence() needs at least one step.');
+        return;
+      }
+
+      this.state = this._loadState();
+
+      // Navigating away with the popup still open counts as dismissal —
+      // otherwise the chain waits forever for a close that already scrolled
+      // off with the old document.
+      if (this.state.pending) {
+        const leftOn = this.state.shownPath;
+        this._advance();
+        // That dismissal happened as they left the previous page, so a
+        // following afterPageChange step is already satisfied by this
+        // navigation — measure against the page they left, not this one.
+        if (leftOn) { this.state.path = leftOn; this._save(); }
+      }
+
+      this._lastTickAt = Date.now();
+      // Returning from a background tab must not credit the time spent away:
+      // restart the delta from now.
+      document.addEventListener('visibilitychange', () => { this._lastTickAt = Date.now(); });
+
+      this._warnSharedCookies();
+      this._evaluate();     // a step may already be due the moment this page loads
+      this._tick();
+      _log('sequence started', this.status());
+    }
+
+    // cookieName defaults to the same 'popup_clicked' for every popup, which is
+    // harmless on its own but silently eats a chain: closing step one marks
+    // step two as already seen, and the sequence skips straight to the end.
+    _warnSharedCookies() {
+      const seen = {};
+      this.steps.forEach((step) => {
+        const inst = registry[step.popup];
+        const cookie = inst && inst.options.cookieName;
+        if (!cookie) return;
+        // The same popup listed twice is a deliberate repeat, not a clash.
+        if (seen[cookie] && seen[cookie] !== step.popup) {
+          console.warn(`[digi2.popups] sequence steps "${seen[cookie]}" and "${step.popup}" share `
+            + `cookieName "${cookie}" — closing one marks the other as seen and it will be skipped. `
+            + 'Give each step its own cookieName (or null).');
+        }
+        seen[cookie] = step.popup;
+      });
+    }
+
+    // ---- State (sessionStorage — one visit) ---------------------------------
+
+    _freshState() {
+      return {
+        v: SEQ_STATE_VERSION,
+        n: this.steps.length,
+        i: 0,                    // step waiting to fire
+        t: 0,                    // visible seconds elapsed this visit
+        due: this.steps[0].after,
+        path: _seqPath(),
+        // An afterPageChange step doesn't start counting until the visitor
+        // actually moves to another page — see _evaluate.
+        armed: !this.steps[0].afterPageChange,
+        pending: false,          // a step is open, waiting to be closed
+        done: false,
+      };
+    }
+
+    _loadState() {
+      let raw = null;
+      try { raw = sessionStorage.getItem(this.storageKey); } catch (e) { /* private mode */ }
+      if (raw) {
+        try {
+          const s = JSON.parse(raw);
+          // A redeployed sequence with a different shape must not resume into
+          // a step index that now means something else.
+          if (s && s.v === SEQ_STATE_VERSION && s.n === this.steps.length) return s;
+        } catch (e) { /* corrupt — start over */ }
+      }
+      return this._freshState();
+    }
+
+    _save() {
+      try { sessionStorage.setItem(this.storageKey, JSON.stringify(this.state)); }
+      catch (e) { /* storage full or blocked — the chain still works in-page */ }
+    }
+
+    // ---- Progression --------------------------------------------------------
+
+    _advance() {
+      const next = this.state.i + 1;
+      this.state.pending = false;
+      if (next >= this.steps.length) {
+        this.state.done = true;
+        _log('sequence finished');
+      } else {
+        this.state.i = next;
+        this.state.due = this.state.t + this.steps[next].after;
+        this.state.path = _seqPath();
+        this.state.armed = !this.steps[next].afterPageChange;
+      }
+      this._save();
+    }
+
+    _evaluate() {
+      const st = this.state;
+      if (this._stopped || st.done || st.pending) return;
+      const step = this.steps[st.i];
+      if (!step) return;
+      // An afterPageChange step is armed by the first navigation after the
+      // previous step ended, and only then does its timer start — "moved on to
+      // another page, gave them a minute there". Counting from the previous
+      // close instead would let a long read on the old page consume the whole
+      // delay, so the popup would land the instant the new page opened.
+      // Arming survives further navigation: the clock keeps running, so
+      // clicking through pages quickly can't postpone it forever.
+      if (!st.armed) {
+        if (_seqPath() === st.path) return;
+        st.armed = true;
+        st.due = st.t + step.after;
+        this._save();
+      }
+      if (st.t < st.due) return;
+
+      const inst = registry[step.popup];
+      if (!inst) {
+        // The popup may simply live on another page — keep waiting rather than
+        // skipping the step. Warn once so a typo is still visible.
+        if (!this._warned[step.popup]) {
+          this._warned[step.popup] = true;
+          console.warn(`[digi2.popups] sequence step "${step.popup}" is not created on this page — waiting.`);
+        }
+        return;
+      }
+
+      // Already dismissed for real (its cookie outlives this visit): skip the
+      // step rather than re-opening something the visitor closed for good.
+      if (inst.wasSeen()) {
+        _log('sequence step already seen → ' + step.popup);
+        this._advance();
+        return;
+      }
+
+      const off = inst._onCloseInternal(() => this._stepClosed());
+      inst.show();
+      if (!inst.isVisible) {
+        // Vetoed (canShow, schedule, URL filter) — undo and retry next tick.
+        off();
+        return;
+      }
+      this._offClose = off;
+      st.pending = true;
+      st.shownPath = _seqPath();   // where it was open, for the navigate-away case
+      this._save();
+      _log('sequence opened → ' + step.popup, { step: st.i, at: Math.round(st.t) + 's' });
+    }
+
+    _stepClosed() {
+      if (this._offClose) { this._offClose(); this._offClose = null; }
+      if (!this.state.pending) return;
+      this._advance();
+    }
+
+    // ---- Clock --------------------------------------------------------------
+
+    _tick() {
+      if (this._stopped || this.state.done) return;
+      this._timerId = setTimeout(() => {
+        const now = Date.now();
+        const delta = now - this._lastTickAt;
+        this._lastTickAt = now;
+        // Count only time the page could actually be seen. The cap stops a
+        // throttled timer (background tabs are slowed to ~1/min) from
+        // crediting a whole minute in one tick.
+        if (!_seqHidden()) this.state.t += Math.min(delta, SEQ_TICK_MS * 2) / 1000;
+        this._evaluate();
+        this._save();
+        this._tick();
+      }, SEQ_TICK_MS);
+    }
+
+    // ---- Public -------------------------------------------------------------
+
+    /** Snapshot for debugging: which step is next, how long the visit has run. */
+    status() {
+      if (!this.state) return null;
+      const step = this.steps[this.state.i];
+      return {
+        step: this.state.i,
+        popup: step ? step.popup : null,
+        elapsed: Math.round(this.state.t),
+        dueAt: this.state.due,
+        waitingForClose: this.state.pending,
+        done: this.state.done,
+      };
+    }
+
+    /** Stop the chain for this page (state is kept — a reload resumes it). */
+    stop() {
+      this._stopped = true;
+      clearTimeout(this._timerId);
+    }
+
+    /** Forget all progress and start the chain from step one. */
+    reset() {
+      try { sessionStorage.removeItem(this.storageKey); } catch (e) { /* ignore */ }
+      this.state = this._freshState();
+      this._save();
+    }
+  }
+
   window.digi2.popups = {
     create(name, options = {}) {
       if (registry[name]) {
@@ -1300,6 +1585,23 @@
 
     list() {
       return Object.keys(registry);
+    },
+
+    /**
+     * Chain popups across a whole visit: each step opens N seconds after the
+     * previous one was closed, counting only time the tab was visible, and
+     * surviving navigation between pages.
+     *
+     *   digi2.popups.sequence([
+     *     { popup: 'welcome', after: 4 },
+     *     { popup: 'oferta',  after: 60, afterPageChange: true },
+     *   ])
+     *
+     * @param {Array} steps — { popup, after (seconds), afterPageChange? }
+     * @param {Object} [options] — { storageKey } for a second, independent chain
+     */
+    sequence(steps, options) {
+      return new D2PopupSequence(steps, options);
     },
 
     /**

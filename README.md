@@ -481,6 +481,68 @@ at all. `showIfPending()` replays it and is a safe no-op otherwise.
 | `markSeen()` | Write the dismissal cookie without closing — the other half of `setCookieOnClose: false` |
 | `wasSeen()` | Already dismissed? `show()` ignores the cookie by design, so chain with `if (!other.wasSeen()) other.show()` |
 
+### Sequences — a chain across the whole visit
+
+`openAfterDelay` starts counting at page load, so every navigation resets it —
+it can't express "and three minutes after that one is closed". `sequence()` can:
+one chain, stepping forward as the visitor moves through the site.
+
+```js
+digi2.popups.sequence([
+  { popup: 'welcome',    after: 4 },                          // 4 s after arriving
+  { popup: 'oferta',     after: 60, afterPageChange: true },  // a minute into another page
+  { popup: 'newsletter', after: 180 },                        // 3 min after the previous close
+  { popup: 'kontakt',    after: 180 },                        // 3 min more — then silence
+])
+```
+
+- **`after` counts from the previous step's close**, not from page load. Leave a
+  popup open and the next one waits; the chain never stacks two popups.
+- **The clock only runs while the tab is visible.** Someone who parks the tab for
+  an hour comes back to where they were, not to the whole chain at once.
+- **It survives navigation** (sessionStorage), and a new browser session starts
+  the chain over.
+- **`afterPageChange: true`** holds the step until the visitor opens a different
+  page, and *then* starts its timer. Leaving with the popup still open counts as
+  dismissing it — the chain moves on instead of waiting for a close that never
+  comes.
+- A step whose popup was already dismissed for good (its cookie is still set) is
+  skipped rather than reopened. A step whose popup doesn't exist on the current
+  page just waits — put a popup on one page only and the chain pauses until the
+  visitor gets there.
+
+Create the popups **without their own auto-triggers** — no `openOnLoad`, no
+`openAfterDelay`. The sequence is what opens them:
+
+```js
+['welcome', 'oferta', 'newsletter', 'kontakt'].forEach(function (name) {
+  digi2.popups.create(name, {
+    popupSelector: '#popup-' + name,
+    closeTriggerSelector: '#popup-' + name + ' [data-popup="close"]',
+    cookieName: 'popup_' + name,        // ← one per popup, see below
+  })
+})
+```
+
+> **Give every popup its own `cookieName`.** The default is the same
+> `popup_clicked` for all of them, so closing step one would mark the rest as
+> seen and the chain would skip to the end. The module warns in the console if
+> it spots two steps sharing a cookie.
+
+**Repeating one popup across steps** works too — list it more than once — but it
+needs `setCookieOnClose: false`. Closing a popup marks it dismissed for the rest
+of the page life (in memory, whatever `cookieName` says), and the later step
+would skip it as already seen. With that flag the close is no longer "done with
+it", so the chain can bring it back; call `markSeen()` yourself when the goal is
+actually met.
+
+| Method | Description |
+|---|---|
+| `sequence(steps, opts)` | Start a chain. `opts.storageKey` runs a second, independent chain |
+| `status()` | `{ step, popup, elapsed, dueAt, waitingForClose, done }` — for debugging |
+| `stop()` | Stop on this page; a reload resumes where it left off |
+| `reset()` | Forget the progress and start from step one |
+
 ### 22 Animations
 
 | Basic | Slide (subtle) | Slide (full) | 3D | Physics | Transform |
@@ -505,6 +567,7 @@ at all. `showIfPending()` replays it and is a safe no-op otherwise.
 | After delay | `openAfterDelay: 5` |
 | Exit intent | `openOnExitIntent: true` |
 | Page views | `openAfterPageViews: 3` |
+| Chained across the visit | `digi2.popups.sequence([…])` — see [Sequences](#sequences--a-chain-across-the-whole-visit) |
 | Outside click | `openOnOutsideClick: '.card'` |
 | Element mouseleave | `openOnElementMouseLeave: '#form'` |
 | Element hover | `openOnElementHover: '.target'` |
