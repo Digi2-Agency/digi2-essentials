@@ -6,7 +6,7 @@
      działa tak samo jak z footera.
 
      WYMAGA loadera z modułem popups:
-     <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@<SHA>/dist/digi2-loader.min.js"
+     <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@c14853f/dist/digi2-loader.min.js"
              d2-popups></script>
 
      JAK DZIAŁA ODLICZANIE
@@ -17,7 +17,7 @@
        kartę na godzinę, wraca do miejsca, w którym skończył.
      • Stan przeżywa przejścia między podstronami (sessionStorage).
        Nowa sesja przeglądarki = sekwencja od początku.
-     • Krok 2 czeka na wejście na INNĄ podstronę i dopiero wtedy odlicza
+     • Krok 2 czeka na wejście na INNĄ podstronę i dopiero tam odlicza
        swoją minutę. Wyjście z podstrony z otwartym popupem liczy się jako
        zamknięcie — łańcuch idzie dalej.
      ============================================================ -->
@@ -50,47 +50,71 @@
   }, 50);
 })(function () {
 
-  /* ── KONFIGURACJA ───────────────────────────────────────────
-     Jeden wpis = jeden krok sekwencji.
-
-     id       — nazwa wewnętrzna (dowolna, musi być unikalna)
-     selector — ID sekcji popupu w Webflow
-     after    — ile sekund po zamknięciu POPRZEDNIEGO popupu
-     afterPageChange — krok czeka na wejście na inną podstronę
-                       i dopiero tam zaczyna odliczać swoje `after`
-
-     ⚠ Każdy popup ma własny cookieName (niżej budowany z `id`).
-       Wspólna nazwa cookie sprawiłaby, że zamknięcie pierwszego
-       oznacza resztę jako "widziane" i łańcuch przeskakuje na koniec. */
-  var KROKI = [
-    { id: 'promo',    selector: '#popup-promo',    after: 4 },
-    { id: 'promo2',   selector: '#popup-promo-2',  after: 60, afterPageChange: true },
-    { id: 'promo3',   selector: '#popup-promo-3',  after: 180 },
-    { id: 'promo4',   selector: '#popup-promo-4',  after: 180 },
-  ];
-
-  /* Ustawienia wspólne — jak w dotychczasowym popupie promo.
-     Świadomie BEZ openAfterDelay: otwieraniem steruje sekwencja. */
-  KROKI.forEach(function (krok) {
-    digi2.popups.create(krok.id, {
-      popupSelector: krok.selector,
-      closeTriggerSelector: krok.selector + ' [data-popup="close"]',
-      animation: 'fade',
-      animationDuration: 0.5,
-      cookieName: 'popup_' + krok.id + '_clicked',
-      cookieDurationDays: 0,        // cookie wygasa od razu — przy kolejnej
-                                    // wizycie popup może pokazać się ponownie
-      excludeUrls: ['/kontakt'],
-    });
+  /* ── POPUP 1 — 4 s po wejściu ────────────────────────────────
+     Bez openAfterDelay: otwieraniem steruje sekwencja (niżej).
+     Zostawiony trigger otwierałby ten popup na każdej podstronie
+     obok łańcucha. */
+  digi2.popups.create('promo', {
+    popupSelector: '#popup-promo',
+    closeTriggerSelector: '#popup-promo [data-popup="close"]',
+    animation: 'fade',
+    animationDuration: 0.5,
+    cookieName: 'popup_promo_clicked',
+    cookieDurationDays: 0,
+    excludeUrls: ['/kontakt'],
   });
 
-  digi2.popups.sequence(KROKI.map(function (krok) {
-    return { popup: krok.id, after: krok.after, afterPageChange: krok.afterPageChange };
-  }));
+  /* ── POPUP 2 — minuta po przejściu na inną podstronę ─────────
+     ⚠ Każdy popup MUSI mieć własny cookieName. Wspólna nazwa
+     sprawia, że zamknięcie pierwszego oznacza resztę jako
+     "widziane" i łańcuch przeskakuje na koniec. */
+  digi2.popups.create('promo2', {
+    popupSelector: '#popup-promo-2',
+    closeTriggerSelector: '#popup-promo-2 [data-popup="close"]',
+    animation: 'fade',
+    animationDuration: 0.5,
+    cookieName: 'popup_promo2_clicked',
+    cookieDurationDays: 0,
+    excludeUrls: ['/kontakt'],
+  });
 
-  /* ── WARIANT: ten sam popup pokazywany 4 razy ───────────────
-     Jeśli zamiast czterech różnych treści ma wracać jeden popup,
-     usuń blok powyżej i użyj tego:
+  /* ── POPUP 3 — 3 min po zamknięciu poprzedniego ────────────── */
+  digi2.popups.create('promo3', {
+    popupSelector: '#popup-promo-3',
+    closeTriggerSelector: '#popup-promo-3 [data-popup="close"]',
+    animation: 'fade',
+    animationDuration: 0.5,
+    cookieName: 'popup_promo3_clicked',
+    cookieDurationDays: 0,
+    excludeUrls: ['/kontakt'],
+  });
+
+  /* ── POPUP 4 — jeszcze 3 min i koniec ───────────────────────── */
+  digi2.popups.create('promo4', {
+    popupSelector: '#popup-promo-4',
+    closeTriggerSelector: '#popup-promo-4 [data-popup="close"]',
+    animation: 'fade',
+    animationDuration: 0.5,
+    cookieName: 'popup_promo4_clicked',
+    cookieDurationDays: 0,
+    excludeUrls: ['/kontakt'],
+  });
+
+  /* ── HARMONOGRAM ─────────────────────────────────────────────
+     after — sekundy liczone od ZAMKNIĘCIA poprzedniego popupu
+             (dla pierwszego kroku: od wejścia na stronę)
+     afterPageChange — krok czeka na wejście na inną podstronę
+             i dopiero tam zaczyna odliczać swoje `after` */
+  digi2.popups.sequence([
+    { popup: 'promo',  after: 4 },
+    { popup: 'promo2', after: 60, afterPageChange: true },
+    { popup: 'promo3', after: 180 },
+    { popup: 'promo4', after: 180 },
+  ]);
+
+  /* ── WARIANT: ten sam popup pokazywany 4 razy ─────────────────
+     Jeśli zamiast czterech treści ma wracać jeden popup, usuń
+     wszystko powyżej i użyj tego:
 
   digi2.popups.create('promo', {
     popupSelector: '#popup-promo',
@@ -112,11 +136,10 @@
   ]);
   */
 
-  /* ── PODGLĄD W KONSOLI ──────────────────────────────────────
-     digi2.debug = true                        → logi modułu
-     Do ręcznego sprawdzenia stanu przypisz sekwencję do zmiennej:
-     var seq = digi2.popups.sequence(...); seq.status();
-     seq.reset() — zaczyna łańcuch od nowa bez czyszczenia sesji. */
+  /* ── PODGLĄD W KONSOLI ───────────────────────────────────────
+     digi2.debug = true    → logi modułu
+     Stan łańcucha:  var seq = digi2.popups.sequence([...]); seq.status();
+     seq.reset()           → zaczyna łańcuch od nowa */
 
 });
 </script>
