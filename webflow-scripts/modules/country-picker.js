@@ -221,19 +221,28 @@
   function findToggleFor(input) {
     var key = input.getAttribute('name') || input.getAttribute('id') || '';
     var all = document.querySelectorAll('[d2-country-picker-toggle]');
-    var loose = null;
-
+    var free = [];
     for (var i = 0; i < all.length; i++) {
-      var el = all[i];
-      if (el.hasAttribute('d2-cp-taken')) continue;
-      var target = (el.getAttribute('d2-country-picker-toggle') || '').trim();
-      if (target && key && target === key) { el.setAttribute('d2-cp-taken', ''); return el; }
-      if (!target && !loose) {
-        var scope = el.closest ? (el.closest('label') || el.closest('form')) : null;
-        if (scope && scope.contains && scope.contains(input)) loose = el;
-      }
+      if (!all[i].hasAttribute('d2-cp-taken')) free.push(all[i]);
     }
-    if (loose) { loose.setAttribute('d2-cp-taken', ''); return loose; }
+
+    var take = function (el) { el.setAttribute('d2-cp-taken', ''); return el; };
+    var owns = function (el) {
+      // The label wins over the form: two forms on one page routinely repeat the
+      // same field name (a section form and the one inside a popup), and then
+      // "first matching name in the DOM" pairs a field with the other form's box.
+      var scope = el.closest ? (el.closest('label') || el.closest('form')) : null;
+      return !!(scope && scope.contains && scope.contains(input));
+    };
+    var named = function (el) {
+      var target = (el.getAttribute('d2-country-picker-toggle') || '').trim();
+      return target && key && target === key;
+    };
+
+    var i2;
+    for (i2 = 0; i2 < free.length; i2++) if (named(free[i2]) && owns(free[i2])) return take(free[i2]);
+    for (i2 = 0; i2 < free.length; i2++) if (owns(free[i2])) return take(free[i2]);
+    for (i2 = 0; i2 < free.length; i2++) if (named(free[i2])) return take(free[i2]);
     return null;
   }
 

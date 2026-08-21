@@ -524,3 +524,26 @@ test('two fields each take their own toggle, matched by name', () => {
   assert.equal(cp(env).get(input).toggle, first);
   assert.equal(cp(env).get(second).toggle, other);
 });
+
+test('two forms repeating the field name each pair with their own toggle', () => {
+  const env = createEnvironment();
+
+  // Section form and popup form — both call the field PHONE, both have a box.
+  const build = (country) => {
+    const form = createElement('form');
+    const toggle = createElement('div', { 'd2-country-picker-toggle': 'PHONE' });
+    const input = createElement('input', { type: 'tel', name: 'PHONE', 'd2-country-picker': country });
+    form.appendChild(toggle);
+    form.appendChild(input);
+    env.body.appendChild(form);
+    input.form = form;
+    return { toggle, input };
+  };
+  const sekcja = build('PL');
+  const popup = build('DE');
+
+  load(env);
+
+  assert.equal(cp(env).get(sekcja.input).toggle, sekcja.toggle, 'section field → section box');
+  assert.equal(cp(env).get(popup.input).toggle, popup.toggle, 'popup field → popup box');
+});
