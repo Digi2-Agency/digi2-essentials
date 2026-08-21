@@ -24,6 +24,8 @@
  *   d2-country-picker-only="PL|DE|CZ"       restrict the list to these
  *   d2-country-picker-search="false"        hide the search box
  *   d2-country-picker-flags="false"         dialing codes only, no emoji flags
+ *   d2-country-picker-layout="split"        flag as its own box next to the field
+ *                                           (default: inside the field)
  *   d2-country-picker-mode="separate"       keep the field digits-only and put
  *                                           the code in a hidden input instead
  *   d2-country-picker-dial-field="PHONE_DIAL"      hidden field name (separate)
@@ -154,6 +156,12 @@
     '.d2-cp-caret{width:.5em;height:.5em;border-right:1px solid currentColor;border-bottom:1px solid currentColor;' +
     'transform:rotate(45deg) translate(-.1em,-.1em);opacity:.6;}' +
     '.d2-cp[d2-cp-open] .d2-cp-caret{transform:rotate(225deg) translate(-.15em,-.15em);}' +
+    // Layout "split": the flag becomes its own box to the left of the field
+    // instead of sitting inside it. Placed after the base rules so it wins.
+    '.d2-cp-split{display:flex;align-items:stretch;gap:.5rem;}' +
+    '.d2-cp-split>input{flex:1 1 auto;min-width:0;}' +
+    '.d2-cp-split .d2-cp-toggle{position:static;flex:0 0 auto;padding:0 .75em;' +
+    'border:1px solid rgba(0,0,0,.15);border-radius:.5rem;}' +
     '.d2-cp-list{position:absolute;z-index:60;top:100%;left:0;min-width:min(20rem,100%);max-height:16rem;overflow:auto;' +
     'display:none;margin-top:.25rem;padding:.25rem;border:1px solid rgba(0,0,0,.15);border-radius:.5rem;' +
     'background:#fff;color:#111;box-shadow:0 12px 32px rgba(0,0,0,.18);}' +
@@ -231,8 +239,11 @@
     this.list = list;
 
     // Wrapper around the field — the field keeps its own classes and styles.
+    this.layout = String(opts.layout || '').toLowerCase() === 'split' ? 'split' : 'inside';
+
     var wrap = document.createElement('div');
-    wrap.className = 'd2-cp';
+    wrap.className = this.layout === 'split' ? 'd2-cp d2-cp-split' : 'd2-cp';
+    wrap.setAttribute('d2-cp-layout', this.layout);
     if (input.parentNode) input.parentNode.insertBefore(wrap, input);
     wrap.appendChild(input);
     this.wrap = wrap;
@@ -254,7 +265,10 @@
     var caret = document.createElement('span');
     caret.className = 'd2-cp-caret';
     toggle.appendChild(caret);
-    wrap.appendChild(toggle);
+    // Split layout: the button goes BEFORE the field in the DOM, so flex puts it
+    // on the left and Tab reaches the country before the number.
+    if (this.layout === 'split') wrap.insertBefore(toggle, input);
+    else wrap.appendChild(toggle);
     this.toggle = toggle;
 
     var menu = document.createElement('div');
@@ -333,6 +347,10 @@
   // Leave room for the flag/dial button inside the field.
   Picker.prototype._padInput = function () {
     var self = this;
+    if (this.layout === 'split') {         // the flag has its own box; the field keeps its padding
+      this.input.style.paddingLeft = '';
+      return;
+    }
     var apply = function () {
       var width = self.toggle.offsetWidth;
       if (!width) return;
@@ -590,6 +608,7 @@
       search: !isOff(attr(input, 'd2-country-picker-search')),
       flags: !isOff(attr(input, 'd2-country-picker-flags')),
       mode: attr(input, 'd2-country-picker-mode') || 'prefix',
+      layout: attr(input, 'd2-country-picker-layout') || 'inside',
       dialField: attr(input, 'd2-country-picker-dial-field') || '',
       countryField: attr(input, 'd2-country-picker-country-field') || '',
     };
@@ -618,6 +637,7 @@
   var INIT_SELECTOR = [
     'd2-country-picker',
     'd2-country-picker-mode',
+    'd2-country-picker-layout',
     'd2-country-picker-only',
     'd2-country-picker-preferred',
     'd2-country-picker-search',

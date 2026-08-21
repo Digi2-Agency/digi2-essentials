@@ -402,3 +402,36 @@ test('the default mode still writes the prefix into the number', () => {
   assert.equal(input.value, '+48 601234567');
   assert.equal(form.querySelector('[name="PHONE_DIAL"]'), null, 'no hidden fields unless asked');
 });
+
+test('layout="split" puts the flag beside the field, not inside it', () => {
+  const env = createEnvironment();
+  const { input } = addField(env, { 'd2-country-picker-layout': 'split' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(picker.wrap.className, 'd2-cp d2-cp-split');
+  assert.equal(picker.wrap.getAttribute('d2-cp-layout'), 'split');
+  assert.equal(input.style.paddingLeft, '', 'the field keeps its own padding');
+  assert.equal(picker.getCountry().iso, 'PL', 'the attribute alone switches the picker on');
+});
+
+test('the default layout still reserves room inside the field', () => {
+  const env = createEnvironment();
+  const { input } = addField(env, { 'd2-country-picker': '' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(picker.wrap.getAttribute('d2-cp-layout'), 'inside');
+  assert.equal(input.style.paddingLeft, '68px', 'toggle width (64) + 4');
+});
+
+test('split layout puts the button before the field in the DOM', () => {
+  const env = createEnvironment();
+  const { input } = addField(env, { 'd2-country-picker-layout': 'split' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  const order = picker.wrap.children;
+  assert.equal(order[0], picker.toggle, 'flag first');
+  assert.equal(order[1], input, 'then the number');
+});

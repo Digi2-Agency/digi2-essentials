@@ -1120,12 +1120,47 @@ itself — no hidden inputs, no second field to map in your CRM.
 | `d2-country-picker-only="PL\|DE\|CZ"` | Restrict the list — e.g. the countries you actually sell to |
 | `d2-country-picker-search="false"` | Hide the search box (it appears on its own for lists over 8 entries) |
 | `d2-country-picker-flags="false"` | Dialing codes only. Worth knowing: **Windows has no emoji flags** and renders two letters instead, so on a Windows-heavy audience this is the safer look |
+| `d2-country-picker-layout="split"` | Flag as its own box **next to** the field instead of inside it — see [Two layouts](#two-layouts) |
 | `d2-country-picker-mode="separate"` | Keep the field digits-only and send the code in a hidden input instead — see [Two modes](#two-modes) |
 | `d2-country-picker-dial-field="PHONE_DIAL"` | Name of the hidden dialing-code field (separate mode; default `<pole>_DIAL`) |
 | `d2-country-picker-country-field="PHONE_COUNTRY"` | Name of the hidden country field (default `<pole>_COUNTRY`) |
 
 Any one of these switches the picker on — a field carrying only
 `d2-country-picker-mode="separate"` works, the bare `d2-country-picker` is not required.
+
+### Two layouts
+
+**`inside` (default)** — the flag sits inside the field, intl-tel-input style. The
+module measures its button and pads the field from the left so the number never
+runs under it.
+
+**`split`** — flag with a caret on the left as its own box, the number field on
+the right:
+
+```html
+<label>
+  <span>Telefon</span>
+  <input type="tel" name="PHONE" placeholder="601 234 567"
+         d2-country-picker="PL" d2-country-picker-layout="split">
+</label>
+```
+
+In Webflow that is just the phone field inside your label plus one attribute —
+the module wraps the field in a flex row on its own, puts the button **before**
+it in the DOM (so Tab reaches the country first, then the number) and stretches
+both to the same height. It never touches the field's own padding here.
+
+Style the button to match your field by overriding `.d2-cp-toggle` — border,
+radius, background, width. E.g. to make it look like the input next to it:
+
+```css
+.d2-cp-split .d2-cp-toggle {
+  border: 1px solid var(--white-smoke);
+  border-radius: 8px;
+  min-height: 50px;
+  padding-inline: 1rem;
+}
+```
 
 ### Two modes
 
