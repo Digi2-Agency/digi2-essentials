@@ -203,6 +203,57 @@
    * decoration so values like "660 000 zł", "$1,250.50" or "€1.250,50" are
    * still sortable as numbers. Returns NaN if no digits found.
    */
+  // ---------------------------------------------------------------------------
+  // Label templates: language + plural
+  //
+  // Webflow Localization translates text, not custom attributes — so one
+  // d2-cms-apply-count would speak Polish on the /en page. And "Pokaż 1
+  // wyników" is wrong in any case. Both are solved by suffixes on the same
+  // attribute, resolved most-specific first:
+  //
+  //   d2-cms-apply-count-en-one → d2-cms-apply-count-en
+  //   → d2-cms-apply-count-one  → d2-cms-apply-count
+  //
+  // The language comes from <html lang> (Webflow sets it per locale), falling
+  // back to the first URL segment. Plural categories come from Intl.PluralRules,
+  // so Polish gets one / few / many and English one / other, without the module
+  // knowing a thing about either grammar.
+  // ---------------------------------------------------------------------------
+  function pageLang() {
+    var htmlLang = document.documentElement && document.documentElement.getAttribute('lang');
+    var value = String(htmlLang || '').trim().toLowerCase().split('-')[0];
+    if (value) return value;
+    try {
+      var segment = (window.location.pathname || '').split('/').filter(Boolean)[0] || '';
+      if (/^[a-z]{2}$/.test(segment)) return segment;
+    } catch (e) { /* exotic environments */ }
+    return '';
+  }
+
+  function pluralCategory(count, lang) {
+    try {
+      return new Intl.PluralRules(lang || undefined).select(count);
+    } catch (e) {
+      return count === 1 ? 'one' : 'other';
+    }
+  }
+
+  function localizedAttr(el, base, count) {
+    var lang = pageLang();
+    var category = typeof count === 'number' ? pluralCategory(count, lang) : null;
+    var names = [];
+    if (lang && category) names.push(base + '-' + lang + '-' + category);
+    if (lang) names.push(base + '-' + lang);
+    if (category) names.push(base + '-' + category);
+    names.push(base);
+
+    for (var i = 0; i < names.length; i++) {
+      var value = attr(el, names[i]);
+      if (value != null && value !== '') return value;
+    }
+    return null;
+  }
+
   function parseLooseNumber(v) {
     if (v == null || v === '') return NaN;
     var s = String(v).trim();
@@ -929,12 +980,15 @@
         if (self._pendingApply) btn.setAttribute('d2-cms-apply-pending', '');
         else btn.removeAttribute('d2-cms-apply-pending');
 
-        var tmpl = attr(btn, 'd2-cms-apply-count');
-        if (tmpl == null) return; // static button — leave the author's label alone
+        // Probe the base name first so a static button stays untouched, then
+        // resolve the real template once the count (and with it the plural
+        // category) is known.
+        if (localizedAttr(btn, 'd2-cms-apply-count') == null) return;
         if (count === null) count = self._countDraftMatches();
 
+        var tmpl = localizedAttr(btn, 'd2-cms-apply-count', count);
         var text;
-        var emptyTxt = attr(btn, 'd2-cms-apply-empty');
+        var emptyTxt = localizedAttr(btn, 'd2-cms-apply-empty', 0);
         if (count === 0 && emptyTxt != null) {
           text = emptyTxt;
         } else if (tmpl.indexOf('{count}') !== -1) {
@@ -2070,7 +2124,9 @@
         // write to it — a hidden tab's list keeps its hands off.
         var tgt = attr(el, 'd2-cms-target');
         if (tgt && tgt.indexOf('|') !== -1 && !visible) continue;
-        var format = attr(el, 'd2-cms-display-format');
+        // Same language/plural suffixes as the apply button; the count that
+        // picks the plural form is the one the template leads with.
+        var format = localizedAttr(el, 'd2-cms-display-format', counts.matching);
         var kind = attr(el, 'd2-cms-display');
         var text;
         if (format) {

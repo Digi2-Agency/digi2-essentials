@@ -2100,6 +2100,46 @@ By default every filter change re-renders the list immediately. Drop a **`d2-cms
 - Wrap the text in a `[d2-cms-apply-label]` child to keep an icon/markup in the button untouched; without it, the button's own text is rewritten.
 - The preview loads the full server-paginated dataset once on init so the count is exact (only when a count template is present — a plain Apply button skips that fetch).
 
+#### Labels in two languages, and Polish plurals
+
+Webflow Localization translates text, not custom attributes — one
+`d2-cms-apply-count` would speak Polish on the `/en` page. And "Pokaż 1 wyników"
+is wrong even in one language. Both are handled by suffixes on the same
+attribute:
+
+```html
+<button d2-cms-target="apartments" d2-cms-apply
+        d2-cms-apply-count="Pokaż {count} wyników"
+        d2-cms-apply-count-one="Pokaż {count} wynik"
+        d2-cms-apply-count-few="Pokaż {count} wyniki"
+        d2-cms-apply-count-en="Show {count} results"
+        d2-cms-apply-count-en-one="Show {count} result"
+        d2-cms-apply-empty="Brak wyników"
+        d2-cms-apply-empty-en="No results">
+  <span d2-cms-apply-label>Pokaż wyniki</span>
+</button>
+```
+
+Resolved most specific first: `-{lang}-{plural}` → `-{lang}` → `-{plural}` →
+the bare attribute. Anything you don't declare falls back, so two attributes are
+a perfectly good start.
+
+- **Language** comes from `<html lang>` (Webflow sets it per locale), falling
+  back to the first URL segment (`/en/…`).
+- **Plural categories** come from `Intl.PluralRules`, so Polish gets
+  `one` / `few` / `many` (1 · 2,3,22 · 5,12) and English `one` / `other` —
+  the module knows nothing about either grammar, the browser does.
+
+`d2-cms-display-format` takes the same suffixes:
+
+```html
+<div d2-cms-target="apartments"
+     d2-cms-display-format="Znaleziono {matching} mieszkań"
+     d2-cms-display-format-one="Znaleziono {matching} mieszkanie"
+     d2-cms-display-format-few="Znaleziono {matching} mieszkania"
+     d2-cms-display-format-en="Found {matching} apartments"></div>
+```
+
 Programmatic equivalent: `list.applyFilters()` commits the current draft. In deferred mode the JS setters (`addFilter`, `filter(...)`, `setRange`, …) also stage — call `applyFilters()` to commit.
 
 ### Range sliders

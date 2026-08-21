@@ -1730,3 +1730,41 @@ test('d2-cms-range-static-bounds keeps one range across every tabbed list', asyn
   assert.equal(minDisp.textContent, '300', 'a tab switch leaves them alone');
   assert.equal(maxDisp.textContent, '1600');
 });
+
+test('apply button label follows the page language and Polish plurals', async () => {
+  const env = createEnvironment();
+  env.document.documentElement = createElement('html', { lang: 'pl' });
+
+  const list = createElement('div', { 'd2-cms-list': 'flats' });
+  [1, 2, 5, 5, 5].forEach(() => list.appendChild(createItem({ tag: 'x' })));
+  env.body.appendChild(list);
+
+  const btn = createElement('button', {
+    'd2-cms-target': 'flats',
+    'd2-cms-apply': '',
+    'd2-cms-apply-count': 'Pokaż {count} wyników',
+    'd2-cms-apply-count-one': 'Pokaż {count} wynik',
+    'd2-cms-apply-count-few': 'Pokaż {count} wyniki',
+    'd2-cms-apply-count-en': 'Show {count} results',
+    'd2-cms-apply-count-en-one': 'Show {count} result',
+  });
+  env.body.appendChild(btn);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const instance = env.window.digi2.cms.get('flats');
+  const labelFor = (n) => {
+    instance._countDraftMatches = () => n;
+    instance._updateApplyButtons();
+    return btn.textContent;
+  };
+
+  assert.equal(labelFor(1), 'Pokaż 1 wynik', 'one');
+  assert.equal(labelFor(3), 'Pokaż 3 wyniki', 'few');
+  assert.equal(labelFor(12), 'Pokaż 12 wyników', 'many — the base template');
+
+  env.document.documentElement.setAttribute('lang', 'en-GB');
+  assert.equal(labelFor(1), 'Show 1 result', 'English singular');
+  assert.equal(labelFor(7), 'Show 7 results', 'English plural');
+});
