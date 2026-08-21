@@ -965,6 +965,21 @@ Toggle-only elements inside the input wrapper — visibility only, no text injec
 
 Use `d2-form-error` (toggle, keeps your icon) for badges; use `d2-form-error-text` when you want the message text. Found as a sibling in the field's wrapper. Text inputs flip on blur, checkboxes/selects on change. Start `display:none`; when shown the inline display is cleared so your CSS controls layout.
 
+### Autofill looks like typing
+
+Chrome and Safari repaint an autofilled field with their own background and text
+colour — on a dark form that means pale blue boxes with dark text, next to
+typed-in fields that look nothing like them. The module puts that right on every
+form on the page, no `create()` needed: the background is painted over and the
+text takes **the field's own colour** (`currentColor`), so a filled-in value is
+indistinguishable from a typed one. The caret follows too.
+
+Opt out with `d2-form-autofill="false"` on the form, a wrapper or `<body>`.
+
+> The colour comes from the field, not from its parent. A wrapper styled grey
+> around a white field used to turn every autofilled value grey — that was
+> `inherit`, and it is fixed.
+
 ### Coming back from "Thank you"
 
 Webflow's success state is terminal: it hides the `<form>` and leaves

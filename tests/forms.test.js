@@ -145,6 +145,13 @@ function matches(node, selector) {
   match = selector.match(/^\[d2-consent-master="([^"]+)"\]$/);
   if (match) return node.getAttribute('d2-consent-master') === match[1];
 
+  // Generic attribute selectors — [attr] and [attr="value"].
+  match = selector.match(/^\[([\w-]+)="([^"]*)"\]$/);
+  if (match) return node.getAttribute(match[1]) === match[2];
+
+  match = selector.match(/^\[([\w-]+)\]$/);
+  if (match) return node.hasAttribute(match[1]);
+
   return false;
 }
 
@@ -874,4 +881,29 @@ test('autoReset accepts the .w-form itself as the root, not just an ancestor', (
 
   env.succeed();
   assert.equal(env.timers.filter((t) => t.ms === 5000).length, 1);
+});
+
+test('autofilled fields are painted in the field own colour, not the parent one', () => {
+  const env = createEnvironment();
+  loadFormsModule(env);
+
+  const style = env.context.document.head.children.find((c) => c.hasAttribute('d2-form-autofill-styles'));
+  assert.ok(style, 'styles injected on boot, without needing create()');
+
+  const css = style.textContent;
+  assert.ok(css.includes('-webkit-text-fill-color:currentColor !important'),
+    'currentColor — inherit would take a differently coloured wrapper');
+  assert.ok(css.includes('caret-color:currentColor'));
+  assert.ok(css.includes(':-webkit-autofill'), 'prefixed selector');
+  assert.ok(css.includes(':autofill'), 'and the standard one');
+  assert.ok(css.split('{').length === 3, 'two blocks: an unknown pseudo must not void the prefixed one');
+});
+
+test('d2-form-autofill="false" leaves the browser styling alone', () => {
+  const env = createEnvironment();
+  env.master.parentElement.setAttribute('d2-form-autofill', 'false');
+  loadFormsModule(env);
+
+  const style = env.context.document.head.children.find((c) => c.hasAttribute('d2-form-autofill-styles'));
+  assert.equal(style, undefined);
 });

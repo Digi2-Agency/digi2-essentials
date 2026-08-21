@@ -102,6 +102,57 @@
     return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   }
 
+  // ---------------------------------------------------------------------------
+  // Autofill — make a filled-in field look like a typed-in one
+  //
+  // Chrome and Safari repaint an autofilled field with their own background and
+  // text colour, so a dark form suddenly shows pale blue boxes with dark text.
+  // The fix is a shadow painted over the background plus -webkit-text-fill-color
+  // set to currentColor — the field's OWN colour. (It used to say `inherit`,
+  // which takes the parent's colour: a wrapper styled grey turned every
+  // autofilled value grey while typing stayed white.)
+  //
+  // Opt out with d2-form-autofill="false" on the form, a wrapper or <body>.
+  // ---------------------------------------------------------------------------
+  var _autofillInjected = false;
+
+  function injectAutofillStyles() {
+    if (_autofillInjected || !document.head) return;
+    if (document.querySelector('[d2-form-autofill="false"], [data-d2-form-autofill="false"]')) return;
+    _autofillInjected = true;
+
+    var scopes = ['.w-form', '[d2-form]', '[data-d2-form]', 'form'];
+    var fields = ['input', 'textarea', 'select'];
+    var states = ['', ':hover', ':focus', ':active'];
+
+    var body =
+      '-webkit-box-shadow:0 0 0 1000px transparent inset !important;' +
+      '-webkit-text-fill-color:currentColor !important;' +
+      'caret-color:currentColor;' +
+      'transition:background-color 5000s ease-in-out 0s;';
+
+    // Two blocks, not one list: a browser that does not know the standard
+    // :autofill would throw away the whole selector list, prefix included.
+    var css = '';
+    ['-webkit-autofill', 'autofill'].forEach(function (pseudo) {
+      var selectors = [];
+      scopes.forEach(function (scope) {
+        fields.forEach(function (field) {
+          states.forEach(function (state) {
+            selectors.push(scope + ' ' + field + ':' + pseudo + state);
+          });
+        });
+      });
+      css += selectors.join(',') + '{' + body + '}';
+    });
+
+    var style = document.createElement('style');
+    style.setAttribute('d2-form-autofill-styles', '');
+    style.textContent = css;
+    document.head.appendChild(style);
+    _log('autofill styles injected');
+  }
+
   function _defer(fn) {
     if (typeof setTimeout === 'function') {
       setTimeout(fn, 0);
@@ -617,29 +668,7 @@
      * Scoped to this form's inputs only.
      */
     _injectAutofillReset() {
-      if (!this.formElement) return;
-
-      var formSel = this.formElement.id
-        ? '#' + this.formElement.id
-        : '[d2-form="' + this.name + '"] form, [data-d2-form="' + this.name + '"] form';
-
-      var css =
-        formSel + ' input:-webkit-autofill,' +
-        formSel + ' input:-webkit-autofill:hover,' +
-        formSel + ' input:-webkit-autofill:focus,' +
-        formSel + ' input:-webkit-autofill:active,' +
-        formSel + ' textarea:-webkit-autofill,' +
-        formSel + ' select:-webkit-autofill {' +
-        '  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;' +
-        '  -webkit-text-fill-color: inherit !important;' +
-        '  transition: background-color 5000s ease-in-out 0s;' +
-        '}';
-
-      var style = document.createElement('style');
-      style.textContent = css;
-      document.head.appendChild(style);
-
-      _log('autofill background reset injected → ' + this.name);
+      injectAutofillStyles();
     }
 
     // ---- Auto-detection of validation rules --------------------------------
@@ -1929,6 +1958,9 @@
   }
 
   function bootForms() {
+    // Every form on the page, registered or not — an autofilled field looking
+    // different from a typed one is never what anyone wanted.
+    injectAutofillStyles();
     bootConsentMasters();
     bootFormResets();
   }
