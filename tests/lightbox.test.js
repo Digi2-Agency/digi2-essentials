@@ -907,3 +907,62 @@ test('hover badge follows a moving trigger (slider swipe) via the rAF loop', () 
   assert.equal(icon.style.left, '118px', 'badge rode along with the slide (40 + 100 - 22)');
   assert.equal(icon.style.opacity, '1', 'still visible while following');
 });
+
+test('d2-lightbox-button opens a named gallery without joining it', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const button = createElement('button', { 'd2-lightbox-button': 'rzuty' }, 'Zobacz galerię');
+  env.body.appendChild(button);
+  addThumb(env, 'https://x/r1.jpg', { 'd2-lightbox': 'rzuty' });
+  addThumb(env, 'https://x/r2.jpg', { 'd2-lightbox': 'rzuty' });
+  addThumb(env, 'https://x/inna.jpg', { 'd2-lightbox': 'inna' });
+
+  env.dispatchDoc('click', button);
+
+  assert.equal(lb(env).isOpen(), true);
+  assert.deepEqual(srcs(env), ['https://x/r1.jpg', 'https://x/r2.jpg'], 'only the named photos');
+  assert.equal(lb(env)._state.index, 0, 'opens on the first photo');
+});
+
+test('an icon inside d2-lightbox-button never becomes a gallery item', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const button = createElement('button', { 'd2-lightbox-button': 'plany' });
+  button.appendChild(createElement('img', { src: 'https://x/ikona.svg' }));   // icon, not a photo
+  env.body.appendChild(button);
+  addThumb(env, 'https://x/plan.jpg', { 'd2-lightbox': 'plany' });
+
+  env.dispatchDoc('click', button);
+
+  assert.deepEqual(srcs(env), ['https://x/plan.jpg'], 'the icon stays out of the gallery');
+});
+
+test('a bare d2-lightbox-button opens the gallery of its own container', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const item = createElement('div', { 'd2-cms-item': '' });
+  env.body.appendChild(item);
+  addThumb(env, 'https://x/a.jpg', null, item);
+  addThumb(env, 'https://x/b.jpg', null, item);
+  const button = createElement('button', { 'd2-lightbox-button': '' }, 'Galeria');
+  item.appendChild(button);
+  addThumb(env, 'https://x/obca.jpg');            // another item's photo, elsewhere
+
+  env.dispatchDoc('click', button);
+
+  assert.deepEqual(srcs(env), ['https://x/a.jpg', 'https://x/b.jpg']);
+});
+
+test('openers get a pointer cursor, photos keep the zoom-in one', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  // no <head> in the harness — injectGlobalStyles falls back to <body>
+  const css = env.body.querySelector('[d2-lightbox-global-styles]').textContent;
+  assert.ok(css.includes('[d2-lightbox-button]{cursor:pointer;}'), 'button rule present');
+  assert.ok(css.indexOf('[d2-lightbox-button]{cursor:pointer;}') > css.indexOf('cursor:zoom-in'),
+    'and it comes after the zoom-in rule, so a button carrying both attributes stays a button');
+});

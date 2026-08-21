@@ -169,12 +169,22 @@
   // bare URL attribute (d2-lightbox-src / d2-lightbox-image with a value).
   // d2-lightbox-image doubles as the modal's image slot — modal internals are
   // excluded from trigger matching, so the two roles never collide.
-  var TRIGGER_SELECTOR = '[d2-lightbox], [d2-lightbox-item], [d2-lightbox-src], [d2-lightbox-image]';
+  var TRIGGER_SELECTOR = '[d2-lightbox], [d2-lightbox-item], [d2-lightbox-src], [d2-lightbox-image], [d2-lightbox-button]';
+
+  // An opener, not a photo: [d2-lightbox-button] opens a gallery it is not part
+  // of. It contributes no item even when it wraps an icon <img>, and it gets a
+  // pointer cursor with no magnifier badge — a button is not something you zoom.
+  function isButton(el) {
+    return !!(el && el.hasAttribute && el.hasAttribute('d2-lightbox-button'));
+  }
 
   // Group identity uses the RAW attribute value — the responsive "a;b@911"
   // syntax makes no sense for gallery names.
   function groupName(trigger) {
-    return trigger.getAttribute('d2-lightbox') || trigger.getAttribute('d2-lightbox-item') || '';
+    return trigger.getAttribute('d2-lightbox')
+      || trigger.getAttribute('d2-lightbox-item')
+      || trigger.getAttribute('d2-lightbox-button')
+      || '';
   }
 
   function isSliderClone(el) {
@@ -211,6 +221,7 @@
     var items = [];
     var index = 0;
     triggers.forEach(function (t) {
+      if (isButton(t)) return;              // opener only — never a gallery item
       var src = resolveSrc(t);
       if (!src || seen[src]) return;
       seen[src] = true;
@@ -294,6 +305,9 @@
     '.w-lightbox:not([d2-lightbox-skip]){cursor:zoom-in;}' +
     '[d2-lightbox-modal] [d2-lightbox],[d2-lightbox-modal] [d2-lightbox-item],' +
     '[d2-lightbox-modal] [d2-lightbox-src],[d2-lightbox-modal] [d2-lightbox-image]{cursor:inherit;}' +
+    // After the zoom-in rule on purpose: a button carrying both attributes
+    // (d2-lightbox-button + d2-lightbox-src) still reads as a button.
+    '[d2-lightbox-button]{cursor:pointer;}' +
     '[d2-lightbox-close],[d2-lightbox-prev],[d2-lightbox-next],[d2-lightbox-thumb]{cursor:pointer;}';
 
   function injectGlobalStyles() {
@@ -1098,6 +1112,7 @@
     var trigger = t.closest(TRIGGER_SELECTOR) || t.closest('.w-lightbox');
     if (!trigger || trigger === iconTrigger) return;
     if (trigger.closest('[d2-lightbox-modal]')) return;
+    if (isButton(trigger)) return;          // openers get no magnifier badge
     if (trigger.hasAttribute && trigger.hasAttribute('d2-lightbox-skip')) return;
     if (trigger.closest('[d2-lightbox-icon="false"]')) return;
     showHoverIcon(trigger);
