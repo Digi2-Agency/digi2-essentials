@@ -695,14 +695,11 @@
       this._updateApplyButtons();
       this._setupMutationWatcher();
 
-      // A live count preview (d2-cms-apply-count) must see the whole dataset, so
-      // preload the remaining server-pagination pages once, then refresh the
-      // button. Without a count preview we skip this — Apply pulls pages itself.
+      // A live count preview must see the whole dataset, so preload the
+      // remaining server-pagination pages once, then refresh the button.
+      // Without a preview we skip this — Apply pulls the pages itself.
       if (this._deferMode && this._nextPageUrl) {
-        var anyApplyCount = this._buttonsForName('[d2-cms-apply]').some(function (b) {
-          return b.hasAttribute('d2-cms-apply-count');
-        });
-        if (anyApplyCount) {
+        if (this._hasCountPreview()) {
           var selfC = this;
           this._ensureAllLoaded().then(function () {
             if (selfC.listEl) selfC._updateApplyButtons();
@@ -1056,6 +1053,20 @@
     //   d2-cms-apply-empty="Brak wyników"            → overrides the 0 case
     //   [d2-cms-apply-label] child                    → only its text is rewritten
     //                                                   (keeps icons/markup intact)
+    /**
+     * Is any Apply button previewing a count? Attribute or hidden text template
+     * — both must trigger the preload, or the preview counts page 1 while the
+     * click counts everything, and the number jumps the moment you commit.
+     */
+    _hasCountPreview() {
+      var buttons = this._buttonsForName('[d2-cms-apply]');
+      for (var i = 0; i < buttons.length; i++) {
+        if (buttons[i].hasAttribute('d2-cms-apply-count')) return true;
+        if (buttons[i].querySelector && buttons[i].querySelector('[d2-cms-apply-count-text]')) return true;
+      }
+      return templateFromText('d2-cms-apply-count-text', this.name, null) !== null;
+    }
+
     _updateApplyButtons() {
       var btns = this._buttonsForName('[d2-cms-apply]');
       if (!btns.length) return;

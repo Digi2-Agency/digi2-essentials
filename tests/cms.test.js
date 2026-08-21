@@ -1867,3 +1867,26 @@ test('templates live inside the button, next to the label, and survive the rewri
   assert.ok(btn.querySelector('.ikona'), 'icon survived');
   assert.equal(btn.querySelector('[d2-cms-apply-label] .ikona'), null, 'and stayed out of the label');
 });
+
+test('a text template counts as a count preview, so the number cannot jump on apply', async () => {
+  const env = createEnvironment();
+  const list = createElement('div', { 'd2-cms-list': 'flats' });
+  list.appendChild(createItem({ rooms: '2' }));
+  env.body.appendChild(list);
+
+  const btn = createElement('button', { 'd2-cms-target': 'flats', 'd2-cms-apply': '' });
+  btn.appendChild(createElement('div', { 'd2-cms-apply-count-text': '' }, 'Pokaż {count} wyników'));
+  env.body.appendChild(btn);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const instance = env.window.digi2.cms.get('flats');
+  assert.equal(instance._hasCountPreview(), true, 'text template alone must trigger the preload');
+
+  // the attribute form still counts, and a plain button still does not
+  btn.children = [];                     // stub DOM: detach the template
+  assert.equal(instance._hasCountPreview(), false);
+  btn.setAttribute('d2-cms-apply-count', 'Pokaż {count}');
+  assert.equal(instance._hasCountPreview(), true);
+});
