@@ -12,6 +12,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 [Popups](#popups) ·
 [Cookies](#cookies) ·
 [Forms](#forms) ·
+[Country Picker](#country-picker) ·
 [Tabs & Accordions](#tabs--accordions) ·
 [Sliders](#sliders) ·
 [Scroll Animations](#scroll-animations) ·
@@ -99,6 +100,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-popups` | popups | 23.3 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
+| `d2-country-picker` | country-picker | 15.5 KB | Phone country picker — flag + dialing code written into the number |
 | `d2-tabs` | tabs | 5.8 KB | Tabs & accordions with animations |
 | `d2-sliders` | sliders | 7.8 KB | Carousel with touch/drag, autoplay, CMS feed (start/end/index) |
 | `d2-animate` | animate | 5.2 KB | 22 scroll animation presets + stagger |
@@ -1071,6 +1073,133 @@ form.clearErrors()
 form.getData()
 form.setField('field', 'value')
 ```
+
+---
+
+## Country Picker
+
+One attribute on a phone field and it gets a country selector that puts the
+dialing code into the number. No init call, no config:
+
+```html
+<input type="tel" name="PHONE" d2-country-picker>
+```
+
+That gives you 🇵🇱 +48 inside the field (absolutely positioned, so the field
+keeps every style it has in the Designer), a searchable list of 245 countries
+with Polish names, and a number that leaves as `+48 601 234 567`.
+
+**Nothing is added to the payload.** The dialing code goes into the phone field
+itself — no hidden inputs, no second field to map in your CRM.
+
+### What it does on its own
+
+| Moment | Behaviour |
+|---|---|
+| On load | Country from the attribute (`d2-country-picker="DE"`), or read from a number the field already holds, else Poland. The field is **not** pre-filled — a lone `+48` would make a `required` check think the visitor answered |
+| While typing | Paste or type `+380…` and the flag follows the number |
+| On blur | The typed number gets its prefix: `0601234567` → `+48 601234567` (the national trunk zero goes) |
+| On submit | Normalised again in the capture phase, so `d2-forms` validates the final number |
+| Switching country | Rewrites an existing prefix: PL → DE turns `+48 601…` into `+49 601…` |
+
+### Options
+
+```html
+<input type="tel" name="PHONE"
+       d2-country-picker="PL"
+       d2-country-picker-preferred="PL|DE|UA"
+       d2-country-picker-only="PL|DE|CZ|UA"
+       d2-country-picker-search="false"
+       d2-country-picker-flags="false">
+```
+
+| Attribute | Description |
+|---|---|
+| `d2-country-picker="PL"` | Country selected on load (ISO 3166-1 alpha-2). Empty = Poland |
+| `d2-country-picker-preferred="PL\|DE"` | Pinned to the top of the list, in that order |
+| `d2-country-picker-only="PL\|DE\|CZ"` | Restrict the list — e.g. the countries you actually sell to |
+| `d2-country-picker-search="false"` | Hide the search box (it appears on its own for lists over 8 entries) |
+| `d2-country-picker-flags="false"` | Dialing codes only. Worth knowing: **Windows has no emoji flags** and renders two letters instead, so on a Windows-heavy audience this is the safer look |
+| `d2-country-picker-mode="separate"` | Keep the field digits-only and send the code in a hidden input instead — see [Two modes](#two-modes) |
+| `d2-country-picker-dial-field="PHONE_DIAL"` | Name of the hidden dialing-code field (separate mode; default `<pole>_DIAL`) |
+| `d2-country-picker-country-field="PHONE_COUNTRY"` | Name of the hidden country field (default `<pole>_COUNTRY`) |
+
+Any one of these switches the picker on — a field carrying only
+`d2-country-picker-mode="separate"` works, the bare `d2-country-picker` is not required.
+
+### Two modes
+
+| | `prefix` (default) | `separate` |
+|---|---|---|
+| Field value | `+48 601 234 567` | `601234567` — digits only |
+| Extra fields | none | `PHONE_DIAL` = `+48`, `PHONE_COUNTRY` = `PL` |
+| Good for | a plain Webflow form where the number goes straight into the notification e-mail | a form with `pattern="\d+"`, or a CRM that assembles E.164 itself |
+
+```html
+<input type="tel" name="PHONE" d2-country-picker="PL" d2-country-picker-mode="separate">
+```
+
+In separate mode the module never touches what the visitor types. Paste a full
+international number and the code moves out of the field into the hidden input
+(the leftover is reduced to digits, so a `pattern="\d+"` field still submits).
+
+### Adding it to a Webflow form
+
+**Prefix mode — one attribute, nothing else:**
+
+1. Select the phone field → **Element settings** → **Custom attributes** → `+`
+2. Name `d2-country-picker`, value `PL` (or leave the value empty — Poland is the default)
+3. Add `d2-country-picker` to the loader tag in **Project settings → Custom code → Head**
+4. Publish. The field keeps its class and styles; the flag lands inside it
+
+**Separate mode — plus the hidden fields.** The module creates them by itself,
+but Webflow only lists fields it knows about in **Forms → Submissions** and in the
+notification e-mail template. So declare them yourself and the module will reuse
+them (matched by name, no duplicates):
+
+5. Drop an **Embed** element *inside the form* (Add panel → Components → Embed) with:
+
+   ```html
+   <input type="hidden" name="PHONE_DIAL">
+   <input type="hidden" name="PHONE_COUNTRY">
+   ```
+
+6. On the phone field add `d2-country-picker-mode` = `separate`
+7. Name them differently if you like — then point the field at them with
+   `d2-country-picker-dial-field` / `d2-country-picker-country-field`
+
+**When the field already has a left icon** (`padding-left` for it), drop that
+class from the phone field — the flag becomes the icon, and the module sets the
+padding itself from the button's real width.
+
+**Replacing intl-tel-input on an existing form:** remove its script, its CSS and
+its init code first — two pickers on one field means two flags and two paddings.
+Watch out for a `pattern="\d+"` left over from that setup: it goes with
+`separate` mode, or the pattern has to be relaxed to something like `[\d+\s]+`.
+
+### Styling
+
+Every part carries a `.d2-cp-*` class and the injected CSS has no `!important`:
+`.d2-cp` (wrapper), `.d2-cp-toggle`, `.d2-cp-flag`, `.d2-cp-dial`, `.d2-cp-caret`,
+`.d2-cp-list`, `.d2-cp-search`, `.d2-cp-option` (`.d2-cp-option-name` /
+`-dial`). The open wrapper gets `[d2-cp-open]`, the selected option
+`[d2-is-active]`, the keyboard-highlighted one `[d2-cp-cursor]`.
+
+### API
+
+```js
+var picker = digi2.countryPicker.get('#PHONE')      // or .create(input, opts)
+picker.setCountry('DE')
+picker.getCountry()        // { iso: 'DE', dial: '49', name: 'Niemcy' }
+picker.getNumber()         // normalises first, then returns the field value
+digi2.countryPicker.countries()   // all 245 entries
+digi2.countryPicker.destroy('#PHONE')
+
+digi2.on('country-picker:change', function (e) { console.log(e.iso, e.dial) })
+```
+
+Fields added later (CMS rows, a form inside a popup) are picked up automatically
+— the module watches the DOM, same as the other modules.
 
 ---
 
@@ -2089,6 +2218,38 @@ Both URL attributes also work **standalone** — an element that only carries `d
 ```
 
 Captions come from `d2-lightbox-caption` on the trigger, falling back to the image `alt`.
+
+### Opening from a button (`d2-lightbox-button`)
+
+Sometimes the thing you click is not a photo — a "Zobacz galerię" button, an icon,
+a link under a listing. `d2-lightbox-button` marks an **opener**: it opens a
+gallery it is not part of.
+
+```html
+<button d2-lightbox-button="rzuty">Zobacz galerię</button>
+
+<div style="display:none">
+  <img d2-lightbox="rzuty" src="salon.jpg"   alt="Salon">
+  <img d2-lightbox="rzuty" src="taras.jpg"   alt="Taras">
+  <img d2-lightbox="rzuty" src="kuchnia.jpg" alt="Kuchnia">
+</div>
+```
+
+- **The button never becomes a photo.** An icon `<img>` inside it is ignored too,
+  so the gallery stays exactly what you listed — no stray logo as slide one.
+- **No magnifier.** The hover badge is skipped and the cursor is `pointer`, not
+  `zoom-in`. A button doesn't advertise itself as something you zoom into.
+- **Grouping works like everywhere else**: a value names the gallery
+  (`d2-lightbox-button="rzuty"`); a bare `d2-lightbox-button` opens the gallery of
+  its nearest `[d2-lightbox-group]` / `[d2-cms-item]`, which is what you want for
+  a per-item "Galeria" button inside a CMS list.
+- Opens on the first photo; for another starting point use
+  `digi2.lightbox.open('rzuty', 2)`.
+
+The photos still need to exist in the DOM — hidden is fine (`display:none`), and
+they don't need to be `<img>` at all: `d2-lightbox-src` (bindable to a CMS image
+field) with an optional `d2-lightbox-caption` is enough. Note that the `thumbs`
+variant then has no small image to reuse and falls back to the full-size files.
 
 ### Grouping — which photos form one gallery
 
