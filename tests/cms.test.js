@@ -61,6 +61,19 @@ function createElement(tagName, attrs, textContent) {
     removeEventListener(type) {
       delete this._listeners[type];
     },
+    nodeType: 1,
+    get firstChild() { return this.children[0] || null; },
+    insertBefore(child, ref) {
+      if (child.parentElement) {
+        child.parentElement.children = child.parentElement.children.filter((item) => item !== child);
+      }
+      child.parentNode = this;
+      child.parentElement = this;
+      const at = this.children.indexOf(ref);
+      if (at === -1) this.children.push(child);
+      else this.children.splice(at, 0, child);
+      return child;
+    },
     appendChild(child) {
       if (child.parentElement) {
         child.parentElement.children = child.parentElement.children.filter((item) => item !== child);
@@ -1813,4 +1826,44 @@ test('label templates can live as text in hidden elements (translatable in Webfl
   kilka.textContent = 'Show {count} results';
   assert.equal(labelFor(7), 'Show 7 results');
   assert.equal(labelFor(1), 'Show 1 result');
+});
+
+test('templates live inside the button, next to the label, and survive the rewrite', async () => {
+  const env = createEnvironment();
+  env.document.documentElement = createElement('html', { lang: 'pl' });
+
+  const list = createElement('div', { 'd2-cms-list': 'flats' });
+  [1, 2].forEach(() => list.appendChild(createItem({ tag: 'x' })));
+  env.body.appendChild(list);
+
+  // the whole button as one package in the Designer — no [d2-cms-apply-label] at all
+  const btn = createElement('button', { 'd2-cms-target': 'flats', 'd2-cms-apply': '' });
+  const ikona = createElement('svg', { class: 'ikona' });
+  btn.appendChild(ikona);
+  btn.appendChild(createElement('span', {}, 'Pokaż wyniki'));
+  btn.appendChild(createElement('div', { 'd2-cms-apply-count-text': '' }, 'Pokaż {count} wyników'));
+  btn.appendChild(createElement('div', { 'd2-cms-apply-count-text': 'one' }, 'Pokaż {count} wynik'));
+  btn.appendChild(createElement('div', { 'd2-cms-apply-count-text': 'few' }, 'Pokaż {count} wyniki'));
+  btn.appendChild(createElement('div', { 'd2-cms-apply-empty-text': '' }, 'Brak wyników'));
+  env.body.appendChild(btn);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const instance = env.window.digi2.cms.get('flats');
+  const labelFor = (n) => {
+    instance._countDraftMatches = () => n;
+    instance._updateApplyButtons();
+    return btn.querySelector('[d2-cms-apply-label]').textContent;
+  };
+
+  assert.equal(labelFor(1), 'Pokaż 1 wynik');
+  assert.equal(labelFor(5), 'Pokaż 5 wyników');
+  assert.equal(labelFor(0), 'Brak wyników');
+
+  // the templates are still there after several rewrites
+  assert.equal(btn.querySelectorAll('[d2-cms-apply-count-text]').length, 3, 'templates survived');
+  // the icon stays a sibling of the label — inside it, the next rewrite would eat it
+  assert.ok(btn.querySelector('.ikona'), 'icon survived');
+  assert.equal(btn.querySelector('[d2-cms-apply-label] .ikona'), null, 'and stayed out of the label');
 });

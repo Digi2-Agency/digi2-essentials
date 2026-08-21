@@ -248,8 +248,70 @@
    * string with no second attribute anywhere. The attribute's value, when set,
    * names the plural category this variant is for.
    */
-  function templateFromText(name, listName, category) {
-    var nodes = _elementsTargeting('[' + name + ']', listName);
+  /**
+   * Where the count label may be written. Normally the button itself — but a
+   * button that carries its templates inside (a Text Block per plural form,
+   * hidden, sitting next to [d2-cms-apply-label]) would lose them the moment we
+   * set its textContent. So in that case we carve out a label span, moving the
+   * author's own text and icons into it, and write only there.
+   */
+  function _labelTargetFor(btn) {
+    var isTemplate = function (node) {
+      return node.nodeType === 1
+        && (node.hasAttribute('d2-cms-apply-count-text') || node.hasAttribute('d2-cms-apply-empty-text'));
+    };
+    var templates = btn.querySelectorAll('[d2-cms-apply-count-text],[d2-cms-apply-empty-text]');
+    if (!templates.length) return btn;   // nothing to protect — write to the button
+
+    var kids = btn.childNodes && btn.childNodes.length != null ? btn.childNodes : (btn.children || []);
+    var texts = [];
+    var elements = [];
+    for (var i = 0; i < kids.length; i++) {
+      var node = kids[i];
+      if (isTemplate(node)) continue;
+      if (node.nodeType === 3) { if (String(node.textContent).trim()) texts.push(node); }
+      else if (node.nodeType === 1) elements.push(node);
+    }
+
+    // The author's own text sits loose in the button: carve it into a label so
+    // the rewrite can't reach the templates. Only TEXT moves — an icon element
+    // stays a sibling, or the next rewrite would wipe it along with the words.
+    if (texts.length) {
+      var label = document.createElement('span');
+      label.setAttribute('d2-cms-apply-label', '');
+      btn.insertBefore(label, texts[0]);
+      for (var t = 0; t < texts.length; t++) label.appendChild(texts[t]);
+      return label;
+    }
+
+    // Text already wrapped in its own element (a Text Block next to an icon):
+    // the one carrying words is the label — an <svg>/<img> icon carries none.
+    var textual = [];
+    for (var e = 0; e < elements.length; e++) {
+      var tag = (elements[e].tagName || '').toUpperCase();
+      if (tag === 'SVG' || tag === 'IMG') continue;
+      if (String(elements[e].textContent || '').trim()) textual.push(elements[e]);
+    }
+    if (textual.length === 1) {
+      // Mark it, so the next pass takes the fast path and CSS has a hook.
+      textual[0].setAttribute('d2-cms-apply-label', '');
+      return textual[0];
+    }
+
+    var fresh = document.createElement('span');
+    fresh.setAttribute('d2-cms-apply-label', '');
+    btn.appendChild(fresh);
+    return fresh;
+  }
+
+  function templateFromText(name, listName, category, scope) {
+    // Inside the button first — that is where the author put them, next to
+    // [d2-cms-apply-label] — then anywhere on the page targeting this list.
+    var nodes = [];
+    if (scope && scope.querySelectorAll) {
+      nodes = Array.prototype.slice.call(scope.querySelectorAll('[' + name + ']'));
+    }
+    if (!nodes.length) nodes = _elementsTargeting('[' + name + ']', listName);
     var fallback = null;
     for (var i = 0; i < nodes.length; i++) {
       var cat = (nodes[i].getAttribute(name) || '').trim().toLowerCase();
@@ -1006,15 +1068,15 @@
         // A hidden text element wins over the attribute: its content is what
         // Webflow Localization can actually translate. Probe both cheaply
         // first, so a plain static button keeps the author's label.
-        var hasText = templateFromText('d2-cms-apply-count-text', self.name, null) !== null;
+        var hasText = templateFromText('d2-cms-apply-count-text', self.name, null, btn) !== null;
         if (!hasText && localizedAttr(btn, 'd2-cms-apply-count') == null) return;
         if (count === null) count = self._countDraftMatches();
 
         var category = pluralCategory(count, pageLang());
-        var tmpl = templateFromText('d2-cms-apply-count-text', self.name, category)
+        var tmpl = templateFromText('d2-cms-apply-count-text', self.name, category, btn)
           || localizedAttr(btn, 'd2-cms-apply-count', count);
         var text;
-        var emptyTxt = templateFromText('d2-cms-apply-empty-text', self.name, null)
+        var emptyTxt = templateFromText('d2-cms-apply-empty-text', self.name, null, btn)
           || localizedAttr(btn, 'd2-cms-apply-empty', 0);
         if (count === 0 && emptyTxt != null) {
           text = emptyTxt;
@@ -1024,7 +1086,7 @@
           text = tmpl + ' ' + count;
         }
 
-        var labelEl = btn.querySelector('[d2-cms-apply-label]') || btn;
+        var labelEl = btn.querySelector('[d2-cms-apply-label]') || _labelTargetFor(btn);
         labelEl.textContent = text;
       });
     }

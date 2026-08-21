@@ -2106,21 +2106,35 @@ Webflow Localization translates text, not custom attributes — one
 `d2-cms-apply-count` would speak Polish on the `/en` page. And "Pokaż 1 wyników"
 is wrong even in one language.
 
-**The straightforward way: keep the templates as text.** Put hidden Text Blocks
-on the page — the editor translates them per locale like any other copy, and
-nobody has to touch attributes again:
+**The straightforward way: keep the templates as text, inside the button.** Hidden
+Text Blocks sitting next to the label — the editor translates them per locale
+like any other copy, and nobody has to touch attributes again:
 
 ```html
-<div d2-cms-target="apartments" d2-cms-apply-count-text>Pokaż {count} wyników</div>
-<div d2-cms-target="apartments" d2-cms-apply-count-text="one">Pokaż {count} wynik</div>
-<div d2-cms-target="apartments" d2-cms-apply-count-text="few">Pokaż {count} wyniki</div>
-<div d2-cms-target="apartments" d2-cms-apply-empty-text>Brak wyników</div>
+<button d2-cms-target="apartments" d2-cms-apply>
+  <svg class="icon">…</svg>
+  Pokaż wyniki
+
+  <div d2-cms-apply-count-text        style="display:none">Pokaż {count} wyników</div>
+  <div d2-cms-apply-count-text="one"  style="display:none">Pokaż {count} wynik</div>
+  <div d2-cms-apply-count-text="few"  style="display:none">Pokaż {count} wyniki</div>
+  <div d2-cms-apply-empty-text        style="display:none">Brak wyników</div>
+</button>
 ```
 
-In the Designer: a Text Block per line, `d2-cms-target` pointing at the list,
-`display: none`. The attribute value names the plural category the variant is
-for; the one without a value is the fallback. `d2-cms-display-format-text` works
-the same for counters.
+In the Designer: a Text Block per form, hidden, dropped inside the button. The
+attribute value names the plural category the variant is for; the one without a
+value is the fallback.
+
+**You don't have to add `[d2-cms-apply-label]` yourself.** A button carrying
+templates can't have its whole content rewritten — that would wipe them — so the
+module carves out a label: it moves the button's own text into a
+`[d2-cms-apply-label]` span, or adopts the Text Block that already holds the
+words. Icons stay outside it and survive every rewrite.
+
+The templates can also live anywhere on the page instead, with
+`d2-cms-target="apartments"` on each — useful when several buttons share them.
+`d2-cms-display-format-text` works the same way for counters.
 
 Templates in text win over the attribute forms below, so you can start with
 attributes and move to text elements when the second language arrives.
