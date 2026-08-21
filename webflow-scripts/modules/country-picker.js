@@ -24,6 +24,8 @@
  *   d2-country-picker-only="PL|DE|CZ"       restrict the list to these
  *   d2-country-picker-search="false"        hide the search box
  *   d2-country-picker-flags="false"         dialing codes only, no emoji flags
+ *   d2-country-picker-lang="en"             list language (pl / en). Without it the
+ *                                           URL decides (/en), then <html lang>
  *   d2-country-picker-layout="split"        flag as its own box next to the field
  *                                           (default: inside the field)
  *   d2-country-picker-mode="separate"       keep the field digits-only and put
@@ -66,22 +68,75 @@
   // ---------------------------------------------------------------------------
   var PACKED = 'AF:93:Afganistan|AL:355:Albania|DZ:213:Algieria|AD:376:Andora|AO:244:Angola|AI:1:Anguilla|AG:1:Antigua i Barbuda|SA:966:Arabia Saudyjska|AR:54:Argentyna|AM:374:Armenia|AW:297:Aruba|AU:61:Australia|AT:43:Austria|AZ:994:Azerbejdżan|BS:1:Bahamy|BH:973:Bahrajn|BD:880:Bangladesz|BB:1:Barbados|BE:32:Belgia|BZ:501:Belize|BJ:229:Benin|BM:1:Bermudy|BT:975:Bhutan|BY:375:Białoruś|BO:591:Boliwia|BA:387:Bośnia i Hercegowina|BW:267:Botswana|BR:55:Brazylia|BN:673:Brunei|IO:246:Brytyjskie Terytorium Oceanu Indyjskiego|VG:1:Brytyjskie Wyspy Dziewicze|BG:359:Bułgaria|BF:226:Burkina Faso|BI:257:Burundi|CL:56:Chile|CN:86:Chiny|HR:385:Chorwacja|CI:225:Côte d’Ivoire|CW:599:Curaçao|CY:357:Cypr|TD:235:Czad|ME:382:Czarnogóra|CZ:420:Czechy|DK:45:Dania|CD:243:Demokratyczna Republika Konga|DM:1:Dominika|DO:1:Dominikana|DJ:253:Dżibuti|EG:20:Egipt|EC:593:Ekwador|ER:291:Erytrea|EE:372:Estonia|SZ:268:Eswatini|ET:251:Etiopia|FK:500:Falklandy|FJ:679:Fidżi|PH:63:Filipiny|FI:358:Finlandia|FR:33:Francja|GA:241:Gabon|GM:220:Gambia|GH:233:Ghana|GI:350:Gibraltar|GR:30:Grecja|GD:1:Grenada|GL:299:Grenlandia|GE:995:Gruzja|GU:1:Guam|GG:44:Guernsey|GY:592:Gujana|GF:594:Gujana Francuska|GP:590:Gwadelupa|GT:502:Gwatemala|GN:224:Gwinea|GW:245:Gwinea Bissau|GQ:240:Gwinea Równikowa|HT:509:Haiti|ES:34:Hiszpania|NL:31:Holandia|HN:504:Honduras|IN:91:Indie|ID:62:Indonezja|IQ:964:Irak|IR:98:Iran|IE:353:Irlandia|IS:354:Islandia|IL:972:Izrael|JM:1:Jamajka|JP:81:Japonia|YE:967:Jemen|JE:44:Jersey|JO:962:Jordania|KY:1:Kajmany|KH:855:Kambodża|CM:237:Kamerun|CA:1:Kanada|QA:974:Katar|KZ:7:Kazachstan|KE:254:Kenia|KG:996:Kirgistan|KI:686:Kiribati|CO:57:Kolumbia|KM:269:Komory|CG:242:Kongo|KR:82:Korea Południowa|KP:850:Korea Północna|XK:383:Kosowo|CR:506:Kostaryka|CU:53:Kuba|KW:965:Kuwejt|LA:856:Laos|LS:266:Lesotho|LB:961:Liban|LR:231:Liberia|LY:218:Libia|LI:423:Liechtenstein|LT:370:Litwa|LU:352:Luksemburg|LV:371:Łotwa|MK:389:Macedonia Północna|MG:261:Madagaskar|YT:262:Majotta|MW:265:Malawi|MV:960:Malediwy|MY:60:Malezja|ML:223:Mali|MT:356:Malta|MP:1:Mariany Północne|MA:212:Maroko|MQ:596:Martynika|MR:222:Mauretania|MU:230:Mauritius|MX:52:Meksyk|FM:691:Mikronezja|MM:95:Mjanma (Birma)|MD:373:Mołdawia|MC:377:Monako|MN:976:Mongolia|MS:1:Montserrat|MZ:258:Mozambik|NA:264:Namibia|NR:674:Nauru|NP:977:Nepal|BQ:599:Niderlandy Karaibskie|DE:49:Niemcy|NE:227:Niger|NG:234:Nigeria|NI:505:Nikaragua|NU:683:Niue|NF:672:Norfolk|NO:47:Norwegia|NC:687:Nowa Kaledonia|NZ:64:Nowa Zelandia|OM:968:Oman|PK:92:Pakistan|PW:680:Palau|PA:507:Panama|PG:675:Papua-Nowa Gwinea|PY:595:Paragwaj|PE:51:Peru|PF:689:Polinezja Francuska|PL:48:Polska|PR:1:Portoryko|PT:351:Portugalia|ZA:27:Republika Południowej Afryki|CF:236:Republika Środkowoafrykańska|CV:238:Republika Zielonego Przylądka|RE:262:Reunion|RU:7:Rosja|RO:40:Rumunia|RW:250:Rwanda|EH:212:Sahara Zachodnia|KN:1:Saint Kitts i Nevis|LC:1:Saint Lucia|VC:1:Saint Vincent i Grenadyny|BL:590:Saint-Barthélemy|MF:590:Saint-Martin|PM:508:Saint-Pierre i Miquelon|SV:503:Salwador|WS:685:Samoa|AS:1:Samoa Amerykańskie|SM:378:San Marino|SN:221:Senegal|RS:381:Serbia|SC:248:Seszele|SL:232:Sierra Leone|SG:65:Singapur|SX:1:Sint Maarten|SK:421:Słowacja|SI:386:Słowenia|SO:252:Somalia|HK:852:SRA Hongkong (Chiny)|MO:853:SRA Makau (Chiny)|LK:94:Sri Lanka|US:1:Stany Zjednoczone|SD:249:Sudan|SS:211:Sudan Południowy|SR:597:Surinam|SJ:47:Svalbard i Jan Mayen|SY:963:Syria|CH:41:Szwajcaria|SE:46:Szwecja|TJ:992:Tadżykistan|TH:66:Tajlandia|TW:886:Tajwan|TZ:255:Tanzania|PS:970:Terytoria Palestyńskie|TL:670:Timor Wschodni|TG:228:Togo|TK:690:Tokelau|TO:676:Tonga|TA:290:Tristan da Cunha|TT:1:Trynidad i Tobago|TN:216:Tunezja|TR:90:Turcja|TM:993:Turkmenistan|TC:1:Turks i Caicos|TV:688:Tuvalu|UG:256:Uganda|UA:380:Ukraina|UY:598:Urugwaj|UZ:998:Uzbekistan|VU:678:Vanuatu|WF:681:Wallis i Futuna|VA:39:Watykan|VE:58:Wenezuela|HU:36:Węgry|GB:44:Wielka Brytania|VN:84:Wietnam|IT:39:Włochy|CX:61:Wyspa Bożego Narodzenia|IM:44:Wyspa Man|SH:290:Wyspa Świętej Heleny|AC:247:Wyspa Wniebowstąpienia|AX:358:Wyspy Alandzkie|CK:682:Wyspy Cooka|VI:1:Wyspy Dziewicze Stanów Zjednoczonych|CC:61:Wyspy Kokosowe|MH:692:Wyspy Marshalla|FO:298:Wyspy Owcze|SB:677:Wyspy Salomona|ST:239:Wyspy Świętego Tomasza i Książęca|ZM:260:Zambia|ZW:263:Zimbabwe|AE:971:Zjednoczone Emiraty Arabskie';
 
+  // English names, same order as PACKED — only the names, the codes are shared.
+  var NAMES_EN = 'Afghanistan|Albania|Algeria|Andorra|Angola|Anguilla|Antigua & Barbuda|Saudi Arabia|Argentina|Armenia|Aruba|Australia|Austria|Azerbaijan|Bahamas|Bahrain|Bangladesh|Barbados|Belgium|Belize|Benin|Bermuda|Bhutan|Belarus|Bolivia|Bosnia & Herzegovina|Botswana|Brazil|Brunei|British Indian Ocean Territory|British Virgin Islands|Bulgaria|Burkina Faso|Burundi|Chile|China|Croatia|Côte d’Ivoire|Curaçao|Cyprus|Chad|Montenegro|Czechia|Denmark|Congo - Kinshasa|Dominica|Dominican Republic|Djibouti|Egypt|Ecuador|Eritrea|Estonia|Eswatini|Ethiopia|Falkland Islands|Fiji|Philippines|Finland|France|Gabon|Gambia|Ghana|Gibraltar|Greece|Grenada|Greenland|Georgia|Guam|Guernsey|Guyana|French Guiana|Guadeloupe|Guatemala|Guinea|Guinea-Bissau|Equatorial Guinea|Haiti|Spain|Netherlands|Honduras|India|Indonesia|Iraq|Iran|Ireland|Iceland|Israel|Jamaica|Japan|Yemen|Jersey|Jordan|Cayman Islands|Cambodia|Cameroon|Canada|Qatar|Kazakhstan|Kenya|Kyrgyzstan|Kiribati|Colombia|Comoros|Congo - Brazzaville|South Korea|North Korea|Kosovo|Costa Rica|Cuba|Kuwait|Laos|Lesotho|Lebanon|Liberia|Libya|Liechtenstein|Lithuania|Luxembourg|Latvia|North Macedonia|Madagascar|Mayotte|Malawi|Maldives|Malaysia|Mali|Malta|Northern Mariana Islands|Morocco|Martinique|Mauritania|Mauritius|Mexico|Micronesia|Myanmar (Burma)|Moldova|Monaco|Mongolia|Montserrat|Mozambique|Namibia|Nauru|Nepal|Caribbean Netherlands|Germany|Niger|Nigeria|Nicaragua|Niue|Norfolk Island|Norway|New Caledonia|New Zealand|Oman|Pakistan|Palau|Panama|Papua New Guinea|Paraguay|Peru|French Polynesia|Poland|Puerto Rico|Portugal|South Africa|Central African Republic|Cape Verde|Réunion|Russia|Romania|Rwanda|Western Sahara|St. Kitts & Nevis|St. Lucia|St. Vincent & Grenadines|St. Barthélemy|St. Martin|St. Pierre & Miquelon|El Salvador|Samoa|American Samoa|San Marino|Senegal|Serbia|Seychelles|Sierra Leone|Singapore|Sint Maarten|Slovakia|Slovenia|Somalia|Hong Kong SAR China|Macao SAR China|Sri Lanka|United States|Sudan|South Sudan|Suriname|Svalbard & Jan Mayen|Syria|Switzerland|Sweden|Tajikistan|Thailand|Taiwan|Tanzania|Palestinian Territories|Timor-Leste|Togo|Tokelau|Tonga|Tristan da Cunha|Trinidad & Tobago|Tunisia|Türkiye|Turkmenistan|Turks & Caicos Islands|Tuvalu|Uganda|Ukraine|Uruguay|Uzbekistan|Vanuatu|Wallis & Futuna|Vatican City|Venezuela|Hungary|United Kingdom|Vietnam|Italy|Christmas Island|Isle of Man|St. Helena|Ascension Island|Åland Islands|Cook Islands|U.S. Virgin Islands|Cocos (Keeling) Islands|Marshall Islands|Faroe Islands|Solomon Islands|São Tomé & Príncipe|Zambia|Zimbabwe|United Arab Emirates';
+
+  var STRINGS = {
+    pl: { search: 'Szukaj kraju…', empty: 'Brak wyników', choose: 'Wybierz kraj', country: 'Kraj' },
+    en: { search: 'Search country…', empty: 'No results', choose: 'Choose country', country: 'Country' },
+  };
+
+  /**
+   * Which language the list speaks. An explicit attribute wins; otherwise the
+   * URL decides — a site with /en pages switches on its own — then <html lang>,
+   * and Polish is the fallback.
+   */
+  function detectLang(el) {
+    var explicit = (el && attr(el, 'd2-country-picker-lang'))
+      || (document.documentElement && attr(document.documentElement, 'd2-country-picker-lang'));
+    if (explicit) return normalizeLang(explicit);
+
+    try {
+      var segments = (window.location.pathname || '').split('/');
+      for (var i = 0; i < segments.length; i++) {
+        var found = normalizeLang(segments[i]);
+        if (found) return found;
+      }
+    } catch (e) { /* exotic environments */ }
+
+    var htmlLang = document.documentElement && document.documentElement.getAttribute('lang');
+    return normalizeLang(htmlLang) || 'pl';
+  }
+
+  function normalizeLang(value) {
+    var v = String(value || '').trim().toLowerCase();
+    if (/^en(-|$)/.test(v)) return 'en';
+    if (/^pl(-|$)/.test(v)) return 'pl';
+    return null;
+  }
+
+  function strings(lang) { return STRINGS[lang] || STRINGS.pl; }
+
   var _all = null;
   function allCountries() {
     if (_all) return _all;
     _all = [];
     var rows = PACKED.split('|');
+    var namesEn = NAMES_EN.split('|');
     for (var i = 0; i < rows.length; i++) {
       var parts = rows[i].split(':');
       if (parts.length < 3) continue;
-      _all.push({ iso: parts[0], dial: parts[1], name: parts[2] });
+      _all.push({ iso: parts[0], dial: parts[1], pl: parts[2], en: namesEn[i] || parts[2], name: parts[2] });
     }
     return _all;
   }
 
-  function byIso(iso) {
+  // One sorted copy per language — sorting has to follow the names on screen.
+  var _sorted = {};
+  function countriesIn(lang) {
+    lang = lang === 'en' ? 'en' : 'pl';
+    if (_sorted[lang]) return _sorted[lang];
+    _sorted[lang] = allCountries().map(function (c) {
+      return { iso: c.iso, dial: c.dial, pl: c.pl, en: c.en, name: c[lang] };
+    }).sort(function (a, b) {
+      return a.name.localeCompare(b.name, lang);
+    });
+    return _sorted[lang];
+  }
+
+  function byIso(iso, lang) {
     if (!iso) return null;
-    var list = allCountries();
+    var list = countriesIn(lang || 'pl');
     iso = String(iso).toUpperCase();
     for (var i = 0; i < list.length; i++) if (list[i].iso === iso) return list[i];
     return null;
@@ -265,10 +320,13 @@
 
     injectCSS();
 
+    this.lang = normalizeLang(opts.lang) || detectLang(input);
+    this.t = strings(this.lang);
+
     // Which countries, and in what order.
     var only = opts.only && opts.only.length ? opts.only : null;
-    var list = allCountries().filter(function (c) { return !only || only.indexOf(c.iso) !== -1; });
-    if (!list.length) list = allCountries().slice();
+    var list = countriesIn(this.lang).filter(function (c) { return !only || only.indexOf(c.iso) !== -1; });
+    if (!list.length) list = countriesIn(this.lang).slice();
 
     var preferred = opts.preferred && opts.preferred.length ? opts.preferred : [];
     if (preferred.length) {
@@ -339,7 +397,7 @@
       toggle.className = 'd2-cp-toggle';
       toggle.setAttribute('aria-haspopup', 'listbox');
       toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-label', 'Wybierz kraj');
+      toggle.setAttribute('aria-label', this.t.choose);
       if (opts.flags !== false) {
         this.flagEl = document.createElement('span');
         this.flagEl.className = 'd2-cp-flag';
@@ -370,7 +428,7 @@
       var search = document.createElement('input');
       search.type = 'text';
       search.className = 'd2-cp-search';
-      search.setAttribute('placeholder', 'Szukaj kraju…');
+      search.setAttribute('placeholder', this.t.search);
       search.setAttribute('autocomplete', 'off');
       menu.appendChild(search);
       this.search = search;
@@ -389,7 +447,9 @@
     if (this.mode === 'separate') this._ensureHiddenFields();
 
     // Starting country: attribute → whatever the field already holds → PL.
-    var start = countryForNumber(input.value) || byIso(opts.country) || byIso('PL') || list[0];
+    var detected = countryForNumber(input.value);
+    var start = (detected && byIso(detected.iso, this.lang)) || byIso(opts.country, this.lang)
+      || byIso('PL', this.lang) || list[0];
     this.setCountry(start.iso, { silent: true, rewrite: false });
 
     // --- wiring -------------------------------------------------------------
@@ -474,7 +534,11 @@
     var q = stripDiacritics(query).trim();
     var matches = this.list.filter(function (c) {
       if (!q) return true;
+      // Both name sets, whichever language is on screen: someone typing
+      // "Germany" on a Polish page still means Niemcy.
       return stripDiacritics(c.name).indexOf(q) !== -1
+        || stripDiacritics(c.pl).indexOf(q) !== -1
+        || stripDiacritics(c.en).indexOf(q) !== -1
         || c.iso.toLowerCase().indexOf(q) !== -1
         || ('+' + c.dial).indexOf(q) === 0
         || c.dial.indexOf(q.replace(/^\+/, '')) === 0;
@@ -483,7 +547,7 @@
     if (!matches.length) {
       var empty = document.createElement('div');
       empty.className = 'd2-cp-empty';
-      empty.textContent = 'Brak wyników';
+      empty.textContent = self.t.empty;
       box.appendChild(empty);
       return;
     }
@@ -566,7 +630,7 @@
    */
   Picker.prototype.setCountry = function (iso, opts) {
     opts = opts || {};
-    var country = byIso(iso);
+    var country = byIso(iso, this.lang);
     if (!country) return false;
 
     var previous = this.country;
@@ -574,7 +638,7 @@
 
     if (this.flagEl) this.flagEl.textContent = flagEmoji(country.iso);
     this.dialEl.textContent = '+' + country.dial;
-    this.toggle.setAttribute('aria-label', 'Kraj: ' + country.name + ' (+' + country.dial + ')');
+    this.toggle.setAttribute('aria-label', this.t.country + ': ' + country.name + ' (+' + country.dial + ')');
 
     var active = this.optionsBox.querySelector('[d2-is-active]');
     if (active) active.removeAttribute('d2-is-active');
@@ -719,6 +783,7 @@
       only: parseList(attr(input, 'd2-country-picker-only')),
       search: !isOff(attr(input, 'd2-country-picker-search')),
       flags: !isOff(attr(input, 'd2-country-picker-flags')),
+      lang: attr(input, 'd2-country-picker-lang') || '',
       mode: attr(input, 'd2-country-picker-mode') || 'prefix',
       layout: attr(input, 'd2-country-picker-layout') || 'inside',
       dialField: attr(input, 'd2-country-picker-dial-field') || '',
@@ -749,6 +814,7 @@
   var INIT_SELECTOR = [
     'd2-country-picker',
     'd2-country-picker-mode',
+    'd2-country-picker-lang',
     'd2-country-picker-layout',
     'd2-country-picker-only',
     'd2-country-picker-preferred',
@@ -782,7 +848,8 @@
       if (picker) picker.destroy();
     },
     list: function () { return registry.map(function (entry) { return entry.input; }); },
-    countries: function () { return allCountries().slice(); },
+    countries: function (lang) { return countriesIn(normalizeLang(lang) || 'pl').slice(); },
+    language: function (el) { return detectLang(el || null); },
     init: autoInit,
   };
 

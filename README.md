@@ -100,7 +100,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-popups` | popups | 23.3 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
-| `d2-country-picker` | country-picker | 15.5 KB | Phone country picker — flag + dialing code written into the number |
+| `d2-country-picker` | country-picker | 24.2 KB | Phone country picker — flag + dialing code written into the number |
 | `d2-tabs` | tabs | 5.8 KB | Tabs & accordions with animations |
 | `d2-sliders` | sliders | 7.8 KB | Carousel with touch/drag, autoplay, CMS feed (start/end/index) |
 | `d2-animate` | animate | 5.2 KB | 22 scroll animation presets + stagger |
@@ -1120,6 +1120,7 @@ itself — no hidden inputs, no second field to map in your CRM.
 | `d2-country-picker-only="PL\|DE\|CZ"` | Restrict the list — e.g. the countries you actually sell to |
 | `d2-country-picker-search="false"` | Hide the search box (it appears on its own for lists over 8 entries) |
 | `d2-country-picker-flags="false"` | Dialing codes only. Worth knowing: **Windows has no emoji flags** and renders two letters instead, so on a Windows-heavy audience this is the safer look |
+| `d2-country-picker-lang="en"` | List language: `pl` (default) or `en`. Without it the URL decides — see [Language](#language) |
 | `d2-country-picker-layout="split"` | Flag as its own box **next to** the field instead of inside it — see [Two layouts](#two-layouts) |
 | `d2-country-picker-toggle="PHONE"` | **On your own element**, not the field: that element becomes the picker — see [Your own toggle](#your-own-toggle-built-in-the-designer) |
 | `d2-country-picker-flag` / `-dial` | Slots inside your toggle the module writes the flag and the code into |
@@ -1172,6 +1173,29 @@ What the module does — and does not do:
 `d2-country-picker-flag` and `d2-country-picker-dial` (leave them empty — the
 module fills them), plus your arrow. On the field itself `d2-country-picker` =
 `PL`. Then `d2-country-picker` in the loader tag, and publish.
+
+### Language
+
+The list ships with Polish and English names and picks the language by itself:
+
+1. `d2-country-picker-lang="en"` on the field (or on `<html>`) — wins over everything,
+2. the **URL**: any `/en` segment switches to English, `/pl` back to Polish — a
+   bilingual Webflow site needs nothing else,
+3. `<html lang>`,
+4. Polish.
+
+Sorting follows the names on screen (`Czechy` sits under C in Polish, `Czechia`
+under C in English but `Germany` moves from N to G), and so do the search
+placeholder, the empty state and the button's `aria-label`.
+
+**Search matches both languages regardless of what is displayed** — someone
+typing "Germany" into a Polish list still finds Niemcy, and "niemcy" in an
+English one still finds Germany. Codes work too: `DE`, `+49`, `49`.
+
+```js
+digi2.countryPicker.countries('en')   // [{ iso:'DE', dial:'49', name:'Germany', pl:'Niemcy', en:'Germany' }, …]
+digi2.countryPicker.language()        // what the module detected on this page
+```
 
 ### Two layouts
 

@@ -110,7 +110,7 @@ function matches(node, selector) {
   return false;
 }
 
-function createEnvironment() {
+function createEnvironment(opts) {
   const body = createElement('body');
   const head = createElement('head');
   const docListeners = {};
@@ -119,6 +119,7 @@ function createEnvironment() {
     body,
     head,
     readyState: 'complete',
+    documentElement: createElement('html', (opts && opts.htmlLang) ? { lang: opts.htmlLang } : {}),
     addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
     removeEventListener(type, fn) {
       if (docListeners[type]) docListeners[type] = docListeners[type].filter((h) => h !== fn);
@@ -129,7 +130,10 @@ function createEnvironment() {
   };
 
   const events = [];
-  const window = { digi2: { log() {}, emit(name, data) { events.push({ name, data }); } } };
+  const window = {
+    digi2: { log() {}, emit(name, data) { events.push({ name, data }); } },
+    location: { pathname: (opts && opts.pathname) || '/kontakt' },
+  };
 
   const env = {
     body, head, events, window, document,
@@ -609,4 +613,63 @@ test('a static toggle gets a positioning context for the list', () => {
   load(env);
 
   assert.equal(cp(env).get(input).toggle.style.position, 'relative');
+});
+
+test('the list speaks Polish by default', () => {
+  const env = createEnvironment();
+  const { input } = addField(env, { 'd2-country-picker': 'DE' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(picker.lang, 'pl');
+  assert.equal(picker.getCountry().name, 'Niemcy');
+  assert.equal(picker.search.attributes.placeholder, 'Szukaj kraju…');
+});
+
+test('an /en URL switches the countries to English on its own', () => {
+  const env = createEnvironment({ pathname: '/en/contact' });
+  const { input } = addField(env, { 'd2-country-picker': 'DE' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(picker.lang, 'en');
+  assert.equal(picker.getCountry().name, 'Germany');
+  assert.equal(picker.search.attributes.placeholder, 'Search country…');
+  assert.equal(picker.list[0].name.localeCompare(picker.list[1].name, 'en') <= 0, true, 'sorted in English');
+});
+
+test('d2-country-picker-lang beats the URL', () => {
+  const env = createEnvironment({ pathname: '/en/contact' });
+  const { input } = addField(env, { 'd2-country-picker': 'CZ', 'd2-country-picker-lang': 'pl' });
+  load(env);
+  assert.equal(cp(env).get(input).getCountry().name, 'Czechy');
+});
+
+test('<html lang> is the fallback when the URL says nothing', () => {
+  const env = createEnvironment({ pathname: '/contact', htmlLang: 'en-GB' });
+  const { input } = addField(env, { 'd2-country-picker': 'PL' });
+  load(env);
+  assert.equal(cp(env).get(input).getCountry().name, 'Poland');
+});
+
+test('both name sets ride along on every country', () => {
+  const env = createEnvironment();
+  load(env);
+  const de = cp(env).countries('en').find((c) => c.iso === 'DE');
+  assert.equal(de.name, 'Germany');
+  assert.equal(de.pl, 'Niemcy');
+  assert.equal(de.dial, '49');
+});
+
+test('search finds a country by either language name', () => {
+  const env = createEnvironment();                 // Polish list
+  const { input } = addField(env, { 'd2-country-picker': 'PL' });
+  load(env);
+  const picker = cp(env).get(input);
+
+  picker._renderOptions('germany');
+  assert.deepEqual(Array.from(picker.optionsBox.children.map((o) => o.getAttribute('d2-cp-iso'))), ['DE']);
+
+  picker._renderOptions('niemcy');
+  assert.deepEqual(Array.from(picker.optionsBox.children.map((o) => o.getAttribute('d2-cp-iso'))), ['DE']);
 });
