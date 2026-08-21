@@ -445,6 +445,15 @@
     };
     apply();
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(apply);
+
+    // The button's width is not ours alone: site CSS restyles it (bigger flag,
+    // more padding, a divider), a webfont lands late, a longer code arrives
+    // (+1 → +380). Measuring once leaves the number sliding under the flag, so
+    // watch the button and re-pad whenever it actually changes size.
+    if (!this._sizeWatch && typeof ResizeObserver === 'function') {
+      this._sizeWatch = new ResizeObserver(apply);
+      this._sizeWatch.observe(this.toggle);
+    }
   };
 
   Picker.prototype._renderOptions = function (query) {
@@ -663,6 +672,7 @@
   Picker.prototype.destroy = function () {
     var self = this;
     var input = this.input;
+    if (this._sizeWatch) { this._sizeWatch.disconnect(); this._sizeWatch = null; }
     document.removeEventListener('click', this._onDocClick);
     document.removeEventListener('keydown', this._onKey);
     input.removeEventListener('input', this._onInput);

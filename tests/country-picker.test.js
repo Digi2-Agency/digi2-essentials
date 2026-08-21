@@ -563,3 +563,25 @@ test('the loader tag carrying the flag is not mistaken for a field', () => {
   assert.ok(cp(env).get(input), 'the real field still gets its picker');
   assert.equal(loader.hasAttribute('d2-country-picker-ready'), false);
 });
+
+test('the field re-pads when the button changes width', () => {
+  const env = createEnvironment();
+  let observed = null;
+  env.context.ResizeObserver = function (cb) {
+    this.observe = (el) => { observed = { el, cb }; };
+    this.disconnect = () => { observed = null; };
+  };
+  const { input } = addField(env, { 'd2-country-picker': 'PL' });
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(input.style.paddingLeft, '68px', 'measured once on init');
+  assert.equal(observed.el, picker.toggle, 'and the button is watched');
+
+  picker.toggle.offsetWidth = 120;      // site CSS made it wider
+  observed.cb();
+  assert.equal(input.style.paddingLeft, '124px', 'the field follows');
+
+  picker.destroy();
+  assert.equal(observed, null, 'and stops watching when destroyed');
+});
