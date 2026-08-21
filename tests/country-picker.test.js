@@ -585,3 +585,28 @@ test('the field re-pads when the button changes width', () => {
   picker.destroy();
   assert.equal(observed, null, 'and stops watching when destroyed');
 });
+
+test('a toggle the author positioned keeps its own position', () => {
+  const env = createEnvironment();
+  env.context.getComputedStyle = () => ({ position: 'absolute', display: 'block' });
+
+  const { form, input } = addField(env, { 'd2-country-picker': 'PL' });
+  const own = createElement('div', { 'd2-country-picker-toggle': 'PHONE' });
+  form.insertBefore(own, form.children[0]);
+  load(env);
+
+  assert.equal(cp(env).get(input).toggle, own);
+  assert.equal(own.style.position, undefined, 'the module does not touch a positioned box');
+});
+
+test('a static toggle gets a positioning context for the list', () => {
+  const env = createEnvironment();
+  env.context.getComputedStyle = () => ({ position: 'static', display: 'block' });
+
+  const { form, input } = addField(env, { 'd2-country-picker': 'PL' });
+  const own = createElement('div', { 'd2-country-picker-toggle': 'PHONE' });
+  form.insertBefore(own, form.children[0]);
+  load(env);
+
+  assert.equal(cp(env).get(input).toggle.style.position, 'relative');
+});

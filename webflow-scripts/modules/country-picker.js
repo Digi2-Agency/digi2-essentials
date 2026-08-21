@@ -156,8 +156,9 @@
     '.d2-cp-caret{width:.5em;height:.5em;border-right:1px solid currentColor;border-bottom:1px solid currentColor;' +
     'transform:rotate(45deg) translate(-.1em,-.1em);opacity:.6;}' +
     '[d2-cp-open] .d2-cp-caret{transform:rotate(225deg) translate(-.15em,-.15em);}' +
-    // The author's own element: only what the dropdown needs to hang off it.
-    '.d2-cp-external{position:relative;cursor:pointer;}' +
+    // The author's own element: cursor only. Position is decided in JS, and only
+    // when the author left it static — their own class must win over ours.
+    '.d2-cp-external{cursor:pointer;}' +
     // Layout "split": the flag becomes its own box to the left of the field
     // instead of sitting inside it. Placed after the base rules so it wins.
     '.d2-cp-split{display:flex;align-items:stretch;gap:.5rem;}' +
@@ -302,6 +303,15 @@
       }
       toggle.setAttribute('aria-haspopup', 'listbox');
       toggle.setAttribute('aria-expanded', 'false');
+
+      // The list hangs off this element, so it needs a positioning context —
+      // but only if the author left one to take. A box they placed themselves
+      // (absolute icon slot, fixed bar) keeps exactly the position they gave it.
+      try {
+        if (typeof getComputedStyle === 'function' && getComputedStyle(toggle).position === 'static') {
+          toggle.style.position = 'relative';
+        }
+      } catch (e) { toggle.style.position = 'relative'; }
 
       // Slots the author marked, or spans prepended so their caret/icon survives.
       this.flagEl = opts.flags === false ? null : toggle.querySelector('[d2-country-picker-flag]');
