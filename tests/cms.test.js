@@ -1768,3 +1768,49 @@ test('apply button label follows the page language and Polish plurals', async ()
   assert.equal(labelFor(1), 'Show 1 result', 'English singular');
   assert.equal(labelFor(7), 'Show 7 results', 'English plural');
 });
+
+test('label templates can live as text in hidden elements (translatable in Webflow)', async () => {
+  const env = createEnvironment();
+  env.document.documentElement = createElement('html', { lang: 'pl' });
+
+  const list = createElement('div', { 'd2-cms-list': 'flats' });
+  [1, 2, 3].forEach(() => list.appendChild(createItem({ tag: 'x' })));
+  env.body.appendChild(list);
+
+  // hidden Text Blocks — what a Webflow editor translates per locale
+  const wiele = createElement('div', { 'd2-cms-target': 'flats', 'd2-cms-apply-count-text': '' }, 'Pokaż {count} wyników');
+  const jeden = createElement('div', { 'd2-cms-target': 'flats', 'd2-cms-apply-count-text': 'one' }, 'Pokaż {count} wynik');
+  const kilka = createElement('div', { 'd2-cms-target': 'flats', 'd2-cms-apply-count-text': 'few' }, 'Pokaż {count} wyniki');
+  const pusto = createElement('div', { 'd2-cms-target': 'flats', 'd2-cms-apply-empty-text': '' }, 'Brak wyników');
+  [wiele, jeden, kilka, pusto].forEach((el) => env.body.appendChild(el));
+
+  // the attribute is still there and must lose to the text element
+  const btn = createElement('button', {
+    'd2-cms-target': 'flats',
+    'd2-cms-apply': '',
+    'd2-cms-apply-count': 'ATRYBUT {count}',
+  });
+  env.body.appendChild(btn);
+
+  loadCmsModule(env);
+  await flushTimers();
+
+  const instance = env.window.digi2.cms.get('flats');
+  const labelFor = (n) => {
+    instance._countDraftMatches = () => n;
+    instance._updateApplyButtons();
+    return btn.textContent;
+  };
+
+  assert.equal(labelFor(1), 'Pokaż 1 wynik');
+  assert.equal(labelFor(3), 'Pokaż 3 wyniki');
+  assert.equal(labelFor(12), 'Pokaż 12 wyników');
+  assert.equal(labelFor(0), 'Brak wyników');
+
+  // translating that one text is all the /en page needs
+  wiele.textContent = 'Show {count} results';
+  jeden.textContent = 'Show {count} result';
+  kilka.textContent = 'Show {count} results';
+  assert.equal(labelFor(7), 'Show 7 results');
+  assert.equal(labelFor(1), 'Show 1 result');
+});

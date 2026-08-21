@@ -2104,8 +2104,29 @@ By default every filter change re-renders the list immediately. Drop a **`d2-cms
 
 Webflow Localization translates text, not custom attributes — one
 `d2-cms-apply-count` would speak Polish on the `/en` page. And "Pokaż 1 wyników"
-is wrong even in one language. Both are handled by suffixes on the same
-attribute:
+is wrong even in one language.
+
+**The straightforward way: keep the templates as text.** Put hidden Text Blocks
+on the page — the editor translates them per locale like any other copy, and
+nobody has to touch attributes again:
+
+```html
+<div d2-cms-target="apartments" d2-cms-apply-count-text>Pokaż {count} wyników</div>
+<div d2-cms-target="apartments" d2-cms-apply-count-text="one">Pokaż {count} wynik</div>
+<div d2-cms-target="apartments" d2-cms-apply-count-text="few">Pokaż {count} wyniki</div>
+<div d2-cms-target="apartments" d2-cms-apply-empty-text>Brak wyników</div>
+```
+
+In the Designer: a Text Block per line, `d2-cms-target` pointing at the list,
+`display: none`. The attribute value names the plural category the variant is
+for; the one without a value is the fallback. `d2-cms-display-format-text` works
+the same for counters.
+
+Templates in text win over the attribute forms below, so you can start with
+attributes and move to text elements when the second language arrives.
+
+**The attribute way**, if you'd rather keep everything on the button — suffixes
+on the same attribute:
 
 ```html
 <button d2-cms-target="apartments" d2-cms-apply

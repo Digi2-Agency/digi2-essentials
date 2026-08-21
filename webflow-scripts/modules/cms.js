@@ -238,6 +238,29 @@
     }
   }
 
+  /**
+   * A template taken from the TEXT of a hidden element, not from an attribute:
+   *
+   *   <div d2-cms-target="flats" d2-cms-apply-count-text>Pokaż {count} wyników</div>
+   *   <div d2-cms-target="flats" d2-cms-apply-count-text="one">Pokaż {count} wynik</div>
+   *
+   * Webflow Localization translates text, so the /en page gets the English
+   * string with no second attribute anywhere. The attribute's value, when set,
+   * names the plural category this variant is for.
+   */
+  function templateFromText(name, listName, category) {
+    var nodes = _elementsTargeting('[' + name + ']', listName);
+    var fallback = null;
+    for (var i = 0; i < nodes.length; i++) {
+      var cat = (nodes[i].getAttribute(name) || '').trim().toLowerCase();
+      var text = (nodes[i].textContent || '').trim();
+      if (!text) continue;
+      if (cat && category && cat === category) return text;
+      if (!cat && fallback === null) fallback = text;
+    }
+    return fallback;
+  }
+
   function localizedAttr(el, base, count) {
     var lang = pageLang();
     var category = typeof count === 'number' ? pluralCategory(count, lang) : null;
@@ -980,15 +1003,19 @@
         if (self._pendingApply) btn.setAttribute('d2-cms-apply-pending', '');
         else btn.removeAttribute('d2-cms-apply-pending');
 
-        // Probe the base name first so a static button stays untouched, then
-        // resolve the real template once the count (and with it the plural
-        // category) is known.
-        if (localizedAttr(btn, 'd2-cms-apply-count') == null) return;
+        // A hidden text element wins over the attribute: its content is what
+        // Webflow Localization can actually translate. Probe both cheaply
+        // first, so a plain static button keeps the author's label.
+        var hasText = templateFromText('d2-cms-apply-count-text', self.name, null) !== null;
+        if (!hasText && localizedAttr(btn, 'd2-cms-apply-count') == null) return;
         if (count === null) count = self._countDraftMatches();
 
-        var tmpl = localizedAttr(btn, 'd2-cms-apply-count', count);
+        var category = pluralCategory(count, pageLang());
+        var tmpl = templateFromText('d2-cms-apply-count-text', self.name, category)
+          || localizedAttr(btn, 'd2-cms-apply-count', count);
         var text;
-        var emptyTxt = localizedAttr(btn, 'd2-cms-apply-empty', 0);
+        var emptyTxt = templateFromText('d2-cms-apply-empty-text', self.name, null)
+          || localizedAttr(btn, 'd2-cms-apply-empty', 0);
         if (count === 0 && emptyTxt != null) {
           text = emptyTxt;
         } else if (tmpl.indexOf('{count}') !== -1) {
@@ -2124,9 +2151,11 @@
         // write to it — a hidden tab's list keeps its hands off.
         var tgt = attr(el, 'd2-cms-target');
         if (tgt && tgt.indexOf('|') !== -1 && !visible) continue;
-        // Same language/plural suffixes as the apply button; the count that
-        // picks the plural form is the one the template leads with.
-        var format = localizedAttr(el, 'd2-cms-display-format', counts.matching);
+        // Same order as the apply button: a hidden, translatable text element
+        // first, then the attribute with its language/plural suffixes.
+        var format = templateFromText('d2-cms-display-format-text', this.name,
+            pluralCategory(counts.matching, pageLang()))
+          || localizedAttr(el, 'd2-cms-display-format', counts.matching);
         var kind = attr(el, 'd2-cms-display');
         var text;
         if (format) {
