@@ -740,9 +740,15 @@
 
   function autoInit(root) {
     var scope = root && root.querySelectorAll ? root : document;
-    var fields = scope.querySelectorAll(INIT_SELECTOR);
-    for (var i = 0; i < fields.length; i++) create(fields[i]);
-    return fields.length;
+    var found = scope.querySelectorAll(INIT_SELECTOR);
+    var made = 0;
+    for (var i = 0; i < found.length; i++) {
+      // The loader tag and a <digi2-module> declaration carry d2-country-picker
+      // as a module flag, not as a field. Only inputs are fields.
+      if (found[i].tagName !== 'INPUT') continue;
+      if (create(found[i])) made++;
+    }
+    return made;
   }
 
   window.digi2.countryPicker = {

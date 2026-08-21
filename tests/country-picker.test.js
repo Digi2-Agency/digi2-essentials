@@ -547,3 +547,19 @@ test('two forms repeating the field name each pair with their own toggle', () =>
   assert.equal(cp(env).get(sekcja.input).toggle, sekcja.toggle, 'section field → section box');
   assert.equal(cp(env).get(popup.input).toggle, popup.toggle, 'popup field → popup box');
 });
+
+test('the loader tag carrying the flag is not mistaken for a field', () => {
+  const env = createEnvironment();
+  const loader = createElement('script', { src: '…/digi2-loader.min.js', 'd2-country-picker': '' });
+  env.body.appendChild(loader);
+  const { input } = addField(env, { 'd2-country-picker': 'PL' });
+
+  const warnings = [];
+  const realWarn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try { load(env); } finally { console.warn = realWarn; }
+
+  assert.equal(warnings.length, 0, 'no console noise about the <script>');
+  assert.ok(cp(env).get(input), 'the real field still gets its picker');
+  assert.equal(loader.hasAttribute('d2-country-picker-ready'), false);
+});
