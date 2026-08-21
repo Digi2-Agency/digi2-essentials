@@ -155,7 +155,9 @@
     '.d2-cp-dial{opacity:.75;}' +
     '.d2-cp-caret{width:.5em;height:.5em;border-right:1px solid currentColor;border-bottom:1px solid currentColor;' +
     'transform:rotate(45deg) translate(-.1em,-.1em);opacity:.6;}' +
-    '.d2-cp[d2-cp-open] .d2-cp-caret{transform:rotate(225deg) translate(-.15em,-.15em);}' +
+    '[d2-cp-open] .d2-cp-caret{transform:rotate(225deg) translate(-.15em,-.15em);}' +
+    // The author's own element: only what the dropdown needs to hang off it.
+    '.d2-cp-external{position:relative;cursor:pointer;}' +
     // Layout "split": the flag becomes its own box to the left of the field
     // instead of sitting inside it. Placed after the base rules so it wins.
     '.d2-cp-split{display:flex;align-items:stretch;gap:.5rem;}' +
@@ -165,7 +167,7 @@
     '.d2-cp-list{position:absolute;z-index:60;top:100%;left:0;min-width:min(20rem,100%);max-height:16rem;overflow:auto;' +
     'display:none;margin-top:.25rem;padding:.25rem;border:1px solid rgba(0,0,0,.15);border-radius:.5rem;' +
     'background:#fff;color:#111;box-shadow:0 12px 32px rgba(0,0,0,.18);}' +
-    '.d2-cp[d2-cp-open] .d2-cp-list{display:block;}' +
+    '[d2-cp-open]>.d2-cp-list{display:block;}' +
     '.d2-cp-search{width:100%;box-sizing:border-box;margin-bottom:.25rem;padding:.5rem .6rem;' +
     'border:1px solid rgba(0,0,0,.15);border-radius:.375rem;font:inherit;color:inherit;}' +
     '.d2-cp-option{display:flex;align-items:center;gap:.5rem;width:100%;padding:.45rem .6rem;border:0;border-radius:.375rem;' +
@@ -203,6 +205,38 @@
     return String(raw).split(/[|,\s]+/).map(function (c) { return c.toUpperCase(); }).filter(Boolean);
   }
 
+  function addClass(el, name) {
+    if (!el || !el.className && el.className !== '') return;
+    var current = String(el.className || '');
+    if ((' ' + current + ' ').indexOf(' ' + name + ' ') === -1) {
+      el.className = current ? current + ' ' + name : name;
+    }
+  }
+
+  /**
+   * The author's own toggle: [d2-country-picker-toggle="PHONE"] anywhere on the
+   * page, matched against the field's name or id. An empty value takes the
+   * nearest one — the same form, or the same label.
+   */
+  function findToggleFor(input) {
+    var key = input.getAttribute('name') || input.getAttribute('id') || '';
+    var all = document.querySelectorAll('[d2-country-picker-toggle]');
+    var loose = null;
+
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (el.hasAttribute('d2-cp-taken')) continue;
+      var target = (el.getAttribute('d2-country-picker-toggle') || '').trim();
+      if (target && key && target === key) { el.setAttribute('d2-cp-taken', ''); return el; }
+      if (!target && !loose) {
+        var scope = el.closest ? (el.closest('label') || el.closest('form')) : null;
+        if (scope && scope.contains && scope.contains(input)) loose = el;
+      }
+    }
+    if (loose) { loose.setAttribute('d2-cp-taken', ''); return loose; }
+    return null;
+  }
+
   function isOff(value) {
     var v = String(value == null ? '' : value).toLowerCase();
     return v === 'false' || v === 'off' || v === '0' || v === 'no';
@@ -238,37 +272,73 @@
     }
     this.list = list;
 
-    // Wrapper around the field — the field keeps its own classes and styles.
-    this.layout = String(opts.layout || '').toLowerCase() === 'split' ? 'split' : 'inside';
+    // Three shapes: the author's own element as the toggle ("custom"), a button
+    // beside the field ("split"), or one inside it ("inside", the default).
+    var external = findToggleFor(input);
+    this.layout = external ? 'custom' : (String(opts.layout || '').toLowerCase() === 'split' ? 'split' : 'inside');
 
-    var wrap = document.createElement('div');
-    wrap.className = this.layout === 'split' ? 'd2-cp d2-cp-split' : 'd2-cp';
-    wrap.setAttribute('d2-cp-layout', this.layout);
-    if (input.parentNode) input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
-    this.wrap = wrap;
+    var wrap, toggle;
 
-    var toggle = document.createElement('button');
-    toggle.type = 'button';                       // never submits the form
-    toggle.className = 'd2-cp-toggle';
-    toggle.setAttribute('aria-haspopup', 'listbox');
-    toggle.setAttribute('aria-expanded', 'false');
-    toggle.setAttribute('aria-label', 'Wybierz kraj');
-    if (opts.flags !== false) {
-      this.flagEl = document.createElement('span');
-      this.flagEl.className = 'd2-cp-flag';
-      toggle.appendChild(this.flagEl);
+    if (external) {
+      // Nothing is wrapped or moved: the element built in the Designer IS the
+      // toggle, and the list hangs off it.
+      wrap = toggle = external;
+      wrap.setAttribute('d2-cp-layout', 'custom');
+      addClass(wrap, 'd2-cp-external');
+      if (toggle.tagName === 'BUTTON') toggle.type = 'button';
+      else {
+        // A div or a Link Block still has to answer to keyboard and screen readers.
+        if (!toggle.getAttribute('role')) toggle.setAttribute('role', 'button');
+        if (!toggle.getAttribute('tabindex')) toggle.setAttribute('tabindex', '0');
+      }
+      toggle.setAttribute('aria-haspopup', 'listbox');
+      toggle.setAttribute('aria-expanded', 'false');
+
+      // Slots the author marked, or spans prepended so their caret/icon survives.
+      this.flagEl = opts.flags === false ? null : toggle.querySelector('[d2-country-picker-flag]');
+      this.dialEl = toggle.querySelector('[d2-country-picker-dial]');
+      if (!this.flagEl && opts.flags !== false) {
+        this.flagEl = document.createElement('span');
+        this.flagEl.className = 'd2-cp-flag';
+        toggle.insertBefore(this.flagEl, toggle.firstChild || null);
+      }
+      if (!this.dialEl) {
+        this.dialEl = document.createElement('span');
+        this.dialEl.className = 'd2-cp-dial';
+        if (this.flagEl && this.flagEl.nextSibling) toggle.insertBefore(this.dialEl, this.flagEl.nextSibling);
+        else toggle.appendChild(this.dialEl);
+      }
+    } else {
+      wrap = document.createElement('div');
+      wrap.className = this.layout === 'split' ? 'd2-cp d2-cp-split' : 'd2-cp';
+      wrap.setAttribute('d2-cp-layout', this.layout);
+      if (input.parentNode) input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+
+      toggle = document.createElement('button');
+      toggle.type = 'button';                       // never submits the form
+      toggle.className = 'd2-cp-toggle';
+      toggle.setAttribute('aria-haspopup', 'listbox');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-label', 'Wybierz kraj');
+      if (opts.flags !== false) {
+        this.flagEl = document.createElement('span');
+        this.flagEl.className = 'd2-cp-flag';
+        toggle.appendChild(this.flagEl);
+      }
+      this.dialEl = document.createElement('span');
+      this.dialEl.className = 'd2-cp-dial';
+      toggle.appendChild(this.dialEl);
+      var caret = document.createElement('span');
+      caret.className = 'd2-cp-caret';
+      toggle.appendChild(caret);
+      // Split layout: the button goes BEFORE the field in the DOM, so flex puts
+      // it on the left and Tab reaches the country before the number.
+      if (this.layout === 'split') wrap.insertBefore(toggle, input);
+      else wrap.appendChild(toggle);
     }
-    this.dialEl = document.createElement('span');
-    this.dialEl.className = 'd2-cp-dial';
-    toggle.appendChild(this.dialEl);
-    var caret = document.createElement('span');
-    caret.className = 'd2-cp-caret';
-    toggle.appendChild(caret);
-    // Split layout: the button goes BEFORE the field in the DOM, so flex puts it
-    // on the left and Tab reaches the country before the number.
-    if (this.layout === 'split') wrap.insertBefore(toggle, input);
-    else wrap.appendChild(toggle);
+
+    this.wrap = wrap;
     this.toggle = toggle;
 
     var menu = document.createElement('div');
@@ -309,6 +379,14 @@
       self.isOpen() ? self.close() : self.open();
     });
 
+    if (this.layout === 'custom' && toggle.tagName !== 'BUTTON') {
+      toggle.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+        if (e.preventDefault) e.preventDefault();
+        self.isOpen() ? self.close() : self.open();
+      });
+    }
+
     this._onDocClick = function (e) {
       if (!self.isOpen()) return;
       if (wrap.contains && wrap.contains(e.target)) return;
@@ -347,7 +425,7 @@
   // Leave room for the flag/dial button inside the field.
   Picker.prototype._padInput = function () {
     var self = this;
-    if (this.layout === 'split') {         // the flag has its own box; the field keeps its padding
+    if (this.layout !== 'inside') {        // the flag has its own box; the field keeps its padding
       this.input.style.paddingLeft = '';
       return;
     }
@@ -574,6 +652,7 @@
   };
 
   Picker.prototype.destroy = function () {
+    var self = this;
     var input = this.input;
     document.removeEventListener('click', this._onDocClick);
     document.removeEventListener('keydown', this._onKey);
@@ -588,7 +667,11 @@
     });
 
     input.style.paddingLeft = '';
-    if (this.wrap.parentNode) {
+    if (this.layout === 'custom') {
+      if (this.menu.parentNode) this.menu.parentNode.removeChild(this.menu);
+      ['d2-cp-open', 'd2-cp-layout', 'd2-cp-taken', 'aria-haspopup', 'aria-expanded']
+        .forEach(function (name) { self.wrap.removeAttribute(name); });
+    } else if (this.wrap.parentNode) {
       this.wrap.parentNode.insertBefore(input, this.wrap);
       this.wrap.parentNode.removeChild(this.wrap);
     }

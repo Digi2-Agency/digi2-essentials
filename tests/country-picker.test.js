@@ -19,7 +19,13 @@ function createElement(tagName, attrs) {
     textContent: '',
     offsetWidth: 64,
     _listeners: {},
-    className: '',
+    className: (attrs && attrs.class) || '',
+    get firstChild() { return this.children[0] || null; },
+    get nextSibling() {
+      const parent = this.parentElement;
+      if (!parent) return null;
+      return parent.children[parent.children.indexOf(this) + 1] || null;
+    },
     classList: {
       add(name) { classes.add(name); },
       remove(name) { classes.delete(name); },
@@ -434,4 +440,87 @@ test('split layout puts the button before the field in the DOM', () => {
   const order = picker.wrap.children;
   assert.equal(order[0], picker.toggle, 'flag first');
   assert.equal(order[1], input, 'then the number');
+});
+
+// The author's own toggle, built in the Designer and placed next to the field.
+function addCustomToggle(env, form, attrs, children) {
+  const el = createElement('div', Object.assign({ 'd2-country-picker-toggle': 'PHONE' }, attrs || {}));
+  (children || []).forEach((c) => el.appendChild(c));
+  form.insertBefore(el, form.children[0]);
+  return el;
+}
+
+test('an element with d2-country-picker-toggle becomes the picker, untouched', () => {
+  const env = createEnvironment();
+  const { form, input } = addField(env, { 'd2-country-picker': 'PL' });
+  const own = addCustomToggle(env, form);
+  load(env);
+
+  const picker = cp(env).get(input);
+  assert.equal(picker.wrap, own, 'the author element is the picker');
+  assert.equal(picker.toggle, own);
+  assert.equal(input.parentElement, form, 'the field is never wrapped or moved');
+  assert.equal(input.style.paddingLeft, '', 'and never padded');
+  assert.equal(own.getAttribute('d2-cp-layout'), 'custom');
+  assert.equal(own.getAttribute('role'), 'button', 'a div still answers as a button');
+  assert.equal(own.getAttribute('tabindex'), '0');
+});
+
+test('the flag and dialing code go into the author slots', () => {
+  const env = createEnvironment();
+  const { form, input } = addField(env, { 'd2-country-picker': 'DE' });
+  const flag = createElement('span', { 'd2-country-picker-flag': '' });
+  const dial = createElement('span', { 'd2-country-picker-dial': '' });
+  const caret = createElement('svg', { class: 'moja-strzalka' });
+  addCustomToggle(env, form, null, [flag, dial, caret]);
+  load(env);
+
+  assert.equal(flag.textContent, '🇩🇪');
+  assert.equal(dial.textContent, '+49');
+  const picker = cp(env).get(input);
+  assert.equal(picker.wrap.children.length, 4, 'their caret survives, list appended');
+  assert.equal(picker.wrap.children[2], caret);
+});
+
+test('without slots the module prepends its own, keeping the author markup', () => {
+  const env = createEnvironment();
+  const { form } = addField(env, { 'd2-country-picker': 'PL' });
+  const caret = createElement('div', { class: 'moja-strzalka' });
+  const own = addCustomToggle(env, form, null, [caret]);
+  load(env);
+
+  assert.equal(own.children[0].className, 'd2-cp-flag');
+  assert.equal(own.children[1].className, 'd2-cp-dial');
+  assert.equal(own.children[2], caret, 'the caret stays where it was, after them');
+});
+
+test('clicking the author element opens the list inside it', () => {
+  const env = createEnvironment();
+  const { form, input } = addField(env, { 'd2-country-picker': 'PL' });
+  const own = addCustomToggle(env, form);
+  load(env);
+
+  own.fire('click');
+  assert.equal(own.hasAttribute('d2-cp-open'), true);
+  assert.equal(own.getAttribute('aria-expanded'), 'true');
+  assert.ok(own.querySelector('[role="listbox"]'), 'the list hangs off the author element');
+
+  own.querySelector('[d2-cp-iso="CZ"]').fire('click');
+  assert.equal(cp(env).get(input).getCountry().iso, 'CZ');
+  assert.equal(own.hasAttribute('d2-cp-open'), false);
+});
+
+test('two fields each take their own toggle, matched by name', () => {
+  const env = createEnvironment();
+  const { form, input } = addField(env, { 'd2-country-picker': 'PL' });
+  const second = createElement('input', { type: 'tel', name: 'PHONE2', 'd2-country-picker': 'DE' });
+  form.appendChild(second);
+  second.form = form;
+
+  const first = addCustomToggle(env, form, { 'd2-country-picker-toggle': 'PHONE' });
+  const other = addCustomToggle(env, form, { 'd2-country-picker-toggle': 'PHONE2' });
+  load(env);
+
+  assert.equal(cp(env).get(input).toggle, first);
+  assert.equal(cp(env).get(second).toggle, other);
 });

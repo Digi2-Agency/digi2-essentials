@@ -1121,12 +1121,57 @@ itself — no hidden inputs, no second field to map in your CRM.
 | `d2-country-picker-search="false"` | Hide the search box (it appears on its own for lists over 8 entries) |
 | `d2-country-picker-flags="false"` | Dialing codes only. Worth knowing: **Windows has no emoji flags** and renders two letters instead, so on a Windows-heavy audience this is the safer look |
 | `d2-country-picker-layout="split"` | Flag as its own box **next to** the field instead of inside it — see [Two layouts](#two-layouts) |
+| `d2-country-picker-toggle="PHONE"` | **On your own element**, not the field: that element becomes the picker — see [Your own toggle](#your-own-toggle-built-in-the-designer) |
+| `d2-country-picker-flag` / `-dial` | Slots inside your toggle the module writes the flag and the code into |
 | `d2-country-picker-mode="separate"` | Keep the field digits-only and send the code in a hidden input instead — see [Two modes](#two-modes) |
 | `d2-country-picker-dial-field="PHONE_DIAL"` | Name of the hidden dialing-code field (separate mode; default `<pole>_DIAL`) |
 | `d2-country-picker-country-field="PHONE_COUNTRY"` | Name of the hidden country field (default `<pole>_COUNTRY`) |
 
 Any one of these switches the picker on — a field carrying only
 `d2-country-picker-mode="separate"` works, the bare `d2-country-picker` is not required.
+
+### Your own toggle, built in the Designer
+
+The two layouts above draw the button for you. When the design is specific — your
+own flag box, your own arrow icon, your own spacing — build it in Webflow and
+hand it to the module instead. Put `d2-country-picker-toggle` on **your element**
+with the phone field's `name` as the value:
+
+```html
+<label>
+  <span>Telefon</span>
+  <div class="row">                                  <!-- your flex row -->
+
+    <div class="country-box" d2-country-picker-toggle="PHONE">
+      <span d2-country-picker-flag></span>
+      <span d2-country-picker-dial></span>
+      <svg class="my-caret">…</svg>                   <!-- your own arrow -->
+    </div>
+
+    <input type="tel" name="PHONE" d2-country-picker="PL">
+  </div>
+</label>
+```
+
+What the module does — and does not do:
+
+- **The field is not wrapped, not moved and not padded.** Your row, your classes,
+  your spacing stay exactly as built.
+- It writes the flag into `[d2-country-picker-flag]` and the code into
+  `[d2-country-picker-dial]`. No slots? It prepends its own two spans and leaves
+  the rest of your markup (arrow, icon, divider) where it is.
+- The list is appended **inside** your element and positioned from it (the module
+  sets `position: relative` only if yours is `static`).
+- A `<div>` or a Link Block gets `role="button"` and `tabindex="0"`, and answers
+  to Enter / Space. A real `<button>` gets `type="button"` so it can't submit.
+- Leave the value empty (`d2-country-picker-toggle`) and it takes the phone field
+  in the same `<label>` or `<form>`. With several fields, name them.
+
+**In Webflow:** Div Block next to the field → Element settings → Custom attributes
+→ `d2-country-picker-toggle` = `PHONE`. Inside it two Text Blocks with
+`d2-country-picker-flag` and `d2-country-picker-dial` (leave them empty — the
+module fills them), plus your arrow. On the field itself `d2-country-picker` =
+`PL`. Then `d2-country-picker` in the loader tag, and publish.
 
 ### Two layouts
 
