@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandbox: promocja steruje stroną</title>
+
+<!--
+  Strona testowa modułu `promo`.
+
+  Odtwarza to, co na prawdziwej stronie klienta: pasek promocyjny („gilotyna"),
+  popup zapisu na newsletter, przyciski i sekcję z ofertą. Wszystkim steruje
+  jedna kampania w 2destate - nic tu nie jest przełączane ręcznie.
+
+  Jak uruchomić
+  -------------
+    npm run build                      # w katalogu oc-projects
+    npx serve -l 5175 .                # port 5175 jest na liście CORS lokalnego 2destate
+    otwórz http://localhost:5175/sandbox/promo
+                                       # bez .html - `serve` przekierowuje
+                                       # i gubi wtedy parametry z adresu
+
+  Skąd bierze stan
+  ----------------
+  Domyślnie z lokalnego 2destate (api.2destate.local). Adres i projekt można
+  podmienić w polu na dole strony - zapisuje się w przeglądarce, więc po
+  odświeżeniu trzyma ustawienie.
+
+  Bez backendu też działa: ?d2-promo-preview=on / =off / =<klucz-kampanii>
+  wymusza stan i pozwala obejrzeć obie wersje strony.
+-->
+
+<style>
+  :root {
+    --tlo: #fbfaf8;
+    --papier: #ffffff;
+    --tekst: #1a1d1c;
+    --tekst-cichy: #6b7370;
+    --linia: #e5e3df;
+    --akcent: #1e9e5a;
+    --akcent-ciemny: #167a45;
+    --promo: #c2410c;
+    --promo-tlo: #fff4ed;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--tlo);
+    color: var(--tekst);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  .strona { max-width: 880px; margin: 0 auto; padding: 0 24px 80px; }
+  header.nawigacja {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--linia);
+  }
+  .logo { font-weight: 700; letter-spacing: -0.01em; }
+  h1 { font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; margin: 40px 0 12px; }
+  h2 { font-size: 20px; margin: 40px 0 8px; }
+  p { margin: 0 0 16px; color: var(--tekst-cichy); }
+  .przycisk {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 18px; border-radius: 8px; border: 1px solid var(--linia);
+    background: var(--papier); color: var(--tekst);
+    font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer;
+  }
+  .przycisk--glowny { background: var(--akcent); border-color: var(--akcent); color: #fff; }
+  .przycisk--glowny:hover { background: var(--akcent-ciemny); }
+  .przycisk--promo { background: var(--promo); border-color: var(--promo); color: #fff; }
+
+  /* Gilotyna - pasek nad nagłówkiem strony */
+  .gilotyna {
+    background: var(--promo); color: #fff;
+    text-align: center; padding: 12px 24px; font-weight: 600; font-size: 15px;
+  }
+
+  .karta {
+    background: var(--papier); border: 1px solid var(--linia);
+    border-radius: 12px; padding: 20px 22px; margin: 16px 0;
+  }
+  .karta--promo { border-color: #f2c4a8; background: var(--promo-tlo); }
+  .znacznik {
+    display: inline-block; padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.03em;
+    background: var(--promo); color: #fff; text-transform: uppercase;
+  }
+
+  /* Popup - w Webflow zwykły div, tutaj to samo */
+  .popup__overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 22, 21, 0.55); padding: 24px;
+  }
+  .popup__okno {
+    background: var(--papier); border-radius: 14px; padding: 28px;
+    max-width: 420px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+
+  /* Panel diagnostyczny - nie ma go na prawdziwej stronie */
+  .diagnostyka {
+    position: fixed; right: 16px; bottom: 16px; z-index: 60;
+    width: 340px; max-width: calc(100vw - 32px);
+    background: #14171f; color: #e7ebf2; border-radius: 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    box-shadow: 0 16px 44px rgba(0,0,0,.32);
+  }
+  .diagnostyka h3 {
+    margin: 0; padding: 12px 14px; font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: #9aa4b6; border-bottom: 1px solid #262c39;
+  }
+  .diagnostyka .tresc { padding: 12px 14px; max-height: 42vh; overflow: auto; }
+  .diagnostyka pre { margin: 0 0 10px; white-space: pre-wrap; word-break: break-word; }
+  .diagnostyka input {
+    width: 100%; padding: 7px 9px; margin: 4px 0 10px;
+    background: #0e1119; border: 1px solid #2b3242; border-radius: 6px;
+    color: #e7ebf2; font: inherit;
+  }
+  .diagnostyka button {
+    padding: 7px 10px; margin-right: 6px; border-radius: 6px; cursor: pointer;
+    background: #232a37; border: 1px solid #333c4d; color: #e7ebf2; font: inherit;
+  }
+  .stan-tak { color: #4ade80; }
+  .stan-nie { color: #f87171; }
+</style>
+</head>
+<body>
+
+<!-- ─── Gilotyna: widoczna tylko w trakcie promocji ─────────────────────── -->
+<div class="gilotyna" d2-promo-when="active">
+  Trwa promocja - sprawdź przecenione mieszkania
+</div>
+
+<div class="strona">
+  <header class="nawigacja">
+    <span class="logo">Osiedle Słoneczne</span>
+    <span>
+      <!-- Przycisk zwykły znika na czas promocji, promocyjny go zastępuje -->
+      <a class="przycisk" href="#" d2-promo-when="inactive">Umów spotkanie</a>
+      <a class="przycisk przycisk--promo" href="#" d2-promo-when="active">Zobacz promocję</a>
+    </span>
+  </header>
+
+  <h1>Mieszkania w drugim etapie</h1>
+  <p>Strona wygląda tak samo jak zawsze. Zmienia się tylko to, co poniżej
+     zależy od kampanii ustawionej w 2destate.</p>
+
+  <!-- ─── Sekcja tylko na czas promocji ─────────────────────────────────── -->
+  <div class="karta karta--promo" d2-promo-when="active">
+    <span class="znacznik">Promocja</span>
+    <h2 style="margin-top:12px">Obniżki w tym etapie</h2>
+    <p style="margin-bottom:0">Ten blok pojawia się i znika sam, razem z kampanią.</p>
+  </div>
+
+  <!-- ─── Warunek: konkretna kampania po kluczu ─────────────────────────── -->
+  <div class="karta" d2-promo-when="active" d2-promo-campaign="wyprzedaz-jesienna">
+    <h2 style="margin-top:0">Wyprzedaż jesienna</h2>
+    <p style="margin-bottom:0">Widoczne tylko przy kampanii o kluczu
+      <code>wyprzedaz-jesienna</code>. Inna kampania tego nie pokaże.</p>
+  </div>
+
+  <!-- ─── Warunek: tag produktu ─────────────────────────────────────────── -->
+  <div class="karta" d2-promo-when="active" d2-promo-tag="oferta-specjalna">
+    <h2 style="margin-top:0">Oferta specjalna</h2>
+    <p style="margin-bottom:0">Widoczne, gdy w promocji jest produkt z tagiem
+      <code>oferta-specjalna</code>.</p>
+  </div>
+
+  <!-- ─── Warunek: próg liczby przecenionych ────────────────────────────── -->
+  <div class="karta" d2-promo-when="active" d2-promo-min-products="3">
+    <h2 style="margin-top:0">Co najmniej trzy mieszkania</h2>
+    <p style="margin-bottom:0">Znika, gdy w promocji zostanie mniej niż trzy.</p>
+  </div>
+
+  <h2>Popup</h2>
+  <p>Popup zapisu na newsletter ma <code>d2-promo-when="inactive"</code>, więc
+     w trakcie promocji nie wyskoczy - także po kliknięciu przycisku poniżej.</p>
+  <button class="przycisk" d2-show-popup="newsletter">Otwórz popup ręcznie</button>
+</div>
+
+<!-- ─── Popup: ukryty na czas promocji ──────────────────────────────────── -->
+<div class="popup__overlay" style="display:none" d2-promo-when="inactive">
+  <div class="popup__okno">
+    <h2 style="margin-top:0">Zapisz się na newsletter</h2>
+    <p>Nie przerywamy tym nikomu, kto przyszedł po promocję.</p>
+    <button class="przycisk przycisk--glowny" d2-close-popup="newsletter">Zamknij</button>
+  </div>
+</div>
+
+<!-- ─── Panel diagnostyczny (tylko w sandboxie) ─────────────────────────── -->
+<div class="diagnostyka">
+  <h3>Stan promocji</h3>
+  <div class="tresc">
+    <pre id="stan">wczytywanie…</pre>
+    <label for="endpoint">Endpoint</label>
+    <input id="endpoint" spellcheck="false">
+    <button id="zapisz">Zapisz i przeładuj</button>
+    <button id="odswiez">Odśwież stan</button>
+    <p style="margin:10px 0 0;color:#9aa4b6">
+      Bez backendu: dopisz do adresu <code>?d2-promo-preview=on</code>,
+      <code>=off</code> albo <code>=wyprzedaz-jesienna</code>.
+    </p>
+  </div>
+</div>
+
+<script>
+  // Endpoint trzymamy w przeglądarce, żeby nie edytować pliku przy każdej próbie.
+  var KLUCZ = 'sandbox_promo_endpoint';
+  var DOMYSLNY =
+    'https://api.2destate.local/api/v1/projects/9e21263f-227e-511c-b9a1-f2a00794a4c2/promo-state';
+  var endpoint = localStorage.getItem(KLUCZ) || DOMYSLNY;
+
+  // Loader czyta atrybuty ze swojego własnego tagu, więc wstawiamy go z kodu -
+  // inaczej endpoint musiałby być wpisany w plik na sztywno.
+  var loader = document.createElement('script');
+  loader.src = '../dist/digi2-loader.min.js';
+  loader.setAttribute('d2-promo', endpoint);
+  loader.setAttribute('d2-popups', '');
+  loader.setAttribute('d2-debug-mode', '');
+  document.head.appendChild(loader);
+
+  loader.addEventListener('load', function () {
+    digi2.modules.require('popups').then(function () {
+      digi2.popups.create('newsletter', {
+        popupSelector: '.popup__overlay',
+        openOnLoad: false,
+        closeTriggerSelector: '[d2-close-popup]'
+      });
+    });
+  });
+</script>
+
+<script>
+  // --- Panel diagnostyczny ---------------------------------------------------
+  var pole = document.getElementById('endpoint');
+  var podglad = document.getElementById('stan');
+  pole.value = endpoint;
+
+  document.getElementById('zapisz').onclick = function () {
+    localStorage.setItem(KLUCZ, pole.value.trim());
+    location.reload();
+  };
+  document.getElementById('odswiez').onclick = function () {
+    if (window.digi2 && digi2.promo) digi2.promo.refresh().then(pokaz);
+  };
+
+  function tak(wartosc) {
+    return wartosc
+      ? '<span class="stan-tak">tak</span>'
+      : '<span class="stan-nie">nie</span>';
+  }
+
+  function pokaz() {
+    var stan = window.digi2 && digi2.promo ? digi2.promo.state() : null;
+    if (!stan) {
+      podglad.textContent = 'brak stanu (moduł jeszcze nie zdecydował)';
+      return;
+    }
+    var kampanie = stan.campaigns.map(function (k) {
+      return '  · ' + k.key + '  (' + k.product_count + ' szt.)';
+    });
+    var tagi = stan.tags.map(function (t) {
+      return '  · ' + t.key + '  (' + t.product_count + ' szt.)';
+    });
+    podglad.innerHTML =
+      'promocja trwa: ' + tak(stan.active) + '\n' +
+      'produktów: ' + stan.product_count + '\n' +
+      'kampanie:\n' + (kampanie.join('\n') || '  (brak)') + '\n' +
+      'tagi:\n' + (tagi.join('\n') || '  (brak)') + '\n' +
+      'stan ważny do: ' + (stan.valid_until || 'bezterminowo');
+  }
+
+  window.addEventListener('load', function () {
+    if (!window.digi2) return;
+    digi2.on('promo:resolved', function (e) {
+      pokaz();
+      console.log('[sandbox] stan rozstrzygnięty ze źródła:', e.source);
+    });
+    digi2.on('promo:change', function () {
+      pokaz();
+      console.log('[sandbox] stan się zmienił');
+    });
+    setTimeout(pokaz, 400);
+  });
+</script>
+
+</body>
+</html>

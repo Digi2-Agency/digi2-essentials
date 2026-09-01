@@ -19,6 +19,7 @@
  *   d2-forms    →  modules/forms.js     Form enhancement with UTM, IP, GA tracking
  *   d2-ab-tests →  modules/ab-tests.js  A/B redirects and link rewriting
  *   d2-format   →  modules/format.js    Number and price formatting
+ *   d2-promo    →  modules/promo.js     Show/hide elements from a running 2destate promotion
  *   d2-lightbox →  modules/lightbox.js  Image lightbox — custom Designer modal or built-in fallback
  *                                       Optional value picks the built-in bottom UI: d2-lightbox="thumbs" | "counter"
  *
@@ -462,6 +463,7 @@
     datalayer: 'datalayer',
     abTests: 'ab-tests',
     lightbox: 'lightbox',
+    promo: 'promo',
   };
 
   function createProxy(namespace, moduleName) {
@@ -620,6 +622,15 @@
         var cfg = el.getAttribute('d2-ab-tests');
         if (cfg) window.digi2._abTestsConfigName = cfg;
         _pushModule(into, 'ab-tests');
+      } else if (name === 'd2-promo') {
+        var promoUrl = el.getAttribute('d2-promo');
+        if (promoUrl) window.digi2._promoEndpoint = promoUrl;
+        _pushModule(into, 'promo');
+      } else if (name === 'd2-promo-state') {
+        // Stan wpisany w stronę - obowiązuje, zanim cokolwiek poleci po sieci.
+        var promoState = el.getAttribute('d2-promo-state');
+        if (promoState) window.digi2._promoState = promoState;
+        _pushModule(into, 'promo');
       } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules') {
         // not a module flag
       } else if (name.indexOf('d2-') === 0) {

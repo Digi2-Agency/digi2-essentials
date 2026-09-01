@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sandbox: mapa ImageMapPro</title>
+
+<!--
+  Strona testowa mapy z 2destate, w takim samym osadzeniu jak na stronie klienta.
+
+  Mapa sama dociąga dane: `ImageMapPro.init()` dostaje konfigurację z `map_id`,
+  a klient pyta o resztę endpoint runtime
+  (`POST /search-engine/map/{map_id}/runtime`) - anonimowo, bez tokenu, dokładnie
+  tak jak na produkcji. Dzięki temu widać tu prawdziwe dane: ceny, statusy,
+  tooltipy i tagi produktów.
+
+  Na dokładkę strona jest spięta z modułem `promo`, więc widać, jak promocja
+  steruje otoczeniem mapy: pasek nad nią i podpis pod nią pojawiają się razem
+  z kampanią. Samej mapy promocja nie dotyka - ImageMapPro ma własne warunki
+  po tagach produktu.
+
+  Jak uruchomić
+  -------------
+    npm run build                      # w katalogu oc-projects
+    npx serve -l 5175 .                # port 5175 jest na liście CORS lokalnego 2destate
+    otwórz http://localhost:5175/sandbox/imagemappro
+                                       # bez .html - `serve` przekierowuje
+                                       # i gubi wtedy parametry z adresu
+
+  Identyfikator mapy i adresy podmienia się w panelu na dole - zapisują się
+  w przeglądarce.
+-->
+
+<style>
+  :root {
+    --tlo: #fbfaf8;
+    --papier: #ffffff;
+    --tekst: #1a1d1c;
+    --tekst-cichy: #6b7370;
+    --linia: #e5e3df;
+    --promo: #c2410c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--tlo); color: var(--tekst);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  .strona { max-width: 1040px; margin: 0 auto; padding: 0 24px 80px; }
+  h1 { font-size: 30px; letter-spacing: -0.02em; margin: 32px 0 8px; }
+  p { color: var(--tekst-cichy); margin: 0 0 20px; }
+  .gilotyna {
+    background: var(--promo); color: #fff; text-align: center;
+    padding: 12px 24px; font-weight: 600; font-size: 15px;
+  }
+  #mapa {
+    background: var(--papier); border: 1px solid var(--linia);
+    border-radius: 12px; min-height: 420px; overflow: hidden;
+  }
+  .podpis {
+    margin-top: 12px; padding: 12px 16px; border-radius: 10px;
+    background: #fff4ed; border: 1px solid #f2c4a8; color: #7c2d12; font-size: 14px;
+  }
+  .panel {
+    position: fixed; right: 16px; bottom: 16px; z-index: 60;
+    width: 340px; max-width: calc(100vw - 32px);
+    background: #14171f; color: #e7ebf2; border-radius: 12px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    box-shadow: 0 16px 44px rgba(0,0,0,.32);
+  }
+  .panel h3 {
+    margin: 0; padding: 12px 14px; font-size: 12px; letter-spacing: .08em;
+    text-transform: uppercase; color: #9aa4b6; border-bottom: 1px solid #262c39;
+  }
+  .panel .tresc { padding: 12px 14px; max-height: 46vh; overflow: auto; }
+  .panel label { display: block; margin-top: 8px; color: #9aa4b6; }
+  .panel input {
+    width: 100%; padding: 7px 9px; margin: 4px 0;
+    background: #0e1119; border: 1px solid #2b3242; border-radius: 6px;
+    color: #e7ebf2; font: inherit;
+  }
+  .panel button {
+    margin: 8px 6px 0 0; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+    background: #232a37; border: 1px solid #333c4d; color: #e7ebf2; font: inherit;
+  }
+  .panel pre { margin: 10px 0 0; white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body>
+
+<!-- Otoczenie mapy sterowane promocją; sama mapa ma własne warunki po tagach -->
+<div class="gilotyna" d2-promo-when="active">
+  Ceny na mapie uwzględniają trwającą promocję
+</div>
+
+<div class="strona">
+  <h1>Mapa mieszkań</h1>
+  <p>Mapa dociąga dane z 2destate tak samo jak na stronie klienta: anonimowo,
+     przez endpoint runtime, po identyfikatorze mapy.</p>
+
+  <div id="mapa"></div>
+
+  <div class="podpis" d2-promo-when="active">
+    Mieszkania objęte promocją mają przekreśloną cenę katalogową w dymku.
+  </div>
+</div>
+
+<div class="panel">
+  <h3>Ustawienia mapy</h3>
+  <div class="tresc">
+    <label for="api">Adres API</label>
+    <input id="api" spellcheck="false">
+    <label for="mapId">Identyfikator mapy</label>
+    <input id="mapId" spellcheck="false" placeholder="uuid mapy z panelu 2destate">
+    <label for="projectId">Identyfikator projektu (dla promocji)</label>
+    <input id="projectId" spellcheck="false">
+    <label for="klient">Adres klienta mapy</label>
+    <input id="klient" spellcheck="false">
+    <button id="zapisz">Zapisz i przeładuj</button>
+    <button id="wyczysc">Wyczyść pamięć mapy</button>
+    <pre id="log">gotowe do startu</pre>
+  </div>
+</div>
+
+<script>
+  var KLUCZE = {
+    api: 'sandbox_api',
+    mapa: 'sandbox_map_id',
+    projekt: 'sandbox_project_id',
+    klient: 'sandbox_map_client'
+  };
+  var DOMYSLNE = {
+    api: 'https://api.2destate.local/api/v1',
+    mapa: '',
+    projekt: '9e21263f-227e-511c-b9a1-f2a00794a4c2',
+    // Panel serwuje zbudowanego klienta - to samo źródło, z którego bierze go
+    // strona klienta. Na produkcji: https://panel.2destate.com/imagemappro/...
+    klient: 'https://panel.2destate.local/imagemappro/2destate-search-engine-core.js'
+  };
+
+  function ustawienie(nazwa) {
+    return localStorage.getItem(KLUCZE[nazwa]) || DOMYSLNE[nazwa];
+  }
+
+  var api = ustawienie('api');
+  var mapId = ustawienie('mapa');
+  var projectId = ustawienie('projekt');
+  var adresKlienta = ustawienie('klient');
+
+  document.getElementById('api').value = api;
+  document.getElementById('mapId').value = mapId;
+  document.getElementById('projectId').value = projectId;
+  document.getElementById('klient').value = adresKlienta;
+
+  var log = document.getElementById('log');
+  function pisz(tekst) {
+    log.textContent = tekst;
+  }
+
+  document.getElementById('zapisz').onclick = function () {
+    localStorage.setItem(KLUCZE.api, document.getElementById('api').value.trim());
+    localStorage.setItem(KLUCZE.mapa, document.getElementById('mapId').value.trim());
+    localStorage.setItem(KLUCZE.projekt, document.getElementById('projectId').value.trim());
+    localStorage.setItem(KLUCZE.klient, document.getElementById('klient').value.trim());
+    location.reload();
+  };
+
+  document.getElementById('wyczysc').onclick = function () {
+    // Klient mapy trzyma pobrane produkty i szablony w przeglądarce - przy
+    // testowaniu zmian w 2destate trzeba je czasem wyrzucić ręcznie.
+    Object.keys(localStorage)
+      .filter(function (k) { return k.indexOf('imp') === 0 || k.indexOf('IMP') === 0; })
+      .forEach(function (k) { localStorage.removeItem(k); });
+    pisz('pamięć mapy wyczyszczona - przeładuj stronę');
+  };
+
+  // --- Moduł promo: steruje otoczeniem mapy ---------------------------------
+  var loader = document.createElement('script');
+  loader.src = '../dist/digi2-loader.min.js';
+  loader.setAttribute('d2-promo', api + '/projects/' + projectId + '/promo-state');
+  loader.setAttribute('d2-debug-mode', '');
+  document.head.appendChild(loader);
+
+  // --- Mapa -----------------------------------------------------------------
+  // Klient ImageMapPro czyta adres API z window.IMAGE_MAP_PRO_API_URL, jeśli
+  // jest ustawiony przed jego wczytaniem - dzięki temu sandbox działa i na
+  // lokalnym 2destate, i na produkcyjnym.
+  window.IMAGE_MAP_PRO_API_URL = api;
+  window.ImageMapPro = window.ImageMapPro || { instances: {} };
+
+  if (!mapId) {
+    pisz('podaj identyfikator mapy w polu obok, żeby ją załadować');
+  } else {
+    var klient = document.createElement('script');
+    klient.src = adresKlienta;
+    klient.onload = function () {
+      try {
+        ImageMapPro.init('#mapa', { map_id: mapId, general: { name: 'sandbox' } });
+        pisz('mapa zainicjowana: ' + mapId);
+      } catch (err) {
+        pisz('błąd inicjalizacji mapy: ' + err.message);
+      }
+    };
+    klient.onerror = function () {
+      pisz(
+        'nie udało się wczytać klienta mapy z:\n' + adresKlienta + '\n' +
+        'Sprawdź, czy panel 2destate działa (klient jedzie z /imagemappro/).'
+      );
+    };
+    document.head.appendChild(klient);
+  }
+
+  window.addEventListener('load', function () {
+    if (!window.digi2) return;
+    digi2.on('promo:resolved', function (e) {
+      var stan = digi2.promo.state();
+      pisz(
+        (log.textContent ? log.textContent + '\n' : '') +
+        'promocja: ' + (stan && stan.active ? 'trwa' : 'nie trwa') +
+        ' (źródło: ' + e.source + ')'
+      );
+    });
+  });
+</script>
+
+</body>
+</html>

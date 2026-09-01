@@ -10,6 +10,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 [Google / Consent](#google--consent) ·
 [A/B Tests](#ab-tests) ·
 [Popups](#popups) ·
+[Promo](#promo) ·
 [Cookies](#cookies) ·
 [Forms](#forms) ·
 [Country Picker](#country-picker) ·
@@ -117,8 +118,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
+| `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
 
-Total (all modules): **188.0 KB min** / **55.9 KB** gzipped.
+Total (all modules): **193.6 KB min** / **57.5 KB** gzipped.
 
 ---
 
@@ -158,6 +160,8 @@ Any value-bearing `d2-*` attribute supports per-breakpoint overrides:
 
 Format: entries separated by `;`. An entry without `@` is the default; `value@<maxWidthPx>` activates when `window.innerWidth <= maxWidthPx`. The smallest matching breakpoint wins.
 
+digi2.on('promo:resolved', (e) => {});  // promotion state decided — e.source tells you how
+digi2.on('promo:change', (e) => {});    // state changed while the page was open
 The loader fires `digi2.on('responsive:change', fn)` only when the active bucket flips (not every resize pixel) — modules like `interactions` re-apply their visible state automatically.
 
 JS API for module authors:
@@ -787,6 +791,88 @@ digi2.dropdowns.close('#my-dropdown')
 digi2.dropdowns.toggle('#my-dropdown')
 digi2.dropdowns.closeAll()
 ```
+
+---
+
+## Promo
+
+Elements on the page follow a promotion running in 2destate. Turn the campaign
+on and the promo bar appears; let it end and the page goes back to normal on its
+own — no republish, nobody clicking at midnight.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"
+  d2-promo="https://api.2destate.com/api/v1/projects/<PROJECT_ID>/promo-state"
+  d2-popups
+></script>
+
+<!-- Promo bar: only while a campaign runs -->
+<div d2-promo-when="active">Sale on now</div>
+
+<!-- Newsletter popup: stands down while it runs -->
+<div class="popup__overlay" d2-promo-when="inactive"> … </div>
+
+<!-- Narrowed to one campaign, one tag, or a floor on discounted products -->
+<div d2-promo-when="active" d2-promo-campaign="autumn-sale"> … </div>
+<div d2-promo-when="active" d2-promo-tag="special-offer"> … </div>
+<div d2-promo-when="active" d2-promo-min-products="5"> … </div>
+```
+
+### Attributes
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-promo="<url>"` | `<script>` | Endpoint returning the project's promotion state |
+| `d2-promo-state` | `<script>` | State baked into the page: `active`, `inactive`, or the JSON payload |
+| `d2-promo-when` | any | `active` shows while conditions hold, `inactive` hides |
+| `d2-promo-campaign` | any | Campaign key from 2destate |
+| `d2-promo-tag` | any | Tag key carried by a discounted product |
+| `d2-promo-min-products` | any | Minimum number of discounted products |
+
+Conditions on one element combine with AND. With none of them, the plain fact
+that a campaign is running decides.
+
+### API
+
+```js
+digi2.promo.state()            // { active, campaigns, tags, product_count, valid_until }
+digi2.promo.isActive('autumn-sale')  // true while that campaign runs
+digi2.promo.hasTag('special-offer')  // true when a discounted product carries it
+digi2.promo.refresh()          // ask 2destate again, bypassing the browser cache
+digi2.promo.apply()            // re-apply after adding elements yourself
+```
+
+### How the state gets there
+
+Three paths, in order, so nothing flashes and nothing blocks:
+
+1. **`d2-promo-state`** — baked into the page, true from the first frame.
+2. **localStorage** — what the last visit saw, painted instantly.
+3. **fetch** — the truth, which replaces both.
+
+The response carries `valid_until`: the midnight at which the state actually
+changes. The module sets one timer for that moment instead of polling. A failed
+request leaves the page looking exactly as it does with no promotion running —
+the site is never held hostage by an API.
+
+### Popups
+
+A popup carrying `d2-promo-when="inactive"` will not open while the promotion
+runs — not on load, not on exit intent, not from `digi2.popups.show()`, not from
+a `d2-show-popup` click. The request is parked, so `showIfPending()` releases it
+once the promotion ends.
+
+### Preview
+
+`?d2-promo-preview=<campaign-key>` forces that campaign on, `=on` forces a
+generic promotion, `=off` forces everything off. Marketing can check the promo
+version of the page before midnight without touching the campaign.
+
+### Sandbox
+
+`sandbox/promo.html` is a full page wired up this way — promo bar, popup,
+buttons and sections, with a live readout of the state. `sandbox/imagemappro.html`
+does the same around an embedded map.
 
 ---
 
@@ -2627,6 +2713,12 @@ digi2.log('module', 'action', data)
 | `d2-cms-clear` / `="tag"` | Button | Clear all filters / only one field |
 | `d2-debug-mode` | Loader script | Enable debug |
 | `d2-gtm="GTM-ID"` | Loader script | GTM container ID |
+| `d2-promo="<url>"` | Loader script | Endpoint with the project's promotion state |
+| `d2-promo-state` | Loader script | Promotion state baked into the page |
+| `d2-promo-when` | Any | `active` / `inactive` — follow the running promotion |
+| `d2-promo-campaign` | Any | Narrow to one campaign key |
+| `d2-promo-tag` | Any | Narrow to a tag on discounted products |
+| `d2-promo-min-products` | Any | Narrow to a floor on discounted products |
 
 ---
 
@@ -2647,7 +2739,7 @@ webflow-scripts/              ← source files
   digi2-loader.js
   digi2.js                    ← standalone build (no loader)
   modules/
-    google.js, ab-tests.js, popups.js, cookies.js, forms.js,
+    google.js, ab-tests.js, popups.js, promo.js, cookies.js, forms.js,
     tabs.js, sliders.js, animate.js, toasts.js, scroll.js,
     lazy.js, countdown.js, filter.js, cms.js, format.js,
     copy.js, interactions.js

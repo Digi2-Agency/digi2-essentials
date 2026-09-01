@@ -541,7 +541,7 @@
     }
 
     _canTrigger() {
-      return !this._isCookieSet() && !this.isVisible && !this._animating && this._isWithinSchedule();
+      return !this._isCookieSet() && !this.isVisible && !this._animating && this._isWithinSchedule() && this._isPromoAllowed();
     }
 
     // ---- Scheduling ---------------------------------------------------------
@@ -589,6 +589,18 @@
       if (start === null && end === null) return;
 
       this._schedule = { start: start, end: end };
+    }
+
+    // A popup carrying d2-promo-when defers to the promo module: the newsletter
+    // prompt has no business interrupting someone who came for the sale. With no
+    // attribute, or with the module absent, nothing is blocked — an unloaded
+    // module must never silence a popup that was configured to appear.
+    _isPromoAllowed() {
+      var el = this.popupElement;
+      if (!el || !el.hasAttribute || !el.hasAttribute('d2-promo-when')) return true;
+      var promo = window.digi2 && window.digi2.promo;
+      if (!promo || typeof promo.allows !== 'function') return true;
+      return promo.allows(el);
     }
 
     _isWithinSchedule() {
@@ -639,6 +651,12 @@
       if (!this.popupElement || this.isVisible || this._animating) return;
       if (!this._isWithinSchedule()) {
         _log('show suppressed — outside schedule → ' + this.name, this._schedule);
+        return;
+      }
+      if (!this._isPromoAllowed()) {
+        _log('show suppressed — promotion state → ' + this.name);
+        // Parkujemy żądanie: gdy promocja się skończy, showIfPending() je wznowi.
+        this.pendingShow = true;
         return;
       }
 
