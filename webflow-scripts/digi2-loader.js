@@ -532,9 +532,28 @@
   // the spare space always lands on the right, which visually detaches
   // right-side labels (e.g. a range slider's max value) from their edge.
   //
+  // The value takes the same per-breakpoint syntax as every other d2-*
+  // attribute, so the anchor can change with the viewport:
+  //
+  //   d2-static-width="left;right@728"   left normally, right at <= 728px
+  //
+  // The lock itself is re-measured when the breakpoint bucket flips: a width
+  // measured on desktop would otherwise cage the element on mobile, where the
+  // same content wraps into a narrower box.
+  //
   // API:
   //   digi2.staticWidth.apply(el)   re-measure + lock a single element
   //   digi2.staticWidth.refresh()   scan the DOM + (re)apply to all marked elements
+  // Resolve the anchor for the CURRENT viewport. digi2.attr applies the
+  // `value;value@max` parser; the raw read is the fallback for the moment
+  // before it exists (or a standalone copy of this file).
+  function _staticWidthAnchor(el) {
+    var raw = (typeof window.digi2.attr === 'function')
+      ? window.digi2.attr(el, 'd2-static-width', '')
+      : el.getAttribute('d2-static-width');
+    return String(raw || '').toLowerCase();
+  }
+
   function _applyStaticWidth(el) {
     if (!el) return;
     var current = parseFloat(el.style.minWidth) || 0;
@@ -542,18 +561,27 @@
     var natural = el.getBoundingClientRect().width;
     var next = Math.max(current, natural);
     if (next > 0) el.style.minWidth = next + 'px';
-    var anchor = (el.getAttribute('d2-static-width') || '').toLowerCase();
+
+    var anchor = _staticWidthAnchor(el);
+    // Flex containers ignore text-align for element children — anchor via
+    // justify-content there instead.
+    var display = '';
+    try { display = window.getComputedStyle(el).display || ''; } catch (e) {}
+    var isFlex = display.indexOf('flex') !== -1;
+
     if (anchor === 'right' || anchor === 'center' || anchor === 'left') {
-      // Flex containers ignore text-align for element children — anchor via
-      // justify-content there instead.
-      var display = '';
-      try { display = window.getComputedStyle(el).display || ''; } catch (e) {}
-      if (display.indexOf('flex') !== -1) {
+      if (isFlex) {
         el.style.justifyContent =
           anchor === 'right' ? 'flex-end' : anchor === 'center' ? 'center' : 'flex-start';
       } else {
         el.style.textAlign = anchor;
       }
+    } else if (isFlex) {
+      // No anchor at this breakpoint. Clear whatever another one set, or the
+      // element keeps an alignment that no longer applies.
+      el.style.justifyContent = '';
+    } else {
+      el.style.textAlign = '';
     }
   }
 
@@ -586,9 +614,23 @@
     document.fonts.ready.then(_initStaticWidth);
   }
 
+  // A breakpoint flip can change both the anchor and how wide the content
+  // wants to be, so drop the locked width and measure again for the new
+  // bucket instead of carrying a desktop measurement onto a phone.
+  function _relockStaticWidth() {
+    var els = document.querySelectorAll('[d2-static-width]');
+    for (var i = 0; i < els.length; i++) els[i].style.minWidth = '';
+    _initStaticWidth();
+  }
+
+  if (typeof window.digi2.on === 'function') {
+    window.digi2.on('responsive:change', _relockStaticWidth);
+  }
+
   window.digi2.staticWidth = {
     apply: _applyStaticWidth,
     refresh: _initStaticWidth,
+    relock: _relockStaticWidth,
   };
 
   // ---- Discover requested modules -----------------------------------------

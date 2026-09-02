@@ -160,6 +160,8 @@ Any value-bearing `d2-*` attribute supports per-breakpoint overrides:
 
 Format: entries separated by `;`. An entry without `@` is the default; `value@<maxWidthPx>` activates when `window.innerWidth <= maxWidthPx`. The smallest matching breakpoint wins.
 
+This includes the loader's own `d2-static-width` — `d2-static-width="left;right@728"` flips a label's anchor below 728px. See [Range sliders](#range-sliders).
+
 digi2.on('promo:resolved', (e) => {});  // promotion state decided — e.source tells you how
 digi2.on('promo:change', (e) => {});    // state changed while the page was open
 The loader fires `digi2.on('responsive:change', fn)` only when the active bucket flips (not every resize pixel) — modules like `interactions` re-apply their visible state automatically.
@@ -2296,6 +2298,14 @@ Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two eff
 Add `d2-cms-range-static-bounds` to opt out of all of the above — bounds are then measured once across the whole dataset (every target included) and never move.
 
 Displays pair well with the loader's `d2-static-width` (locks the element's width to its widest observed value so the layout doesn't shift while dragging). The attribute value picks the edge the content anchors to when shorter than the locked box: `d2-static-width="right"` / `"center"` (default left; flex containers get `justify-content` instead of `text-align`). A bare `d2-static-width` on the **max** display — or on a wrapper around it — is auto-anchored `right` by the CMS module, so the value stays glued to the track's right edge instead of drifting left as it gets shorter.
+
+The anchor takes [per-breakpoint values](#responsive-attributes) like any other `d2-*` attribute, so a label can sit left on desktop and hug the right edge once the layout tightens:
+
+```html
+<div d2-static-width="left;right@728">1 600 000</div>
+```
+
+An entry that doesn't apply at the current width clears the anchor rather than leaving the previous one in place, and the locked width itself is re-measured when the breakpoint flips — a width measured on desktop would otherwise cage the element on mobile, where the same text wraps into a narrower box.
 
 ### Options
 
