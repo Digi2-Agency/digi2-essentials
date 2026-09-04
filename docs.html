@@ -711,6 +711,8 @@
       <a href="#popups-animations">Animations</a>
       <a href="#popups-triggers">Triggers</a>
       <a href="#popups-schedule">Scheduling</a>
+      <a href="#popups-traffic">Campaign Targeting</a>
+      <a href="#popups-sequences">Sequences</a>
       <a href="#popups-webflow">Webflow Setup</a>
     </div>
   </div>
@@ -725,6 +727,7 @@
       <a href="#forms-validation">Validation</a>
       <a href="#forms-errors">Error Elements</a>
       <a href="#forms-tracking">UTM Tracking</a>
+      <a href="#forms-reset">Reset After Success</a>
       <a href="#forms-context">Context Capture</a>
     </div>
   </div>
@@ -814,6 +817,7 @@
       <a href="#countdown">Countdown</a>
       <a href="#filter">CMS Filtering</a>
       <a href="#cms">CMS List (sort + load more)</a>
+      <a href="#cms-range">Range Slider</a>
       <a href="#format">Number / Price Format</a>
       <a href="#copy">Copy to Clipboard</a>
     </div>
@@ -923,6 +927,17 @@
 digi2.<span class="fn">resolveResponsive</span>(parsed, w)  <span class="comment">// → string at width (innerWidth if w omitted)</span>
 digi2.<span class="fn">attr</span>(el, name, fallback)     <span class="comment">// → resolved string for that el+attr</span>
 digi2.on(<span class="string">'responsive:change'</span>, fn)   <span class="comment">// fires when active bucket flips</span></code></pre>
+    <h3>Locking width across breakpoints</h3>
+    <p><code>d2-static-width</code> pins an element to the widest content it has shown, so swapping values causes no layout shift, and anchors shorter content to one edge. The anchor takes the same per-breakpoint syntax as everything else:</p>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Any element</span>
+        <span class="wf-arrow">→</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-static-width</span>
+        <span class="chip chip--attr"><span class="k">Value</span> left;right@728</span>
+      </div>
+    </div>
+    <p class="muted">Left normally, right at 728px and below. A value that doesn't apply at the current width clears the anchor rather than leaving the previous breakpoint's alignment in place, and the locked width is re-measured when the breakpoint flips — a width measured on desktop would otherwise cage the element on mobile, where the same text wraps narrower. Flex containers are anchored with <code>justify-content</code> instead of <code>text-align</code>.</p>
   </section>
 
   <!-- ── DEBUG ── -->
@@ -1016,6 +1031,12 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>schedule</code></td><td><code>null</code></td><td><code>{ from, to }</code> or <code>'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'</code> — only show within this date/time window. Also readable from <code>d2-popup-schedule</code> on the popup element. See <a href="#popups-schedule">Scheduling</a></td></tr>
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie. Set to <code>null</code> to disable — popup re-shows every page load</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
+      <tr><td><code>setCookieOnClose</code></td><td><code>true</code></td><td><code>false</code> → closing doesn't silence the popup; call <code>markSeen()</code> when the goal is actually met</td></tr>
+      <tr><td><code>utm</code></td><td><code>null</code></td><td><code>'utm_source:facebook|instagram'</code> — only show to that traffic. See <a href="#popups-traffic">Campaign Targeting</a></td></tr>
+      <tr><td><code>utmExclude</code></td><td><code>null</code></td><td><code>'utm_medium:cpc'</code> — never show to that traffic. Beats <code>utm</code></td></tr>
+      <tr><td><code>utmCookie</code></td><td><code>true</code></td><td>Remember the campaign on first touch, so the gate still matches after the visitor navigates</td></tr>
+      <tr><td><code>utmCookieDays</code></td><td><code>365</code></td><td>How long that memory lasts</td></tr>
+      <tr><td><code>sequence</code></td><td><code>null</code></td><td><code>[4, {after: 60, afterPageChange: true}, 180]</code> — show this popup repeatedly across the visit. See <a href="#popups-sequences">Sequences</a></td></tr>
     </table>
   </section>
 
@@ -1130,6 +1151,96 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
   </section>
 
   <!-- ── POPUPS · WEBFLOW SETUP ── -->
+  <section id="popups-traffic">
+    <h2>Campaign Targeting</h2>
+    <p>Scope a popup to the traffic it was written for. Like scheduling, this is a gate rather than a trigger: your triggers still run, the popup just stays shut for everyone else.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+        <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+      </div>
+
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <pre><code>digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+  <span class="prop">utm</span>: <span class="string">'utm_source:facebook|instagram'</span>,   <span class="comment">// only this traffic</span>
+  <span class="prop">utmExclude</span>: <span class="string">'utm_medium:cpc'</span>,            <span class="comment">// never this traffic</span>
+  <span class="prop">utmCookie</span>: <span class="keyword">true</span>                          <span class="comment">// remember it past the landing page</span>
+})</code></pre>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="webflow">
+        <p>Add a custom attribute to the popup wrapper:</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Popup Wrapper</span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-popup-utm</span>
+            <span class="chip chip--attr"><span class="k">Value</span> utm_source:facebook|instagram</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Popup Wrapper</span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-popup-utm-exclude</span>
+            <span class="chip chip--attr"><span class="k">Value</span> utm_medium:cpc</span>
+          </div>
+        </div>
+        <p class="muted"><code>data-d2-popup-utm</code> works too. The popup still needs its <code>create()</code> embed.</p>
+      </div>
+    </div>
+
+    <h3>Value format</h3>
+    <table>
+      <tr><th>Form</th><th>Matches</th></tr>
+      <tr><td><code>utm_source:facebook</code></td><td>Exactly that value, case-insensitive — <code>google</code> never matches <code>googleads</code></td></tr>
+      <tr><td><code>utm_source:facebook|instagram</code></td><td>Either one — pipe is OR</td></tr>
+      <tr><td><code>utm_campaign</code></td><td>Any non-empty value for that key</td></tr>
+      <tr><td><code>utm_campaign:*</code></td><td>Same as the bare key</td></tr>
+      <tr><td><code>ref:partner-a</code></td><td>Any query parameter, not only <code>utm_*</code></td></tr>
+    </table>
+
+    <h3>It survives navigation</h3>
+    <p>A campaign parameter only exists in the URL of the landing page. A gate reading just the query string would go dark the moment the visitor clicks through — taking <code>openAfterDelay</code>, <code>openAfterPageViews</code> and sequences with it. So the module reads the URL first and falls back to a cookie it writes on first touch, under the same name the forms module uses (<code>utm_source</code>, …) — one shared value, not two copies. Set <code>utmCookie: false</code> to skip that write.</p>
+
+    <h3>Where the gate sits</h3>
+    <p>URL filters first (they block everything, including <code>digi2.popups.show()</code>), then traffic, then schedule, then promotion state and <code>canShow</code>.</p>
+    <p class="muted">A traffic mismatch is <strong>not</strong> parked for <code>showIfPending()</code> — unlike a promotion ending or another popup closing, it can never resolve during the visit. It does stop <code>show()</code> and <code>d2-show-popup</code> clicks: a popup written for one campaign shouldn't open for someone else just because a button was clicked. In a <a href="#popups-sequences">sequence</a>, a step that doesn't match is skipped rather than waited on. These two attributes are read raw rather than through the responsive parser, because a campaign value may legitimately contain <code>;</code> or <code>@</code>.</p>
+  </section>
+
+  <section id="popups-sequences">
+    <h2>Sequences</h2>
+    <p>Spread popups across a whole visit. <code>openAfterDelay</code> restarts at every page load, so it can't express "and three minutes after that one is closed" — a sequence can, because its clock lives in <code>sessionStorage</code> and survives navigation.</p>
+
+    <h3>One popup, shown several times</h3>
+    <pre><code>digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+  <span class="prop">popupSelector</span>: <span class="string">'#popup-promo'</span>,
+  <span class="prop">cookieName</span>: <span class="keyword">null</span>,
+  <span class="prop">sequence</span>: [<span class="num">4</span>, { <span class="prop">after</span>: <span class="num">60</span>, <span class="prop">afterPageChange</span>: <span class="keyword">true</span> }, <span class="num">180</span>, <span class="num">180</span>]
+})</code></pre>
+    <p>Numbers are seconds: the first counts from arrival, each next one from the <strong>close</strong> of the previous showing. An entry may be an object when a step needs <code>afterPageChange</code> — wait until the visitor opens another page, and only then start counting.</p>
+    <p class="muted">This implies <code>setCookieOnClose: false</code>: a popup that repeats can't treat "closed" as "done with it", or every later showing would be skipped and you'd see it exactly once.</p>
+
+    <h3>A chain of different popups</h3>
+    <pre><code>digi2.popups.<span class="fn">sequence</span>([
+  { <span class="prop">popup</span>: <span class="string">'welcome'</span>,    <span class="prop">after</span>: <span class="num">4</span> },
+  { <span class="prop">popup</span>: <span class="string">'oferta'</span>,     <span class="prop">after</span>: <span class="num">60</span>, <span class="prop">afterPageChange</span>: <span class="keyword">true</span> },
+  { <span class="prop">popup</span>: <span class="string">'newsletter'</span>, <span class="prop">after</span>: <span class="num">180</span> }
+])</code></pre>
+
+    <table>
+      <tr><th>Behaviour</th><th>Why</th></tr>
+      <tr><td>The clock only runs while the tab is visible</td><td>Someone who parks a tab for an hour comes back to the step they were on, not to the whole chain at once</td></tr>
+      <tr><td>State survives navigation; a new browser session starts over</td><td><code>sessionStorage</code>, one run per visit</td></tr>
+      <tr><td>Leaving a page with the popup open counts as dismissing it</td><td>Otherwise the chain waits forever for a close event that left with the old document</td></tr>
+      <tr><td>A step whose popup was dismissed for good is skipped</td><td>Its cookie outlives the visit — reopening it would ignore the visitor's answer</td></tr>
+      <tr><td>A step whose popup doesn't match the visitor's traffic is skipped</td><td>A <a href="#popups-traffic">campaign mismatch</a> can't resolve during the visit; waiting would stall every later step</td></tr>
+      <tr><td>A step whose popup isn't on this page waits</td><td>It may simply live on another page</td></tr>
+    </table>
+
+    <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>
+    <p><code>status()</code> returns <code>{ step, popup, elapsed, dueAt, waitingForClose, done }</code> for debugging; <code>stop()</code> halts the chain on this page, <code>reset()</code> starts it over.</p>
+  </section>
+
   <section id="popups-webflow">
     <h2>Popups in Webflow</h2>
     <p>Build the structure + attributes in the Designer, then register the popup once with a small embed. Prerequisite: the loader runs with <code>d2-popups</code>.</p>
@@ -1458,6 +1569,50 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
   </section>
 
   <!-- ── FORMS · CONTEXT CAPTURE ── -->
+  <section id="forms-reset">
+    <h2>Reset After Success</h2>
+    <p>Webflow's success state is terminal: it hides the <code>&lt;form&gt;</code> and leaves <code>.w-form-done</code> up until the page reloads. Anywhere people submit more than once — a booking widget, "report another", a form inside a popup that reopens — that's the wrong resting state.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+        <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+      </div>
+
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <pre><code>digi2.forms.<span class="fn">create</span>(<span class="string">'contact'</span>, { <span class="prop">resetAfterSuccess</span>: <span class="num">30</span> })
+
+<span class="comment">// or without registering a form at all</span>
+digi2.forms.<span class="fn">autoReset</span>(<span class="num">30</span>)              <span class="comment">// every .w-form on the page</span>
+digi2.forms.<span class="fn">restore</span>(<span class="string">'#contact-form'</span>)   <span class="comment">// right now, e.g. from a popup's onOpen</span></code></pre>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="webflow">
+        <p>Add a custom attribute to the form wrapper — the element Webflow gives the <code>w-form</code> class:</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Form Block (.w-form)</span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-form-reset</span>
+            <span class="chip chip--attr"><span class="k">Value</span> 30</span>
+          </div>
+        </div>
+        <p class="muted">Seconds. A bare attribute with no value means 30. No <code>create()</code> embed needed for this one.</p>
+      </div>
+    </div>
+
+    <h3>What a restore does</h3>
+    <table>
+      <tr><th>Step</th><th>Detail</th></tr>
+      <tr><td>Clears the fields</td><td><code>form.reset()</code></td></tr>
+      <tr><td>Keeps hidden tracking values</td><td><code>UTM_*</code>, <code>GCLID</code>, <code>IP_ADDRESS</code> were written by JS, so their DOM default is empty — a plain reset would silently un-attribute every later submission. They're carried across</td></tr>
+      <tr><td>Hides the success message, brings the form back</td><td>Webflow hid it with an inline style</td></tr>
+      <tr><td>Drops validation error styling</td><td>Left over from the submission</td></tr>
+    </table>
+
+    <p class="muted">An <strong>error</strong> state is treated differently: only the message is cleared and every field keeps what the visitor typed — wiping a filled-in form because the server hiccuped would be its own bug. Detection watches Webflow's own show/hide via <code>MutationObserver</code>, so it doesn't care how the form was submitted, and no-ops where <code>MutationObserver</code> is missing.</p>
+  </section>
+
   <section id="forms-context">
     <h2>Context Capture</h2>
     <p>Capture “which one did they click?” into the form. Put <code>d2-form-data-&lt;field&gt;="value"</code> on any container; a click inside it copies the value into the form as a hidden field named <code>&lt;field&gt;</code>. Perfect for a grid of product/plan cards that all open the same form popup.</p>
@@ -2069,6 +2224,60 @@ digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// afte
 &lt;button <span class="prop">d2-cms-target</span>=<span class="string">"products"</span> <span class="prop">d2-cms-filter</span>=<span class="string">"category:shoes"</span>&gt;Shoes&lt;/button&gt;
 &lt;button <span class="prop">d2-cms-target</span>=<span class="string">"products"</span> <span class="prop">d2-cms-load-more</span>&gt;Load more&lt;/button&gt;</code></pre>
   </section>
+
+  <section id="cms-range">
+    <h2>Range Slider</h2>
+    <p>A dual-handle numeric filter over a CMS list — price, area, floor. Bounds are detected from the items themselves, so you don't hardcode them.</p>
+
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Wrapper</span>
+        <span class="wf-arrow">→</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-cms-range</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-cms-range-field</span>
+        <span class="chip chip--attr"><span class="k">Value</span> price</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-cms-target</span>
+        <span class="chip chip--attr"><span class="k">Value</span> apartments</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Track / Fill / Handles</span>
+        <span class="wf-arrow">→</span>
+        <span class="chip chip--attr">d2-cms-range-track</span>
+        <span class="chip chip--attr">d2-cms-range-fill</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-cms-range-handle</span>
+        <span class="chip chip--attr"><span class="k">Value</span> min / max</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Value labels</span>
+        <span class="wf-arrow">→</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-cms-range-display</span>
+        <span class="chip chip--attr"><span class="k">Value</span> min / max</span>
+      </div>
+    </div>
+
+    <h3>Bounds follow the filters</h3>
+    <p>Auto-detected bounds are measured from the items that pass the <em>other</em> active filters, and re-measured after every filter change. Switch to a "Houses" tab and the price runs from the cheapest to the dearest house — not from the cheapest row in the whole collection. Works with anything that filters the list: tab triggers doubling as <code>d2-cms-filter</code> chips, dropdowns, checkboxes.</p>
+    <table>
+      <tr><th>Rule</th><th>Why</th></tr>
+      <tr><td>The slider's own field is excluded from the measurement</td><td>Otherwise dragging the min handle would drag the whole scale up after it, and you could never drag back down</td></tr>
+      <tr><td>An overlapping selection is kept (clamped); one that misses the new scale entirely is dropped</td><td>A 300–500k pick meeting a 900k–1.6M tab would pin both handles together and show nothing</td></tr>
+      <tr><td>If the filters match nothing, the last real scale stays on screen</td><td>You still need a slider to drag back out of the dead end</td></tr>
+      <tr><td><code>d2-cms-range-static-bounds</code> freezes all of it</td><td>One measurement across the whole dataset, never re-measured</td></tr>
+    </table>
+
+    <h3>Other attributes</h3>
+    <table>
+      <tr><th>Attribute</th><th>Value</th><th>What it does</th></tr>
+      <tr><td><code>d2-cms-range-step</code></td><td>number</td><td>Keyboard/drag increment (default 1)</td></tr>
+      <tr><td><code>d2-cms-range-snap</code></td><td>flag</td><td>Rounds auto-detected bounds outward to the step — min down, max up — for round ends without ever excluding an item</td></tr>
+      <tr><td><code>d2-cms-range-min</code> / <code>-max</code></td><td>number</td><td>Fix a bound instead of detecting it</td></tr>
+      <tr><td><code>d2-cms-range-displayformat</code></td><td><code>pln</code>, <code>0,000.00 PLN</code>, …</td><td>Number formatting for the labels</td></tr>
+      <tr><td><code>d2-cms-range-prefix</code> / <code>-suffix</code></td><td>text</td><td>Wraps the formatted value</td></tr>
+    </table>
+
+    <p class="muted">With a pipe target (<code>d2-cms-target="flats|houses"</code>) the slider drives whichever list the open tab shows, re-measuring on <code>tabs:change</code>. Pair the labels with <code>d2-static-width</code> so the layout doesn't shift while dragging — see <a href="#responsive">Responsive Attributes</a> for anchoring it per breakpoint.</p>
+  </section>
+
 
   <!-- ── FORMAT ── -->
   <section id="format">

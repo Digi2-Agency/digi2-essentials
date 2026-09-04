@@ -12,27 +12,47 @@ tylko te moduły, które strona zadeklarowała flagami na tagu `<script>`.
 | `dist/**` | build (`npm run build`, terser) — commitowany, bo to on idzie na CDN |
 | `tests/*.test.js` | testy (`npm test`, node:test + vm z mini-DOM-em) |
 | `README.md` | dokumentacja techniczna dla programisty |
-| `docs/` | **dokumentacja dla użytkownika** — `index.html` + `data.js` + `data2.js` + `app.js` |
+| `docs.html` | **dokumentacja główna** — samodzielny cheatsheet (angielski), to ją dostaje odbiorca |
+| `docs/` | druga wersja dokumentacji, sterowana danymi (`index.html` + `data.js` + `data2.js` + `app.js`, polski) |
 
-`docs.html` w katalogu głównym to porzucona, samodzielna wersja dokumentacji
-(czerwiec 2026) — nie odzwierciedla stanu kodu i nie jest utrzymywana. Nie
-dopisuj do niej nowych rzeczy; żywa dokumentacja to katalog `docs/`.
+Dokumentacja jest w dwóch miejscach i obie trzeba utrzymywać. `docs.html` jest
+tą główną. `docs/` trzyma te same treści w formie danych (`window.D2DOCS`).
 
 ## Każda zmiana kończy się aktualizacją dokumentacji
 
 Nowa funkcja, nowy atrybut, nowa opcja, zmiana zachowania — **zawsze**, w tej
-samej zmianie co kod, opisz ją w **trzech** miejscach:
+samej zmianie co kod, opisz ją w **czterech** miejscach:
 
-1. **`docs/`** (`data.js` / `data2.js`) — dokumentacja dla użytkownika, szczegóły niżej
-2. **`README.md`** — opis techniczny: składnia, zachowania brzegowe, dlaczego tak
-3. **`CHANGELOG.md`** — wpis pod numerem wersji, z punktu widzenia osoby budującej stronę
+1. **`docs.html`** — dokumentacja główna, szczegóły niżej
+2. **`docs/`** (`data.js` / `data2.js`) — druga wersja, ta sama treść w formie danych
+3. **`README.md`** — opis techniczny: składnia, zachowania brzegowe, dlaczego tak
+4. **`CHANGELOG.md`** — wpis pod numerem wersji, z punktu widzenia osoby budującej stronę
 
-Żadnego z tych trzech nie pomijaj i nie odkładaj „na potem". Dokumentacja, która
+Żadnego z tych czterech nie pomijaj i nie odkładaj „na potem". Dokumentacja, która
 nie zna funkcji, jest gorsza niż jej brak: ktoś sprawdza, nie znajduje i pisze
 to od nowa. Zmiana bez wpisu w changelogu jest niewidoczna dla kogoś, kto podbija
 wersję na stronie klienta i musi wiedzieć, co się zmieni.
 
-Gdzie dokładnie w `docs/data.js` / `docs/data2.js` (moduł = klucz w `window.D2DOCS`):
+### `docs.html`
+
+Samodzielny plik: cała treść, style i skrypt w środku, bez zależności. Konwencje,
+których trzymaj się przy dopisywaniu:
+
+- nowy temat = `<section id="...">` z `<h2>`, wstawiona **w kolejności** obok
+  pokrewnych sekcji, plus link `<a href="#id">` w odpowiedniej grupie paska bocznego
+- gdzie coś da się zrobić i z JS, i atrybutem — blok `.platform` z dwiema
+  zakładkami (`data-platform-tab="js"` / `"webflow"`)
+- mapowanie na Webflow: `.wf-map` → `.wf-el` z chipami `Name` / `Value`
+- kod w `<pre><code>` z ręcznym podświetleniem: `<span class="fn|prop|string|comment|keyword|num">`
+- tabele `<table><tr><th>` na warianty i zachowania brzegowe, `.muted` na przypisy
+- opcje JS modułu dopisz też do jego tabeli opcji (kolumny: nazwa, domyślna, opis)
+- treść po angielsku, jak reszta pliku
+
+Po edycji sprawdź, że każdy `href="#..."` ma swoją sekcję i nie powstały duplikaty `id`.
+
+### `docs/data.js` / `docs/data2.js`
+
+Moduł = klucz w `window.D2DOCS`:
 
 - **nowy atrybut** → tablica `attrs` danego modułu:
   `{ a: 'd2-...', v: 'wartości', el: 'na jakim elemencie', d: 'opis', n: 'przypis' }`
