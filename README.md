@@ -557,6 +557,52 @@ Each popup keeps its own progress, so two popups can repeat independently. All
 the timing rules below apply — visible-time clock, surviving navigation, one
 visit per session.
 
+### Traffic targeting — show a popup only to one campaign
+
+A popup can be scoped to the traffic it was written for:
+
+```html
+<div class="popup" d2-popup-utm="utm_source:facebook|instagram">…</div>
+<div class="popup" d2-popup-utm-exclude="utm_medium:cpc">…</div>
+```
+
+Or from JS: `create('promo', { utm: 'utm_source:facebook', utmExclude: 'utm_medium:cpc' })`.
+
+Grammar is the codebase's usual `key:value|value` — pipe is OR within the key,
+matching is case-insensitive and exact (so `google` never matches `googleads`).
+A bare key (`d2-popup-utm="utm_campaign"`) or `*` means "any non-empty value".
+An exclude match beats an include match. No attribute at all means everyone,
+exactly like `d2-popup-include`.
+
+**The value survives navigation.** A campaign parameter only exists in the URL
+of the landing page, so a gate that read the query string alone would go dark
+the moment the visitor clicked through — taking `openAfterDelay`,
+`openAfterPageViews` and sequences with it. The module reads the URL first and
+falls back to a cookie it writes itself on first touch, under the same name
+`forms.js` uses (`utm_source`, …), so both modules share one value instead of
+keeping two copies. `utmCookie: false` turns that write off; `utmCookieDays`
+(default 365) sets how long it lasts.
+
+The key is not restricted to `utm_*` — `d2-popup-utm="ref:partner-a"` works for
+any query parameter.
+
+> These two attributes are read raw, not through the [responsive parser](#responsive-attributes),
+> because a campaign value may legitimately contain `;` or `@`. Per-breakpoint
+> values are meaningless here anyway — traffic source doesn't depend on viewport width.
+
+**Where the gate sits:** URL filters first (they block everything, including
+`digi2.popups.show()`), then traffic, then schedule, then promo and `canShow`.
+A traffic mismatch is *not* parked for `showIfPending()` — unlike a promo that
+ends or another popup closing, it can never resolve during the visit. It does
+stop `show()` and `d2-show-popup` clicks: a popup written for one campaign
+shouldn't open for someone else just because a button was clicked. With
+`digi2.debug = true`, a refusal in `show()` names the gate that turned it down.
+
+In a [sequence](#sequences--a-chain-across-the-whole-visit) a step whose popup
+doesn't match the visitor's traffic is **skipped**, not waited on — the chain
+carries on to the next step. Waiting would be waiting on something that cannot
+change before the visit ends, and would take every later step down with it.
+
 ### Sequences — a chain across the whole visit
 
 For a chain of **different** popups, `digi2.popups.sequence()` is the same
@@ -725,6 +771,7 @@ Skip a popup on chosen subpages — straight from the Designer, on the popup ele
 - The block is **hard**: on an excluded page no trigger fires — not auto-triggers, not `d2-show-popup` clicks, not even `digi2.popups.show()`.
 - `data-d2-popup-exclude` / `data-d2-popup-include` work too.
 - JS equivalents: `excludeUrls: […]` (merges with the attribute) and `containsUrls: […]` (the attribute replaces the default match-everything).
+- To scope a popup by **where the visitor came from** rather than which page they're on, see [Traffic targeting](#traffic-targeting--show-a-popup-only-to-one-campaign) (`d2-popup-utm`).
 
 ### Webflow setup
 

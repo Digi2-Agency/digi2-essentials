@@ -13,6 +13,13 @@
  *   closeTriggerSelector: '.my-close-btn'        — any CSS selector, clicks close this popup
  *   animation:            'fade'                 — none | fade | slide-up | slide-down | slide-left | slide-right | zoom
  *   animationDuration:    0.4                    — seconds
+ *   utm:                  'utm_source:facebook'  — only show to traffic carrying it
+ *   utmExclude:           'utm_medium:cpc'       — never show to this traffic
+ *
+ * Traffic targeting (see the "Traffic targeting" section below):
+ *   <div class="popup" d2-popup-utm="utm_source:facebook|instagram">
+ *   The value survives navigation — the module remembers the campaign in a
+ *   cookie on the landing page, so the gate still matches on page 3 of a visit.
  */
 (function () {
   'use strict';
@@ -290,6 +297,18 @@
         sessionStorageKey: 'popupPageViews',
         lockScrollOnShow: true,       // lock body scroll when popup is visible
         schedule: null,               // { from, to } or "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM" — only show within this window (either bound may be blank for open-ended). Also read from d2-popup-schedule / data-d2-popup-schedule on the popup element.
+        // ---- Traffic targeting ---------------------------------------------
+        // Show only to visitors carrying a campaign parameter:
+        //   utm: 'utm_source:facebook|instagram'   whitelist (OR within the key)
+        //   utm: 'utm_source'                      any non-empty utm_source
+        //   utmExclude: 'utm_medium:cpc'           never show to this traffic
+        // Also read from d2-popup-utm / d2-popup-utm-exclude on the element.
+        utm: null,
+        utmExclude: null,
+        // Remember the value in a cookie on the landing page, so the gate still
+        // matches on page 3 of the visit where the query string is long gone.
+        utmCookie: true,
+        utmCookieDays: 365,
         // ---- New triggers --------------------------------------------------
         openOnOutsideClick: null,         // CSS selector — clicks anywhere outside this element open popup
         openOnElementMouseLeave: null,    // CSS selector — mouse leaving this element opens popup
@@ -383,6 +402,8 @@
 
       // Element-level URL filters must merge BEFORE the URL gate below.
       if (this.popupElement) this._mergeUrlFilterAttributes();
+
+      this._parseTrafficOptions();
 
       if (this._shouldExcludeUrl() || !this._shouldContainUrl()) {
         // Hard-block every entry point on this URL — including direct show()
@@ -541,7 +562,53 @@
     }
 
     _canTrigger() {
-      return !this._isCookieSet() && !this.isVisible && !this._animating && this._isWithinSchedule() && this._isPromoAllowed();
+      return !this._isCookieSet() && !this.isVisible && !this._animating
+        && this._isTrafficAllowed() && this._isWithinSchedule() && this._isPromoAllowed();
+    }
+
+    // ---- Traffic targeting --------------------------------------------------
+    // Reads `utm` / `utmExclude` from options, falling back to the element's
+    // d2-popup-utm / d2-popup-utm-exclude (with the data- prefix as an alias).
+    //
+    // These two attributes are read RAW rather than through attr(): a campaign
+    // value can legitimately contain ';' or '@', which the responsive parser
+    // would eat. Same call the lightbox makes for group identity. Nothing about
+    // a traffic source depends on viewport width, so nothing is lost.
+    _parseTrafficOptions() {
+      var el = this.popupElement;
+      var rawInclude = this.options.utm;
+      var rawExclude = this.options.utmExclude;
+      if (rawInclude == null && el) {
+        rawInclude = el.getAttribute('d2-popup-utm') || el.getAttribute('data-d2-popup-utm');
+      }
+      if (rawExclude == null && el) {
+        rawExclude = el.getAttribute('d2-popup-utm-exclude') || el.getAttribute('data-d2-popup-utm-exclude');
+      }
+
+      this._utm = _parseTrafficFilter(rawInclude, this.name);
+      this._utmExclude = _parseTrafficFilter(rawExclude, this.name);
+
+      // First touch: if the key this popup cares about is in the URL right now,
+      // remember it, or the gate goes dark as soon as the visitor clicks
+      // through to the next page.
+      if (this.options.utmCookie) {
+        [this._utm, this._utmExclude].forEach(function (f) {
+          if (!f) return;
+          var fresh = _urlParam(f.key);
+          if (fresh) _writeCookieRaw(f.key, fresh, this.options.utmCookieDays);
+        }, this);
+      }
+    }
+
+    /**
+     * Does this visitor's traffic match what the popup targets? An exclude
+     * filter wins over an include one, and no filters at all means "everyone".
+     */
+    _isTrafficAllowed() {
+      if (!this._utm && !this._utmExclude) return true;
+      if (this._utmExclude && _trafficMatches(this._utmExclude)) return false;
+      if (this._utm && !_trafficMatches(this._utm)) return false;
+      return true;
     }
 
     // ---- Scheduling ---------------------------------------------------------
@@ -649,6 +716,15 @@
         return;
       }
       if (!this.popupElement || this.isVisible || this._animating) return;
+      if (!this._isTrafficAllowed()) {
+        // No pendingShow: unlike a promo or canShow veto, this one can never
+        // clear during the visit, and parking it would make a sequence step
+        // wait forever for a popup that is not for this visitor.
+        _log('show suppressed — traffic does not match → ' + this.name, {
+          utm: this._utm, exclude: this._utmExclude,
+        });
+        return;
+      }
       if (!this._isWithinSchedule()) {
         _log('show suppressed — outside schedule → ' + this.name, this._schedule);
         return;
@@ -1298,16 +1374,10 @@
 
     _getCookie() {
       if (!this.options.cookieName) return '';
-      const name = this.options.cookieName + '=';
-      const decoded = decodeURIComponent(document.cookie);
-      const parts = decoded.split(';');
-      for (let i = 0; i < parts.length; i++) {
-        let c = parts[i].trimStart();
-        if (c.indexOf(name) === 0) {
-          return c.substring(name.length);
-        }
-      }
-      return '';
+      // Was decoding the entire jar, unguarded: one unrelated cookie carrying a
+      // literal '%' threw out of here, through _isCookieSet() and _init(), and
+      // took the whole create() call with it.
+      return _readCookieRaw(this.options.cookieName);
     }
 
     // ---- URL filters --------------------------------------------------------
@@ -1360,6 +1430,96 @@
   // Register module on digi2 namespace
   // ---------------------------------------------------------------------------
   const registry = {};
+
+  // ---------------------------------------------------------------------------
+  // Traffic targeting (d2-popup-utm)
+  //
+  // A campaign popup has to answer "did this visitor arrive from X?" — and the
+  // answer must survive navigation, because the query string is gone by the
+  // second pageview. forms.js already writes utm_* cookies, but only when a
+  // form with tracking exists on the page; a popup cannot depend on that, so it
+  // captures what it needs itself, under the SAME cookie names (no prefix), so
+  // the two modules read and write one shared value rather than two copies.
+  //
+  // Cookie reads/writes are direct document.cookie calls rather than the
+  // cookies module — same reasoning as forms.js: that module may not be loaded.
+  // ---------------------------------------------------------------------------
+  // Read ONE cookie by name, decoding only that cookie's value.
+  //
+  // Decoding the whole document.cookie header first — which is what this module
+  // used to do — is wrong twice over. It throws URIError on a single stray '%'
+  // anywhere in the jar (a legal cookie octet that any other script may write),
+  // and an encoded ';' inside someone else's value turns into a real separator,
+  // which both forges pairs that were never set and truncates values that were.
+  // On a traffic gate that means an exclude filter failing OPEN — the popup
+  // shown to exactly the audience it was told to avoid.
+  function _readCookieRaw(name) {
+    try {
+      var escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      var match = (document.cookie || '').match(new RegExp('(?:^|;\\s*)' + escaped + '=([^;]*)'));
+      if (!match) return '';
+      // A value that isn't valid percent-encoding is still a value: hand back
+      // the raw text rather than pretending the cookie is absent.
+      try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+    } catch (e) { return ''; }   /* cookies blocked entirely */
+  }
+
+  function _writeCookieRaw(name, value, days) {
+    try {
+      var d = new Date();
+      d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
+      document.cookie = name + '=' + encodeURIComponent(value)
+        + ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+    } catch (e) { /* cookies blocked — the URL read still works this pageview */ }
+  }
+
+  function _urlParam(key) {
+    try {
+      return new URLSearchParams(window.location.search).get(key) || '';
+    } catch (e) { return ''; }
+  }
+
+  // Current value of a campaign key: this pageview's URL wins, the cookie from
+  // the landing page is the fallback.
+  function _trafficValue(key) {
+    var exact = _urlParam(key) || _readCookieRaw(key);
+    if (exact) return exact;
+    var lower = String(key).toLowerCase();
+    if (lower === key) return '';
+    return _urlParam(lower) || _readCookieRaw(lower);
+  }
+
+  // "utm_source:facebook|instagram" → { key, values }.  A bare "utm_source"
+  // means "any non-empty value", as does an explicit "*".
+  function _parseTrafficFilter(raw, popupName) {
+    if (raw == null) return null;
+    var text = String(raw).trim();
+    if (!text) return null;
+    var colon = text.indexOf(':');
+    // Keep the author's capitalisation: query parameters are case-sensitive, so
+    // lowercasing turned "?refID=x" with d2-popup-utm="refID:x" into a gate no
+    // visitor could ever satisfy. _trafficValue still tries the lowercase form
+    // as a fallback, which covers the usual utm_* spelling either way.
+    var key = (colon === -1 ? text : text.slice(0, colon)).trim();
+    if (!key) {
+      // Fail open, the way an unparseable schedule does: warn, then no gate.
+      console.warn('[digi2.popups] "' + popupName + '" — could not read utm filter "' + text
+        + '". Expected key:value, e.g. utm_source:facebook.');
+      return null;
+    }
+    var rest = colon === -1 ? '' : text.slice(colon + 1);
+    var values = rest.split('|').map(function (v) { return v.trim(); }).filter(Boolean);
+    return { key: key, values: values, any: values.length === 0 || values.indexOf('*') !== -1 };
+  }
+
+  function _trafficMatches(filter) {
+    if (!filter) return false;
+    var actual = _trafficValue(filter.key);
+    if (!actual) return false;
+    if (filter.any) return true;
+    var lowered = String(actual).toLowerCase();
+    return filter.values.some(function (v) { return v.toLowerCase() === lowered; });
+  }
 
   // ---------------------------------------------------------------------------
   // Sequence — one chain of popups spread across a whole visit
@@ -1554,6 +1714,16 @@
       // step rather than re-opening something the visitor closed for good.
       if (inst.wasSeen()) {
         _log('sequence step already seen → ' + step.popup);
+        this._advance();
+        return;
+      }
+
+      // Not for this visitor's traffic. Unlike a missing popup — which may
+      // simply live on another page and is worth waiting for — a campaign
+      // mismatch cannot resolve during the visit, so waiting would park the
+      // whole chain here forever and every later step with it. Skip on.
+      if (typeof inst._isTrafficAllowed === 'function' && !inst._isTrafficAllowed()) {
+        _log('sequence step not for this traffic → ' + step.popup);
         this._advance();
         return;
       }

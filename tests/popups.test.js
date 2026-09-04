@@ -88,7 +88,7 @@ function matchesSelector(node, selector) {
   return !!tagMatch || attrMatches.length > 0;
 }
 
-function createEnvironment({ store = {}, pathname = '/' } = {}) {
+function createEnvironment({ store = {}, pathname = '/', search = '', cookie = '' } = {}) {
   const body = createElement('body');
   const documentElement = createElement('html');
   const docListeners = {};
@@ -98,7 +98,7 @@ function createEnvironment({ store = {}, pathname = '/' } = {}) {
     body,
     documentElement,
     readyState: 'complete',
-    cookie: '',
+    cookie,
     visibilityState: 'visible',
     addEventListener(type, fn) {
       docListeners[type] = docListeners[type] || [];
@@ -114,7 +114,7 @@ function createEnvironment({ store = {}, pathname = '/' } = {}) {
 
   const window = {
     digi2: { log() {} },
-    location: { href: 'https://example.com' + pathname, pathname },
+    location: { href: 'https://example.com' + pathname + search, pathname, search },
     scrollY: 0,
   };
   window.document = document;
@@ -143,6 +143,7 @@ function createEnvironment({ store = {}, pathname = '/' } = {}) {
       setTimeout: fakeSetTimeout,
       clearTimeout: fakeClearTimeout,
       Date,
+      URLSearchParams,
     }),
     window,
     document,
@@ -1099,4 +1100,214 @@ test('sequence: cookieName null ignores any old cookie — new and returning ali
   promo._closeByUser();
   runSeconds(env, clock, 61);
   assert.equal(promo.isVisible, true, 'and the second showing too');
+});
+
+// ---------------------------------------------------------------------------
+// Traffic targeting — d2-popup-utm
+// ---------------------------------------------------------------------------
+
+function utmEnv({ search = '', cookie = '', attrs = {}, options = {} } = {}) {
+  const env = createEnvironment({ search, cookie });
+  loadPopupsModule(env);
+  const el = createElement('div', Object.assign({ class: 'popup__overlay' }, attrs));
+  env.body.appendChild(el);
+  const inst = env.window.digi2.popups.create('promo', Object.assign({
+    animation: 'none', openOnLoad: true, cookieName: null,
+  }, options));
+  return { env, inst, el };
+}
+
+test('d2-popup-utm shows the popup only to matching traffic', () => {
+  const hit = utmEnv({ search: '?utm_source=facebook', attrs: { 'd2-popup-utm': 'utm_source:facebook' } });
+  assert.equal(hit.inst.isVisible, true, 'facebook visitor sees it');
+
+  const miss = utmEnv({ search: '?utm_source=google', attrs: { 'd2-popup-utm': 'utm_source:facebook' } });
+  assert.equal(miss.inst.isVisible, false, 'google visitor does not');
+});
+
+test('no utm attribute means everyone, as before', () => {
+  const plain = utmEnv({ search: '?utm_source=google' });
+  assert.equal(plain.inst.isVisible, true);
+});
+
+test('a visitor with no campaign at all fails a utm gate', () => {
+  const direct = utmEnv({ attrs: { 'd2-popup-utm': 'utm_source:facebook' } });
+  assert.equal(direct.inst.isVisible, false, 'direct traffic is not facebook traffic');
+});
+
+test('the gate still matches on a later pageview, from the cookie', () => {
+  // No query string left — the visitor clicked through to another page.
+  const later = utmEnv({ cookie: 'utm_source=facebook', attrs: { 'd2-popup-utm': 'utm_source:facebook' } });
+  assert.equal(later.inst.isVisible, true);
+});
+
+test('the landing page writes the campaign cookie so the next page can read it', () => {
+  const first = utmEnv({ search: '?utm_source=facebook', attrs: { 'd2-popup-utm': 'utm_source:facebook' } });
+  assert.match(first.env.document.cookie, /utm_source=facebook/, 'captured on first touch');
+
+  const off = utmEnv({
+    search: '?utm_source=facebook',
+    attrs: { 'd2-popup-utm': 'utm_source:facebook' },
+    options: { utmCookie: false },
+  });
+  assert.equal(off.env.document.cookie, '', 'utmCookie:false writes nothing');
+});
+
+test('pipes are OR, and matching ignores case', () => {
+  const insta = utmEnv({ search: '?utm_source=instagram', attrs: { 'd2-popup-utm': 'utm_source:facebook|instagram' } });
+  assert.equal(insta.inst.isVisible, true);
+
+  const cased = utmEnv({ search: '?utm_source=FaceBook', attrs: { 'd2-popup-utm': 'utm_source: facebook | instagram ' } });
+  assert.equal(cased.inst.isVisible, true, 'case and stray spaces do not matter');
+
+  const other = utmEnv({ search: '?utm_source=tiktok', attrs: { 'd2-popup-utm': 'utm_source:facebook|instagram' } });
+  assert.equal(other.inst.isVisible, false);
+});
+
+test('a bare key means any campaign value for that key', () => {
+  const any = utmEnv({ search: '?utm_campaign=spring', attrs: { 'd2-popup-utm': 'utm_campaign' } });
+  assert.equal(any.inst.isVisible, true);
+
+  const none = utmEnv({ search: '?utm_source=google', attrs: { 'd2-popup-utm': 'utm_campaign' } });
+  assert.equal(none.inst.isVisible, false, 'a different key does not satisfy it');
+
+  const star = utmEnv({ search: '?utm_campaign=summer', attrs: { 'd2-popup-utm': 'utm_campaign:*' } });
+  assert.equal(star.inst.isVisible, true, '* reads the same as a bare key');
+});
+
+test('d2-popup-utm-exclude hides the popup from that traffic', () => {
+  const paid = utmEnv({ search: '?utm_medium=cpc', attrs: { 'd2-popup-utm-exclude': 'utm_medium:cpc' } });
+  assert.equal(paid.inst.isVisible, false);
+
+  const organic = utmEnv({ search: '?utm_medium=email', attrs: { 'd2-popup-utm-exclude': 'utm_medium:cpc' } });
+  assert.equal(organic.inst.isVisible, true);
+});
+
+test('exclude beats include when both match', () => {
+  const both = utmEnv({
+    search: '?utm_source=facebook&utm_medium=cpc',
+    attrs: { 'd2-popup-utm': 'utm_source:facebook', 'd2-popup-utm-exclude': 'utm_medium:cpc' },
+  });
+  assert.equal(both.inst.isVisible, false);
+});
+
+test('the gate also stops delayed triggers and an explicit show()', () => {
+  const env = createEnvironment({ search: '?utm_source=google' });
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay', 'd2-popup-utm': 'utm_source:facebook' }));
+  const inst = env.window.digi2.popups.create('promo', {
+    animation: 'none', openAfterDelay: 5, cookieName: null,
+  });
+
+  const delay = env.timers.find((t) => t.ms === 5000);
+  if (delay) delay.fn();                      // openAfterDelay bypasses _canTrigger
+  assert.equal(inst.isVisible, false, 'the delay trigger is gated too');
+
+  env.window.digi2.popups.show('promo');
+  assert.equal(inst.isVisible, false, 'and so is an imperative show()');
+  assert.equal(inst.pendingShow, false, 'the request is dropped, not parked');
+});
+
+test('the utm option works from JS as well as from the attribute', () => {
+  const viaJs = utmEnv({ search: '?utm_source=newsletter', options: { utm: 'utm_source:newsletter' } });
+  assert.equal(viaJs.inst.isVisible, true);
+});
+
+test('a non-utm query key works too — the gate is not hardcoded to utm_*', () => {
+  const ref = utmEnv({ search: '?ref=partner-a', attrs: { 'd2-popup-utm': 'ref:partner-a' } });
+  assert.equal(ref.inst.isVisible, true);
+});
+
+test('an unreadable filter fails open, the way an unparseable schedule does', () => {
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  let inst;
+  try {
+    inst = utmEnv({ search: '?utm_source=google', attrs: { 'd2-popup-utm': ':::' } }).inst;
+  } finally {
+    console.warn = orig;
+  }
+  assert.equal(inst.isVisible, true, 'garbage does not mute the popup forever');
+  assert.ok(warnings.some((w) => w.includes('utm filter')), 'but it is reported');
+});
+
+// --- regressions found by the adversarial review of the traffic gate --------
+
+test('a stray % in an unrelated cookie does not blind the traffic gate', () => {
+  // decodeURIComponent over the whole jar threw URIError here, and the catch
+  // turned it into "no campaign at all" for every key.
+  const hit = utmEnv({
+    cookie: 'promoCode=SAVE50%; utm_source=facebook',
+    attrs: { 'd2-popup-utm': 'utm_source:facebook' },
+  });
+  assert.equal(hit.inst.isVisible, true, 'the include gate still matches');
+
+  const excluded = utmEnv({
+    cookie: 'promoCode=SAVE50%; utm_medium=cpc',
+    attrs: { 'd2-popup-utm-exclude': 'utm_medium:cpc' },
+  });
+  assert.equal(excluded.inst.isVisible, false,
+    'and the exclude gate does not fail open onto the traffic it must avoid');
+});
+
+test('an encoded semicolon in a foreign cookie cannot forge a campaign', () => {
+  const forged = utmEnv({
+    cookie: 'pref=x%3Butm_source%3Dfacebook',
+    attrs: { 'd2-popup-utm': 'utm_source:facebook' },
+  });
+  assert.equal(forged.inst.isVisible, false, 'another script cannot fake the visitor origin');
+});
+
+test('a campaign value containing a semicolon survives the round trip', () => {
+  const stored = utmEnv({
+    cookie: 'utm_campaign=a%3Bb',
+    attrs: { 'd2-popup-utm': 'utm_campaign:a;b' },
+  });
+  assert.equal(stored.inst.isVisible, true, 'read back whole, not truncated at the encoded ;');
+});
+
+test('a mixed-case query key matches, and utm_* still matches either way', () => {
+  const mixed = utmEnv({ search: '?refID=partner-a', attrs: { 'd2-popup-utm': 'refID:partner-a' } });
+  assert.equal(mixed.inst.isVisible, true, 'the key is used as written');
+
+  const upperAttr = utmEnv({ search: '?utm_source=facebook', attrs: { 'd2-popup-utm': 'UTM_SOURCE:facebook' } });
+  assert.equal(upperAttr.inst.isVisible, true, 'a lowercase fallback covers the usual spelling');
+});
+
+test('the dismissal cookie read survives a malformed cookie jar', () => {
+  // _getCookie decoded the whole jar unguarded: this used to throw straight
+  // out of create().
+  const env = createEnvironment({ cookie: 'broken=100%off; popup_seen=true' });
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+  const inst = env.window.digi2.popups.create('promo', {
+    animation: 'none', openOnLoad: true, cookieName: 'popup_seen',
+  });
+  assert.equal(inst.isVisible, false, 'the dismissal is still read, and nothing threw');
+});
+
+test('a traffic-gated step is skipped so the chain moves on', () => {
+  const store = {};
+  const env = createEnvironment({ store, search: '?utm_source=google' });
+  loadPopupsModule(env);
+  ['welcome', 'oferta'].forEach((n) => env.body.appendChild(createElement('div', { class: 'p-' + n })));
+
+  const welcome = env.window.digi2.popups.create('welcome', {
+    popupSelector: '.p-welcome', animation: 'none', cookieName: null,
+    utm: 'utm_source:facebook',                 // this visitor came from google
+  });
+  const oferta = env.window.digi2.popups.create('oferta', {
+    popupSelector: '.p-oferta', animation: 'none', cookieName: null,
+  });
+  const clock = installFakeClock(env);
+  const seq = env.window.digi2.popups.sequence([
+    { popup: 'welcome', after: 2 },
+    { popup: 'oferta', after: 2 },
+  ]);
+
+  runSeconds(env, clock, 6);
+  assert.equal(welcome.isVisible, false, 'the gated step never opens');
+  assert.equal(oferta.isVisible, true, 'and the chain reaches the next step instead of stalling');
+  assert.ok(seq.status().step >= 1, 'the sequence advanced past it');
 });

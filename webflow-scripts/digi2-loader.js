@@ -80,6 +80,10 @@
  *   cookieDurationDays:   1                   How long dismissal lasts
  *   excludeUrls:          []                  URL patterns to skip
  *   containsUrls:         ['/']               URL patterns required to show
+ *   utm:                  null                'utm_source:facebook|instagram' — only this traffic
+ *   utmExclude:           null                'utm_medium:cpc' — never this traffic
+ *   utmCookie:            true                Remember the campaign so it survives navigation
+ *   utmCookieDays:        365                 How long that memory lasts
  *   onOpen:               null                Callback(instance) on show
  *   onClose:              null                Callback(instance) on hide
  *
