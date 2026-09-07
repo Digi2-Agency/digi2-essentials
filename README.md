@@ -1835,7 +1835,7 @@ Everything reports by default. Narrow it down with two explicit attributes:
 | `d2-datalayer-disable="a b"` | Everything **except** these groups |
 | `d2-datalayer-only="a b"` | **Only** these groups |
 
-Groups: `popups`, `cms`, `tabs`, `forms`, `lightbox`, `ab`. Using both is allowed —
+Groups: `popups`, `cms`, `tabs`, `forms`, `forms-detail`, `lightbox`, `ab`. Using both is allowed —
 `-only` narrows first, then `-disable` subtracts from that. A group name that
 doesn't exist logs a warning with the valid list, instead of silently reporting
 nothing. Either attribute alone also loads the module, so `d2-datalayer` on its
@@ -1859,6 +1859,9 @@ own is only needed when you want the defaults.
 | Server refused the submission | `form_submit_error` | `form_id`, `form_name` |
 | Form rejected by validation | `form_error` | `form_id`, `form_name` |
 | A lead | `generate_lead` | fires on **`form_submit` by default** — see below |
+| First interaction with a form | `form_start` | `form_id`, `form_name` |
+| A field filled in | `form_field_interaction` | `field_name`, `field_type` |
+| Submit button pressed | `form_submit_click` | `form_id`, `form_name` |
 | A/B variant shown | `experiment_impression` | `experiment_id`, `variant_id` |
 | A/B variant clicked | `select_promotion` | `promotion_id`, `creative_name` |
 
@@ -1870,6 +1873,33 @@ custom names in the same snake_case style and GA4 reports them as-is.
 
 Video events belong to the `popups` group, so `d2-datalayer-disable="popups"`
 silences them along with the open/close pair.
+
+### The funnel — where people drop out
+
+Submitted / not submitted says nothing about *why*. Three events in their own
+`forms-detail` group answer that:
+
+| Event | Fires |
+|---|---|
+| `form_start` | On the first interaction with the form — **once per visit**, not per pageview |
+| `form_field_interaction` | On the **first change of each field**, carrying `field_name` and `field_type` |
+| `form_submit_click` | When the button is pressed, **before** validation runs |
+
+Together with the events above that's a full funnel: `form_start →
+form_field_interaction → form_submit_click → form_submit / form_error →
+generate_lead / form_submit_error`. `form_submit_click` minus `form_submit` is
+"pressed the button and got bounced by validation" — the field people fail on
+shows up as the last `form_field_interaction` before they give up.
+
+> **Never a value.** These carry the *name* and *type* of a field, never its
+> contents. No emails, phone numbers or message bodies reach the dataLayer —
+> that is both a GDPR line and a GA4 terms-of-use line.
+
+`form_field_interaction` fires on a field's **first** change rather than every
+blur: a 12-field form would otherwise push a dozen events per visitor and
+swamp GA4's event limits. The whole group can go with
+`d2-datalayer-disable="forms-detail"`, which leaves the submit and lead events
+untouched.
 
 ### Where `generate_lead` fires
 

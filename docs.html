@@ -2341,10 +2341,11 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><th>Attribute</th><th>Effect</th></tr>
       <tr><td><code>d2-datalayer</code></td><td>Load the module — every group reports</td></tr>
       <tr><td><code>d2-datalayer-disable="a b"</code></td><td>Everything <strong>except</strong> those groups</td></tr>
+      <tr><td><code>d2-datalayer-disable="forms-detail"</code></td><td>Drop the form funnel, keep the conversions</td></tr>
       <tr><td><code>d2-datalayer-only="a b"</code></td><td><strong>Only</strong> those groups</td></tr>
       <tr><td><code>d2-datalayer-lead="submit|success"</code></td><td>When <code>generate_lead</code> fires — see <a href="#datalayer-forms">Form Events</a></td></tr>
     </table>
-    <p class="muted">Groups: <code>popups</code>, <code>cms</code>, <code>tabs</code>, <code>forms</code>, <code>lightbox</code>, <code>ab</code>.</p>
+    <p class="muted">Groups: <code>popups</code>, <code>cms</code>, <code>tabs</code>, <code>forms</code>, <code>forms-detail</code>, <code>lightbox</code>, <code>ab</code>.</p>
 
     <h3>Event map</h3>
     <table>
@@ -2370,6 +2371,17 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>form_submit_success</code></td><td><strong>Webflow confirmed the submission</strong> (<code>.w-form-done</code>)</td></tr>
       <tr><td><code>form_submit_error</code></td><td>Webflow refused it (<code>.w-form-fail</code>) — spam guard, plan limit, network</td></tr>
     </table>
+
+    <h3>The funnel — where people drop out</h3>
+    <p>Submitted or not says nothing about why. Three more events, in their own <code>forms-detail</code> group, answer that.</p>
+    <table>
+      <tr><th>Event</th><th>Fires</th></tr>
+      <tr><td><code>form_start</code></td><td>First interaction with the form — <strong>once per visit</strong>, not per pageview</td></tr>
+      <tr><td><code>form_field_interaction</code></td><td>The <strong>first change of each field</strong>, with <code>field_name</code> and <code>field_type</code></td></tr>
+      <tr><td><code>form_submit_click</code></td><td>The button was pressed, <strong>before</strong> validation ran</td></tr>
+    </table>
+    <p>Full funnel: <code>form_start → form_field_interaction → form_submit_click → form_submit / form_error → generate_lead / form_submit_error</code>. <code>form_submit_click</code> minus <code>form_submit</code> is "pressed the button and got bounced by validation", and the field people stall on shows up as the last <code>form_field_interaction</code> before they give up.</p>
+    <p class="muted"><strong>Never a value.</strong> These carry the name and type of a field, never its contents — no emails, phone numbers or message bodies, which is both a GDPR line and a GA4 terms line. <code>form_field_interaction</code> fires on a field's first change rather than every blur, or a 12-field form would push a dozen events per visitor. Drop the whole group with <code>d2-datalayer-disable="forms-detail"</code> without touching the conversion events.</p>
 
     <h3>Where generate_lead fires</h3>
     <p>By default, on <code>form_submit</code> — the click. Webflow hasn't sent the request at that point, so a refusal still counts as a conversion. Since <code>generate_lead</code> is usually a key event in GA4 and imported into Google Ads, that is what the bidding algorithms learn from.</p>

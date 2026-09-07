@@ -47,6 +47,28 @@ Wykrywanie działa na każdym `.w-form`, zarejestrowanym przez `create()` czy ni
 `createAll()` w kodzie strony. Stan sukcesu widoczny już w chwili wczytania
 strony jest ignorowany; liczy się wyłącznie przejście w ten stan.
 
+### Lejek formularza — gdzie ludzie odpadają
+
+Nowa grupa `forms-detail` (osobna, bo gadatliwa — wyłączasz przez
+`d2-datalayer-disable="forms-detail"` nie tracąc zdarzeń konwersji):
+
+| Zdarzenie | Kiedy |
+|---|---|
+| `form_start` | pierwsza interakcja z formularzem — **raz na wizytę**, nie na odsłonę |
+| `form_field_interaction` | **pierwsza zmiana każdego pola**, z `field_name` i `field_type` |
+| `form_submit_click` | naciśnięcie przycisku, **przed** walidacją |
+
+Razem daje to pełny lejek: `form_start → form_field_interaction →
+form_submit_click → form_submit / form_error → generate_lead /
+form_submit_error`. Różnica `form_submit_click` minus `form_submit` to
+„nacisnął i odbiła go walidacja", a pole, na którym ludzie się zatrzymują, widać
+jako ostatnie `form_field_interaction` przed porzuceniem.
+
+Do `dataLayer` trafia **nazwa i typ pola, nigdy wpisana wartość** — żadnych
+maili, telefonów ani treści wiadomości. `form_field_interaction` leci przy
+pierwszej zmianie pola, nie przy każdym `blur`: formularz z 12 polami inaczej
+wypychałby tuzin zdarzeń na użytkownika i zaszumił raporty GA4.
+
 ### Poprawki z tej samej analizy
 
 - **Testy A/B raportowały puste zdarzenia.** Most czytał `d.test` / `d.variant`,

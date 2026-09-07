@@ -1912,13 +1912,134 @@
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // Funnel — where people drop out of a form
+  //
+  // Submitted / not submitted says nothing about WHY. These three tell you
+  // whether anyone starts, which field they stall on, and whether they push
+  // the button and get bounced by validation:
+  //
+  //   form:start        first interaction with the form   (once per visit)
+  //   form:field        a field was filled in or changed  (once per field)
+  //   form:submitclick  the button was pressed            (before validation)
+  //
+  // Names and types only — never a value anyone typed. That is a hard line:
+  // an email address in a dataLayer push is both a GDPR problem and a breach
+  // of the GA4 terms.
+  //
+  // Volume is why `form:field` fires on the first change of each field rather
+  // than on every blur: a 12-field form would otherwise put a dozen events per
+  // visitor into GA4. The datalayer module keeps all three in their own
+  // `forms-detail` group, so a site can switch them off without losing the
+  // submit/lead events.
+  // ---------------------------------------------------------------------------
+  var FUNNEL_SESSION_PREFIX = 'd2FormStart:';
+
+  function _fieldIdentity(el) {
+    if (!el || el.tagName === undefined) return null;
+    var tag = String(el.tagName).toUpperCase();
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return null;
+    var type = String(el.type || (tag === 'SELECT' ? 'select' : 'text')).toLowerCase();
+    if (type === 'hidden' || type === 'submit' || type === 'button') return null;
+    // The NAME of the field, never its contents.
+    var name = el.name || el.getAttribute('name') || el.id || type;
+    return { name: name, type: type };
+  }
+
+  function _startedThisVisit(key) {
+    try { return sessionStorage.getItem(FUNNEL_SESSION_PREFIX + key) === '1'; }
+    catch (e) { return false; }
+  }
+
+  function _markStarted(key) {
+    try { sessionStorage.setItem(FUNNEL_SESSION_PREFIX + key, '1'); } catch (e) { /* private mode */ }
+  }
+
+  /**
+   * Wire the funnel events on one Webflow form. Idempotent per wrapper.
+   */
+  function wireFormFunnel(target) {
+    var parts = _webflowParts(target);
+    var wrapper = parts.wrapper;
+    var formEl = parts.form;
+    if (!wrapper || !formEl) return false;
+    if (wrapper._d2FunnelBound) return true;
+    wrapper._d2FunnelBound = true;
+
+    var base = function () {
+      return { name: _formNameFor(formEl), formId: formEl.id || null };
+    };
+    var startKey = formEl.id || _formNameFor(formEl) || 'form';
+    var seenFields = {};
+    var started = false;
+
+    var markStart = function () {
+      if (started) return;
+      started = true;
+      // Once per visit, not once per pageview: a form in the header would
+      // otherwise report a start on every page someone opens.
+      if (_startedThisVisit(startKey)) return;
+      _markStarted(startKey);
+      _emitEvent('form:start', base());
+    };
+
+    formEl.addEventListener('focusin', function (e) {
+      if (!_fieldIdentity(e.target)) return;
+      markStart();
+    }, true);
+
+    formEl.addEventListener('change', function (e) {
+      var field = _fieldIdentity(e.target);
+      if (!field) return;
+      markStart();
+      var key = field.name + ':' + field.type;
+      if (seenFields[key]) return;      // first change per field only
+      seenFields[key] = true;
+      var payload = base();
+      payload.fieldName = field.name;
+      payload.fieldType = field.type;
+      _emitEvent('form:field', payload);
+    }, true);
+
+    // One press, one event. A click on the submit button raises BOTH click and
+    // submit, so the two handlers below share a short guard rather than
+    // reporting the same attempt twice.
+    var lastAttempt = 0;
+    var reportAttempt = function () {
+      var now = Date.now();
+      if (now - lastAttempt < 500) return;
+      lastAttempt = now;
+      _emitEvent('form:submitclick', base());
+    };
+
+    // Capture phase, so it runs before validation refuses anything:
+    // form_submit_click minus form_submit is "pressed the button and got
+    // bounced by validation". Also covers submitting with Enter.
+    formEl.addEventListener('submit', reportAttempt, true);
+
+    // A click that never becomes a submit — the browser's own required-field
+    // check, or a handler blocking it — is still someone pressing the button.
+    formEl.addEventListener('click', function (e) {
+      var t = e.target;
+      if (!t) return;
+      var type = String(t.type || '').toLowerCase();
+      var tag = String(t.tagName || '').toUpperCase();
+      if (type === 'submit' || (tag === 'BUTTON' && type !== 'button')) reportAttempt();
+    }, true);
+
+    return true;
+  }
+
   // Arm every Webflow form on the page. Cheap (one observer per form, reading
   // only), and it means a confirmed lead is reported whether or not the site
   // registered the form with create().
   function bootFormOutcomes(root) {
     var scope = root || document;
     var wraps = scope.querySelectorAll('.w-form');
-    for (var i = 0; i < wraps.length; i++) observeFormOutcome(wraps[i]);
+    for (var i = 0; i < wraps.length; i++) {
+      observeFormOutcome(wraps[i]);
+      wireFormFunnel(wraps[i]);
+    }
   }
 
   // ---------------------------------------------------------------------------

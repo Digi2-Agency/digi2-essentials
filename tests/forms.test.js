@@ -1013,3 +1013,116 @@ test('the outcome observer does not switch auto-reset on', () => {
   assert.equal(env.timers.filter((t) => t.ms === 30000).length, 0, 'no reset timer armed');
   assert.equal(env.form.style.display, 'none', 'the form stays as Webflow left it');
 });
+
+// ---------------------------------------------------------------------------
+// Funnel events on the bus
+// ---------------------------------------------------------------------------
+
+function funnelEnv() {
+  const base = createResetEnvironment();
+  const emitted = [];
+  base.context.window.digi2.emit = (name, data) => emitted.push({ name, data });
+
+  const store = {};
+  base.context.sessionStorage = {
+    getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: (k) => { delete store[k]; },
+  };
+  base.context.Date = Date;
+
+  const email = createElement('input', { type: 'email', name: 'EMAIL' });
+  const msg = createElement('textarea', { name: 'MESSAGE' });
+  msg.tagName = 'TEXTAREA';
+  const submit = createElement('input', { type: 'submit' });
+  [email, msg, submit].forEach((el) => base.form.appendChild(el));
+
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), base.context, { filename: modulePath });
+
+  const fire = (el, type) => {
+    const handlers = base.form._listeners[type] || [];
+    handlers.slice().forEach((fn) => fn({ target: el, type }));
+  };
+  return Object.assign({}, base, {
+    emitted, email, msg, submit, fire,
+    of: (n) => emitted.filter((e) => e.name === n),
+    store,
+  });
+}
+
+test('the first interaction reports form_start, once', () => {
+  const env = funnelEnv();
+  env.fire(env.email, 'focusin');
+  env.fire(env.msg, 'focusin');
+  env.fire(env.email, 'focusin');
+  assert.equal(env.of('form:start').length, 1, 'one start per form, not per field');
+});
+
+test('form_start does not repeat on the next page of the same visit', () => {
+  const env = funnelEnv();
+  env.fire(env.email, 'focusin');
+  assert.equal(env.of('form:start').length, 1);
+  assert.ok(Object.keys(env.store).some((k) => k.startsWith('d2FormStart:')), 'remembered for the visit');
+
+  // Same visit, form present again (e.g. a footer form on the next page).
+  const second = funnelEnv();
+  Object.assign(second.context.sessionStorage, {
+    getItem: (k) => (k.startsWith('d2FormStart:') ? '1' : null),
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), second.context, { filename: modulePath });
+  second.emitted.length = 0;
+  second.fire(second.email, 'focusin');
+  assert.equal(second.of('form:start').length, 0, 'already counted this visit');
+});
+
+test('a field reports once, on its first change — not on every blur', () => {
+  const env = funnelEnv();
+  env.fire(env.email, 'change');
+  env.fire(env.email, 'change');
+  env.fire(env.email, 'change');
+  assert.equal(env.of('form:field').length, 1, 'a 12-field form must not push 12 events per blur');
+
+  env.fire(env.msg, 'change');
+  assert.equal(env.of('form:field').length, 2, 'but a different field does report');
+});
+
+test('a field reports its name and type, never what was typed', () => {
+  const env = funnelEnv();
+  env.email.value = 'anna.kowalska@example.com';
+  env.fire(env.email, 'change');
+
+  const d = env.of('form:field')[0].data;
+  assert.equal(d.fieldName, 'EMAIL');
+  assert.equal(d.fieldType, 'email');
+  assert.ok(!JSON.stringify(d).includes('anna.kowalska'), 'the value never leaves the page');
+});
+
+test('changing a field also starts the form, for someone who pastes straight in', () => {
+  const env = funnelEnv();
+  env.fire(env.email, 'change');
+  assert.equal(env.of('form:start').length, 1);
+});
+
+test('hidden and button fields are not interactions', () => {
+  const env = funnelEnv();
+  const utm = createElement('input', { type: 'hidden', name: 'UTM_SOURCE' });
+  env.form.appendChild(utm);
+  env.fire(utm, 'change');
+  env.fire(env.submit, 'change');
+  assert.equal(env.of('form:field').length, 0);
+  assert.equal(env.of('form:start').length, 0, 'a hidden field is not a person starting the form');
+});
+
+test('pressing the button reports one attempt, not two', () => {
+  // A click on a submit button raises click AND submit.
+  const env = funnelEnv();
+  env.fire(env.submit, 'click');
+  env.fire(env.submit, 'submit');
+  assert.equal(env.of('form:submitclick').length, 1, 'one press, one event');
+});
+
+test('submitting with Enter still reports the attempt', () => {
+  const env = funnelEnv();
+  env.fire(env.email, 'submit');
+  assert.equal(env.of('form:submitclick').length, 1);
+});

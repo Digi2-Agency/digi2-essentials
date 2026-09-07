@@ -34,6 +34,11 @@
  *   server refused it   → form_submit_error
  *   form rejected       → form_error            (client-side validation failed)
  *
+ *   funnel, group `forms-detail` (switch off with d2-datalayer-disable):
+ *   first interaction   → form_start             (once per visit)
+ *   a field filled in   → form_field_interaction (once per field, name+type only)
+ *   button pressed      → form_submit_click      (before validation)
+ *
  *   generate_lead fires on form_submit by default — see leadOn below.
  *   A/B variant shown   → experiment_impression
  *   A/B variant clicked → select_promotion
@@ -51,7 +56,10 @@
 
   // ---- which groups report -------------------------------------------------
 
-  var GROUPS = ['popups', 'cms', 'tabs', 'forms', 'lightbox', 'ab'];
+  // forms-detail is its own group on purpose: the funnel is chatty compared to
+  // the submit/lead events, and a site should be able to drop it without
+  // losing the events its conversions depend on.
+  var GROUPS = ['popups', 'cms', 'tabs', 'forms', 'forms-detail', 'lightbox', 'ab'];
   var off = {};
 
   // Two explicit attributes instead of one overloaded value:
@@ -286,6 +294,26 @@
         form_id: d.formId,
         form_name: d.name,
       };
+    });
+
+    // ---- funnel (forms-detail) ----------------------------------------------
+    listen('form:start', 'forms-detail', function (d) {
+      return { event: 'form_start', form_id: d.formId, form_name: d.name };
+    });
+
+    listen('form:field', 'forms-detail', function (d) {
+      return {
+        event: 'form_field_interaction',
+        form_id: d.formId,
+        form_name: d.name,
+        // The field's name and type. Never its value.
+        field_name: d.fieldName,
+        field_type: d.fieldType,
+      };
+    });
+
+    listen('form:submitclick', 'forms-detail', function (d) {
+      return { event: 'form_submit_click', form_id: d.formId, form_name: d.name };
     });
 
     listen('form:invalid', 'forms', function (d) {

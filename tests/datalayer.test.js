@@ -289,3 +289,44 @@ test('select_content carries the image it opened', () => {
     { event: 'select_content', content_type: 'image', item_id: '/img/salon.jpg', index: 2, total: 9 },
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// Funnel — the forms-detail group
+// ---------------------------------------------------------------------------
+
+test('the funnel maps onto GA4 form events', () => {
+  const env = createEnvironment();
+  env.emit('form:start', { name: 'kontakt', formId: 'email-form' });
+  env.emit('form:field', { name: 'kontakt', formId: 'email-form', fieldName: 'EMAIL', fieldType: 'email' });
+  env.emit('form:submitclick', { name: 'kontakt', formId: 'email-form' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'form_start', form_id: 'email-form', form_name: 'kontakt' },
+    {
+      event: 'form_field_interaction', form_id: 'email-form', form_name: 'kontakt',
+      field_name: 'EMAIL', field_type: 'email',
+    },
+    { event: 'form_submit_click', form_id: 'email-form', form_name: 'kontakt' },
+  ]);
+});
+
+test('forms-detail can be switched off without losing the lead events', () => {
+  const env = createEnvironment({ disable: 'forms-detail' });
+  env.emit('form:start', { name: 'kontakt', formId: 'email-form' });
+  env.emit('form:field', { name: 'kontakt', formId: 'email-form', fieldName: 'EMAIL', fieldType: 'email' });
+  env.emit('form:submitclick', { name: 'kontakt', formId: 'email-form' });
+  assert.deepEqual(env.dl(), [], 'the chatty group is silent');
+
+  env.emit('form:submit', { name: 'kontakt', formId: 'email-form' });
+  const events = env.dl().map((e) => e.event);
+  assert.ok(events.includes('generate_lead'), 'conversions keep reporting');
+  assert.ok(events.includes('form_submit'));
+});
+
+test('forms-detail is a known group name', () => {
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try { createEnvironment({ disable: 'forms-detail' }); } finally { console.warn = orig; }
+  assert.equal(warnings.length, 0, 'no "unknown group" warning');
+});
