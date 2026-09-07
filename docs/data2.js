@@ -335,7 +335,7 @@
       { a: 'd2-lightbox-bg', v: 'kolor CSS | none', el: 'modal / trigger / przodek', d: 'Tło malowane pod zdjęciem (wypełnia przezroczyste PNG, np. rzuty). Domyślnie białe; <code>none</code> = przezroczyste. Czytane z najbliższego przodka triggera lub z modala.' },
       { a: 'd2-lightbox-skip', v: '—', el: 'link .w-lightbox', d: 'Zostawia ten natywny lightbox Webflowowi (bez przejęcia przez moduł).' },
       { a: 'd2-lightbox="thumbs|counter"', v: 'na tagu loadera / <digi2-module>', el: 'import modułu', d: 'Domyślny dół wbudowanego modala dla całej strony: <code>thumbs</code> = klikalne kwadraciki-miniaturki (klik przewija do zdjęcia), <code>counter</code> / goła flaga = licznik „1 / 4". Miniaturki używają małych wariantów obrazków, które triggery już wyświetlają.' },
-      { a: 'd2-lightbox-variant', v: 'thumbs | counter', el: 'trigger lub przodek (item CMS, sekcja, body)', d: 'Nadpisuje domyślny wariant strony dla pojedynczej galerii.' },
+      { a: 'd2-lightbox-variant', v: 'thumbs | counter', el: 'trigger lub przodek (item CMS, sekcja, body)', d: 'Nadpisuje domyślny wariant strony dla pojedynczej galerii.', n: 'pasek miniaturek to jedna przewijana linia — nie zawija się do kolejnych rzędów, ma własne strzałki po bokach (widoczne tylko gdy jest co przewijać) i jedzie za galerią: zmiana zdjęcia przewija pasek do aktywnej miniaturki' },
       { a: 'd2-lightbox-icon', v: 'false', el: 'trigger lub przodek', d: 'Wyłącza pływającą ikonkę lupy pokazywaną po najechaniu na trigger.' },
       { a: 'd2-lightbox-thumbs', v: '—', el: 'kontener we własnym modalu', d: 'Moduł wypełnia go klikalnymi miniaturkami <code>&lt;img d2-lightbox-thumb="i"&gt;</code>; aktywna dostaje <code>d2-is-active</code> — obie stylujesz w CSS.' }
     ],

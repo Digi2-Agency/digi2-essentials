@@ -829,6 +829,7 @@
       <a href="#filter">CMS Filtering</a>
       <a href="#cms">CMS List (sort + load more)</a>
       <a href="#cms-range">Range Slider</a>
+      <a href="#lightbox">Lightbox</a>
       <a href="#format">Number / Price Format</a>
       <a href="#copy">Copy to Clipboard</a>
     </div>
@@ -2291,6 +2292,32 @@ digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// afte
 
 
   <!-- ── FORMAT ── -->
+  <section id="lightbox">
+    <h2>Lightbox</h2>
+    <p>Clicking anything marked <code>d2-lightbox</code> opens a full-screen gallery — arrows, keyboard, drag, and a bottom bar that is either a counter or a strip of thumbnails. Without a modal of your own, the module injects a built-in one.</p>
+    <pre><code>&lt;script src="…/digi2-loader.min.js" <span class="attr">d2-lightbox</span>=<span class="string">"thumbs"</span>&gt;&lt;/script&gt;
+
+&lt;img <span class="attr">d2-lightbox</span> src=<span class="string">"/photo-1.jpg"</span>&gt;
+&lt;img <span class="attr">d2-lightbox</span> src=<span class="string">"/photo-2.jpg"</span>&gt;</code></pre>
+    <table>
+      <tr><th>Value</th><th>Bottom bar</th></tr>
+      <tr><td><code>counter</code> (default, or a bare flag)</td><td>"1 / 4"</td></tr>
+      <tr><td><code>thumbs</code></td><td>Clickable thumbnail strip</td></tr>
+    </table>
+    <p class="muted">A single gallery overrides the page default with <code>d2-lightbox-variant</code> on the trigger or any ancestor. With one photo every navigation affordance disappears — no arrows, no counter, no strip, no dragging.</p>
+
+    <h3>The thumbnail strip</h3>
+    <p>The strip is <strong>one scrollable line</strong>, whatever the gallery size. It used to wrap, so thirty photos stacked into rows deep enough to push the photo itself off screen.</p>
+    <table>
+      <tr><th>Behaviour</th><th>Detail</th></tr>
+      <tr><td>Its own arrows</td><td>Shown <strong>only when the strip doesn't fit</strong>, dimmed at whichever end you have reached</td></tr>
+      <tr><td>One press</td><td>Moves about 80% of the visible width, leaving a couple of thumbs in view</td></tr>
+      <tr><td>It follows the gallery</td><td>Changing photo scrolls the matching thumbnail into view and centres it where there is room</td></tr>
+      <tr><td>Motion and resize</td><td>Respects <code>prefers-reduced-motion</code>; re-checks itself on resize, so rotating a phone gets the arrows right</td></tr>
+    </table>
+    <p class="muted">The scrollbar is hidden — drag, swipe, the arrows and picking a photo all move the strip. On a custom modal your own <code>[d2-lightbox-thumbs]</code> container keeps the CSS you gave it: the auto-scroll to the active thumb still applies where the container scrolls, the arrows are built-in only.</p>
+  </section>
+
   <section id="format">
     <h2>Number / Price Format</h2>
     <p>Format raw CMS text values as localized numbers. Load with <code>d2-format</code>, <code>d2-format-price</code>, or <code>d2-format-number</code> on the loader tag.</p>

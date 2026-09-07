@@ -966,3 +966,118 @@ test('openers get a pointer cursor, photos keep the zoom-in one', () => {
   assert.ok(css.indexOf('[d2-lightbox-button]{cursor:pointer;}') > css.indexOf('cursor:zoom-in'),
     'and it comes after the zoom-in rule, so a button carrying both attributes stays a button');
 });
+
+// ---------------------------------------------------------------------------
+// Thumbnail strip: one scrollable line, not a stack
+// ---------------------------------------------------------------------------
+
+// Open a thumbs-variant gallery of `count` photos and give the strip the
+// measurements of a line too long to fit, so the scrolling logic has something
+// to work with.
+function openStrip(env, count, { fits = false } = {}) {
+  const group = createElement('div', { 'd2-lightbox-group': '', 'd2-lightbox-variant': 'thumbs' });
+  env.body.appendChild(group);
+  const first = addThumb(env, 'https://x/s1.jpg', null, group);
+  for (let i = 2; i <= count; i++) addThumb(env, `https://x/s${i}.jpg`, null, group);
+
+  env.dispatchDoc('click', first);
+  const modal = builtin(env);
+  const strip = modal.querySelector('[d2-lightbox-thumbs]');
+
+  const THUMB = 60;                       // 52px + gap
+  strip.clientWidth = 300;
+  strip.scrollWidth = fits ? 240 : THUMB * count;
+  strip.scrollLeft = 0;
+  strip.scrollTo = ({ left }) => { strip.scrollLeft = left; };
+  strip.getBoundingClientRect = () => ({ left: 0, width: strip.clientWidth });
+
+  // Each thumbnail sits where it would in a row, shifted by the scroll.
+  strip.querySelectorAll('[d2-lightbox-thumb]').forEach((th, i) => {
+    th.getBoundingClientRect = () => ({ left: i * THUMB - strip.scrollLeft, width: 52 });
+  });
+
+  // The module measured the strip while it was still dimensionless in this
+  // harness; a scroll tick re-reads the sizes just set above.
+  if (strip._listeners.scroll) strip._listeners.scroll();
+
+  const nav = (dir) => modal.querySelectorAll(`[d2-lb-stripnav="${dir}"]`)[0];
+  return { modal, strip, nav, thumbs: strip.querySelectorAll('[d2-lightbox-thumb]') };
+}
+
+test('the thumb strip is one line that scrolls, not a wrapping stack', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const { strip } = openStrip(env, 30);
+
+  assert.notEqual(strip.style.flexWrap, 'wrap', 'a 30-photo gallery must not stack into rows');
+  assert.equal(strip.style.overflowX, 'auto', 'it scrolls instead');
+});
+
+test('strip arrows appear only when there is something to scroll', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+
+  const many = openStrip(env, 30);
+  assert.equal(many.nav('prev').style.display, 'flex');
+  assert.equal(many.nav('next').style.display, 'flex');
+
+  const env2 = createEnvironment();
+  loadLightboxModule(env2);
+  const few = openStrip(env2, 3, { fits: true });
+  assert.equal(few.nav('prev').style.display, 'none', 'a strip that fits needs no arrows');
+  assert.equal(few.nav('next').style.display, 'none');
+});
+
+test('an arrow scrolls the strip by most of a screenful', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const { strip, nav } = openStrip(env, 30);
+
+  nav('next')._listeners.click({ stopPropagation() {} });
+  assert.equal(strip.scrollLeft, 240, '80% of the 300px viewport');
+
+  nav('prev')._listeners.click({ stopPropagation() {} });
+  assert.equal(strip.scrollLeft, 0);
+});
+
+test('the strip travels with the gallery as the photo changes', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const { strip, thumbs } = openStrip(env, 30);
+  assert.equal(strip.scrollLeft, 0, 'starts at the beginning');
+
+  env.dispatchDoc('click', thumbs[20]);          // jump deep into the gallery
+
+  assert.ok(strip.scrollLeft > 0, 'the strip followed the selection');
+  assert.equal(thumbs[20].hasAttribute('d2-is-active'), true);
+  // Centred: thumb 20 sits at 1200, half a viewport is 150, minus half a thumb.
+  assert.ok(Math.abs(strip.scrollLeft - (20 * 60 + 26 - 150)) < 2, 'active thumb is centred');
+});
+
+test('arrows dim at the ends instead of pretending to work', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const { strip, nav } = openStrip(env, 30);
+
+  assert.equal(nav('prev').style.pointerEvents, 'none', 'nothing to the left at the start');
+  assert.equal(nav('next').style.pointerEvents, 'auto');
+
+  strip.scrollLeft = strip.scrollWidth - strip.clientWidth;
+  strip._listeners.scroll();
+
+  assert.equal(nav('next').style.pointerEvents, 'none', 'nothing to the right at the end');
+  assert.equal(nav('prev').style.pointerEvents, 'auto');
+});
+
+test('a single-photo gallery shows no strip and no strip arrows', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const group = createElement('div', { 'd2-lightbox-group': '', 'd2-lightbox-variant': 'thumbs' });
+  env.body.appendChild(group);
+  const only = addThumb(env, 'https://x/one.jpg', null, group);
+
+  env.dispatchDoc('click', only);
+  const modal = builtin(env);
+  assert.equal(modal.querySelector('[d2-lightbox-thumbs]').style.display, 'none');
+  assert.equal(modal.querySelectorAll('[d2-lb-stripnav="next"]')[0].style.display, 'none');
+});

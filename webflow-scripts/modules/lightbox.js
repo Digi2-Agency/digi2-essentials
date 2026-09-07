@@ -280,10 +280,103 @@
     '<circle cx="11" cy="11" r="7"/><line x1="20.5" y1="20.5" x2="16" y2="16"/>' +
     '<line x1="11" y1="8.2" x2="11" y2="13.8"/><line x1="8.2" y1="11" x2="13.8" y2="11"/></svg>';
 
+  // ---- Thumbnail strip: one scrollable line -------------------------------
+  // A wrapping strip pushes the photo off screen as soon as a gallery gets
+  // big. One line that scrolls keeps the lightbox the same height whether the
+  // gallery holds four photos or forty.
+
+  function prefersReducedMotion() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) { return false; }
+  }
+
+  function scrollStripTo(strip, left) {
+    var max = Math.max(0, strip.scrollWidth - strip.clientWidth);
+    var target = Math.max(0, Math.min(left, max));
+    if (Math.abs(strip.scrollLeft - target) < 2) return;
+    if (!prefersReducedMotion() && typeof strip.scrollTo === 'function') {
+      try { strip.scrollTo({ left: target, behavior: 'smooth' }); return; } catch (e) { /* older engine */ }
+    }
+    strip.scrollLeft = target;
+  }
+
+  // One button-press moves most of a screenful, keeping a couple of thumbs in
+  // view so you can tell where you landed.
+  function nudgeStrip(strip, direction) {
+    if (!strip) return;
+    var step = Math.max(80, Math.round(strip.clientWidth * 0.8));
+    scrollStripTo(strip, strip.scrollLeft + direction * step);
+  }
+
+  // Keep the active thumbnail in view as the photo changes, so the strip
+  // travels with the gallery instead of stranding you at the start.
+  function scrollActiveThumbIntoView(strip, thumb) {
+    if (!strip || !thumb || typeof strip.getBoundingClientRect !== 'function') return;
+    if (strip.scrollWidth <= strip.clientWidth + 1) return;   // nothing to scroll
+    var sRect = strip.getBoundingClientRect();
+    var tRect = thumb.getBoundingClientRect();
+    if (!sRect.width || !tRect.width) return;
+    // Centre it, measured through rects so it doesn't matter what the strip's
+    // offsetParent happens to be.
+    var delta = (tRect.left + tRect.width / 2) - (sRect.left + sRect.width / 2);
+    scrollStripTo(strip, strip.scrollLeft + delta);
+  }
+
+  // Strip arrows exist only when they do something: hidden for a strip that
+  // fits, dimmed at whichever end you have reached.
+  function updateStripNav(strip) {
+    if (!strip || !strip.parentNode) return;
+    var wrap = strip.parentNode;
+    if (!wrap.querySelectorAll) return;
+    var buttons = toArray(wrap.querySelectorAll('[d2-lb-stripnav]'));
+    if (!buttons.length) return;
+
+    var hiddenStrip = strip.style.display === 'none';
+    var scrollable = !hiddenStrip && strip.scrollWidth > strip.clientWidth + 1;
+    var atStart = strip.scrollLeft <= 1;
+    var atEnd = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;
+
+    buttons.forEach(function (btn) {
+      btn.style.display = scrollable ? 'flex' : 'none';
+      var isPrev = btn.getAttribute('d2-lb-stripnav') === 'prev';
+      var spent = isPrev ? atStart : atEnd;
+      btn.style.opacity = spent ? '0.25' : '0.75';
+      btn.style.pointerEvents = spent ? 'none' : 'auto';
+    });
+  }
+
+  function makeStripButton(doc, direction) {
+    var btn = doc.createElement('button');
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('d2-lb-stripnav', direction);
+    btn.setAttribute('aria-label', direction === 'prev' ? 'Previous thumbnails' : 'More thumbnails');
+    btn.classList.add('d2-lb-btn', 'd2-lb-stripnav');
+    btn.innerHTML = direction === 'prev' ? PREV_SVG : NEXT_SVG;
+    Object.assign(btn.style, {
+      display: 'none',
+      flex: '0 0 auto',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '28px',
+      height: '28px',
+      padding: '0',
+      border: '0',
+      borderRadius: '50%',
+      background: 'rgba(255,255,255,0.12)',
+      color: '#fff',
+      opacity: '0.75',
+    });
+    return btn;
+  }
+
   var BUILTIN_CSS = '' +
     '.d2-lb-btn{transition:background-color .15s ease,opacity .15s ease;}' +
     '.d2-lb-btn:hover{background-color:rgba(255,255,255,0.22)!important;}' +
-    '.d2-lb-thumbs{display:flex;}' +
+    '.d2-lb-thumbs{display:flex;flex-wrap:nowrap;scrollbar-width:none;-ms-overflow-style:none;}' +
+    '.d2-lb-thumbs::-webkit-scrollbar{display:none;}' +
+    '.d2-lb-thumbs [d2-lightbox-thumb]{flex:0 0 auto;}' +
+    '.d2-lb-stripnav:hover{background-color:rgba(255,255,255,0.22)!important;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]{width:52px;height:52px;object-fit:cover;border-radius:4px;' +
     'opacity:.55;border:2px solid transparent;transition:opacity .15s ease,border-color .15s ease;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]:hover{opacity:.85;}' +
@@ -295,6 +388,7 @@
     '.d2-lb-viewport{width:100vw!important;height:74vh!important;}' +
     '.d2-lb-img{border-radius:0!important;}' +
     '.d2-lb-thumbs [d2-lightbox-thumb]{width:40px;height:40px;}' +
+    '.d2-lb-stripnav{width:24px!important;height:24px!important;}' +
     '}';
 
   // Page-wide styles, injected on load (independent of which modal is used):
@@ -475,20 +569,55 @@
     Object.assign(caption.style, { fontSize: '14px', opacity: '0.85', marginBottom: '4px' });
     bar.appendChild(caption);
 
+    // The strip is one scrollable line, not a wrapping grid: a gallery with
+    // thirty photos used to stack into rows deep enough to cover the photo it
+    // was meant to help you navigate.
+    var thumbsWrap = doc.createElement('div');
+    thumbsWrap.classList.add('d2-lb-thumbs-wrap');
+    Object.assign(thumbsWrap.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      margin: '6px auto 0',
+      maxWidth: '92vw',
+      pointerEvents: 'auto',
+    });
+
+    var thumbsPrev = makeStripButton(doc, 'prev');
+    var thumbsNext = makeStripButton(doc, 'next');
+
     var thumbs = doc.createElement('div');
     thumbs.setAttribute('d2-lightbox-thumbs', '');
     thumbs.classList.add('d2-lb-thumbs');
     // display comes from the .d2-lb-thumbs class (flex); inline none hides it.
     Object.assign(thumbs.style, {
       display: 'none',
-      justifyContent: 'center',
-      flexWrap: 'wrap',
       gap: '8px',
-      margin: '6px auto 0',
-      maxWidth: '92vw',
+      overflowX: 'auto',
+      scrollBehavior: 'smooth',
       pointerEvents: 'auto',
     });
-    bar.appendChild(thumbs);
+
+    thumbsWrap.appendChild(thumbsPrev);
+    thumbsWrap.appendChild(thumbs);
+    thumbsWrap.appendChild(thumbsNext);
+    bar.appendChild(thumbsWrap);
+
+    thumbsPrev.addEventListener('click', function (e) {
+      e.stopPropagation();
+      nudgeStrip(thumbs, -1);
+    });
+    thumbsNext.addEventListener('click', function (e) {
+      e.stopPropagation();
+      nudgeStrip(thumbs, 1);
+    });
+    thumbs.addEventListener('scroll', function () { updateStripNav(thumbs); });
+
+    // Rotating a phone changes what fits: arrows that were needed in portrait
+    // may not be in landscape, and the other way round.
+    try {
+      window.addEventListener('resize', function () { updateStripNav(thumbs); });
+    } catch (e) { /* no window listener — nothing breaks without it */ }
 
     var counter = doc.createElement('div');
     counter.setAttribute('d2-lightbox-counter', '');
@@ -646,11 +775,20 @@
 
     slots.thumbs.forEach(function (el) {
       el.style.display = thumbsVisible ? '' : 'none';
+      var active = null;
       toArray(el.querySelectorAll('[d2-lightbox-thumb]')).forEach(function (th) {
         var i = parseInt(th.getAttribute('d2-lightbox-thumb'), 10);
-        if (i === index) th.setAttribute('d2-is-active', '');
-        else th.removeAttribute('d2-is-active');
+        if (i === index) {
+          th.setAttribute('d2-is-active', '');
+          active = th;
+        } else {
+          th.removeAttribute('d2-is-active');
+        }
       });
+      // The strip follows the gallery: changing photo brings the matching
+      // thumbnail into view instead of leaving it somewhere off to the right.
+      if (thumbsVisible && active) scrollActiveThumbIntoView(el, active);
+      updateStripNav(el);
     });
 
     var navDisplay = multi ? '' : 'none';

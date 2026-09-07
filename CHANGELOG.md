@@ -5,6 +5,30 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.6.0 — 2026-09-07
+
+### Lightbox: pasek miniatur w jednej linii, z przewijaniem
+
+Pasek miniatur zawijał się do kolejnych rzędów, więc galeria z trzydziestoma
+zdjęciami budowała pod zdjęciem kilkupiętrowy stos i wypychała samo zdjęcie
+poza ekran — im więcej było do oglądania, tym mniej było widać.
+
+Teraz pasek to **jedna linia**, niezależnie od liczby zdjęć:
+
+- własne strzałki po bokach paska, widoczne **tylko wtedy, gdy jest co
+  przewijać**, wygaszane na krańcach
+- jedno naciśnięcie przesuwa ok. 80% szerokości widoku, zostawiając kilka
+  miniatur w polu widzenia
+- **pasek jedzie za galerią** — zmiana zdjęcia przewija pasek do aktywnej
+  miniatury i centruje ją tam, gdzie jest miejsce
+- pasek szanuje `prefers-reduced-motion` i przelicza się przy zmianie rozmiaru
+  okna (obrót telefonu)
+
+Pasek scrollbara jest ukryty — przewijasz gestem, strzałkami albo wybierając
+zdjęcie. We własnym modalu kontener `[d2-lightbox-thumbs]` zachowuje Twój CSS;
+automatyczne przewijanie do aktywnej miniatury działa i tam, strzałki są tylko
+we wbudowanym.
+
 ## v1.4.0 — 2026-09-07
 
 ### Zdarzenia formularza w dataLayer — `generate_lead` mierzył zły moment

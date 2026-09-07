@@ -2738,6 +2738,26 @@ A single gallery can override the page default with `d2-lightbox-variant` on the
 
 The thumb strip reuses the small image each trigger already displays (falling back to the full-size file), so it costs no extra bandwidth. With a **single photo** every navigation affordance disappears: no arrows, no "1 / 1" counter, no thumbs, and dragging is disabled.
 
+**The strip is one scrollable line.** It used to wrap, so a gallery of thirty
+photos stacked into rows deep enough to push the photo itself off screen — the
+lightbox got taller the more there was to look at. Now it stays one line
+whatever the count, with its own small arrows at either end:
+
+- arrows appear **only when the strip doesn't fit**, and dim at whichever end
+  you've reached
+- one press moves about 80% of the visible width, leaving a couple of thumbs in
+  view so you can tell where you landed
+- **the strip follows the gallery**: changing photo scrolls the matching
+  thumbnail into view and centres it where there's room, so the active one is
+  never stranded off to the side
+- it respects `prefers-reduced-motion` (jumps instead of animating) and
+  re-checks itself on resize, so rotating a phone gets the arrows right
+
+The scrollbar is hidden — drag, swipe, arrows and picking a photo all move the
+strip. On a custom modal your own `[d2-lightbox-thumbs]` container keeps
+whatever CSS you gave it; the auto-scroll to the active thumb still applies if
+the container scrolls, and the arrows are built-in-only.
+
 An injected stylesheet (no `!important`, override freely) gives triggers `cursor: zoom-in` (magnifier) and close/prev/next/thumb slots `cursor: pointer`. Hovering a trigger also shows a **floating magnifier badge** centered over it — one fixed-position element placed by the module, so it works on `<img>` triggers (which can't hold children) and on CMS items rendered later, without touching your markup. Disable it with `d2-lightbox-icon="false"` on the trigger or any ancestor (section, `body`). The built-in modal's close/prev/next buttons use centered SVG icons (no font-dependent glyphs), styleable via `.d2-lb-*`.
 
 ### API & events
