@@ -2,6 +2,11 @@
  * digi2 - A/B Tests Module
  * Loaded automatically by digi2-loader.js when d2-ab-tests="configName" is present.
  *
+ * Pushes digi2_ab_assigned / digi2_ab_click to the dataLayer itself. With the
+ * datalayer module also loaded, the same events arrive a second time as
+ * experiment_impression / select_promotion — add d2-ab-datalayer="false" to
+ * leave the pushing to that module.
+ *
  * Config:
  *   window.sitemap = {
  *     pricing: {
@@ -207,7 +212,28 @@
     return variants[variants.length - 1];
   }
 
+  // The module pushes digi2_ab_assigned / digi2_ab_click itself, AND the
+  // datalayer module maps the same bus events onto experiment_impression /
+  // select_promotion. Running both means one assignment lands in the dataLayer
+  // twice under two names — harmless for a GTM trigger listening to one of
+  // them, confusing for anyone reading the dataLayer or counting events.
+  //
+  // The own push stays the default: sites have GTM triggers wired to these
+  // names and dropping them silently would break those. Turn it off where the
+  // datalayer bridge is doing the job instead:
+  //
+  //   <script ... d2-ab-tests="myTests" d2-ab-datalayer="false"></script>
+  var _ownPushDisabled = (function () {
+    try {
+      var el = document.querySelector('script[d2-ab-datalayer]')
+        || document.querySelector('[d2-ab-datalayer]');
+      if (!el) return false;
+      return String(el.getAttribute('d2-ab-datalayer') || '').trim().toLowerCase() === 'false';
+    } catch (e) { return false; }
+  })();
+
   function _pushDataLayer(data) {
+    if (_ownPushDisabled) return;
     var canUseGoogleModule = window.digi2.google &&
       typeof window.digi2.google.dataLayerPush === 'function' &&
       ((window.digi2._loaded && window.digi2._loaded.google) || window.digi2._gtmId);

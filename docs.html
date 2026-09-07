@@ -2358,6 +2358,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td>Form events</td><td><a href="#datalayer-forms">see below</a></td></tr>
       <tr><td>A/B variant shown / clicked</td><td><code>experiment_impression</code> / <code>select_promotion</code></td></tr>
     </table>
+    <p class="muted">The ab-tests module also pushes <code>digi2_ab_assigned</code> / <code>digi2_ab_click</code> on its own, so with both modules loaded one assignment reaches the dataLayer twice under two names. Both keep firing by default — sites have GTM triggers on the <code>digi2_*</code> names — and <code>d2-ab-datalayer="false"</code> switches the module's own push off where the bridge is doing the job.</p>
   </section>
 
   <section id="datalayer-forms">

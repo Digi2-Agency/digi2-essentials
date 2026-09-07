@@ -53,7 +53,8 @@ function createElement(tagName, attrs) {
   return el;
 }
 
-function createEnvironment() {
+function createEnvironment(opts) {
+  opts = opts || {};
   const body = createElement('body');
   const observers = [];
 
@@ -128,6 +129,13 @@ function createEnvironment() {
     addEventListener() {},
     querySelectorAll(selector) {
       return body.querySelectorAll(selector);
+    },
+    querySelector(selector) {
+      // Only the loader-flag lookups need this.
+      if (selector.indexOf('d2-ab-datalayer') !== -1 && opts.abDatalayer != null) {
+        return { getAttribute: () => String(opts.abDatalayer) };
+      }
+      return null;
     },
   };
 
@@ -238,4 +246,26 @@ test('base redirect queues assignment without digi2_ab_viewed event', () => {
     JSON.parse(JSON.stringify(env.events)).some((entry) => entry.data && entry.data.event === 'digi2_ab_viewed'),
     false
   );
+});
+
+test('the module pushes its own dataLayer event by default', () => {
+  const env = createEnvironment();
+  loadAbTestsModule(env);
+  env.window.digi2.abTests.assign('pricing');
+
+  const events = env.window.dataLayer.map((e) => e && e.event).filter(Boolean);
+  assert.ok(events.includes('digi2_ab_assigned'),
+    'sites have GTM triggers on this name — it must keep firing unasked');
+});
+
+test('d2-ab-datalayer="false" leaves the pushing to the datalayer module', () => {
+  // With both modules loaded the same assignment otherwise lands twice, once
+  // as digi2_ab_assigned and once as experiment_impression.
+  const env = createEnvironment({ abDatalayer: 'false' });
+  loadAbTestsModule(env);
+  env.window.digi2.abTests.assign('pricing');
+
+  assert.deepEqual(env.window.dataLayer, [], 'no push of its own');
+  assert.ok(env.events.some((e) => e.event === 'ab:assigned'),
+    'but the bus event still fires, so the bridge can map it');
 });

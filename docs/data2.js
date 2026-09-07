@@ -873,6 +873,7 @@
       { a: 'd2-datalayer-disable', v: 'grupy', el: 'tag loadera', d: 'Wszystko <b>oprócz</b> wymienionych grup, np. <code>"lightbox ab"</code>.' },
       { a: 'd2-datalayer-only', v: 'grupy', el: 'tag loadera', d: '<b>Tylko</b> wymienione grupy. Łączy się z <code>-disable</code>: najpierw zawęża, potem odejmuje.' },
       { a: 'd2-datalayer-disable', v: 'forms-detail', el: 'tag loadera', d: 'Wyłącza sam lejek formularza (<code>form_start</code>, <code>form_field_interaction</code>, <code>form_submit_click</code>), zostawiając zdarzenia konwersji. Grupa jest osobna, bo jest gadatliwa.' },
+      { a: 'd2-ab-datalayer', v: 'false', el: 'tag loadera', d: 'Wyłącza własny push modułu <code>ab-tests</code> (<code>digi2_ab_assigned</code> / <code>digi2_ab_click</code>). Bez tego jedno przypisanie wariantu trafia do <code>dataLayer</code> dwa razy — raz z modułu, raz z mostu jako <code>experiment_impression</code>.', n: 'domyślnie oba lecą — klienci mają triggery GTM na nazwach digi2_*' },
       { a: 'd2-datalayer-lead', v: 'submit | success', el: 'tag loadera', d: 'Kiedy leci <code>generate_lead</code>. Domyślnie <code>submit</code> — czyli po walidacji klienckiej, jeszcze zanim Webflow wyśle zgłoszenie. <code>success</code> przepina je na potwierdzenie serwera (<code>.w-form-done</code>), czyli na prawdziwego leada.', n: 'domyślna wartość celowo nie zmienia zachowania istniejących wdrożeń — przełączaj świadomie, po sprawdzeniu kluczowych zdarzeń w GA4 i importu do Ads' }
     ],
 

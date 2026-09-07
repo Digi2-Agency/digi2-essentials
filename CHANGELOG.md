@@ -75,6 +75,11 @@ wypychałby tuzin zdarzeń na użytkownika i zaszumił raporty GA4.
   a moduł emituje `ab_test` / `ab_variant`, więc do `dataLayer` szło samo
   `{event: 'experiment_impression'}` bez parametrów.
 - **`select_content` bez `item_id`** — `lightbox:open` nie niósł `src`.
+- **Testy A/B raportowały się dwa razy** — moduł `ab-tests` pcha
+  `digi2_ab_assigned` sam, a most `datalayer` mapuje to samo zdarzenie na
+  `experiment_impression`. Oba nadal lecą domyślnie (klienci mają triggery GTM
+  na nazwach `digi2_*`), ale `d2-ab-datalayer="false"` wyłącza własny push
+  modułu tam, gdzie robotę wykonuje most.
 - **Nazwy ukrytych pól w README** były nieaktualne: dokumentacja podawała
   `utm_source_hidden`, `gclid`, `page_url` małymi literami, a moduł wstrzykuje
   `UTM_SOURCE`, `GCLID`, `PAGE_URL` wielkimi. Kto mapował pola po nazwie w CRM

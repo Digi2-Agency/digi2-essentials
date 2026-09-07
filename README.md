@@ -1874,6 +1874,21 @@ custom names in the same snake_case style and GA4 reports them as-is.
 Video events belong to the `popups` group, so `d2-datalayer-disable="popups"`
 silences them along with the open/close pair.
 
+### A/B events land twice
+
+The ab-tests module pushes `digi2_ab_assigned` / `digi2_ab_click` itself, and
+this bridge maps the same bus events onto `experiment_impression` /
+`select_promotion`. With both modules loaded, one assignment reaches the
+dataLayer twice under two names.
+
+Both keep firing by default — sites have GTM triggers wired to the `digi2_*`
+names and dropping them silently would break those. Where the bridge is doing
+the job, switch the module's own push off:
+
+```html
+<script src=".../digi2-loader.min.js" d2-ab-tests="myTests" d2-ab-datalayer="false" d2-datalayer></script>
+```
+
 ### The funnel — where people drop out
 
 Submitted / not submitted says nothing about *why*. Three events in their own
