@@ -5,6 +5,61 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.4.0 — 2026-09-07
+
+### Zdarzenia formularza w dataLayer — `generate_lead` mierzył zły moment
+
+Dotąd `generate_lead` leciał w chwili kliknięcia „Wyślij", po walidacji
+w przeglądarce — **zanim** Webflow wysłał zgłoszenie. Odrzucenie przez spam
+guard, limit planu albo błąd sieci i tak liczyło się jako konwersja, a ponieważ
+`generate_lead` jest zwykle kluczowym zdarzeniem w GA4 i trafia do Google Ads,
+na tym sygnale uczyły się algorytmy licytacji.
+
+Nowe zdarzenia — lecą **zawsze**, niezależnie od ustawień:
+
+| Zdarzenie | Kiedy |
+|---|---|
+| `form_submit` | klik „Wyślij", walidacja kliencka przeszła |
+| `form_submit_success` | **serwer przyjął zgłoszenie** (`.w-form-done`) |
+| `form_submit_error` | serwer odrzucił (`.w-form-fail`) |
+| `form_error` | walidacja kliencka odrzuciła (bez zmian) |
+
+`form_submit_success` i `generate_lead` z potwierdzenia niosą kontekst leada:
+`form_location`, `lead_source` / `lead_medium` / `lead_campaign` (z URL-a albo
+z cookie), `has_gclid` / `has_fbclid` jako **boolean**, `consent_marketing`.
+Treść pól nigdy nie trafia do `dataLayer`.
+
+**`generate_lead` bez zmian domyślnie.** Nadal leci przy `form_submit`, żeby
+nie ruszyć liczb u nikogo, kto ma je już wpięte w GA4 i Ads. Przepięcie na
+prawdziwy sygnał to jeden atrybut, do włączenia świadomie:
+
+```html
+<script src="…/digi2-loader.min.js" d2-forms d2-datalayer d2-datalayer-lead="success"></script>
+```
+
+Przed przełączeniem u klienta: sprawdź kluczowe zdarzenia w GA4 i import
+konwersji do Ads. Wszystkie cztery zdarzenia lecą też przed przełączeniem, więc
+poprawną konwersję można zbudować i zweryfikować w GTM zawczasu. Rozjazd między
+`form_submit` a `form_submit_success` to darmowy wskaźnik awarii formularza.
+
+Wykrywanie działa na każdym `.w-form`, zarejestrowanym przez `create()` czy nie
+— wcześniej `generate_lead` w ogóle nie działał bez wywołania `create()` /
+`createAll()` w kodzie strony. Stan sukcesu widoczny już w chwili wczytania
+strony jest ignorowany; liczy się wyłącznie przejście w ten stan.
+
+### Poprawki z tej samej analizy
+
+- **Testy A/B raportowały puste zdarzenia.** Most czytał `d.test` / `d.variant`,
+  a moduł emituje `ab_test` / `ab_variant`, więc do `dataLayer` szło samo
+  `{event: 'experiment_impression'}` bez parametrów.
+- **`select_content` bez `item_id`** — `lightbox:open` nie niósł `src`.
+- **Nazwy ukrytych pól w README** były nieaktualne: dokumentacja podawała
+  `utm_source_hidden`, `gclid`, `page_url` małymi literami, a moduł wstrzykuje
+  `UTM_SOURCE`, `GCLID`, `PAGE_URL` wielkimi. Kto mapował pola po nazwie w CRM
+  albo w Make, dostawał puste wartości.
+- **`console.warn` w module google** odsyłał do nieistniejącego atrybutu
+  `g-gtm-id` zamiast `d2-gtm`.
+
 ## v1.3.7 — 2026-09-04
 
 ### Popupy: kierowanie na źródło ruchu

@@ -29,8 +29,12 @@
  *   more rows loaded    → view_item_list     (+ loaded)
  *   product expanded    → select_item        (tab/accordion opened)
  *   image opened        → select_content     (content_type: 'image')
- *   form submitted      → generate_lead
- *   form rejected       → form_error
+ *   form submitted      → form_submit          (client-side validation passed)
+ *   server accepted it  → form_submit_success   (+ generate_lead with d2-datalayer-lead="success")
+ *   server refused it   → form_submit_error
+ *   form rejected       → form_error            (client-side validation failed)
+ *
+ *   generate_lead fires on form_submit by default — see leadOn below.
  *   A/B variant shown   → experiment_impression
  *   A/B variant clicked → select_promotion
  */
@@ -77,6 +81,31 @@
   })();
 
   function on(group) { return !off[group]; }
+
+  // ---- when does generate_lead fire ----------------------------------------
+  // 'submit'  (default) — on the submit handler, i.e. what this module has
+  //                       always done. Kept as the default on purpose: sites
+  //                       already have generate_lead marked as a key event in
+  //                       GA4 and imported into Ads, and silently moving it
+  //                       would break their conversions without warning.
+  // 'success' — on Webflow confirming the submission (.w-form-done). This is
+  //             the honest signal; switch a site over once its GA4/Ads config
+  //             has been checked.
+  //
+  //   <script ... d2-datalayer d2-datalayer-lead="success"></script>
+  //
+  // Either way form_submit / form_submit_success / form_submit_error are all
+  // pushed, so a site can build the correct conversion in GTM before flipping.
+  var leadOn = (function () {
+    var el = document.querySelector('script[d2-datalayer-lead]')
+      || document.querySelector('[d2-datalayer-lead]');
+    var raw = el ? String(el.getAttribute('d2-datalayer-lead') || '').trim().toLowerCase() : '';
+    if (raw && raw !== 'submit' && raw !== 'success') {
+      console.warn('[digi2.datalayer] d2-datalayer-lead="' + raw + '" — expected "submit" or "success". Using "submit".');
+      return 'submit';
+    }
+    return raw || 'submit';
+  })();
 
   // ---- push ----------------------------------------------------------------
 
@@ -208,8 +237,52 @@
     });
 
     listen('form:submit', 'forms', function (d) {
+      // The click, once client-side validation passed. Not a lead yet.
+      if (leadOn === 'submit') {
+        push(clean({ event: 'generate_lead', form_id: d.formId, form_name: d.name }));
+      }
       return {
-        event: 'generate_lead',
+        event: 'form_submit',
+        form_id: d.formId,
+        form_name: d.name,
+      };
+    });
+
+    // The server took it. This is the lead.
+    listen('form:success', 'forms', function (d) {
+      if (leadOn === 'success') {
+        push(clean({
+          event: 'generate_lead',
+          form_id: d.formId,
+          form_name: d.name,
+          form_location: d.formLocation,
+          lead_source: d.leadSource,
+          lead_medium: d.leadMedium,
+          lead_campaign: d.leadCampaign,
+          has_gclid: d.hasGclid,
+          has_fbclid: d.hasFbclid,
+          consent_marketing: d.consentMarketing,
+        }));
+      }
+      return {
+        event: 'form_submit_success',
+        form_id: d.formId,
+        form_name: d.name,
+        form_location: d.formLocation,
+        lead_source: d.leadSource,
+        lead_medium: d.leadMedium,
+        lead_campaign: d.leadCampaign,
+        has_gclid: d.hasGclid,
+        has_fbclid: d.hasFbclid,
+        consent_marketing: d.consentMarketing,
+      };
+    });
+
+    // The server refused it — spam guard, plan limit, network. The gap between
+    // form_submit and form_submit_success is a free outage indicator.
+    listen('form:failure', 'forms', function (d) {
+      return {
+        event: 'form_submit_error',
         form_id: d.formId,
         form_name: d.name,
       };
@@ -226,16 +299,18 @@
     listen('ab:assigned', 'ab', function (d) {
       return {
         event: 'experiment_impression',
-        experiment_id: d.test || d.name,
-        variant_id: d.variant,
+        // ab-tests.js emits { ab_test, ab_variant }; reading d.test/d.variant
+        // meant clean() dropped both and pushed a bare event with no params.
+        experiment_id: d.ab_test || d.test || d.name,
+        variant_id: d.ab_variant || d.variant,
       };
     });
 
     listen('ab:click', 'ab', function (d) {
       return {
         event: 'select_promotion',
-        promotion_id: d.test || d.name,
-        creative_name: d.variant,
+        promotion_id: d.ab_test || d.test || d.name,
+        creative_name: d.ab_variant || d.variant,
       };
     });
 

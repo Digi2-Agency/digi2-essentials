@@ -10,7 +10,7 @@ window.D2DOCS = {
     { label: 'Komponenty UI', items: ['popups', 'toasts', 'tabs', 'dropdowns', 'sliders', 'lightbox', 'interactions', 'floatingdock'] },
     { label: 'Efekty', items: ['animate', 'scroll', 'lazy'] },
     { label: 'Narzędzia', items: ['format', 'countdown', 'copy', 'cookies'] },
-    { label: 'Marketing', items: ['google', 'abtests'] }
+    { label: 'Marketing', items: ['google', 'abtests', 'datalayer'] }
   ],
 
   start: {

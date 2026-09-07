@@ -24,9 +24,10 @@ function createEnvironment(cfg) {
   };
   const document = {
     querySelector(sel) {
-      const m = sel.match(/\[(d2-datalayer-(?:only|disable))\]/);
+      const m = sel.match(/\[(d2-datalayer-(?:only|disable|lead))\]/);
       if (!m) return null;
-      const key = m[1] === 'd2-datalayer-only' ? 'only' : 'disable';
+      const key = m[1] === 'd2-datalayer-only' ? 'only'
+        : m[1] === 'd2-datalayer-disable' ? 'disable' : 'lead';
       return elFor(m[1], attrs[key]);
     },
   };
@@ -88,12 +89,15 @@ test('expanding a product row reports select_item; forms report lead / error', (
   env.emit('form:submit', { name: 'contactPopup', formId: 'wf-form-Popup' });
   env.emit('form:invalid', { name: 'contactPopup', formId: 'wf-form-Popup' });
 
-  const [item, lead, err] = env.dl();
+  // form_submit is new alongside generate_lead; the lead itself is untouched.
+  const [item, lead, submit, err] = env.dl();
   assert.equal(item.event, 'select_item');
   assert.equal(item.item_id, 'b-1-05');
   assert.equal(item.item_list_name, 'products');
   assert.equal(lead.event, 'generate_lead');
   assert.equal(lead.form_id, 'wf-form-Popup');
+  assert.equal(submit.event, 'form_submit');
+  assert.equal(submit.form_id, 'wf-form-Popup');
   assert.equal(err.event, 'form_error');
 });
 
@@ -183,4 +187,105 @@ test('disabling the popups group silences the video events too', () => {
   const env = createEnvironment({ disable: 'popups' });
   env.emit('popup:video-end', { name: 'film' });
   assert.equal(env.dl().length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// form_submit / generate_lead / form_submit_error
+// ---------------------------------------------------------------------------
+
+const SUCCESS = {
+  formId: 'email-form', name: 'kontakt', formLocation: '/mieszkania',
+  leadSource: 'facebook', leadMedium: 'cpc', leadCampaign: 'wiosna',
+  hasGclid: false, hasFbclid: true, consentMarketing: true,
+};
+
+test('by default generate_lead keeps firing exactly where it always did', () => {
+  // The whole point of the default: a site with generate_lead marked as a key
+  // event in GA4 and imported into Ads sees no change until it opts in.
+  const env = createEnvironment();
+  env.emit('form:submit', { name: 'kontakt', formId: 'email-form' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'generate_lead', form_id: 'email-form', form_name: 'kontakt' },
+    { event: 'form_submit', form_id: 'email-form', form_name: 'kontakt' },
+  ]);
+});
+
+test('the confirmed submission is reported even on the default setting', () => {
+  const env = createEnvironment();
+  env.emit('form:success', SUCCESS);
+
+  assert.deepEqual(env.dl(), [{
+    event: 'form_submit_success',
+    form_id: 'email-form', form_name: 'kontakt', form_location: '/mieszkania',
+    lead_source: 'facebook', lead_medium: 'cpc', lead_campaign: 'wiosna',
+    has_gclid: false, has_fbclid: true, consent_marketing: true,
+  }], 'false survives clean() — "not from Google Ads" is information, not a blank');
+});
+
+test('d2-datalayer-lead="success" moves generate_lead onto the server confirmation', () => {
+  const env = createEnvironment({ lead: 'success' });
+
+  env.emit('form:submit', { name: 'kontakt', formId: 'email-form' });
+  assert.deepEqual(env.dl(), [
+    { event: 'form_submit', form_id: 'email-form', form_name: 'kontakt' },
+  ], 'the click alone is no longer a lead');
+
+  env.emit('form:success', SUCCESS);
+  const events = env.dl().map((e) => e.event);
+  assert.deepEqual(events, ['form_submit', 'generate_lead', 'form_submit_success']);
+
+  const lead = env.dl().find((e) => e.event === 'generate_lead');
+  assert.equal(lead.lead_source, 'facebook');
+  assert.equal(lead.has_fbclid, true);
+  assert.equal(lead.form_location, '/mieszkania');
+});
+
+test('a refused submission is reported and is never a lead', () => {
+  const env = createEnvironment({ lead: 'success' });
+  env.emit('form:failure', { name: 'kontakt', formId: 'email-form' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'form_submit_error', form_id: 'email-form', form_name: 'kontakt' },
+  ]);
+});
+
+test('an unknown d2-datalayer-lead value falls back to the safe default', () => {
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  let env;
+  try { env = createEnvironment({ lead: 'whenever' }); } finally { console.warn = orig; }
+
+  env.emit('form:submit', { name: 'kontakt', formId: 'email-form' });
+  assert.ok(env.dl().some((e) => e.event === 'generate_lead'), 'behaves as "submit"');
+  assert.ok(warnings.some((w) => w.includes('d2-datalayer-lead')), 'and says so');
+});
+
+test('disabling the forms group silences all of it, new events included', () => {
+  const env = createEnvironment({ disable: 'forms' });
+  env.emit('form:submit', { name: 'kontakt', formId: 'email-form' });
+  env.emit('form:success', SUCCESS);
+  env.emit('form:failure', { name: 'kontakt', formId: 'email-form' });
+  assert.deepEqual(env.dl(), []);
+});
+
+test('A/B events carry their parameters instead of arriving empty', () => {
+  const env = createEnvironment();
+  env.emit('ab:assigned', { ab_test: 'hero', ab_variant: 'B' });
+  env.emit('ab:click', { ab_test: 'hero', ab_variant: 'B' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'experiment_impression', experiment_id: 'hero', variant_id: 'B' },
+    { event: 'select_promotion', promotion_id: 'hero', creative_name: 'B' },
+  ]);
+});
+
+test('select_content carries the image it opened', () => {
+  const env = createEnvironment();
+  env.emit('lightbox:open', { index: 2, total: 9, src: '/img/salon.jpg' });
+
+  assert.deepEqual(env.dl(), [
+    { event: 'select_content', content_type: 'image', item_id: '/img/salon.jpg', index: 2, total: 9 },
+  ]);
 });

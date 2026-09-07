@@ -856,4 +856,33 @@
     ]
   };
 
+  /* ════════════════════════ DATALAYER ════════════════════════ */
+  M.datalayer = {
+    name: 'DataLayer — GA4',
+    short: 'DataLayer',
+    cat: 'Marketing',
+    flag: 'd2-datalayer',
+    icon: 'chart',
+    size: '3,3 KB min',
+    auto: true,
+    tagline: 'Aktywność modułów trafia do dataLayer pod nazwami zdarzeń GA4 — bez pisania kodu per strona.',
+    desc: 'Most między szyną zdarzeń digi2 a <code>dataLayer</code>. Popupy, listy CMS, taby, formularze, lightbox i testy A/B raportują się same, pod nazwami rekomendowanymi przez GA4. Grupy można wyłączać per strona. Osobno konfigurowany jest moment, w którym leci <code>generate_lead</code> — patrz niżej, bo to decyzja, która wpływa na konwersje w Google Ads.',
+
+    attrs: [
+      { a: 'd2-datalayer', v: '(puste)', el: 'tag loadera', d: 'Włącza moduł — raportują wszystkie grupy.' },
+      { a: 'd2-datalayer-disable', v: 'grupy', el: 'tag loadera', d: 'Wszystko <b>oprócz</b> wymienionych grup, np. <code>"lightbox ab"</code>.' },
+      { a: 'd2-datalayer-only', v: 'grupy', el: 'tag loadera', d: '<b>Tylko</b> wymienione grupy. Łączy się z <code>-disable</code>: najpierw zawęża, potem odejmuje.' },
+      { a: 'd2-datalayer-lead', v: 'submit | success', el: 'tag loadera', d: 'Kiedy leci <code>generate_lead</code>. Domyślnie <code>submit</code> — czyli po walidacji klienckiej, jeszcze zanim Webflow wyśle zgłoszenie. <code>success</code> przepina je na potwierdzenie serwera (<code>.w-form-done</code>), czyli na prawdziwego leada.', n: 'domyślna wartość celowo nie zmienia zachowania istniejących wdrożeń — przełączaj świadomie, po sprawdzeniu kluczowych zdarzeń w GA4 i importu do Ads' }
+    ],
+
+    api: {
+      desc: 'Grupy: <code>popups</code>, <code>cms</code>, <code>tabs</code>, <code>forms</code>, <code>lightbox</code>, <code>ab</code>. Zdarzenia formularza: <code>form_submit</code> (klik po walidacji), <code>form_error</code> (walidacja odrzuciła), <code>form_submit_success</code> (serwer przyjął), <code>form_submit_error</code> (serwer odrzucił). Rozjazd między <code>form_submit</code> a <code>form_submit_success</code> to darmowy wskaźnik awarii formularza.',
+      code: "<!-- wszystko raportuje, generate_lead na potwierdzeniu serwera -->\n<script src=\"…/digi2-loader.min.js\"\n        d2-forms d2-datalayer d2-datalayer-lead=\"success\"></script>\n\n<!-- albo: bez lightboxa i testów A/B -->\n<script src=\"…/digi2-loader.min.js\"\n        d2-datalayer d2-datalayer-disable=\"lightbox ab\"></script>\n\n// Parametry potwierdzonego leada (form_submit_success / generate_lead):\n//   form_id, form_name        — id elementu i nazwa z create()\n//   form_location             — ścieżka strony\n//   lead_source / _medium / _campaign  — UTM z URL-a albo z cookie\n//   has_gclid / has_fbclid    — BOOLEAN, nigdy sama wartość click id\n//   consent_marketing         — czy zaznaczono wszystkie zgody\n//\n// Do dataLayer nigdy nie trafia treść pól — żadnych maili, telefonów\n// ani treści wiadomości."
+    },
+
+    examples: [
+      { title: 'Przepięcie generate_lead na potwierdzenie serwera', desc: 'Domyślnie <code>generate_lead</code> leci przy kliknięciu „Wyślij” po walidacji w przeglądarce — czyli zanim Webflow wyśle zgłoszenie. Odrzucenie przez spam guard albo limit planu i tak policzy się jako konwersja, a uczą się na tym algorytmy Google Ads i Meta. Przed przełączeniem sprawdź w GA4 kluczowe zdarzenia i import do Ads.', code: '<script src="…/digi2-loader.min.js"\n        d2-forms d2-datalayer d2-datalayer-lead="success"></script>' }
+    ]
+  };
+
 })(window.D2DOCS.modules);

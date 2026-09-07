@@ -8,7 +8,7 @@
  *   3. Consent manager — API to grant/deny/update consent categories
  *
  * Loader attributes:
- *   g-gtm-id="GTM-XXXXXXX"    — your GTM container ID (required)
+ *   d2-gtm="GTM-XXXXXXX"      — your GTM container ID (required)
  *
  * API:
  *   digi2.google.consent.grant('analytics_storage')         Grant a single category
@@ -121,7 +121,7 @@
       document.addEventListener('DOMContentLoaded', injectNoscript);
     }
   } else {
-    console.warn('[digi2.google] No g-gtm-id attribute found on loader script. GTM not injected.');
+    console.warn('[digi2.google] No d2-gtm attribute found on loader script. GTM not injected.');
   }
 
   // ---------------------------------------------------------------------------

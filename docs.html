@@ -764,6 +764,17 @@
 
   <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      DataLayer / GA4
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#datalayer">Overview</a>
+      <a href="#datalayer-forms">Form Events &amp; Leads</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group is-collapsed">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Tabs & Accordions
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -2321,6 +2332,68 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
   </section>
 
   <!-- ── EVENTS ── -->
+  <section id="datalayer">
+    <h2>DataLayer (GA4)</h2>
+    <p>One flag turns module activity into GA4-shaped <code>dataLayer</code> pushes — no per-site glue code, no GTM triggers hand-wired to CSS classes.</p>
+    <pre><code>&lt;script src="…/digi2-loader.min.js" <span class="attr">d2-datalayer</span> <span class="attr">d2-popups</span> <span class="attr">d2-cms</span> <span class="attr">d2-forms</span>&gt;&lt;/script&gt;</code></pre>
+
+    <table>
+      <tr><th>Attribute</th><th>Effect</th></tr>
+      <tr><td><code>d2-datalayer</code></td><td>Load the module — every group reports</td></tr>
+      <tr><td><code>d2-datalayer-disable="a b"</code></td><td>Everything <strong>except</strong> those groups</td></tr>
+      <tr><td><code>d2-datalayer-only="a b"</code></td><td><strong>Only</strong> those groups</td></tr>
+      <tr><td><code>d2-datalayer-lead="submit|success"</code></td><td>When <code>generate_lead</code> fires — see <a href="#datalayer-forms">Form Events</a></td></tr>
+    </table>
+    <p class="muted">Groups: <code>popups</code>, <code>cms</code>, <code>tabs</code>, <code>forms</code>, <code>lightbox</code>, <code>ab</code>.</p>
+
+    <h3>Event map</h3>
+    <table>
+      <tr><th>What happened</th><th>GA4 event</th></tr>
+      <tr><td>Popup opened / closed</td><td><code>view_promotion</code> / <code>close_promotion</code></td></tr>
+      <tr><td>Popup video finished / unmuted</td><td><code>video_complete</code> / <code>video_unmute</code></td></tr>
+      <tr><td>List filtered / sorted / extended</td><td><code>view_item_list</code></td></tr>
+      <tr><td>Row expanded</td><td><code>select_item</code></td></tr>
+      <tr><td>Image opened</td><td><code>select_content</code></td></tr>
+      <tr><td>Form events</td><td><a href="#datalayer-forms">see below</a></td></tr>
+      <tr><td>A/B variant shown / clicked</td><td><code>experiment_impression</code> / <code>select_promotion</code></td></tr>
+    </table>
+  </section>
+
+  <section id="datalayer-forms">
+    <h2>Form Events &amp; Leads</h2>
+    <p>A form produces four distinct signals, and telling them apart is the difference between measuring intent and measuring outcome.</p>
+
+    <table>
+      <tr><th>Event</th><th>Fires when</th></tr>
+      <tr><td><code>form_submit</code></td><td>Visitor clicked Submit and client-side validation passed</td></tr>
+      <tr><td><code>form_error</code></td><td>Client-side validation refused it</td></tr>
+      <tr><td><code>form_submit_success</code></td><td><strong>Webflow confirmed the submission</strong> (<code>.w-form-done</code>)</td></tr>
+      <tr><td><code>form_submit_error</code></td><td>Webflow refused it (<code>.w-form-fail</code>) — spam guard, plan limit, network</td></tr>
+    </table>
+
+    <h3>Where generate_lead fires</h3>
+    <p>By default, on <code>form_submit</code> — the click. Webflow hasn't sent the request at that point, so a refusal still counts as a conversion. Since <code>generate_lead</code> is usually a key event in GA4 and imported into Google Ads, that is what the bidding algorithms learn from.</p>
+    <pre><code>&lt;script src="…/digi2-loader.min.js" <span class="attr">d2-forms</span> <span class="attr">d2-datalayer</span> <span class="attr">d2-datalayer-lead</span>=<span class="string">"success"</span>&gt;&lt;/script&gt;</code></pre>
+    <table>
+      <tr><th>Value</th><th><code>generate_lead</code> fires on</th></tr>
+      <tr><td><code>submit</code> (default)</td><td>The submit handler, after client-side validation</td></tr>
+      <tr><td><code>success</code></td><td>Webflow confirming the submission — the honest signal</td></tr>
+    </table>
+    <p class="muted"><strong>The default stays <code>submit</code> on purpose.</strong> Moving it silently would change the numbers on every site already running this library, and any site with <code>generate_lead</code> imported into Ads would see its conversion volume shift with no warning. Flip a site over once its GA4 key events and Ads import have been checked. All four events above are pushed either way, so the correct conversion can be built and verified in GTM <em>before</em> the switch.</p>
+
+    <h3>What a confirmed lead carries</h3>
+    <table>
+      <tr><th>Param</th><th>Value</th></tr>
+      <tr><td><code>form_id</code> / <code>form_name</code></td><td>Element id, and the name from <code>create()</code> where the form is registered</td></tr>
+      <tr><td><code>form_location</code></td><td>Path of the page it was sent from</td></tr>
+      <tr><td><code>lead_source</code> / <code>lead_medium</code> / <code>lead_campaign</code></td><td>UTM values, from the URL or the first-touch cookie</td></tr>
+      <tr><td><code>has_gclid</code> / <code>has_fbclid</code></td><td><strong>Booleans</strong> — the click id itself never leaves the page</td></tr>
+      <tr><td><code>consent_marketing</code></td><td>Whether every consent checkbox in the form was ticked</td></tr>
+    </table>
+    <p class="muted">Field values are never pushed — no emails, phone numbers or message bodies, only names of things and flags. Detection runs on every <code>.w-form</code>, registered with <code>create()</code> or not, so a confirmed lead is reported even on pages that never call it. A success state already visible when the page loads is ignored — only a transition into it counts, or every pageview of a page with a stray visible <code>.w-form-done</code> would report a lead.</p>
+    <p class="muted">The gap between <code>form_submit</code> and <code>form_submit_success</code> is a free outage indicator: if they diverge, the form is failing between the browser and Webflow.</p>
+  </section>
+
   <section id="events">
     <h2>Events</h2>
     <pre><code>digi2.<span class="fn">on</span>(<span class="string">'loaded'</span>, fn)              <span class="comment">// all modules loaded</span>

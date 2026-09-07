@@ -1150,16 +1150,21 @@ form back, and drops any validation error styling.
 
 ### Auto-Injected Hidden Inputs
 
+Names are **uppercase** — this table used to list them lowercase with a
+`_hidden` suffix, which is not what the module injects. Anything mapping these
+by name (a CRM, a Make scenario) needs the names as written here.
+
 | Input name | Source |
 |---|---|
-| `utm_campaign_hidden` | URL param → cookie |
-| `utm_source_hidden` | URL param → cookie |
-| `utm_medium_hidden` | URL param → cookie |
-| `utm_content_hidden` | URL param → cookie |
-| `utm_term_hidden` | URL param → cookie |
-| `gclid` / `fbclid` / `msclkid` | URL param → cookie |
-| `gaclientid` | `_ga` cookie |
-| `page_url` / `page_title` / `page_referrer` | Page meta |
+| `UTM_CAMPAIGN` | URL param → cookie |
+| `UTM_SOURCE` | URL param → cookie |
+| `UTM_MEDIUM` | URL param → cookie |
+| `UTM_CONTENT` | URL param → cookie |
+| `UTM_TERM` | URL param → cookie |
+| `GCLID` / `FBCLID` / `MSCLKID` | URL param → cookie (skipped when empty) |
+| `GOOGLE_ANALYTICS_ID` | `_ga` cookie |
+| `PAGE_URL` / `PAGE_TITLE` / `PAGE_REFERRER` | Page meta |
+| `IP_ADDRESS` | ipify — off by default (`ipTracking: true`) |
 | `ip_address` | ipify API |
 
 ### Context Capture
@@ -1849,8 +1854,11 @@ own is only needed when you want the defaults.
 | More rows loaded | `view_item_list` | `item_list_name`, `loaded` |
 | Product row expanded | `select_item` | `item_list_name`, `item_id` |
 | Image opened | `select_content` | `content_type: 'image'`, `item_id`, `index`, `total` |
-| Form submitted (valid) | `generate_lead` | `form_id`, `form_name` |
+| Form submitted (valid) | `form_submit` | `form_id`, `form_name` |
+| **Server accepted the submission** | `form_submit_success` | `form_id`, `form_name`, `form_location`, `lead_source`, `lead_medium`, `lead_campaign`, `has_gclid`, `has_fbclid`, `consent_marketing` |
+| Server refused the submission | `form_submit_error` | `form_id`, `form_name` |
 | Form rejected by validation | `form_error` | `form_id`, `form_name` |
+| A lead | `generate_lead` | fires on **`form_submit` by default** — see below |
 | A/B variant shown | `experiment_impression` | `experiment_id`, `variant_id` |
 | A/B variant clicked | `select_promotion` | `promotion_id`, `creative_name` |
 
@@ -1862,6 +1870,43 @@ custom names in the same snake_case style and GA4 reports them as-is.
 
 Video events belong to the `popups` group, so `d2-datalayer-disable="popups"`
 silences them along with the open/close pair.
+
+### Where `generate_lead` fires
+
+By default it fires on `form_submit` — the click, once client-side validation
+passed. That is what this module has always done, and it is **wrong**: Webflow
+hasn't sent the request yet, so a spam-guard refusal, a plan limit or a dropped
+connection all count as conversions. Since `generate_lead` is typically a key
+event in GA4 and imported into Google Ads, that inflated signal is what the
+bidding algorithms learn from.
+
+The honest signal is Webflow confirming the submission. Move `generate_lead`
+onto it with one attribute:
+
+```html
+<script src=".../digi2-loader.min.js" d2-forms d2-datalayer d2-datalayer-lead="success"></script>
+```
+
+| Value | `generate_lead` fires on |
+|---|---|
+| `submit` (default) | the submit handler, after client-side validation |
+| `success` | Webflow showing `.w-form-done` — the server took it |
+
+**The default stays `submit` deliberately.** Moving it silently would change
+the numbers on every site already running this library, and any site with
+`generate_lead` imported into Ads would see its conversion volume shift with no
+warning. Flip a site over once you've checked its GA4 key events and Ads import.
+
+`form_submit`, `form_submit_success` and `form_submit_error` are pushed either
+way, so you can build the correct conversion in GTM and verify it against live
+traffic *before* flipping the switch. The gap between `form_submit` and
+`form_submit_success` is also a free outage indicator: if they diverge, the form
+is failing somewhere between the browser and Webflow.
+
+Detection watches Webflow's own success/error state on every `.w-form`, armed
+whether or not the form was registered with `create()` — so a confirmed lead is
+reported even on pages that never call it. A success state already on screen
+when the page loads is not reported: only a transition into it counts.
 
 Filters are flattened into one string (`rooms:1|2,status:Dostępne`) because GA4
 parameters can't hold objects. Empty values are dropped so no blank parameters

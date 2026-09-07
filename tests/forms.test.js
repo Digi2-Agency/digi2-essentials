@@ -735,7 +735,7 @@ test('autoValidation gives MESSAGE no minimum length — any non-empty text pass
 
 // Minimal .w-form markup plus the machinery the feature needs: a controllable
 // MutationObserver (fired manually) and captured timers.
-function createResetEnvironment({ resetAttr } = {}) {
+function createResetEnvironment({ resetAttr, doneVisibleOnLoad } = {}) {
   const body = createElement('body');
   const wrapperAttrs = { class: 'w-form' };
   if (resetAttr !== undefined) wrapperAttrs['d2-form-reset'] = resetAttr;
@@ -794,6 +794,10 @@ function createResetEnvironment({ resetAttr } = {}) {
       disconnect() {}
     },
   });
+
+  // A .w-form-done left visible in the Designer is on screen before the module
+  // ever runs — the state it must not mistake for a fresh submission.
+  if (doneVisibleOnLoad) done.style.display = 'block';
 
   vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
 
@@ -906,4 +910,106 @@ test('d2-form-autofill="false" leaves the browser styling alone', () => {
 
   const style = env.context.document.head.children.find((c) => c.hasAttribute('d2-form-autofill-styles'));
   assert.equal(style, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Submission outcome on the bus — the signal generate_lead should ride on
+// ---------------------------------------------------------------------------
+
+function outcomeEnv({ cookie = '', search = '', consents = [] } = {}) {
+  const base = createResetEnvironment();          // .w-form + form + done + fail
+  const emitted = [];
+  base.context.window.digi2.on = (name, fn) => {
+    (base.context.window.digi2._h = base.context.window.digi2._h || {});
+    (base.context.window.digi2._h[name] = base.context.window.digi2._h[name] || []).push(fn);
+  };
+  base.context.window.digi2.emit = (name, data) => emitted.push({ name, data });
+  base.context.document.cookie = cookie;
+  base.context.window.location = { search, href: 'https://example.com/mieszkania' + search, pathname: '/mieszkania' };
+  base.context.URLSearchParams = URLSearchParams;
+
+  consents.forEach((checked, i) => {
+    const box = createElement('input', { type: 'checkbox', name: 'CONSENT_' + i });
+    box.checked = checked;
+    base.form.appendChild(box);
+  });
+
+  // Re-run the module against this prepared environment.
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), base.context, { filename: modulePath });
+  return Object.assign({}, base, { emitted, of: (n) => emitted.filter((e) => e.name === n) });
+}
+
+test('a Webflow success is put on the bus as form:success', () => {
+  const env = outcomeEnv();
+  env.succeed();
+  assert.equal(env.of('form:success').length, 1, 'reported once');
+  assert.equal(env.of('form:failure').length, 0);
+});
+
+test('a success state already on screen at load is never reported as a lead', () => {
+  // Otherwise every pageview of a page whose .w-form-done was left visible in
+  // the Designer reports a lead on the first unrelated DOM change — the same
+  // class of false signal this whole change exists to remove.
+  const env = createResetEnvironment({ doneVisibleOnLoad: true });
+  const emitted = [];
+  env.context.window.digi2.emit = (name, data) => emitted.push({ name, data });
+
+  // Any mutation inside the wrapper runs the observer.
+  env.observers.forEach((o) => o.cb([]));
+
+  assert.equal(emitted.filter((e) => e.name === 'form:success').length, 0,
+    'the state was already there — it is not a new submission');
+
+  // And a genuine submission afterwards still reports: hide, then show again.
+  env.done.style.display = 'none';
+  env.observers.forEach((o) => o.cb([]));
+  env.done.style.display = 'block';
+  env.observers.forEach((o) => o.cb([]));
+
+  assert.equal(emitted.filter((e) => e.name === 'form:success').length, 1,
+    'a real transition into the success state still counts');
+});
+
+test('a Webflow error is reported separately and is never a success', () => {
+  const env = outcomeEnv();
+  env.failSubmit();
+  assert.equal(env.of('form:failure').length, 1);
+  assert.equal(env.of('form:success').length, 0);
+});
+
+test('the success payload carries campaign context but no typed values', () => {
+  const env = outcomeEnv({
+    search: '?utm_source=facebook&utm_medium=cpc&fbclid=abc123',
+    cookie: 'utm_campaign=wiosna',
+    consents: [true, true],
+  });
+  env.succeed();
+
+  const d = env.of('form:success')[0].data;
+  assert.equal(d.leadSource, 'facebook');
+  assert.equal(d.leadMedium, 'cpc');
+  assert.equal(d.leadCampaign, 'wiosna', 'read from the cookie when not in the URL');
+  assert.equal(d.hasFbclid, true, 'a boolean, never the click id itself');
+  assert.equal(d.hasGclid, false);
+  assert.equal(d.consentMarketing, true);
+  assert.equal(d.formLocation, '/mieszkania');
+
+  const serialised = JSON.stringify(d);
+  assert.ok(!serialised.includes('abc123'), 'the click id value never leaves the page');
+  assert.ok(!serialised.includes('Anna'), 'and neither does anything anyone typed');
+});
+
+test('consent_marketing is false when a consent box was left unticked', () => {
+  const env = outcomeEnv({ consents: [true, false] });
+  env.succeed();
+  assert.equal(env.of('form:success')[0].data.consentMarketing, false);
+});
+
+test('the outcome observer does not switch auto-reset on', () => {
+  // Measurement must not drag an unrelated feature in with it: a form without
+  // d2-form-reset must still be sitting in its success state afterwards.
+  const env = outcomeEnv();
+  env.succeed();
+  assert.equal(env.timers.filter((t) => t.ms === 30000).length, 0, 'no reset timer armed');
+  assert.equal(env.form.style.display, 'none', 'the form stays as Webflow left it');
 });

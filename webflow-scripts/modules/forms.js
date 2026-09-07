@@ -1806,6 +1806,122 @@
   };
 
   // ---------------------------------------------------------------------------
+  // Submission outcome — the signal that the SERVER accepted the form
+  //
+  // The submit handler fires after client-side validation, before Webflow has
+  // even sent the request. Treating that as a lead counts spam-guard refusals,
+  // plan limits and network failures as conversions, and feeds that back to
+  // Google Ads and Meta as training data.
+  //
+  // Webflow's own success state is the honest signal, so we watch for it and
+  // put it on the bus as `form:success` (and `form:failure` for .w-form-fail).
+  // What listens to those — if anything — is the datalayer module's business.
+  //
+  // Deliberately separate from watchWebflowForm(): that one exists to restore
+  // the form and only runs where the site asked for auto-reset. Measurement
+  // must not depend on, or switch on, an unrelated feature.
+  // ---------------------------------------------------------------------------
+  function _formNameFor(formEl) {
+    for (var name in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+      if (registry[name] && registry[name].formElement === formEl) return name;
+    }
+    return null;
+  }
+
+  // Everything the library already knows at the moment a lead lands. Read from
+  // the DOM and the first-party cookies — never the values people typed.
+  function _outcomeContext(formEl) {
+    var ctx = {};
+    try { ctx.formLocation = window.location.pathname || '/'; } catch (e) {}
+    try {
+      var params = new URLSearchParams(window.location.search);
+      ctx.leadSource = params.get('utm_source') || _getCookie('utm_source') || null;
+      ctx.leadMedium = params.get('utm_medium') || _getCookie('utm_medium') || null;
+      ctx.leadCampaign = params.get('utm_campaign') || _getCookie('utm_campaign') || null;
+      // Booleans, not the ids themselves: a click id is user-identifying and
+      // has no business in an analytics payload.
+      ctx.hasGclid = !!(params.get('gclid') || _getCookie('gclid'));
+      ctx.hasFbclid = !!(params.get('fbclid') || _getCookie('fbclid'));
+    } catch (e) { /* URLSearchParams missing, cookies blocked */ }
+    try {
+      // Consent boxes are marked with d2-consent-item where the site uses the
+      // consent groups; otherwise fall back to the CONSENT_* naming this module
+      // injects. Filtering in JS rather than in the selector keeps it working
+      // for a lowercase name and doesn't depend on attribute-prefix selectors.
+      var boxes = formEl.querySelectorAll('input');
+      var total = 0, granted = 0;
+      for (var i = 0; i < boxes.length; i++) {
+        var box = boxes[i];
+        if (box.type !== 'checkbox') continue;
+        var isConsent = box.hasAttribute('d2-consent-item')
+          || box.hasAttribute('data-d2-consent-item')
+          || /^consent/i.test(box.name || '');
+        if (!isConsent) continue;
+        total++;
+        if (box.checked) granted++;
+      }
+      if (total) ctx.consentMarketing = granted === total;
+    } catch (e) { /* no consent checkboxes */ }
+    return ctx;
+  }
+
+  function _emitOutcome(kind, formEl) {
+    if (!formEl) return;
+    var payload = { name: _formNameFor(formEl), formId: formEl.id || null };
+    if (kind === 'success') {
+      var ctx = _outcomeContext(formEl);
+      for (var k in ctx) {
+        if (Object.prototype.hasOwnProperty.call(ctx, k)) payload[k] = ctx[k];
+      }
+    }
+    _log('form ' + kind, payload);
+    _emitEvent('form:' + kind, payload);
+  }
+
+  /**
+   * Watch one .w-form for Webflow's success/error state and report it on the
+   * bus. Idempotent per wrapper; independent of the auto-reset observer.
+   */
+  function observeFormOutcome(target) {
+    var parts = _webflowParts(target);
+    var wrapper = parts.wrapper;
+    if (!wrapper || !parts.form) return false;
+    if (wrapper._d2OutcomeBound) return true;
+    if (typeof MutationObserver !== 'function') return false;
+    wrapper._d2OutcomeBound = true;
+
+    // Seed from the CURRENT state and only report transitions into it. A page
+    // whose .w-form-done is visible on load — easy to leave that way in the
+    // Designer — must not report a lead on every pageview, which is the exact
+    // failure this whole thing exists to remove.
+    var wasDone = _isShown(parts.done);
+    var wasFail = _isShown(parts.fail);
+
+    var check = function () {
+      var isDone = _isShown(parts.done);
+      var isFail = _isShown(parts.fail);
+      if (isDone && !wasDone) _emitOutcome('success', parts.form);
+      if (isFail && !wasFail) _emitOutcome('failure', parts.form);
+      wasDone = isDone;
+      wasFail = isFail;
+    };
+
+    var observer = new MutationObserver(check);
+    observer.observe(wrapper, { attributes: true, subtree: true, attributeFilter: ['style'] });
+    return true;
+  }
+
+  // Arm every Webflow form on the page. Cheap (one observer per form, reading
+  // only), and it means a confirmed lead is reported whether or not the site
+  // registered the form with create().
+  function bootFormOutcomes(root) {
+    var scope = root || document;
+    var wraps = scope.querySelectorAll('.w-form');
+    for (var i = 0; i < wraps.length; i++) observeFormOutcome(wraps[i]);
+  }
+
+  // ---------------------------------------------------------------------------
   // Auto-reset after a Webflow success
   //
   // Webflow's success state is terminal: it hides the <form> and leaves
@@ -1963,6 +2079,7 @@
     injectAutofillStyles();
     bootConsentMasters();
     bootFormResets();
+    bootFormOutcomes();
   }
 
   if (document.readyState === 'loading' && document.addEventListener) {

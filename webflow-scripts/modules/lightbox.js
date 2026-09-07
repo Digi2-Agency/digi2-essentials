@@ -769,7 +769,13 @@
     if (typeof modal.focus === 'function') modal.focus();
 
     _log('open', { items: items.length, index: state.index, builtin: modal.hasAttribute('d2-lightbox-default') });
-    _emit('lightbox:open', { index: state.index, total: items.length });
+    // src travels with the event: the datalayer bridge maps it to item_id, and
+    // without it select_content arrived with no way to tell the images apart.
+    _emit('lightbox:open', {
+      index: state.index,
+      total: items.length,
+      src: (items[state.index] && items[state.index].src) || null,
+    });
   }
 
   function close() {
