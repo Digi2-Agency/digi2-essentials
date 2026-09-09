@@ -648,6 +648,13 @@ Create the popups **without their own auto-triggers** — no `openOnLoad`, no
 })
 ```
 
+**A scheduled popup never stacks on another.** A step waits while anything else
+is on screen, and a popup the visitor opens deliberately dismisses a scheduled
+one that is in the way. Two modals on top of each other read as broken: closing
+the top one leaves the other behind, and it looks like the close button did
+nothing. Only sequence-opened popups give way — one the site opened itself is
+left alone.
+
 > **Give every popup its own `cookieName`.** The default is the same
 > `popup_clicked` for all of them, so closing step one would mark the rest as
 > seen and the chain would skip to the end. The module warns in the console if

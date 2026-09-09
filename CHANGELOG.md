@@ -5,6 +5,52 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.6.3 — 2026-09-09
+
+### Popup z sekwencji nie wchodzi już na formularz
+
+Zgłoszone z `wielka16.com/products/…`: „nie działa zamykanie popupa po kliknięciu
+Zapytaj o cenę". Zamykanie działało — problem był inny. Popup promocyjny
+z sekwencji (`sequence: [4, …]`) wyskakiwał 4 s po wejściu i zostawał na ekranie.
+Kliknięcie „Zapytaj o cenę" otwierało formularz **na nim**, więc zamknięcie
+formularza odsłaniało tamten popup i wyglądało to tak, jakby krzyżyk nic nie zrobił.
+
+- **Krok sekwencji czeka, gdy cokolwiek innego jest otwarte** i wchodzi dopiero,
+  gdy ekran jest wolny. Nie przepada — czeka.
+- **Popup otwarty świadomie przez odwiedzającego zamyka ten z sekwencji**, jeśli
+  ten zasłania ekran. Ustępuje tylko popup otwarty przez sekwencję; ten, który
+  strona otworzyła sama, zostaje nietknięty.
+
+## v1.6.2 — 2026-09-09
+
+### Suwaki zakresu przestają się nawzajem zabijać
+
+Dwa suwaki nad jedną listą przeliczały sobie nawzajem granice. Wystarczyło
+przesunąć metraż na tyle, żeby została jedna oferta, a suwak ceny zwijał się do
+punktu (`9 358 784 … 9 358 784`) — bez rozpiętości, więc martwy: nie reagował na
+przeciąganie, klawiaturę ani kliknięcie w tor, a każdy kolejny ruch skakał.
+Odtworzone na `bernardynska.com/wyszukiwarka`.
+
+- **Granice liczą się wyłącznie z filtrów kategorialnych** (taby, chipy,
+  checkboxy, selecty). Żaden filtr zakresu — ani własny suwaka, ani sąsiada —
+  nie zawęża skali. Granice odpowiadają na pytanie „co jest w ofercie w tym
+  tabie", a to pytanie o facety.
+- **Suwak, którym się właśnie rusza, nie jest przeliczany.** Przeliczenie
+  w trakcie przeciągania przesuwa mapowanie piksel→wartość pod palcem: ta sama
+  pozycja kursora daje inną liczbę między dwoma zdarzeniami i uchwyt skacze.
+- Zwężenie do jednej wartości przez **facet** zostaje — gdy tab zostawia jedno
+  mieszkanie, „900 000 … 900 000" to prawda o ofercie, a facet da się odkliknąć.
+
+Zachowanie, które ktoś mógł lubić, a które znika: wybór ceny nie zawęża już
+skali metrażu. To świadomy kompromis — to sprzężenie zabijało widżet.
+
+## v1.6.1 — 2026-09-07
+
+- Pasek miniaturek w lightboxie jest **wyśrodkowany, dopóki się mieści**. Cztery
+  zdjęcia siedzą na środku, a nie przy lewej krawędzi; do wyrównania od lewej
+  pasek przechodzi dopiero przy przepełnieniu, bo wyśrodkowany pasek
+  z przewijaniem ucina początek listy i nie da się do niej wrócić.
+
 ## v1.6.0 — 2026-09-07
 
 ### Lightbox: pasek miniatur w jednej linii, z przewijaniem

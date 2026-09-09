@@ -1311,3 +1311,64 @@ test('a traffic-gated step is skipped so the chain moves on', () => {
   assert.equal(oferta.isVisible, true, 'and the chain reaches the next step instead of stalling');
   assert.ok(seq.status().step >= 1, 'the sequence advanced past it');
 });
+
+// ---------------------------------------------------------------------------
+// A scheduled popup must not stack on top of what the visitor opened
+// ---------------------------------------------------------------------------
+
+function stackEnv() {
+  const store = {};
+  const env = createEnvironment({ store });
+  // Before the module runs: a sequence stamps Date.now() as it starts, and a
+  // clock installed afterwards jumps backwards, so its elapsed time goes
+  // negative and no step ever comes due.
+  const clock = installFakeClock(env);
+  loadPopupsModule(env);
+  ['promo', 'contact'].forEach((n) => env.body.appendChild(createElement('div', { class: 'p-' + n })));
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-promo', animation: 'none', cookieName: null, sequence: [2],
+  });
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null,
+  });
+  return { env, promo, contact, clock };
+}
+
+test('a sequence step waits while the visitor has another popup open', () => {
+  const t = stackEnv();
+  t.contact.show();                       // visitor clicked a CTA
+  assert.equal(t.contact.isVisible, true);
+
+  runSeconds(t.env, t.clock, 6);          // the scheduled promo comes due
+
+  assert.equal(t.promo.isVisible, false,
+    'two stacked modals read as broken: closing the top one leaves the other');
+  assert.equal(t.contact.isVisible, true, 'what the visitor opened stays');
+
+  // Once the screen is free, the step still runs — it waited, it did not vanish.
+  t.contact._closeByUser();
+  runSeconds(t.env, t.clock, 2);
+  assert.equal(t.promo.isVisible, true);
+});
+
+test('opening a popup deliberately dismisses a scheduled one that is in the way', () => {
+  const t = stackEnv();
+  runSeconds(t.env, t.clock, 3);
+  assert.equal(t.promo.isVisible, true, 'the scheduled popup is up');
+
+  t.contact.show();                       // visitor clicks "ask about the price"
+
+  assert.equal(t.contact.isVisible, true);
+  assert.equal(t.promo.isVisible, false,
+    'the scheduled one gives way — the visitor asked for this form');
+});
+
+test('a popup the site opened itself is never dismissed by another', () => {
+  // Only sequence-opened popups give way; anything else is the site's call.
+  const t = stackEnv();
+  t.promo.show();                         // opened deliberately, not by the sequence
+  t.contact.show();
+
+  assert.equal(t.promo.isVisible, true, 'left alone');
+  assert.equal(t.contact.isVisible, true);
+});

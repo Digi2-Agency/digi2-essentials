@@ -749,6 +749,17 @@
       }
       this.pendingShow = false;
 
+      // A scheduled popup gives way to one the visitor asked for. Without
+      // this, clicking a CTA while a sequence popup is up stacks two modals:
+      // closing the one on top leaves the other behind, which reads as "the
+      // close button is broken". Only sequence-opened popups are dismissed —
+      // a popup the site opened deliberately is left alone.
+      var parked = _visiblePopupOtherThan(this);
+      if (parked && parked._openedBySequence) {
+        _log('closing scheduled popup "' + parked.name + '" for "' + this.name + '"');
+        parked.hide();
+      }
+
       // Resolve responsive option strings (e.g. animation: 'fade;slide-up@911')
       // at show time so breakpoint changes take effect without re-create.
       this._refreshResponsiveOpts();
@@ -891,6 +902,7 @@
 
         _emitEvent('popup:close', { name: this.name });
         _safeCall(this.options.onClose, this.name, 'onClose', this);
+        this._openedBySequence = false;
         // After the site's own handler, so a sequence advancing to its next
         // step never pre-empts an onClose that hands off to another popup.
         this._closeHooks.slice().forEach((fn) => {
@@ -1543,6 +1555,16 @@
   // Popups in a sequence should be created WITHOUT their own auto-triggers
   // (no openOnLoad / openAfterDelay) — the sequence is what opens them.
   // ---------------------------------------------------------------------------
+  // Any popup currently on screen other than `self`.
+  function _visiblePopupOtherThan(self) {
+    for (var name in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+      var other = registry[name];
+      if (other && other !== self && other.isVisible) return other;
+    }
+    return null;
+  }
+
   const SEQ_TICK_MS = 1000;
   const SEQ_STATE_VERSION = 1;
 
@@ -1728,6 +1750,18 @@
         return;
       }
 
+      // Something else is already on screen — a form the visitor opened, a
+      // popup another trigger fired. A scheduled step is the least urgent
+      // thing on the page: it waits for the screen rather than landing on top
+      // of what someone is reading. Two stacked modals also read as broken:
+      // closing the top one leaves the other, and it looks like the close
+      // button did nothing.
+      var busy = _visiblePopupOtherThan(inst);
+      if (busy) {
+        _log('sequence step waiting — "' + busy.name + '" is open');
+        return;                                    // try again next tick
+      }
+
       const off = inst._onCloseInternal(() => this._stepClosed());
       inst.show();
       if (!inst.isVisible) {
@@ -1736,6 +1770,7 @@
         return;
       }
       this._offClose = off;
+      inst._openedBySequence = true;
       st.pending = true;
       st.shownPath = _seqPath();   // where it was open, for the navigate-away case
       this._save();

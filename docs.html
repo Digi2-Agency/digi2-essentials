@@ -1247,6 +1247,8 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td>A step whose popup was dismissed for good is skipped</td><td>Its cookie outlives the visit — reopening it would ignore the visitor's answer</td></tr>
       <tr><td>A step whose popup doesn't match the visitor's traffic is skipped</td><td>A <a href="#popups-traffic">campaign mismatch</a> can't resolve during the visit; waiting would stall every later step</td></tr>
       <tr><td>A step whose popup isn't on this page waits</td><td>It may simply live on another page</td></tr>
+      <tr><td>A step waits while another popup is on screen</td><td>A scheduled popup does not land on top of a form the visitor opened — two stacked modals read as broken, since closing the top one leaves the other behind</td></tr>
+      <tr><td>Opening a popup deliberately dismisses a scheduled one in the way</td><td>The visitor asked for this one. Only sequence-opened popups give way</td></tr>
     </table>
 
     <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>
@@ -2271,7 +2273,8 @@ digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// afte
     <p>Auto-detected bounds are measured from the items that pass the <em>other</em> active filters, and re-measured after every filter change. Switch to a "Houses" tab and the price runs from the cheapest to the dearest house — not from the cheapest row in the whole collection. Works with anything that filters the list: tab triggers doubling as <code>d2-cms-filter</code> chips, dropdowns, checkboxes.</p>
     <table>
       <tr><th>Rule</th><th>Why</th></tr>
-      <tr><td>The slider's own field is excluded from the measurement</td><td>Otherwise dragging the min handle would drag the whole scale up after it, and you could never drag back down</td></tr>
+      <tr><td>Range filters are excluded — this slider's and every other slider's</td><td>Two sliders over one list would measure each other: narrow the area enough and the price set is one flat, so the price scale collapses to a single value and that slider goes dead</td></tr>
+      <tr><td>The slider being dragged is never re-measured</td><td>It would move the value/pixel mapping under the finger and make the handle jump</td></tr>
       <tr><td>An overlapping selection is kept (clamped); one that misses the new scale entirely is dropped</td><td>A 300–500k pick meeting a 900k–1.6M tab would pin both handles together and show nothing</td></tr>
       <tr><td>If the filters match nothing, the last real scale stays on screen</td><td>You still need a slider to drag back out of the dead end</td></tr>
       <tr><td><code>d2-cms-range-static-bounds</code> freezes all of it</td><td>One measurement across the whole dataset, never re-measured</td></tr>
