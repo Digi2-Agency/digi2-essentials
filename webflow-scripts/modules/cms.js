@@ -1737,16 +1737,16 @@
     // after it, and the user could never drag back down.
     _itemsMatchingExcept(field) {
       var srcF = this._deferMode ? this._committedFilters : this._filters;
-      var srcR = this._deferMode ? this._committedRangeFilters : this._rangeFilters;
-      var ranges = srcR;
-      if (field && Object.prototype.hasOwnProperty.call(srcR, field)) {
-        ranges = {};
-        for (var k in srcR) {
-          if (Object.prototype.hasOwnProperty.call(srcR, k) && k !== field) ranges[k] = srcR[k];
-        }
-      }
-      if (!Object.keys(srcF).length && !Object.keys(ranges).length
-          && !Object.keys(this._excludes).length) {
+      // FACETS ONLY. No range filter narrows a slider's scale — not the
+      // slider's own (it would rescale the track under the dragging finger)
+      // and not a sibling's either. Two sliders over one list otherwise
+      // measure each other: drag the area handle in far enough and the price
+      // set is down to one flat, so the price scale collapses to min === max
+      // and that slider is dead — no drag, no keyboard, no track click.
+      // Bounds answer "what is on offer in this tab / category", which is a
+      // question about facets.
+      var ranges = {};
+      if (!Object.keys(srcF).length && !Object.keys(this._excludes).length) {
         return this.items;                       // nothing filtering — whole set
       }
       var out = [];
@@ -3336,6 +3336,7 @@
       // True once bounds came from real item values — lets a later re-measure
       // that finds nothing keep the last known scale instead of resetting.
       this._measured = false;
+      this._dragging = false;
       // True once the user has dragged or keyed the slider. Until then, a
       // background refresh (e.g. after loading more server pages) is free to
       // snap the handles to the new full extent — nothing the user set is
@@ -3413,6 +3414,12 @@
           if (min == null) min = this.min;
           if (max == null) max = this.max;
         }
+        // A zero-span measurement is left as it is on purpose. It can now only
+        // come from a facet — one tab, one category, one matching flat — where
+        // "900 000 to 900 000" is the truth about what is on offer, and the
+        // visitor can always un-pick the facet. Before sliders stopped
+        // measuring each other it also came from a sibling slider, and there
+        // it was a trap: the widget went dead with no way back.
         if (min != null && max != null) this._measured = true;
       }
       if (min == null) min = 0;
@@ -3542,6 +3549,10 @@
             try { handle.setPointerCapture(e.pointerId); } catch (err) {}
           }
           handle.setAttribute('d2-cms-range-dragging', '');
+          // Re-measuring mid-drag would move the value/pixel mapping under the
+          // finger: the same screen position would resolve to a different
+          // number between two pointermove events, and the handle jumps.
+          self._dragging = true;
 
           var onMove = function (ev) { self._dragTo(ev.clientX, isMax); };
           var onUp = function () {
@@ -3549,6 +3560,7 @@
             document.removeEventListener('pointerup', onUp);
             document.removeEventListener('pointercancel', onUp);
             handle.removeAttribute('d2-cms-range-dragging');
+            self._dragging = false;
           };
           document.addEventListener('pointermove', onMove);
           document.addEventListener('pointerup', onUp);
@@ -3824,6 +3836,7 @@
     try {
       _rangeRegistry.forEach(function (s) {
         if (!s.track || !s.dynamicBounds) return;
+        if (s._dragging) return;      // never rescale the slider under the finger
         var bound = s.cmsTargets || [];
         for (var i = 0; i < bound.length; i++) {
           if (bound[i].name === listName) { s.refresh(); return; }

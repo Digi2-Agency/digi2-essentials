@@ -2424,9 +2424,10 @@ Add `d2-cms-range-snap` for **outward** rounding to `d2-cms-range-step`. Two eff
 - **Auto-detected bounds** round to the step (e.g. with `step="5"` a 7 → 207.25 dataset becomes 5 → 210). Explicitly set `d2-cms-range-min/max` are never snapped.
 - **Dragging the handles** snaps the live value outward too — the min handle floors, the max handle ceils — so a handle never rounds *inward* and clips an item sitting just past it (drag min onto a `28.75` item → lands on `25`, keeps it in). Without the flag, handles round to the nearest tick (classic slider feel).
 
-**Bounds follow the filters.** Auto-detected bounds are measured from the items that currently pass the *other* filters, and re-measured after every filter change. Switch to a "Domy" tab and the price slider runs from the cheapest to the dearest house — not from the cheapest row in the whole CMS. Works with anything that filters the list: tab triggers doubling as `d2-cms-filter` chips, dropdowns, checkboxes.
+**Bounds follow the facets.** Auto-detected bounds are measured from the items that pass the current **facet** filters — tabs, chips, dropdowns, checkboxes — and re-measured after every such change. Switch to a "Domy" tab and the price slider runs from the cheapest to the dearest house, not from the cheapest row in the whole CMS.
 
-- The slider's **own** field is left out of that measurement, so dragging never rescales the track under your fingers.
+- **Range filters are excluded from that measurement — this slider's and every other slider's.** Bounds answer "what is on offer in this tab", which is a question about facets. Two sliders over one list would otherwise measure each other: drag the area handle far enough in, the price set is down to a single flat, and the price scale collapses to `min === max` — no span, so dragging, arrows and track clicks all do nothing and the widget is stuck.
+- **The slider being dragged is never re-measured mid-drag.** Re-measuring moves the value/pixel mapping under the finger: the same screen position resolves to a different number between two pointer events, and the handle jumps.
 - Handles keep the user's pick when it still overlaps the new scale (clamped into it), and fall back to the full extent when it doesn't — a 300–500k selection meeting a 900k–1.6M tab would otherwise pin both handles together and show nothing.
 - If the new filter combination matches nothing, the last real scale stays on screen so there's still a slider to drag back out with.
 

@@ -1890,3 +1890,94 @@ test('a text template counts as a count preview, so the number cannot jump on ap
   btn.setAttribute('d2-cms-apply-count', 'Pokaż {count}');
   assert.equal(instance._hasCountPreview(), true);
 });
+
+// ---------------------------------------------------------------------------
+// Two sliders over one list must not rescale each other
+// ---------------------------------------------------------------------------
+
+function twoSliderEnv({ chip = false } = {}) {
+  const env = createEnvironment();
+  const bus = {};
+  env.window.digi2.on = (ev, fn) => { (bus[ev] = bus[ev] || []).push(fn); };
+  env.window.digi2.emit = (ev, d) => { (bus[ev] || []).forEach((fn) => fn(d)); };
+
+  const make = (field) => {
+    const w = createElement('div', {
+      'd2-cms-range': '', 'd2-cms-range-field': field,
+      'd2-cms-range-step': '1', 'd2-cms-range-displayformat': 'plain',
+      'd2-cms-target': 'flats',
+    });
+    const track = createElement('div', { 'd2-cms-range-track': '' });
+    track.appendChild(createElement('div', { 'd2-cms-range-fill': '' }));
+    track.appendChild(createElement('button', { 'd2-cms-range-handle': 'min' }));
+    track.appendChild(createElement('button', { 'd2-cms-range-handle': 'max' }));
+    const min = createElement('div', { 'd2-cms-range-display': 'min' });
+    const max = createElement('div', { 'd2-cms-range-display': 'max' });
+    w.appendChild(track); w.appendChild(min); w.appendChild(max);
+    env.body.appendChild(w);
+    return { w, track, min, max };
+  };
+
+  const area = make('area');
+  const price = make('price');
+  const chipEl = chip
+    ? env.body.appendChild(createElement('button', { 'd2-cms-filter': 'rooms:1', 'd2-cms-target': 'flats' }))
+    : null;
+
+  // Four flats whose area and price rise together, so narrowing one axis hard
+  // leaves a single flat on the other — the production shape of the bug.
+  const list = createElement('div', { 'd2-cms-list': 'flats' });
+  [[35, 900000, '1'], [60, 2000000, '2'], [120, 5000000, '3'], [207, 9358784, '4']]
+    .forEach(([a, p, r]) => list.appendChild(createItem({ area: String(a), price: String(p), rooms: r })));
+  env.body.appendChild(list);
+
+  loadCmsModule(env);
+  const shown = (s) => s.min.textContent + '\u2026' + s.max.textContent;
+  return { env, area, price, chipEl, shown };
+}
+
+test('dragging one slider does not collapse the other to a dead point', async () => {
+  const t = twoSliderEnv();
+  await flushTimers();
+  assert.equal(t.shown(t.price), '900000\u20269358784', 'price starts at the full spread');
+
+  // Drag AREA far to the right — on production this left one flat and the
+  // price slider collapsed to 9358784…9358784, dead to drag and keyboard.
+  t.area.track._listeners.pointerdown({ target: t.area.track, clientX: 90, preventDefault: () => {} });
+  await flushTimers();
+
+  const [lo, hi] = t.shown(t.price).split('\u2026');
+  assert.notEqual(lo, hi, 'the price slider still has a span to drag');
+  assert.equal(t.shown(t.price), '900000\u20269358784',
+    'a sibling slider is not a facet — it must not rescale this one');
+});
+
+test('a facet filter still rescales the slider', async () => {
+  // The behaviour dynamic bounds exist for in the first place.
+  const t = twoSliderEnv({ chip: true });
+  await flushTimers();
+  assert.equal(t.shown(t.price), '900000\u20269358784');
+
+  dispatchDocument(t.env, 'click', t.chipEl);
+  await flushTimers();
+
+  assert.equal(t.shown(t.price), '900000\u2026900000',
+    'a facet narrowing to one flat is a real answer about what is on offer');
+});
+
+test('the slider under the finger is not re-measured mid-drag', async () => {
+  const t = twoSliderEnv({ chip: true });
+  await flushTimers();
+
+  // Press and hold on the area track: a drag is in progress.
+  const handle = t.area.track.querySelectorAll('[d2-cms-range-handle="min"]')[0];
+  handle._listeners.pointerdown({ clientX: 10, pointerId: 1, preventDefault: () => {} });
+  const duringDrag = t.shown(t.area);
+
+  // A facet change elsewhere would normally rescale every slider on the list.
+  dispatchDocument(t.env, 'click', t.chipEl);
+  await flushTimers();
+
+  assert.equal(t.shown(t.area), duringDrag,
+    'the value/pixel mapping held still while the handle was held');
+});
