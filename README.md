@@ -2743,6 +2743,10 @@ photos stacked into rows deep enough to push the photo itself off screen — the
 lightbox got taller the more there was to look at. Now it stays one line
 whatever the count, with its own small arrows at either end:
 
+- **centred while it fits**, so a four-photo gallery sits in the middle of the
+  bar rather than shoved to the left; it switches to left-aligned only once
+  there is more than fits, because centring an overflowing flex row makes its
+  first items unreachable
 - arrows appear **only when the strip doesn't fit**, and dim at whichever end
   you've reached
 - one press moves about 80% of the visible width, leaving a couple of thumbs in

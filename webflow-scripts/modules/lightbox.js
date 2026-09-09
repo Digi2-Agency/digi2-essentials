@@ -337,6 +337,11 @@
     var atStart = strip.scrollLeft <= 1;
     var atEnd = strip.scrollLeft >= strip.scrollWidth - strip.clientWidth - 1;
 
+    // A scrolling flex row must start at flex-start: with justify-content
+    // centre the overflowing head of the list is unreachable — you can never
+    // scroll back to the first thumbnail.
+    strip.style.justifyContent = scrollable ? 'flex-start' : 'center';
+
     buttons.forEach(function (btn) {
       btn.style.display = scrollable ? 'flex' : 'none';
       var isPrev = btn.getAttribute('d2-lb-stripnav') === 'prev';
@@ -577,6 +582,7 @@
     Object.assign(thumbsWrap.style, {
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: '4px',
       margin: '6px auto 0',
       maxWidth: '92vw',
@@ -593,6 +599,11 @@
     Object.assign(thumbs.style, {
       display: 'none',
       gap: '8px',
+      // 0 1 auto: as wide as its thumbnails when they fit, capped by the
+      // wrapper when they don't. Growing it would push a four-photo strip out
+      // to the full width and strand the thumbs on the left.
+      flex: '0 1 auto',
+      justifyContent: 'center',
       overflowX: 'auto',
       scrollBehavior: 'smooth',
       pointerEvents: 'auto',

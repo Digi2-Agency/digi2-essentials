@@ -1081,3 +1081,17 @@ test('a single-photo gallery shows no strip and no strip arrows', () => {
   assert.equal(modal.querySelector('[d2-lightbox-thumbs]').style.display, 'none');
   assert.equal(modal.querySelectorAll('[d2-lb-stripnav="next"]')[0].style.display, 'none');
 });
+
+test('a strip that fits is centred; one that overflows starts at the left', () => {
+  const env = createEnvironment();
+  loadLightboxModule(env);
+  const few = openStrip(env, 4, { fits: true });
+  assert.equal(few.strip.style.justifyContent, 'center',
+    'four thumbnails belong in the middle of the bar, not shoved left');
+
+  const env2 = createEnvironment();
+  loadLightboxModule(env2);
+  const many = openStrip(env2, 30);
+  assert.equal(many.strip.style.justifyContent, 'flex-start',
+    'centring an overflowing flex row makes its first items unreachable');
+});

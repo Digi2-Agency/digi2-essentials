@@ -15,6 +15,10 @@ poza ekran — im więcej było do oglądania, tym mniej było widać.
 
 Teraz pasek to **jedna linia**, niezależnie od liczby zdjęć:
 
+- **wyśrodkowany, dopóki się mieści** — cztery miniatury siedzą na środku, nie
+  przy lewej krawędzi; do wyrównania od lewej przechodzi dopiero, gdy jest ich
+  za dużo (wyśrodkowany pasek z przewijaniem ucina początek listy i nie da się
+  do niej wrócić)
 - własne strzałki po bokach paska, widoczne **tylko wtedy, gdy jest co
   przewijać**, wygaszane na krańcach
 - jedno naciśnięcie przesuwa ok. 80% szerokości widoku, zostawiając kilka
