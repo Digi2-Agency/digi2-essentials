@@ -768,8 +768,8 @@
       this.isVisible = true;
 
       if (this.options.lockScrollOnShow) {
-        this._savedOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
+        this._holdsScrollLock = true;
+        _lockScroll();
       }
       const anim = this._getAnimation();
       const dur = this._activeAnimationDuration;
@@ -896,8 +896,9 @@
         applyStyles(this.popupElement, anim.reset());
         this._animating = false;
 
-        if (this.options.lockScrollOnShow) {
-          document.body.style.overflow = this._savedOverflow || '';
+        if (this._holdsScrollLock) {
+          this._holdsScrollLock = false;
+          _unlockScroll();
         }
 
         _emitEvent('popup:close', { name: this.name });
@@ -1555,6 +1556,33 @@
   // Popups in a sequence should be created WITHOUT their own auto-triggers
   // (no openOnLoad / openAfterDelay) — the sequence is what opens them.
   // ---------------------------------------------------------------------------
+  // ---- Body scroll lock ----------------------------------------------------
+  // Counted, not remembered per popup. Each instance used to snapshot
+  // body.style.overflow on open and write it back on close, which breaks the
+  // moment two popups overlap: the second snapshots the FIRST one's "hidden",
+  // so closing the first unlocks the page while a modal is still up, and
+  // closing the second restores "hidden" and leaves the page permanently
+  // unscrollable — which looks exactly like a close button that did nothing.
+  var _scrollLocks = 0;
+  var _scrollSaved = null;
+
+  function _lockScroll() {
+    if (_scrollLocks === 0) {
+      _scrollSaved = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
+    _scrollLocks++;
+  }
+
+  function _unlockScroll() {
+    if (_scrollLocks === 0) return;      // never unlock more than we locked
+    _scrollLocks--;
+    if (_scrollLocks === 0) {
+      document.body.style.overflow = _scrollSaved || '';
+      _scrollSaved = null;
+    }
+  }
+
   // Any popup currently on screen other than `self`.
   function _visiblePopupOtherThan(self) {
     for (var name in registry) {

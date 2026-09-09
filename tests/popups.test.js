@@ -1372,3 +1372,39 @@ test('a popup the site opened itself is never dismissed by another', () => {
   assert.equal(t.promo.isVisible, true, 'left alone');
   assert.equal(t.contact.isVisible, true);
 });
+
+test('two overlapping popups leave the page scrollable when both close', () => {
+  // Each popup used to snapshot body.style.overflow for itself. With two of
+  // them the second snapshotted the first one's "hidden", so closing the first
+  // unlocked the page under an open modal and closing the second locked it for
+  // good — a page you cannot scroll reads as "the popup would not close".
+  const t = stackEnv();
+  assert.equal(t.env.document.body.style.overflow, '', 'starts scrollable');
+
+  t.promo.show();
+  assert.equal(t.env.document.body.style.overflow, 'hidden');
+
+  t.contact.show();                    // second modal on top
+  assert.equal(t.env.document.body.style.overflow, 'hidden', 'still locked');
+
+  t.promo.hide();                      // the one underneath goes
+  assert.equal(t.env.document.body.style.overflow, 'hidden',
+    'a modal is still open — the page must stay locked');
+
+  t.contact.hide();
+  assert.equal(t.env.document.body.style.overflow, '',
+    'last one closed: the visitor gets their page back');
+});
+
+test('a popup that does not lock scroll never releases someone else lock', () => {
+  const t = stackEnv();
+  t.promo.show();
+  const bare = t.env.window.digi2.popups.create('bare', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null, lockScrollOnShow: false,
+  });
+  bare.show();
+  bare.hide();
+  assert.equal(t.env.document.body.style.overflow, 'hidden', 'the promo still holds it');
+  t.promo.hide();
+  assert.equal(t.env.document.body.style.overflow, '');
+});

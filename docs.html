@@ -1249,6 +1249,7 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td>A step whose popup isn't on this page waits</td><td>It may simply live on another page</td></tr>
       <tr><td>A step waits while another popup is on screen</td><td>A scheduled popup does not land on top of a form the visitor opened — two stacked modals read as broken, since closing the top one leaves the other behind</td></tr>
       <tr><td>Opening a popup deliberately dismisses a scheduled one in the way</td><td>The visitor asked for this one. Only sequence-opened popups give way</td></tr>
+      <tr><td>The scroll lock is counted across popups</td><td>Released when the last popup holding it closes — two overlapping popups used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
     </table>
 
     <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>

@@ -648,6 +648,13 @@ Create the popups **without their own auto-triggers** — no `openOnLoad`, no
 })
 ```
 
+**The page scroll lock is counted, not remembered per popup.** With two popups
+overlapping, each used to snapshot `body.style.overflow` for itself: the second
+captured the first one's `hidden`, so closing the first unlocked the page under
+an open modal, and closing the second wrote `hidden` back and left the page
+permanently unscrollable — which reads as "the popup wouldn't close". The lock
+is now released when the last popup holding it closes.
+
 **A scheduled popup never stacks on another.** A step waits while anything else
 is on screen, and a popup the visitor opens deliberately dismisses a scheduled
 one that is in the way. Two modals on top of each other read as broken: closing

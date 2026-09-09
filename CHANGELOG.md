@@ -21,6 +21,18 @@ formularza odsłaniało tamten popup i wyglądało to tak, jakby krzyżyk nic ni
   ten zasłania ekran. Ustępuje tylko popup otwarty przez sekwencję; ten, który
   strona otworzyła sama, zostaje nietknięty.
 
+### Zablokowany scroll po zamknięciu popupów
+
+Druga połowa tego samego zgłoszenia, i realny powód, dla którego „dalej nie
+działa": po zamknięciu obu popupów **strona zostawała zablokowana** — nie dało
+się jej przewijać, więc wyglądało to jak niezamknięty popup.
+
+Każdy popup zapamiętywał `body.style.overflow` osobno. Przy dwóch nachodzących
+drugi zapamiętywał `hidden` ustawione przez pierwszego: zamknięcie pierwszego
+odblokowywało stronę **pod otwartym modalem**, a zamknięcie drugiego wpisywało
+`hidden` z powrotem — na stałe. Blokada jest teraz liczona i zdejmowana, gdy
+zamyka się ostatni popup, który ją trzymał.
+
 ## v1.6.2 — 2026-09-09
 
 ### Suwaki zakresu przestają się nawzajem zabijać
