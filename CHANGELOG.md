@@ -5,6 +5,47 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.6.5 — 2026-09-10
+
+### Popup promocyjny nie wchodzi już na otwarty formularz — nigdy, nie tylko z sekwencji
+
+Zgłoszone z `rajska77.com`: po kliknięciu „Zarezerwuj" w wyszukiwarce i zamknięciu
+popupa nie dało się scrollować strony. Odtworzone — po drugim otwarciu i zamknięciu
+formularza strona zostawała z `body { overflow: hidden }`, przy czym **żaden popup nie
+był widoczny**: nie było czego zamknąć, a przycisk „Zarezerwuj" przestawał otwierać
+cokolwiek. Ratował tylko reload. Winne były dwie rzeczy naraz.
+
+**Zasada „jeden popup naraz" obejmuje teraz wszystkie popupy, nie tylko te z sekwencji:**
+
+- **Popup otwarty automatycznie czeka** — `openAfterDelay`, exit intent, scroll,
+  bezczynność, odsłony, krok sekwencji. Nie zasłania i nie zamyka tego, co jest na
+  ekranie: parkuje się i wchodzi ~0,6 s po tym, jak ekran się zwolni. Promocja nie
+  wchodzi na formularz, który odwiedzający właśnie wypełnia.
+- **Popup otwarty świadomie przez odwiedzającego wygrywa** — `d2-show-popup`,
+  `openTriggerSelector`, `digi2.popups.show()`, przechwycony link. To, co jest na
+  ekranie, zamyka się **pierwsze**, a nowy popup wchodzi dopiero po tym zamknięciu, więc
+  nie ma nawet klatki, w której widać oba.
+- Odłożony popup przy swojej kolejce sprawdza wszystko od nowa: cookie zapisane w
+  międzyczasie, harmonogram, `canShow()`. Czeka na wolny ekran, nie rezerwuje sobie pokazu.
+
+Zmiana zachowania: dwa popupy otwarte jawnie (`show()`) nie nakładają się już na siebie —
+wcześniej ustępował tylko popup otwarty przez sekwencję.
+
+### Zdjęcie blokady scrolla nie zależy już od kaprysu przeglądarki
+
+Koniec animacji zamykania czytany był z gołego `transitionend`, co myliło się w dwie strony.
+Zdarzenie **bąbelkuje**, więc przejście przycisku *wewnątrz* popupu (choćby hover) wyglądało
+jak koniec animacji samego popupu i rwało zamykanie w połowie. A bywa, że nie przychodzi
+w ogóle — `display: none`, `prefers-reduced-motion`, transition nadpisany CSS-em strony,
+karta w tle. Wtedy popup zostawał na zawsze „w trakcie animacji": trzymał blokadę scrolla,
+`hide()` nic już nie robił, a `show()` nie otwierał go ponownie.
+
+- Liczy się **wyłącznie własne zdarzenie popupu**, a nie to, które przyszło z dziecka.
+- Do tego **zapadka czasowa** tuż po czasie animacji: bookkeeping domyka się nawet wtedy,
+  gdy przeglądarka nie zgłosi niczego. Blokada scrolla zawsze schodzi.
+- **Krzyżyk kliknięty w trakcie otwierania** zamyka popup, zamiast zostać zignorowany
+  (`hide()` odmawiał pracy, dopóki trwała animacja wejścia).
+
 ## v1.6.3 — 2026-09-09
 
 ### Popup z sekwencji nie wchodzi już na formularz

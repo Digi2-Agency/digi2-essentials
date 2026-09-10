@@ -20,6 +20,12 @@
  *   <div class="popup" d2-popup-utm="utm_source:facebook|instagram">
  *   The value survives navigation — the module remembers the campaign in a
  *   cookie on the landing page, so the gate still matches on page 3 of a visit.
+ *
+ * One popup at a time (see show()):
+ *   Nothing ever opens on top of what is already on screen. A popup the PAGE
+ *   opened (delay, exit-intent, scroll, idle, a sequence step) waits and takes
+ *   its turn once the screen is free; a popup the VISITOR asked for wins, and
+ *   the one on screen closes before it appears.
  */
 (function () {
   'use strict';
@@ -177,6 +183,45 @@
   // Helper — apply a style object to an element
   function applyStyles(el, styles) {
     Object.assign(el.style, styles);
+  }
+
+  // Run `done` when the popup's own fade/slide has finished — exactly once, and
+  // whatever the browser does with the transition.
+  //
+  // Waiting on a bare transitionend gets this wrong twice over. The event
+  // bubbles, so a button hovering inside the popup finishes ITS transition and
+  // the popup mistakes it for its own: hide() then tears the popup down mid-fade
+  // and, worse, show() marks itself settled while it is still animating. And the
+  // event may never arrive at all — display:none, prefers-reduced-motion, a
+  // transition the site's CSS overrode, a tab in the background. Then the popup
+  // stays `_animating` forever: hide() refuses to run, the scroll lock is never
+  // released and the visitor is left on a page that will not scroll and a close
+  // button that does nothing. Only the popup's own event counts, and a timer a
+  // touch longer than the animation guarantees the rest.
+  //
+  // Returns a `finish` fn: call it to settle the animation early (a close
+  // arriving mid-open must not leave the bookkeeping half-done).
+  function _afterTransition(el, durationSec, done) {
+    var settled = false;
+    var timer = null;
+
+    function finish() {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener('transitionend', onEnd);
+      if (timer !== null) clearTimeout(timer);
+      done();
+    }
+
+    function onEnd(e) {
+      // Not ours — a child element's transition on its way up the tree.
+      if (e && e.target && e.target !== el) return;
+      finish();
+    }
+
+    el.addEventListener('transitionend', onEnd);
+    timer = setTimeout(finish, (Number(durationSec) || 0) * 1000 + 80);
+    return finish;
   }
 
   // Debug helper
@@ -351,6 +396,13 @@
       this.pendingShow = false;
       this._video = null;
       this._animating = false;
+      // On screen from the first frame of the open animation to the last frame
+      // of the close one. `isVisible` flips at the START of hide(), so it alone
+      // would let a second popup slide in underneath one still fading out.
+      this._onScreen = false;
+      // Settles the animation currently running (open or close) — see
+      // _afterTransition. Called when the other direction interrupts it.
+      this._finishAnimation = null;
 
       // Mobile exit-intent state
       this.isMobile = false;
@@ -449,7 +501,7 @@
       } else if (this.options.openAfterPageViews !== null) {
         this._setupPageViewsTrigger();
       } else if (this.options.openOnLoad) {
-        this.show();
+        this.show({ auto: true });
       }
 
       // New triggers — additive, each guards via _canTrigger() so they can combine safely
@@ -710,12 +762,30 @@
 
     // ---- Public API ---------------------------------------------------------
 
-    show() {
+    /**
+     * Open the popup.
+     *
+     * @param {Object} [opts]
+     * @param {boolean} [opts.auto]  — the page decided to open this, not the
+     *   visitor (delay, exit-intent, scroll, idle, a sequence step…). An
+     *   automatic popup never lands on top of one that is already up: it parks
+     *   itself and comes back when the screen is free.
+     * @param {boolean} [opts.park]  — whether a blocked automatic open should be
+     *   remembered (default true). A sequence runs its own clock and retries by
+     *   itself, so it opts out rather than being replayed twice.
+     */
+    show(opts) {
+      var auto = !!(opts && opts.auto);
+      var park = !opts || opts.park !== false;
+
       if (this._urlBlocked) {
         _log('show suppressed — URL excluded → ' + this.name);
         return;
       }
-      if (!this.popupElement || this.isVisible || this._animating) return;
+      if (!this.popupElement || this.isVisible) return;
+      // Mid-close: settle the close now rather than opening a popup whose
+      // own hide() is still due to run and would tear it back down.
+      if (this._finishAnimation) this._finishAnimation();
       if (!this._isTrafficAllowed()) {
         // No pendingShow: unlike a promo or canShow veto, this one can never
         // clear during the visit, and parking it would make a sequence step
@@ -749,15 +819,37 @@
       }
       this.pendingShow = false;
 
-      // A scheduled popup gives way to one the visitor asked for. Without
-      // this, clicking a CTA while a sequence popup is up stacks two modals:
-      // closing the one on top leaves the other behind, which reads as "the
-      // close button is broken". Only sequence-opened popups are dismissed —
-      // a popup the site opened deliberately is left alone.
-      var parked = _visiblePopupOtherThan(this);
-      if (parked && parked._openedBySequence) {
-        _log('closing scheduled popup "' + parked.name + '" for "' + this.name + '"');
-        parked.hide();
+      // ---- One popup at a time -------------------------------------------
+      // Two modals on screen at once is never right. The visitor filling in a
+      // form gets it covered by a promo they did not ask for; whichever one
+      // they close leaves the other behind, which reads as a close button that
+      // did nothing; and both hold the scroll lock, so the page underneath can
+      // end up stuck. Who yields depends on who asked:
+      //
+      //   automatic (delay, exit-intent, scroll, idle, sequence…)
+      //       → waits. The form on screen belongs to the visitor; a scheduled
+      //         promo is the least urgent thing on the page. It parks itself
+      //         and opens once the screen is free.
+      //   asked for (a click on a trigger, digi2.popups.show(), an intercepted
+      //   link)
+      //       → wins, because the visitor just asked for it. What is on screen
+      //         closes FIRST and this one opens after that close finishes, so
+      //         the two never overlap even for a frame.
+      var busy = _visiblePopupOtherThan(this);
+      if (busy) {
+        if (auto) {
+          if (park) this.pendingShow = true;
+          _log('show deferred — "' + busy.name + '" is on screen → ' + this.name);
+          return;
+        }
+        _log('closing "' + busy.name + '" first, the visitor asked for "' + this.name + '"');
+        var self = this;
+        var off = busy._onCloseInternal(function () {
+          off();
+          self.show(opts);
+        });
+        busy.hide();
+        return;
       }
 
       // Resolve responsive option strings (e.g. animation: 'fade;slide-up@911')
@@ -766,6 +858,7 @@
 
       _log('show → ' + this.name, { animation: this._activeAnimation });
       this.isVisible = true;
+      this._onScreen = true;
 
       if (this.options.lockScrollOnShow) {
         this._holdsScrollLock = true;
@@ -774,11 +867,17 @@
       const anim = this._getAnimation();
       const dur = this._activeAnimationDuration;
 
+      const afterShow = () => {
+        this._finishAnimation = null;
+        this._animating = false;
+        _emitEvent('popup:open', { name: this.name });
+        _safeCall(this.options.onOpen, this.name, 'onOpen', this);
+      };
+
       if (anim === ANIMATIONS.none) {
         this.popupElement.style.display = 'flex';
         this._videoPlay();
-        _emitEvent('popup:open', { name: this.name });
-        _safeCall(this.options.onOpen, this.name, 'onOpen', this);
+        afterShow();
         return;
       }
 
@@ -789,11 +888,7 @@
       void this.popupElement.offsetHeight; // force reflow
       applyStyles(this.popupElement, anim.in());
 
-      this.popupElement.addEventListener('transitionend', () => {
-        this._animating = false;
-        _emitEvent('popup:open', { name: this.name });
-        _safeCall(this.options.onOpen, this.name, 'onOpen', this);
-      }, { once: true });
+      this._finishAnimation = _afterTransition(this.popupElement, dur, afterShow);
     }
 
     /**
@@ -844,10 +939,10 @@
      * Replay a show() that canShow() previously vetoed. Safe to call blindly —
      * it does nothing unless this popup actually asked to open.
      */
-    showIfPending() {
+    showIfPending(opts) {
       if (!this.pendingShow) return false;
       this.pendingShow = false;
-      this.show();
+      this.show(opts);
       return this.isVisible;
     }
 
@@ -879,7 +974,11 @@
     }
 
     hide() {
-      if (!this.popupElement || !this.isVisible || this._animating) return;
+      if (!this.popupElement || !this.isVisible) return;
+      // A close arriving mid-open used to be dropped on the floor: the visitor
+      // hit the X during the fade-in and nothing happened. Settle the open
+      // instead — onOpen fires, the bookkeeping completes — then close.
+      if (this._finishAnimation) this._finishAnimation();
 
       // Re-resolve in case the breakpoint flipped while the popup was open.
       this._refreshResponsiveOpts();
@@ -892,9 +991,11 @@
       const dur = this._activeAnimationDuration;
 
       const afterHide = () => {
+        this._finishAnimation = null;
         this.popupElement.style.display = 'none';
         applyStyles(this.popupElement, anim.reset());
         this._animating = false;
+        this._onScreen = false;
 
         if (this._holdsScrollLock) {
           this._holdsScrollLock = false;
@@ -910,6 +1011,9 @@
           try { fn(this); } catch (e) { /* a hook must never break the close */ }
         });
 
+        // The screen is free again: whatever gave way earlier gets its turn.
+        _resumeParkedPopup();
+
         if (this._pendingNavigation) {
           const target = this._pendingNavigation;
           this._pendingNavigation = null;
@@ -924,7 +1028,7 @@
 
       this._animating = true;
       applyStyles(this.popupElement, anim.out(dur));
-      this.popupElement.addEventListener('transitionend', afterHide, { once: true });
+      this._finishAnimation = _afterTransition(this.popupElement, dur, afterHide);
     }
 
     // ---- Animation helper ---------------------------------------------------
@@ -1005,7 +1109,7 @@
       if (this._isCookieSet() || this.isVisible) return;
       if (e.clientY <= 10) {
         _log('exit-intent triggered (desktop) → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       }
     }
 
@@ -1021,7 +1125,7 @@
       ) {
         this.scrollTriggered = true;
         _log('exit-intent triggered (mobile scroll) → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       }
 
       this.lastScrollY = currentScrollY <= 0 ? 0 : currentScrollY;
@@ -1032,7 +1136,7 @@
     _setupDelayTrigger() {
       this._delayTimerId = setTimeout(() => {
         if (!this._isCookieSet() && !this.isVisible) {
-          this.show();
+          this.show({ auto: true });
         }
       }, this.options.openAfterDelay * 1000);
     }
@@ -1053,7 +1157,7 @@
     _setupPageViewsTrigger() {
       if (this._getPageViews() >= this.options.openAfterPageViews) {
         if (!this._isCookieSet() && !this.isVisible) {
-          this.show();
+          this.show({ auto: true });
         }
       }
     }
@@ -1069,7 +1173,7 @@
         if (inside) return;
         if (this.popupElement && this.popupElement.contains(e.target)) return;
         _log('outside-click triggered → ' + this.name, sel);
-        this.show();
+        this.show({ auto: true });
       };
       document.addEventListener('click', handler, true);
       this._cleanupFns.push(() => document.removeEventListener('click', handler, true));
@@ -1085,7 +1189,7 @@
       const handler = () => {
         if (!this._canTrigger()) return;
         _log('element-mouseleave triggered → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       };
       els.forEach((el) => el.addEventListener('mouseleave', handler));
       this._cleanupFns.push(() => els.forEach((el) => el.removeEventListener('mouseleave', handler)));
@@ -1101,7 +1205,7 @@
       const handler = () => {
         if (!this._canTrigger()) return;
         _log('element-hover triggered → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       };
       els.forEach((el) => el.addEventListener('mouseenter', handler));
       this._cleanupFns.push(() => els.forEach((el) => el.removeEventListener('mouseenter', handler)));
@@ -1114,7 +1218,7 @@
         if (document.visibilityState !== 'hidden') return;
         if (!this._canTrigger()) return;
         _log('tab-blur triggered → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       };
       document.addEventListener('visibilitychange', handler);
       this._cleanupFns.push(() => document.removeEventListener('visibilitychange', handler));
@@ -1131,7 +1235,7 @@
         if (pct < target) return;
         if (!this._canTrigger()) return;
         _log('scroll-percent triggered → ' + this.name, { pct: pct.toFixed(1), target });
-        this.show();
+        this.show({ auto: true });
       };
       const handler = () => {
         if (throttle) return;
@@ -1157,7 +1261,7 @@
           if (!entry.isIntersecting) continue;
           if (!this._canTrigger()) return;
           _log('scroll-past-element triggered → ' + this.name);
-          this.show();
+          this.show({ auto: true });
           this._intersectionObserver.disconnect();
           this._intersectionObserver = null;
           return;
@@ -1174,7 +1278,7 @@
       const fire = () => {
         if (!this._canTrigger()) return;
         _log('idle triggered → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       };
       const reset = () => {
         if (this._idleTimerId) clearTimeout(this._idleTimerId);
@@ -1204,7 +1308,7 @@
         }
         _log('rage-click triggered → ' + this.name, { clicks: this._rageClicks.length });
         this._rageClicks = [];
-        this.show();
+        this.show({ auto: true });
       };
       document.addEventListener('click', handler);
       this._cleanupFns.push(() => document.removeEventListener('click', handler));
@@ -1250,7 +1354,7 @@
         if (ae && form.contains(ae) && !selectsArr.includes(ae)) return;
         if (!this._canTrigger()) return;
         _log('select-abandon triggered → ' + this.name);
-        this.show();
+        this.show({ auto: true });
       };
 
       const onFocus = () => { interacted = true; };
@@ -1316,7 +1420,7 @@
         if (!this._canTrigger()) return;
 
         _log('scroll-speed triggered → ' + this.name, { speed: Math.round(speed), direction });
-        this.show();
+        this.show({ auto: true });
       };
 
       document.addEventListener('scroll', handler, { passive: true });
@@ -1583,14 +1687,42 @@
     }
   }
 
-  // Any popup currently on screen other than `self`.
+  // Any popup currently on screen other than `self`. "On screen" covers the
+  // fade-out too: isVisible flips the moment hide() starts, so going by that
+  // alone lets the next popup appear underneath one still animating away.
   function _visiblePopupOtherThan(self) {
     for (var name in registry) {
       if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
       var other = registry[name];
-      if (other && other !== self && other.isVisible) return other;
+      if (other && other !== self && (other.isVisible || other._onScreen)) return other;
     }
     return null;
+  }
+
+  // A beat between one popup closing and a parked one opening. Without it the
+  // promo appears in the same frame the visitor's form disappears, which feels
+  // like the close button swapped one modal for another rather than giving the
+  // page back.
+  var RESUME_AFTER_CLOSE_MS = 600;
+
+  // Let one popup that stepped aside have the screen now that it is free.
+  // Re-runs the full show() path, so a cookie written in the meantime, a promo
+  // window that has closed or a canShow() veto still applies.
+  function _resumeParkedPopup() {
+    setTimeout(function () {
+      if (_visiblePopupOtherThan(null)) return;   // someone got there first
+      for (var name in registry) {
+        if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+        var inst = registry[name];
+        if (!inst || !inst.pendingShow) continue;
+        // Dismissed while it waited — show() itself ignores the cookie, since
+        // it is an explicit command, but nothing here is explicit any more.
+        if (inst._isCookieSet()) { inst.pendingShow = false; continue; }
+        _log('screen free — resuming deferred popup → ' + name);
+        inst.showIfPending({ auto: true });
+        return;                                   // one at a time, always
+      }
+    }, RESUME_AFTER_CLOSE_MS);
   }
 
   const SEQ_TICK_MS = 1000;
@@ -1791,7 +1923,9 @@
       }
 
       const off = inst._onCloseInternal(() => this._stepClosed());
-      inst.show();
+      // Scheduled, and the sequence runs its own clock: if the screen is busy it
+      // retries on the next tick, so it must not also park a pending show.
+      inst.show({ auto: true, park: false });
       if (!inst.isVisible) {
         // Vetoed (canShow, schedule, URL filter) — undo and retry next tick.
         off();

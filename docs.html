@@ -1114,6 +1114,16 @@ digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>, <
 digi2.popups.<span class="fn">get</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">list</span>()</code></pre>
+
+    <h3>One popup at a time</h3>
+    <p>Two modals on screen at once is never right: whichever one the visitor closes leaves the other behind, and it reads as a close button that did nothing. Nothing ever opens on top of what is already up — who yields depends on who asked for it.</p>
+    <table>
+      <tr><th>Opened by</th><th>With another popup on screen</th></tr>
+      <tr><td><strong>The page</strong> — <code>openAfterDelay</code>, exit intent, scroll, idle, page views, a <a href="#popups-sequences">sequence</a> step</td><td><strong>Waits.</strong> It parks itself and opens ~0.6 s after the screen frees up. A promo never covers the form the visitor is filling in, and never closes it either</td></tr>
+      <tr><td><strong>The visitor</strong> — <code>d2-show-popup</code>, <code>openTriggerSelector</code>, <code>digi2.popups.show()</code>, an intercepted link</td><td><strong>Wins.</strong> What is on screen closes first; this one opens once that close has finished, so the two never overlap even for a frame</td></tr>
+    </table>
+    <p class="muted">A deferred popup re-runs every check when its turn comes — a dismissal cookie written while it waited, a <a href="#popups-schedule">schedule</a> that has since closed, a <code>canShow()</code> veto. It waits for a free screen; it does not book a guaranteed appearance.</p>
+    <p class="muted">The page scroll lock is released by the last popup holding it, whatever the browser does with the close animation: the popup settles on its own <code>transitionend</code> or on a timer just past the animation duration, whichever comes first. A ✕ pressed while the popup is still fading in closes it rather than being ignored.</p>
   </section>
 
   <!-- ── POPUPS · SCHEDULING ── -->
@@ -1248,7 +1258,7 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td>A step whose popup doesn't match the visitor's traffic is skipped</td><td>A <a href="#popups-traffic">campaign mismatch</a> can't resolve during the visit; waiting would stall every later step</td></tr>
       <tr><td>A step whose popup isn't on this page waits</td><td>It may simply live on another page</td></tr>
       <tr><td>A step waits while another popup is on screen</td><td>A scheduled popup does not land on top of a form the visitor opened — two stacked modals read as broken, since closing the top one leaves the other behind</td></tr>
-      <tr><td>Opening a popup deliberately dismisses a scheduled one in the way</td><td>The visitor asked for this one. Only sequence-opened popups give way</td></tr>
+      <tr><td>Opening a popup deliberately dismisses whatever is in the way</td><td>The visitor asked for this one. The popup on screen closes first, and the new one opens after that close finishes — never both at once</td></tr>
       <tr><td>The scroll lock is counted across popups</td><td>Released when the last popup holding it closes — two overlapping popups used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
     </table>
 

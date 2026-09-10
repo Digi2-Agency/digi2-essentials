@@ -648,19 +648,30 @@ Create the popups **without their own auto-triggers** — no `openOnLoad`, no
 })
 ```
 
-**The page scroll lock is counted, not remembered per popup.** With two popups
-overlapping, each used to snapshot `body.style.overflow` for itself: the second
-captured the first one's `hidden`, so closing the first unlocked the page under
-an open modal, and closing the second wrote `hidden` back and left the page
-permanently unscrollable — which reads as "the popup wouldn't close". The lock
-is now released when the last popup holding it closes.
+**One popup at a time — always.** Two modals on top of each other read as
+broken: whichever one the visitor closes leaves the other behind, and it looks
+like the close button did nothing. Who yields depends on who asked for it:
 
-**A scheduled popup never stacks on another.** A step waits while anything else
-is on screen, and a popup the visitor opens deliberately dismisses a scheduled
-one that is in the way. Two modals on top of each other read as broken: closing
-the top one leaves the other behind, and it looks like the close button did
-nothing. Only sequence-opened popups give way — one the site opened itself is
-left alone.
+| Opened by | With another popup on screen |
+|---|---|
+| **automatically** — `openAfterDelay`, exit-intent, scroll, idle, page views, a sequence step | **waits.** It parks itself and opens ~0.6 s after the screen frees up. The promo does not cover the form the visitor is filling in, and does not close it either. |
+| **the visitor** — a click on a trigger, `digi2.popups.show()`, an intercepted link | **wins.** What is on screen closes first and the new popup opens once that close has finished, so the two never overlap. |
+
+A deferred popup re-runs the full check when its turn comes: a dismissal cookie
+written while it waited, a schedule that has since closed or a `canShow()` veto
+all still apply. It waits for the screen — it does not queue up a guaranteed
+appearance.
+
+**The page scroll lock always comes back off.** The lock is counted across
+popups and released when the last one holding it closes — but the release used
+to hang on a `transitionend` that the browser does not always send (`display:
+none`, reduced motion, a CSS override, a backgrounded tab) and that also fires
+for transitions bubbling up from buttons *inside* the popup. Either way the
+close stalled halfway: popup gone, lock still held, page dead to scrolling with
+nothing on screen to close. The animation now settles on the popup's own event
+or on a timer just past its duration, whichever lands first — and a close
+arriving mid-open (an impatient click on the ✕) settles the open first instead
+of being ignored.
 
 > **Give every popup its own `cookieName`.** The default is the same
 > `popup_clicked` for all of them, so closing step one would mark the rest as

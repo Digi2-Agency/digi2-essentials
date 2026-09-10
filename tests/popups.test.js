@@ -1363,17 +1363,19 @@ test('opening a popup deliberately dismisses a scheduled one that is in the way'
     'the scheduled one gives way — the visitor asked for this form');
 });
 
-test('a popup the site opened itself is never dismissed by another', () => {
-  // Only sequence-opened popups give way; anything else is the site's call.
+test('a popup asked for replaces what is on screen instead of stacking on it', () => {
+  // Whoever opened the one already up, two modals at once is wrong: whichever
+  // the visitor closes leaves the other behind, and that reads as a close
+  // button that did nothing.
   const t = stackEnv();
   t.promo.show();                         // opened deliberately, not by the sequence
-  t.contact.show();
+  t.contact.show();                       // and now the visitor asks for the form
 
-  assert.equal(t.promo.isVisible, true, 'left alone');
-  assert.equal(t.contact.isVisible, true);
+  assert.equal(t.promo.isVisible, false, 'the one that was up gives way');
+  assert.equal(t.contact.isVisible, true, 'the one just asked for takes the screen');
 });
 
-test('two overlapping popups leave the page scrollable when both close', () => {
+test('closing the last popup gives the page back', () => {
   // Each popup used to snapshot body.style.overflow for itself. With two of
   // them the second snapshotted the first one's "hidden", so closing the first
   // unlocked the page under an open modal and closing the second locked it for
@@ -1384,27 +1386,165 @@ test('two overlapping popups leave the page scrollable when both close', () => {
   t.promo.show();
   assert.equal(t.env.document.body.style.overflow, 'hidden');
 
-  t.contact.show();                    // second modal on top
-  assert.equal(t.env.document.body.style.overflow, 'hidden', 'still locked');
-
-  t.promo.hide();                      // the one underneath goes
+  t.contact.show();                    // takes over from the promo
   assert.equal(t.env.document.body.style.overflow, 'hidden',
-    'a modal is still open — the page must stay locked');
+    'a modal is still on screen — the page stays locked through the handover');
 
   t.contact.hide();
   assert.equal(t.env.document.body.style.overflow, '',
     'last one closed: the visitor gets their page back');
 });
 
-test('a popup that does not lock scroll never releases someone else lock', () => {
+test('opening and closing the same popup twice leaves the page scrollable', () => {
+  // The lock is counted, so a handover that loses count leaves the page locked
+  // under nothing at all: no popup on screen, no close button to press, and
+  // scrolling dead until a reload.
   const t = stackEnv();
-  t.promo.show();
+  for (let i = 0; i < 3; i++) {
+    t.contact.show();
+    assert.equal(t.env.document.body.style.overflow, 'hidden', `locked on open ${i + 1}`);
+    t.contact._closeByUser();
+    assert.equal(t.env.document.body.style.overflow, '', `released on close ${i + 1}`);
+  }
+});
+
+test('a popup that does not lock scroll leaves the page alone', () => {
+  const t = stackEnv();
   const bare = t.env.window.digi2.popups.create('bare', {
     popupSelector: '.p-contact', animation: 'none', cookieName: null, lockScrollOnShow: false,
   });
   bare.show();
+  assert.equal(t.env.document.body.style.overflow, '', 'nothing was locked');
   bare.hide();
-  assert.equal(t.env.document.body.style.overflow, 'hidden', 'the promo still holds it');
-  t.promo.hide();
   assert.equal(t.env.document.body.style.overflow, '');
+
+  t.promo.show();
+  assert.equal(t.env.document.body.style.overflow, 'hidden', 'a locking popup still locks');
+  t.promo.hide();
+  assert.equal(t.env.document.body.style.overflow, '', 'and releases what it took');
+});
+
+// ---------------------------------------------------------------------------
+// The fade must always finish the bookkeeping — even when the browser
+// never reports it
+// ---------------------------------------------------------------------------
+
+// Fire every queued timer registered for exactly `ms`, once.
+function fireTimers(env, ms) {
+  const due = env.timers.filter((t) => t.ms === ms && !t.fired);
+  due.forEach((t) => { t.fired = true; t.fn(); });
+  return due.length;
+}
+
+const FADE_MS = 0.4 * 1000 + 80;   // animationDuration + the module's margin
+
+function fadeEnv() {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'p-contact' }));
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', cookieName: null,   // animation: 'fade' by default
+  });
+  return { env, contact, el: contact.popupElement, body: env.document.body };
+}
+
+test('a fade the browser never reports still closes the popup and unlocks the page', () => {
+  // transitionend can simply not arrive: display:none, reduced motion, a
+  // transition the site's CSS overrode, a backgrounded tab. The close then
+  // stalled halfway — popup gone from the screen but the scroll lock still
+  // held — and the visitor was left on a page that would not scroll, with no
+  // popup to close and nothing to click. Only a reload got out of it.
+  const t = fadeEnv();
+  t.contact.show();
+  fireTimers(t.env, FADE_MS);                  // the open settles
+  assert.equal(t.body.style.overflow, 'hidden');
+
+  t.contact._closeByUser();
+  assert.equal(t.body.style.overflow, 'hidden', 'still locked while it fades out');
+
+  fireTimers(t.env, FADE_MS);                  // no transitionend ever came
+  assert.equal(t.el.style.display, 'none', 'the popup finished closing anyway');
+  assert.equal(t.body.style.overflow, '', 'and the page scrolls again');
+});
+
+test('a transition finishing inside the popup does not tear it down mid-fade', () => {
+  // transitionend bubbles. A button inside the popup finishing its hover
+  // transition used to be mistaken for the popup's own fade.
+  const t = fadeEnv();
+  t.contact.show();
+  fireTimers(t.env, FADE_MS);
+
+  t.contact._closeByUser();
+  const button = createElement('button');
+  t.el.appendChild(button);
+  t.el._listeners.transitionend({ target: button });
+
+  assert.equal(t.el.style.display, 'flex', 'a child transition is not the popup closing');
+
+  t.el._listeners.transitionend({ target: t.el });
+  assert.equal(t.el.style.display, 'none', 'its own transition is');
+  assert.equal(t.body.style.overflow, '');
+});
+
+test('the close button works while the popup is still fading in', () => {
+  // hide() used to refuse to run while _animating, so an impatient visitor
+  // pressing X during the fade-in got nothing at all.
+  const t = fadeEnv();
+  t.contact.show();                            // fade-in still in flight
+  t.contact._closeByUser();
+
+  fireTimers(t.env, FADE_MS);
+  assert.equal(t.contact.isVisible, false);
+  assert.equal(t.el.style.display, 'none');
+  assert.equal(t.body.style.overflow, '', 'no lock left behind');
+});
+
+// ---------------------------------------------------------------------------
+// An automatic popup waits for the screen — it never lands on what the
+// visitor opened
+// ---------------------------------------------------------------------------
+
+test('a delayed promo waits while a form is open, then takes its turn', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  ['promo', 'contact'].forEach((n) => env.body.appendChild(createElement('div', { class: 'p-' + n })));
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-promo', animation: 'none', cookieName: null, openAfterDelay: 5,
+  });
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null,
+  });
+
+  contact.show();                              // visitor opened the booking form
+  fireTimers(env, 5000);                       // the promo's delay comes due
+
+  assert.equal(promo.isVisible, false, 'it does not cover the form');
+  assert.equal(contact.isVisible, true, 'and does not close it either');
+
+  contact._closeByUser();
+  assert.equal(promo.isVisible, false,
+    'not in the same frame the form disappears — that reads as a swap, not a close');
+
+  fireTimers(env, 600);                        // a beat later
+  assert.equal(promo.isVisible, true, 'it waited, it did not vanish');
+});
+
+test('a promo that waited still respects the cookie written while it waited', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  ['promo', 'contact'].forEach((n) => env.body.appendChild(createElement('div', { class: 'p-' + n })));
+  const promo = env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-promo', animation: 'none', cookieName: 'promo_seen', openAfterDelay: 5,
+  });
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null,
+  });
+
+  contact.show();
+  fireTimers(env, 5000);
+  promo.markSeen();                            // dismissed elsewhere in the meantime
+  contact._closeByUser();
+  fireTimers(env, 600);
+
+  assert.equal(promo.isVisible, false, 'the deferred open re-checks, it does not just replay');
 });
