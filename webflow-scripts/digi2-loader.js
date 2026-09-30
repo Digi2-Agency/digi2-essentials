@@ -76,6 +76,10 @@
  *   openAfterDelay:       null                Seconds — show after delay
  *   openOnExitIntent:     false               Show on exit intent (mouse/scroll)
  *   openAfterPageViews:   null                Show after N page views (sessionStorage)
+ *   startOn:              null                'intro:done' — hold the automatic triggers
+ *                                             until that milestone (digi2.signal or a
+ *                                             DOM event). { event, timeout } to tune the
+ *                                             failsafe, which defaults to 10 s.
  *   cookieName:           'popup_clicked'     Dismissal cookie name
  *   cookieDurationDays:   1                   How long dismissal lasts
  *   excludeUrls:          []                  URL patterns to skip
@@ -135,6 +139,9 @@
  *   digi2.on('consent:updated', fn)     Consent state changed (receives state)
  *   digi2.off('loaded', fn)             Remove listener
  *   digi2.emit('custom', data)          Emit custom event
+ *   digi2.signal('intro:done')          Emit AND remember — late listeners still fire
+ *   digi2.when('intro:done', fn)        Run fn once: now if signalled, else on arrival
+ *   digi2.signalled('intro:done')       Has this signal already fired?
  *   digi2.onReady(fn)                   Alias for digi2.on('loaded', fn)
  *
  * ─── Responsive Attributes ──────────────────────────────────────────────────
@@ -241,6 +248,42 @@
   // ---- Backwards-compatible onReady (wraps the event system) ---------------
   window.digi2.onReady = function (fn) {
     window.digi2.on('loaded', fn);
+  };
+
+  // ---- Signals — milestones a late listener still hears ---------------------
+  // emit() only reaches whoever is already subscribed, which is the wrong shape
+  // for a one-off milestone like "the intro animation finished". The module
+  // that cares is fetched asynchronously, so on a fast connection it subscribes
+  // after the milestone and waits forever; on a slow one it subscribes first
+  // and works. signal() records that the thing happened, and when() runs the
+  // callback immediately if it already did.
+  var signalled = {};
+
+  window.digi2.signal = function (event, data) {
+    signalled[event] = { data: data };
+    window.digi2.emit(event, data);
+  };
+
+  window.digi2.signalled = function (event) {
+    return Object.prototype.hasOwnProperty.call(signalled, event);
+  };
+
+  // Run fn once, now or when the event arrives. Returns an unsubscribe fn.
+  window.digi2.when = function (event, fn) {
+    if (typeof fn !== 'function') return function () {};
+    if (Object.prototype.hasOwnProperty.call(signalled, event)) {
+      fn(signalled[event].data);
+      return function () {};
+    }
+    var done = false;
+    function once(data) {
+      if (done) return;
+      done = true;
+      window.digi2.off(event, once);
+      fn(data);
+    }
+    window.digi2.on(event, once);
+    return function () { window.digi2.off(event, once); };
   };
 
   // ---- Responsive attribute parser -----------------------------------------

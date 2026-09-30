@@ -5,6 +5,93 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.7.0 — 2026-09-30
+
+### Popupy potrafią poczekać na koniec animacji intro
+
+Strona, która otwiera się loaderem, psuła każdy wyzwalacz czasowy: `openAfterDelay: 7`
+liczy od załadowania strony, więc przy sześciosekundowym intro popup otwierał się
+**za kurtyną**, a kiedy animacja schodziła, wisiał na ekranie już od sekundy.
+
+Nowa opcja `startOn` przesuwa linię startu:
+
+```js
+digi2.popups.create('promo', {
+  popupSelector: '#popup-promo',
+  startOn: 'intro:done',   // poczekaj na moment
+  openAfterDelay: 7,       // …i dopiero wtedy odliczaj 7 s
+})
+
+// tam, gdzie kończy się animacja:
+digi2.signal('intro:done')
+```
+
+W Designerze, bez ruszania JS-a strony:
+
+| Atrybut | Element | Wartość |
+|---|---|---|
+| `d2-popup-start-on` | overlay popupu | `intro:done` |
+| `d2-popup-start-timeout` | overlay popupu | `12` (sekundy) albo `never` |
+
+Nazwa zdarzenia jest dowolna — jedna strona może czekać na `intro:done`, inna na
+`video:ended`.
+
+**Moment zgłosisz na trzy sposoby**, bo kto pisze animację, rzadko pisze popup:
+`digi2.signal('intro:done')` (najlepszy), `window.dispatchEvent(new CustomEvent('intro:done'))`
+albo to samo na `document`.
+
+**Nowe w szynie zdarzeń: sygnały.** `digi2.emit()` dociera tylko do tych, którzy już
+słuchają, a moduły dociągają się asynchronicznie — intro, które skończy się przed
+`popups.js`, wołałoby w pustkę i bramka nie otworzyłaby się nigdy. `digi2.signal(nazwa)`
+zapamiętuje, że coś się wydarzyło, `digi2.when(nazwa, fn)` odpala callback także po
+fakcie, a `digi2.signalled(nazwa)` odpowiada true/false.
+
+**Bezpiecznik.** Animacja potrafi nie dojechać: wtyczka z 404, odwiedzający
+z `prefers-reduced-motion`, błąd trzy linijki wcześniej. Utrata wszystkich
+automatycznych popupów na stronie jest gorsza niż pokazanie ich odrobinę za wcześnie,
+więc **bramka otwiera się sama po 10 s**. `{ event, timeout: 12 }` zmienia ten czas,
+`timeout: false` (albo `d2-popup-start-timeout="never"`) każe czekać bez końca.
+Ustaw go odrobinę dłużej, niż trwa animacja.
+
+**Bramka wstrzymuje tylko to, co strona wymyśliła sama** — `openOnLoad`,
+`openAfterDelay`, exit intent, odsłony, bezczynność, scroll, szybki scroll, zmianę
+karty i zegar sekwencji. Wszystko, po co sięga odwiedzający (`d2-show-popup`,
+`openTriggerSelector`, `digi2.popups.show()`, hover, rage click, przechwycony link),
+działa od razu: kto kliknął, ten poprosił.
+
+Sekwencja przyjmuje to jako własną opcję — `digi2.popups.sequence(kroki, { startOn: 'intro:done' })`
+— a czas czekania nie jest doliczany do wizyty. Przy `sequence` podanym w `create()`
+wystarczy `startOn` na popupie.
+
+**Bez `startOn` nic się nie zmienia**: bramka jest od razu otwarta, a wyzwalacze
+podpinają się dokładnie tak jak dotąd.
+
+### `minPageViews` — „dopiero gdy pozwiedzał, i dopiero po chwili"
+
+`openAfterPageViews: 2` **jest** wyzwalaczem: otwiera popup w momencie wejścia na drugą
+podstronę i nie da się go połączyć z opóźnieniem (wyzwalacze są łańcuchem else-if).
+Nowa opcja to bramka, która łączy się z czymkolwiek:
+
+```js
+digi2.popups.create('oferta', {
+  openAfterDelay: 30,   // 30 s na stronie…
+  minPageViews: 2,      // …i nie wcześniej niż na drugiej podstronie wizyty
+})
+```
+
+W Designerze: `d2-popup-min-pageviews="2"` na overlayu popupu.
+
+Wstrzymuje **tylko otwarcia automatyczne** — klik w `d2-show-popup` czy `digi2.popups.show()`
+otwiera popup zawsze, bo przycisk, który nic nie robi na pierwszej podstronie, jest gorszy
+niż popup pokazany za wcześnie.
+
+### Strona z dwoma popupami liczyła każdą odsłonę podwójnie
+
+Licznik odsłon (`sessionStorage`, domyślnie `popupPageViews`) był podbijany przez **każdą
+instancję** popupu przy starcie. Na stronie z dwoma popupami jedno wejście liczyło się jako
+dwa, więc `openAfterPageViews: 2` odpalało już na pierwszej podstronie. Teraz odsłonę liczy
+pierwsza instancja w dokumencie, a reszta tylko czyta.
+
 ## v1.6.5 — 2026-09-10
 
 ### Popup promocyjny nie wchodzi już na otwarty formularz — nigdy, nie tylko z sekwencji

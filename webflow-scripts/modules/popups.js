@@ -15,6 +15,13 @@
  *   animationDuration:    0.4                    — seconds
  *   utm:                  'utm_source:facebook'  — only show to traffic carrying it
  *   utmExclude:           'utm_medium:cpc'       — never show to this traffic
+ *   startOn:              'intro:done'           — hold automatic triggers until this milestone
+ *
+ * Start gate (see _openWhen):
+ *   startOn: 'intro:done' + openAfterDelay: 7 = seven seconds after the intro
+ *   animation ends, not seven seconds after the page loaded. The milestone may
+ *   come from digi2.signal('intro:done') or a DOM event of that name on
+ *   window/document; a failsafe timer opens the gate if it never arrives.
  *
  * Traffic targeting (see the "Traffic targeting" section below):
  *   <div class="popup" d2-popup-utm="utm_source:facebook|instagram">
@@ -281,6 +288,74 @@
     return el.getAttribute(name);
   }
 
+  // ---- Start gate (startOn) ------------------------------------------------
+  // Hold the automatic triggers until the page says it is ready — in practice
+  // until an intro/loader animation has finished covering the screen. Without
+  // it, "four seconds after arrival" lands the popup in the middle of the intro,
+  // and openOnLoad fires against a screen the visitor cannot even see yet.
+  //
+  // The milestone is accepted from three places, because whoever owns the
+  // animation is rarely whoever owns the popup:
+  //   digi2.signal('intro:done')                          the digi2 bus
+  //   window.dispatchEvent(new CustomEvent('intro:done'))
+  //   document.dispatchEvent(new CustomEvent('intro:done'))
+  // digi2.signal() is the one to prefer: it is remembered, so an intro that
+  // finishes before this module is fetched still opens the gate.
+  //
+  // A failsafe timer opens the gate anyway. An animation that throws, a plugin
+  // that fails to load, a reduced-motion visitor whose intro never runs — none
+  // of them should cost the site every automatic popup on the page.
+  var START_GATE_TIMEOUT = 10;   // seconds
+
+  function _openWhen(spec, cb) {
+    if (!spec) { cb(); return function () {}; }
+
+    var cfg = (typeof spec === 'object') ? spec : { event: spec };
+    var name = cfg.event || cfg.name;
+    if (!name) { cb(); return function () {}; }
+
+    var timeout = Object.prototype.hasOwnProperty.call(cfg, 'timeout')
+      ? cfg.timeout
+      : START_GATE_TIMEOUT;
+    var done = false;
+    var offBus = null;
+    var timerId = null;
+
+    function detach() {
+      if (offBus) { try { offBus(); } catch (e) { /* ignore */ } offBus = null; }
+      if (timerId !== null) { clearTimeout(timerId); timerId = null; }
+      if (typeof window.removeEventListener === 'function') window.removeEventListener(name, onDom);
+      if (typeof document.removeEventListener === 'function') document.removeEventListener(name, onDom);
+    }
+
+    function open(via) {
+      if (done) return;
+      done = true;
+      detach();
+      _log('start gate open (' + via + ') → ' + name);
+      cb();
+    }
+
+    function onDom() { open('event'); }
+
+    if (window.digi2 && typeof window.digi2.when === 'function') {
+      offBus = window.digi2.when(name, function () { open('signal'); });
+    }
+    // Already signalled: when() ran the callback synchronously and the gate is
+    // open — nothing left to attach or cancel.
+    if (done) return function () {};
+
+    if (typeof window.addEventListener === 'function') window.addEventListener(name, onDom);
+    if (typeof document.addEventListener === 'function') document.addEventListener(name, onDom);
+
+    var secs = parseFloat(timeout);
+    if (timeout !== false && timeout !== null && !isNaN(secs)) {
+      timerId = setTimeout(function () { open('timeout'); }, secs * 1000);
+    }
+
+    return function () { if (!done) { done = true; detach(); } };
+  }
+
   function _pad2(v) {
     v = String(v);
     return v.length < 2 ? '0' + v : v;
@@ -339,9 +414,23 @@
         openAfterDelay: null,
         openOnExitIntent: false,
         openAfterPageViews: null,
+        // Gate, not a trigger: never open automatically before the visitor has
+        // seen this many pages this session. Combines with any trigger, which
+        // openAfterPageViews cannot — that one IS the trigger and fires the
+        // moment the count is reached. A click always gets through.
+        // Also read from d2-popup-min-pageviews on the popup element.
+        minPageViews: null,
         sessionStorageKey: 'popupPageViews',
         lockScrollOnShow: true,       // lock body scroll when popup is visible
         schedule: null,               // { from, to } or "YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM" — only show within this window (either bound may be blank for open-ended). Also read from d2-popup-schedule / data-d2-popup-schedule on the popup element.
+        // ---- Start gate ----------------------------------------------------
+        // Hold every automatic trigger until this milestone arrives — typically
+        // an intro/loader animation finishing. Clicks and hovers are unaffected.
+        //   startOn: 'intro:done'
+        //   startOn: { event: 'intro:done', timeout: 12 }   failsafe, seconds
+        //   startOn: { event: 'intro:done', timeout: false } wait forever
+        // Also read from d2-popup-start-on / d2-popup-start-timeout on the element.
+        startOn: null,
         // ---- Traffic targeting ---------------------------------------------
         // Show only to visitors carrying a campaign parameter:
         //   utm: 'utm_source:facebook|instagram'   whitelist (OR within the key)
@@ -416,6 +505,7 @@
       this._boundOpenHandler = null;
       this._boundCloseHandler = null;
       this._delayTimerId = null;
+      this._cancelStartGate = null;
 
       // Cleanup registry for new triggers — each entry is a fn that detaches its trigger
       this._cleanupFns = [];
@@ -477,6 +567,8 @@
       this.lastScrollY = window.scrollY;
 
       this._parseScheduleOption();
+      this._parseStartOnOption();
+      this._parseMinPageViewsOption();
 
       // A popup that repeats can't treat "closed" as "done with it": the
       // dismissal flag would make the sequence skip every later showing, and
@@ -494,28 +586,41 @@
       this.shown = this._isCookieSet();
       if (this.shown) return;
 
-      if (this.options.openOnExitIntent) {
-        this._setupExitIntent();
-      } else if (this.options.openAfterDelay !== null) {
-        this._setupDelayTrigger();
-      } else if (this.options.openAfterPageViews !== null) {
-        this._setupPageViewsTrigger();
-      } else if (this.options.openOnLoad) {
-        this.show({ auto: true });
-      }
-
-      // New triggers — additive, each guards via _canTrigger() so they can combine safely
+      // New triggers — additive, each guards via _canTrigger() so they can combine safely.
+      // These are the ones the VISITOR reaches for: a hover, a click, a rage
+      // click, leaving a form, following a link. They stay live even behind a
+      // start gate — somebody who acts has asked for the popup, and an intro
+      // covering the screen is exactly when nobody is clicking anything anyway.
       if (this.options.openOnOutsideClick) this._setupOutsideClickTrigger();
       if (this.options.openOnElementMouseLeave) this._setupElementMouseLeaveTrigger();
       if (this.options.openOnElementHover) this._setupElementHoverTrigger();
-      if (this.options.openOnTabBlur) this._setupTabBlurTrigger();
-      if (this.options.openAfterScrollPercent !== null) this._setupScrollPercentTrigger();
-      if (this.options.openAfterScrollPastElement) this._setupScrollPastElementTrigger();
-      if (this.options.openAfterIdle !== null) this._setupIdleTrigger();
       if (this.options.openOnRageClick) this._setupRageClickTrigger();
       if (this.options.openOnSelectAbandon) this._setupSelectAbandonTrigger();
-      if (this.options.openOnScrollSpeed) this._setupScrollSpeedTrigger();
       if (this.options.interceptLinks) this._setupLinkInterceptTrigger();
+
+      // Everything the PAGE decides on its own waits for the start gate. With
+      // no startOn the gate is already open and this runs synchronously, so the
+      // wiring order above and below is unchanged for every existing site.
+      this._cancelStartGate = _openWhen(this.options.startOn, () => {
+        this._cancelStartGate = null;
+        if (this._isCookieSet() || this.isVisible) return;
+
+        if (this.options.openOnExitIntent) {
+          this._setupExitIntent();
+        } else if (this.options.openAfterDelay !== null) {
+          this._setupDelayTrigger();
+        } else if (this.options.openAfterPageViews !== null) {
+          this._setupPageViewsTrigger();
+        } else if (this.options.openOnLoad) {
+          this.show({ auto: true });
+        }
+
+        if (this.options.openOnTabBlur) this._setupTabBlurTrigger();
+        if (this.options.openAfterScrollPercent !== null) this._setupScrollPercentTrigger();
+        if (this.options.openAfterScrollPastElement) this._setupScrollPastElementTrigger();
+        if (this.options.openAfterIdle !== null) this._setupIdleTrigger();
+        if (this.options.openOnScrollSpeed) this._setupScrollSpeedTrigger();
+      });
 
       if (this.options.video) this._setupVideo();
     }
@@ -674,6 +779,63 @@
     //   ",2026-07-01 23:59"            → until this moment
     // Parsed in the visitor's local timezone. A date with no time defaults to
     // 00:00 for the start bound and 23:59:59 for the end bound of that day.
+    // minPageViews may also be set on the element: d2-popup-min-pageviews="2".
+    _parseMinPageViewsOption() {
+      if (!this.popupElement || this.options.minPageViews != null) return;
+      var raw = attr(this.popupElement, 'd2-popup-min-pageviews');
+      if (raw == null) raw = this.popupElement.getAttribute('data-d2-popup-min-pageviews');
+      if (raw == null || String(raw).trim() === '') return;
+      var n = parseInt(String(raw).trim(), 10);
+      if (isNaN(n)) {
+        console.warn(`[digi2.popups] "${this.name}" — d2-popup-min-pageviews="${raw}" is not a `
+          + 'number; ignoring it.');
+        return;
+      }
+      this.options.minPageViews = n;
+    }
+
+    // Enough of the visit seen? Pages are counted once per document, not once
+    // per popup — see _updatePageViews.
+    _hasEnoughPageViews() {
+      if (this.options.minPageViews == null) return true;
+      return this._getPageViews() >= this.options.minPageViews;
+    }
+
+    // startOn may also be set on the element, so a Designer-built popup can
+    // wait for the intro without anyone touching the site's JS:
+    //   d2-popup-start-on="intro:done"
+    //   d2-popup-start-timeout="12"     seconds, or "never" to wait indefinitely
+    // The timeout attribute is read on its own so it can tune a startOn that
+    // came from JS, and it is ignored when nothing is being waited for.
+    _parseStartOnOption() {
+      if (!this.popupElement) return;
+
+      if (this.options.startOn == null) {
+        var raw = attr(this.popupElement, 'd2-popup-start-on');
+        if (raw == null) raw = this.popupElement.getAttribute('data-d2-popup-start-on');
+        if (raw != null && String(raw).trim() !== '') this.options.startOn = String(raw).trim();
+      }
+      if (!this.options.startOn) return;
+
+      var t = attr(this.popupElement, 'd2-popup-start-timeout');
+      if (t == null) t = this.popupElement.getAttribute('data-d2-popup-start-timeout');
+      if (t == null) return;
+      t = String(t).trim();
+      if (t === '') return;
+
+      var spec = (typeof this.options.startOn === 'object')
+        ? this.options.startOn
+        : { event: this.options.startOn };
+      if (t === 'never' || t === 'false') spec.timeout = false;
+      else if (!isNaN(parseFloat(t))) spec.timeout = parseFloat(t);
+      else {
+        console.warn(`[digi2.popups] "${this.name}" — d2-popup-start-timeout="${t}" is not a `
+          + 'number of seconds (or "never"); keeping the default failsafe.');
+        return;
+      }
+      this.options.startOn = spec;
+    }
+
     _parseScheduleOption() {
       var raw = this.options.schedule;
       if (raw == null && this.popupElement) {
@@ -744,6 +906,10 @@
       if (this._boundCloseHandler) {
         document.removeEventListener('click', this._boundCloseHandler);
       }
+      if (this._cancelStartGate) {
+        this._cancelStartGate();
+        this._cancelStartGate = null;
+      }
       if (this._delayTimerId) {
         clearTimeout(this._delayTimerId);
       }
@@ -797,6 +963,15 @@
       }
       if (!this._isWithinSchedule()) {
         _log('show suppressed — outside schedule → ' + this.name, this._schedule);
+        return;
+      }
+      if (auto && !this._hasEnoughPageViews()) {
+        // Only automatic opens. A visitor who clicked a trigger has asked for
+        // this popup, and a button that does nothing on page one is worse than
+        // a popup shown early. No pendingShow either: the count only moves on
+        // navigation, and that means a new document with fresh triggers.
+        _log('show suppressed — ' + this._getPageViews() + ' of '
+          + this.options.minPageViews + ' pages seen → ' + this.name);
         return;
       }
       if (!this._isPromoAllowed()) {
@@ -919,7 +1094,13 @@
 
       // Each popup gets its own storage slot, so two popups can run their own
       // repeats without overwriting each other's progress.
-      this.sequence = new D2PopupSequence(steps, { storageKey: 'd2PopupSequence:' + this.name });
+      this.sequence = new D2PopupSequence(steps, {
+        storageKey: 'd2PopupSequence:' + this.name,
+        // A popup that waits for the intro waits for it here too — otherwise
+        // the instance holds its own triggers back while the chain opens it
+        // anyway, which is the same popup landing mid-animation.
+        startOn: this.options.startOn,
+      });
       return this.sequence;
     }
 
@@ -1143,10 +1324,18 @@
 
     // ---- Page-views trigger -------------------------------------------------
 
+    // One page view is one document, not one popup. Every instance used to
+    // increment the shared counter as it initialised, so a page carrying two
+    // popups counted every visit twice — openAfterPageViews: 2 then fired on
+    // the very first page, and minPageViews would have been off by the same
+    // factor. The first instance counts; the rest read what it wrote.
     _updatePageViews() {
-      let views = parseInt(sessionStorage.getItem(this.options.sessionStorageKey) || '0', 10);
+      var key = this.options.sessionStorageKey;
+      if (_pageViewCounted[key]) return this._getPageViews();
+      _pageViewCounted[key] = true;
+      let views = parseInt(sessionStorage.getItem(key) || '0', 10);
       views++;
-      sessionStorage.setItem(this.options.sessionStorageKey, views.toString());
+      sessionStorage.setItem(key, views.toString());
       return views;
     }
 
@@ -1667,6 +1856,9 @@
   // so closing the first unlocks the page while a modal is still up, and
   // closing the second restores "hidden" and leaves the page permanently
   // unscrollable — which looks exactly like a close button that did nothing.
+  // Page-view keys already incremented in THIS document — see _updatePageViews.
+  var _pageViewCounted = {};
+
   var _scrollLocks = 0;
   var _scrollSaved = null;
 
@@ -1756,6 +1948,7 @@
       this.storageKey = options.storageKey || 'd2PopupSequence';
       this._timerId = null;
       this._stopped = false;
+      this._cancelStartGate = null;
       this._warned = {};
 
       if (!this.steps.length) {
@@ -1783,9 +1976,20 @@
       document.addEventListener('visibilitychange', () => { this._lastTickAt = Date.now(); });
 
       this._warnSharedCookies();
-      this._evaluate();     // a step may already be due the moment this page loads
-      this._tick();
-      _log('sequence started', this.status());
+
+      // The chain's clock waits for the same start gate as a single popup, so
+      // "four seconds after arrival" means four seconds after the intro got out
+      // of the way — not four seconds into an animation nobody can click past.
+      // Time spent waiting is not credited to the visit: the delta restarts
+      // when the gate opens.
+      this._cancelStartGate = _openWhen(options.startOn, () => {
+        this._cancelStartGate = null;
+        if (this._stopped) return;
+        this._lastTickAt = Date.now();
+        this._evaluate();   // a step may already be due the moment this page loads
+        this._tick();
+        _log('sequence started', this.status());
+      });
     }
 
     // cookieName defaults to the same 'popup_clicked' for every popup, which is
@@ -1983,6 +2187,7 @@
     stop() {
       this._stopped = true;
       clearTimeout(this._timerId);
+      if (this._cancelStartGate) { this._cancelStartGate(); this._cancelStartGate = null; }
     }
 
     /** Forget all progress and start the chain from step one. */
@@ -2033,6 +2238,8 @@
      *   ])
      *
      * @param {Array} steps — { popup, after (seconds), afterPageChange? }
+     * @param {Object} [options] — { storageKey, startOn }. startOn holds the
+     *   chain's clock until that milestone arrives (see _openWhen).
      * @param {Object} [options] — { storageKey } for a second, independent chain
      */
     sequence(steps, options) {

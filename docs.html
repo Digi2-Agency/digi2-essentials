@@ -710,6 +710,7 @@
       <a href="#popups">Overview</a>
       <a href="#popups-animations">Animations</a>
       <a href="#popups-triggers">Triggers</a>
+      <a href="#popups-start-gate">Waiting for an Intro</a>
       <a href="#popups-schedule">Scheduling</a>
       <a href="#popups-traffic">Campaign Targeting</a>
       <a href="#popups-sequences">Sequences</a>
@@ -1044,6 +1045,8 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>cookieName</code></td><td><code>'popup_clicked'</code></td><td>Dismissal cookie. Set to <code>null</code> to disable — popup re-shows every page load</td></tr>
       <tr><td><code>cookieDurationDays</code></td><td><code>1</code></td><td>Cookie lifespan</td></tr>
       <tr><td><code>setCookieOnClose</code></td><td><code>true</code></td><td><code>false</code> → closing doesn't silence the popup; call <code>markSeen()</code> when the goal is actually met</td></tr>
+      <tr><td><code>minPageViews</code></td><td><code>null</code></td><td><code>2</code> — never open <em>automatically</em> before the visitor has seen this many pages this session. A gate, so it combines with any trigger. Also readable from <code>d2-popup-min-pageviews</code></td></tr>
+      <tr><td><code>startOn</code></td><td><code>null</code></td><td><code>'intro:done'</code> — hold the automatic triggers until that milestone. <code>{ event, timeout }</code> tunes the failsafe. Also readable from <code>d2-popup-start-on</code>. See <a href="#popups-start-gate">Waiting for an Intro</a></td></tr>
       <tr><td><code>utm</code></td><td><code>null</code></td><td><code>'utm_source:facebook|instagram'</code> — only show to that traffic. See <a href="#popups-traffic">Campaign Targeting</a></td></tr>
       <tr><td><code>utmExclude</code></td><td><code>null</code></td><td><code>'utm_medium:cpc'</code> — never show to that traffic. Beats <code>utm</code></td></tr>
       <tr><td><code>utmCookie</code></td><td><code>true</code></td><td>Remember the campaign on first touch, so the gate still matches after the visitor navigates</td></tr>
@@ -1105,6 +1108,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td>Rage click</td><td><code>openOnRageClick: 4</code> (or <code>true</code> for default 3)</td></tr>
       <tr><td>Select abandon</td><td><code>openOnSelectAbandon: '#my-form'</code></td></tr>
       <tr><td>Fast scroll</td><td><code>openOnScrollSpeed: 2500</code> or <code>{ speed: 2500, direction: 'up' }</code></td></tr>
+      <tr><td>Hold for an intro</td><td><code>startOn: 'intro:done'</code> — not a trigger of its own; it delays the automatic ones. See <a href="#popups-start-gate">Waiting for an Intro</a></td></tr>
       <tr><td>Link intercept</td><td><code>interceptLinks: true</code> · <code>'a:not(.skip)'</code> · <code>{ device: 'mobile' }</code> — opens popup before navigation, navigates on close</td></tr>
     </table>
     <pre><code><span class="comment">// API methods</span>
@@ -1114,6 +1118,14 @@ digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>, <
 digi2.popups.<span class="fn">get</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">list</span>()</code></pre>
+
+    <h3>Requiring a few pages first</h3>
+    <p><code>openAfterPageViews: 2</code> <em>is</em> the trigger — it opens the moment the second page loads. When the condition is "they have been around a bit <strong>and</strong> stayed a while", use <code>minPageViews</code> instead: a gate that combines with whatever trigger you already have.</p>
+    <pre><code>digi2.popups.<span class="fn">create</span>(<span class="string">'oferta'</span>, {
+  <span class="prop">openAfterDelay</span>: <span class="num">30</span>,     <span class="comment">// 30 s on the page…</span>
+  <span class="prop">minPageViews</span>: <span class="num">2</span>,       <span class="comment">// …and not before the second page</span>
+})</code></pre>
+    <p class="muted">It holds back automatic opens only — a click on <code>d2-show-popup</code> or a <code>digi2.popups.show()</code> still opens it, because a button that does nothing on page one is worse than a popup shown early. The count lives in <code>sessionStorage</code> and is one per <em>document</em>, however many popups the page carries.</p>
 
     <h3>One popup at a time</h3>
     <p>Two modals on screen at once is never right: whichever one the visitor closes leaves the other behind, and it reads as a close button that did nothing. Nothing ever opens on top of what is already up — who yields depends on who asked for it.</p>
@@ -1127,6 +1139,80 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
   </section>
 
   <!-- ── POPUPS · SCHEDULING ── -->
+  <!-- ── POPUPS · START GATE ── -->
+  <section id="popups-start-gate">
+    <h2>Waiting for an Intro</h2>
+    <p>A page that opens with a loader or intro animation has a problem with timed popups: <code>openAfterDelay: 7</code> counts from page load, so on a six-second intro the popup opens against a curtain the visitor can’t see past — and by the time the animation lifts, it has been sitting there for a second already. <code>startOn</code> moves the starting line. Every trigger <strong>the page</strong> decides on its own waits for the milestone; every trigger <strong>the visitor</strong> reaches for stays live.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+        <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+      </div>
+
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <pre><code>digi2.popups.<span class="fn">create</span>(<span class="string">'promo'</span>, {
+  <span class="prop">popupSelector</span>: <span class="string">'#popup-promo'</span>,
+  <span class="prop">startOn</span>: <span class="string">'intro:done'</span>,   <span class="comment">// wait for the animation</span>
+  <span class="prop">openAfterDelay</span>: <span class="num">7</span>,        <span class="comment">// then count seven seconds</span>
+})
+
+<span class="comment">// …and wherever the animation finishes:</span>
+digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)</code></pre>
+        <p class="muted">The name is yours — <code>startOn</code> waits for whatever string you pass, so one page can gate on <code>'intro:done'</code> and another on <code>'video:ended'</code>.</p>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="webflow">
+        <p>Add custom attributes to the popup wrapper:</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Popup Wrapper</span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-popup-start-on</span>
+            <span class="chip chip--attr"><span class="k">Value</span> intro:done</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Popup Wrapper</span>
+            <span class="wf-arrow">→</span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-popup-start-timeout</span>
+            <span class="chip chip--attr"><span class="k">Value</span> 12</span>
+          </div>
+        </div>
+        <p class="muted">The timeout attribute is optional — it only tunes the failsafe below. <code>data-d2-popup-start-on</code> also works.</p>
+      </div>
+    </div>
+
+    <h3>Three ways to say “go”</h3>
+    <p>Whoever owns the animation is rarely whoever owns the popup, so the milestone is accepted from all three:</p>
+    <table>
+      <tr><th>From</th><th>Code</th><th>Notes</th></tr>
+      <tr><td>digi2 bus</td><td><code>digi2.signal('intro:done')</code></td><td><strong>Prefer this.</strong> It is remembered: a popup created after the signal opens its gate immediately instead of waiting forever</td></tr>
+      <tr><td>window</td><td><code>window.dispatchEvent(new CustomEvent('intro:done'))</code></td><td>For animation code that knows nothing about digi2</td></tr>
+      <tr><td>document</td><td><code>document.dispatchEvent(new CustomEvent('intro:done'))</code></td><td>Same, if that is where your code already dispatches</td></tr>
+    </table>
+    <p class="muted"><code>digi2.emit()</code> reaches only whoever is already subscribed. The popups module is fetched asynchronously, so an intro that finishes first would emit into an empty room — which is exactly the race <code>digi2.signal()</code> exists to remove. <code>digi2.when(name, fn)</code> and <code>digi2.signalled(name)</code> are the read side, for your own code.</p>
+
+    <h3>The failsafe</h3>
+    <p>An animation can fail to arrive: a plugin that 404s, a reduced-motion visitor whose intro never plays, a JS error three lines earlier. None of that should cost the site every automatic popup on the page, so the gate opens on its own after ten seconds.</p>
+    <table>
+      <tr><th>Value</th><th>Behaviour</th></tr>
+      <tr><td><code>startOn: 'intro:done'</code></td><td>Failsafe at 10 s</td></tr>
+      <tr><td><code>startOn: { event: 'intro:done', timeout: 12 }</code></td><td>Failsafe at 12 s</td></tr>
+      <tr><td><code>startOn: { event: 'intro:done', timeout: false }</code></td><td>No failsafe — waits indefinitely</td></tr>
+      <tr><td><code>d2-popup-start-timeout="never"</code></td><td>Same, from the attribute</td></tr>
+    </table>
+    <p class="muted">Set the failsafe a little longer than the animation actually runs, not shorter: a gate that opens early is the bug you were fixing.</p>
+
+    <h3>What waits and what doesn’t</h3>
+    <table>
+      <tr><th>Trigger</th><th>Behind the gate?</th></tr>
+      <tr><td><code>openOnLoad</code>, <code>openAfterDelay</code>, <code>openOnExitIntent</code>, <code>openAfterPageViews</code>, <code>openAfterIdle</code>, <code>openAfterScrollPercent</code>, <code>openAfterScrollPastElement</code>, <code>openOnScrollSpeed</code>, <code>openOnTabBlur</code></td><td><strong>Waits.</strong> The page decided these on its own</td></tr>
+      <tr><td><code>d2-show-popup</code>, <code>openTriggerSelector</code>, <code>digi2.popups.show()</code>, <code>openOnElementHover</code>, <code>openOnOutsideClick</code>, <code>openOnElementMouseLeave</code>, <code>openOnRageClick</code>, <code>openOnSelectAbandon</code>, <code>interceptLinks</code></td><td><strong>Live at once.</strong> Somebody who clicks has asked for it</td></tr>
+      <tr><td>A <a href="#popups-sequences">sequence</a></td><td><strong>Waits.</strong> The chain’s clock starts when the gate opens, and the wait isn’t credited to the visit — pass <code>startOn</code> in <code>digi2.popups.sequence(steps, { startOn: 'intro:done' })</code>, or on the popup when the sequence is a <code>create()</code> option</td></tr>
+    </table>
+    <p class="muted">Without <code>startOn</code> nothing changes: the gate is already open and every trigger is wired exactly as before.</p>
+  </section>
+
   <section id="popups-schedule">
     <h2>Scheduled Popups</h2>
     <p>Limit a popup to a date/time window. It’s a gate, not a trigger — your triggers still run, but the popup won’t show outside the window. Times use the visitor’s local timezone.</p>
@@ -2459,6 +2545,13 @@ digi2.<span class="fn">off</span>(<span class="string">'loaded'</span>)         
 digi2.<span class="fn">emit</span>(<span class="string">'custom'</span>, data)         <span class="comment">// emit custom event</span>
 digi2.<span class="fn">onReady</span>(fn)                 <span class="comment">// alias for on('loaded')</span></code></pre>
     <p>Subscribing to <code>loaded</code> after modules already loaded calls <code>fn</code> immediately.</p>
+
+    <h3>Signals — milestones a late listener still hears</h3>
+    <p><code>emit()</code> reaches whoever is subscribed at that moment, which is the wrong shape for a one-off milestone like “the intro animation finished”. Modules are fetched asynchronously, so on a fast connection the listener subscribes <em>after</em> the milestone and waits forever, while on a slow one it works — a race that looks like a popup that sometimes never opens.</p>
+    <pre><code>digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)          <span class="comment">// emit AND remember</span>
+digi2.<span class="fn">when</span>(<span class="string">'intro:done'</span>, fn)      <span class="comment">// run once: now if already signalled</span>
+digi2.<span class="fn">signalled</span>(<span class="string">'intro:done'</span>)       <span class="comment">// → true / false</span></code></pre>
+    <p><code>when()</code> returns an unsubscribe function and never fires twice. Used by <code>startOn</code> — see <a href="#popups-start-gate">Waiting for an Intro</a>.</p>
   </section>
 
   <!-- ── MODULE MANAGEMENT ── -->
@@ -2478,6 +2571,8 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     <table>
       <tr><th>Attribute</th><th>Element</th><th>Description</th></tr>
       <tr><td><code>d2-show-popup="name"</code></td><td>Any</td><td>Click opens popup by name</td></tr>
+      <tr><td><code>d2-popup-start-on="intro:done"</code></td><td>Popup wrapper</td><td>Hold the automatic triggers until that milestone</td></tr>
+      <tr><td><code>d2-popup-start-timeout="12"</code></td><td>Popup wrapper</td><td>Failsafe for the above, in seconds (<code>never</code> to wait indefinitely)</td></tr>
       <tr><td><code>d2-form="name"</code></td><td>Div wrapping form</td><td>Marks form for enhancement</td></tr>
       <tr><td><code>d2-form-error-text</code></td><td>Inside label</td><td>Error message element (text set from errorMessages)</td></tr>
       <tr><td><code>d2-form-summary</code></td><td>Inside form</td><td>Summary error container</td></tr>

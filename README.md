@@ -439,6 +439,8 @@ digi2.popups.create('newsletter', {
 | `openOnScrollSpeed` | `null` | px/sec or `{ speed, direction }` — fast-scroll trigger |
 | `interceptLinks` | `false` | `true` · selector · `{ device, selector }` — intercept link clicks, navigate on close |
 | `schedule` | `null` | `{ from, to }` or `'YYYY-MM-DD HH:MM, YYYY-MM-DD HH:MM'` — only show within this window. See [Scheduling](#scheduling) |
+| `minPageViews` | `null` | `2` — never open *automatically* before the visitor has seen this many pages this session. A gate, so it combines with any trigger. Also readable from `d2-popup-min-pageviews` |
+| `startOn` | `null` | `'intro:done'` or `{ event, timeout }` — hold the automatic triggers until that milestone. See [Waiting for an intro](#waiting-for-an-intro--the-starton-option) |
 | `cookieName` | `'popup_clicked'` | Dismissal cookie. `null` disables — re-shows every page load |
 | `cookieDurationDays` | `1` | Cookie lifespan |
 | `setCookieOnClose` | `true` | `false` → closing doesn't suppress the popup. See [Sequencing](#sequencing-two-popups) |
@@ -729,6 +731,7 @@ actually met.
 | Select abandon | `openOnSelectAbandon: '#my-form'` |
 | Fast scroll | `openOnScrollSpeed: 2500` or `{ speed: 2500, direction: 'up' }` |
 | Link intercept | `interceptLinks: true` or `{ device: 'mobile' }` (navigates after close) |
+| Held until an intro ends | `startOn: 'intro:done'` — not a trigger; it moves the starting line of the ones above. See [Waiting for an intro](#waiting-for-an-intro--the-starton-option) |
 
 ### API
 
@@ -741,6 +744,111 @@ digi2.popups.get('name')
 digi2.popups.destroy('name')
 digi2.popups.list()
 ```
+
+### Requiring a few pages first — `minPageViews`
+
+`openAfterPageViews: 2` *is* the trigger: it opens the moment the second page loads, and it cannot
+be combined with a delay (the triggers are an either/or chain). When the rule is "they have been
+around a bit **and** stayed a while", use the gate instead:
+
+```js
+digi2.popups.create('oferta', {
+  openAfterDelay: 30,   // 30 s on the page…
+  minPageViews: 2,      // …and not before the second page of the visit
+  cookieName: 'popup_oferta_seen',
+  cookieDurationDays: 3,
+})
+```
+
+In the Designer: `d2-popup-min-pageviews="2"` on the popup wrapper (`data-d2-` prefix works too).
+
+It holds back **automatic** opens only. A click on `d2-show-popup`, `openTriggerSelector` or
+`digi2.popups.show()` still opens the popup — a button that does nothing on page one is worse than
+a popup shown early. A blocked automatic open is dropped rather than parked: the count only moves
+on navigation, and that means a new document with fresh triggers anyway.
+
+The counter lives in `sessionStorage` under `sessionStorageKey` (default `popupPageViews`) and
+counts one view per **document**, however many popups that document carries.
+
+### Waiting for an intro — the `startOn` option
+
+A page that opens with a loader animation breaks every timed trigger. `openAfterDelay: 7`
+counts from page load, so on a six-second intro the popup opens behind the curtain and has
+already been sitting there a second by the time the animation lifts. `startOn` moves the
+starting line:
+
+```js
+digi2.popups.create('promo', {
+  popupSelector: '#popup-promo',
+  startOn: 'intro:done',   // wait for the milestone
+  openAfterDelay: 7,       // …then count seven seconds
+})
+
+// wherever the animation finishes:
+digi2.signal('intro:done')
+```
+
+In the Designer, without touching the site's JS:
+
+| Attribute | Element | Value |
+|---|---|---|
+| `d2-popup-start-on` | popup wrapper | `intro:done` |
+| `d2-popup-start-timeout` | popup wrapper | `12` (seconds) or `never` |
+
+The name is arbitrary — `startOn` waits for whatever string it is given, so one page can gate
+on `'intro:done'` and another on `'video:ended'`. Both attributes take the `data-d2-` prefix too.
+
+**Three sources, because whoever owns the animation is rarely whoever owns the popup:**
+
+| From | Code |
+|---|---|
+| digi2 bus (preferred) | `digi2.signal('intro:done')` |
+| window | `window.dispatchEvent(new CustomEvent('intro:done'))` |
+| document | `document.dispatchEvent(new CustomEvent('intro:done'))` |
+
+`digi2.signal()` is the one to reach for because it is **remembered**. `emit()` reaches only
+whoever is already subscribed, and modules are fetched asynchronously — an intro that finishes
+before `popups.js` lands would emit into an empty room, and the gate would never open. The read
+side of the same mechanism is `digi2.when(name, fn)` (runs once, immediately if the signal
+already fired, and returns an unsubscribe fn) and `digi2.signalled(name)`.
+
+**The failsafe.** An animation can simply not arrive: a plugin that 404s, a reduced-motion
+visitor whose intro never plays, an error three lines earlier. Losing every automatic popup on
+the page to that is worse than opening a little early, so the gate opens on its own after
+**10 seconds**.
+
+| Value | Failsafe |
+|---|---|
+| `startOn: 'intro:done'` | 10 s |
+| `startOn: { event: 'intro:done', timeout: 12 }` | 12 s |
+| `startOn: { event: 'intro:done', timeout: false }` | none — waits indefinitely |
+| `d2-popup-start-timeout="never"` | none |
+
+Set it a little longer than the animation actually runs; a gate that opens early is the bug
+being fixed here.
+
+**What the gate holds back.** Only what the *page* decided on its own: `openOnLoad`,
+`openAfterDelay`, `openOnExitIntent`, `openAfterPageViews`, `openAfterIdle`,
+`openAfterScrollPercent`, `openAfterScrollPastElement`, `openOnScrollSpeed`, `openOnTabBlur`,
+and a [sequence](#sequences--a-chain-across-the-whole-visit)'s clock. Everything the *visitor*
+reaches for stays live — `d2-show-popup`, `openTriggerSelector`, `digi2.popups.show()`, hover,
+outside click, rage click, select abandon, intercepted links. Somebody who clicks has asked for
+the popup, and an intro covering the screen is exactly when nobody is clicking anything anyway.
+
+A sequence takes it as an option of its own, and the time spent waiting is not credited to the
+visit — the clock starts when the gate opens:
+
+```js
+digi2.popups.sequence([
+  { popup: 'welcome', after: 4 },
+  { popup: 'oferta',  after: 60, afterPageChange: true },
+], { startOn: 'intro:done' })
+```
+
+With a `sequence` passed to `create()`, the popup's own `startOn` covers the chain as well.
+
+Without `startOn` nothing changes: the gate is already open and every trigger is wired exactly
+as before.
 
 ### Scheduling
 
@@ -2818,6 +2926,22 @@ digi2.off('loaded', fn)
 digi2.emit('custom', data)
 digi2.onReady(fn)                   // alias for on('loaded')
 ```
+
+### Signals — milestones a late listener still hears
+
+`emit()` reaches whoever is subscribed at that moment. That is the wrong shape for a one-off
+milestone such as "the intro animation finished": modules are fetched asynchronously, so on a
+fast connection the listener subscribes *after* the milestone and waits forever, while on a slow
+one it works — a race that reads as "the popup sometimes never opens".
+
+```js
+digi2.signal('intro:done')          // emit AND remember
+digi2.when('intro:done', fn)        // run once — immediately if already signalled
+digi2.signalled('intro:done')       // → true / false
+```
+
+`when()` returns an unsubscribe function and never fires its callback twice. This is what the
+popups' [`startOn`](#waiting-for-an-intro--the-starton-option) option is built on.
 
 ---
 

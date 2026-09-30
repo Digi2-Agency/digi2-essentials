@@ -847,7 +847,7 @@
 
     api: {
       desc: 'Składnia responsywna działa w większości atrybutów: <code>wartość;wartość@maxPx</code> (np. <code>left;up@911</code>).',
-      code: "digi2.onReady(function () {\n  // wszystkie moduły załadowane i zainicjalizowane\n});\n\ndigi2.on('module:loaded', function (nazwa) {});\ndigi2.on('responsive:change', function (szerokosc) {});\ndigi2.emit('moj-event', { cokolwiek: 1 });\n\ndigi2.modules.check('forms');            // true / false\ndigi2.modules.require('forms').then(function () {});  // dociągnij na żądanie\n\ndigi2.attr(el, 'd2-animation-direction', 'up'); // odczyt wartości responsywnej"
+      code: "digi2.onReady(function () {\n  // wszystkie moduły załadowane i zainicjalizowane\n});\n\ndigi2.on('module:loaded', function (nazwa) {});\ndigi2.on('responsive:change', function (szerokosc) {});\ndigi2.emit('moj-event', { cokolwiek: 1 });\n\n// Sygnały — momenty, które usłyszy także spóźniony słuchacz.\n// emit() dociera tylko do tych, którzy JUŻ słuchają, a moduły\n// dociągają się asynchronicznie — koniec animacji intro zgłoszony\n// przez emit() potrafi trafić w pustkę. signal() zapamiętuje, że\n// coś się wydarzyło, a when() odpala callback także po fakcie.\ndigi2.signal('intro:done');                     // zgłoś moment\ndigi2.when('intro:done', function () {});       // odpal raz: teraz albo później\ndigi2.signalled('intro:done');                  // true / false\n// Tego używa opcja startOn w popupach — patrz strona modułu Popupy.\n\ndigi2.modules.check('forms');            // true / false\ndigi2.modules.require('forms').then(function () {});  // dociągnij na żądanie\n\ndigi2.attr(el, 'd2-animation-direction', 'up'); // odczyt wartości responsywnej"
     },
 
     examples: [

@@ -119,6 +119,16 @@ function createEnvironment({ store = {}, pathname = '/', search = '', cookie = '
   };
   window.document = document;
 
+  // window-level listeners — the start gate gives the page three ways to say
+  // "go" and one of them is a DOM event on window.
+  const winListeners = {};
+  window.addEventListener = function (type, fn) {
+    (winListeners[type] = winListeners[type] || []).push(fn);
+  };
+  window.removeEventListener = function (type, fn) {
+    if (winListeners[type]) winListeners[type] = winListeners[type].filter((h) => h !== fn);
+  };
+
   const sessionStorage = {
     getItem(k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null; },
     setItem(k, v) { store[k] = String(v); },
@@ -149,6 +159,9 @@ function createEnvironment({ store = {}, pathname = '/', search = '', cookie = '
     document,
     body,
     timers,
+    dispatchWindow(type) {
+      (winListeners[type] || []).slice().forEach((fn) => fn({ type }));
+    },
     dispatchDoc(type, target) {
       const event = { target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
       (docListeners[type] || []).forEach((fn) => fn(event));
@@ -156,6 +169,30 @@ function createEnvironment({ store = {}, pathname = '/', search = '', cookie = '
     },
   };
   return env;
+}
+
+// The loader's event bus, in miniature — signal() remembers, when() replays.
+// The popups module only ever calls when(); the rest is here so a test can
+// signal the way a real page does.
+function installBus(env) {
+  const listeners = {};
+  const signalled = {};
+  const bus = env.window.digi2;
+  bus.on = (event, fn) => { (listeners[event] = listeners[event] || []).push(fn); };
+  bus.off = (event, fn) => {
+    if (listeners[event]) listeners[event] = listeners[event].filter((f) => f !== fn);
+  };
+  bus.emit = (event, data) => { (listeners[event] || []).slice().forEach((fn) => fn(data)); };
+  bus.signal = (event, data) => { signalled[event] = { data }; bus.emit(event, data); };
+  bus.signalled = (event) => Object.prototype.hasOwnProperty.call(signalled, event);
+  bus.when = (event, fn) => {
+    if (signalled[event]) { fn(signalled[event].data); return () => {}; }
+    let done = false;
+    const once = (data) => { if (done) return; done = true; bus.off(event, once); fn(data); };
+    bus.on(event, once);
+    return () => bus.off(event, once);
+  };
+  return bus;
 }
 
 function loadPopupsModule(env) {
@@ -1547,4 +1584,145 @@ test('a promo that waited still respects the cookie written while it waited', ()
   fireTimers(env, 600);
 
   assert.equal(promo.isVisible, false, 'the deferred open re-checks, it does not just replay');
+});
+
+
+// ---------------------------------------------------------------------------
+// Start gate (startOn)
+// ---------------------------------------------------------------------------
+
+function gateEnv(options, attrs) {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  installBus(env);
+  env.body.appendChild(createElement('div', Object.assign({ class: 'popup__overlay' }, attrs || {})));
+  const inst = env.window.digi2.popups.create('promo', Object.assign({
+    animation: 'none', cookieName: null, openAfterDelay: 7,
+  }, options || {}));
+  return { env, inst };
+}
+
+const delayTimer = (env) => env.timers.find((t) => t.ms === 7000);
+
+test('without startOn the delay timer is armed at once — unchanged behaviour', () => {
+  const { env } = gateEnv();
+  assert.ok(delayTimer(env), 'openAfterDelay armed immediately');
+});
+
+test('startOn holds the delay timer until the milestone is signalled', () => {
+  const { env, inst } = gateEnv({ startOn: 'intro:done' });
+  assert.equal(delayTimer(env), undefined, 'nothing armed while the intro runs');
+
+  env.window.digi2.signal('intro:done');
+
+  const delay = delayTimer(env);
+  assert.ok(delay, 'the delay timer starts when the intro ends');
+  delay.fn();
+  assert.equal(inst.isVisible, true, 'and the popup opens seven seconds later');
+});
+
+test('a milestone signalled before the popup exists still opens the gate', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const bus = installBus(env);
+  bus.signal('intro:done');                 // intro finished first — fast connection
+
+  env.body.appendChild(createElement('div', { class: 'popup__overlay' }));
+  env.window.digi2.popups.create('promo', {
+    animation: 'none', cookieName: null, openAfterDelay: 7, startOn: 'intro:done',
+  });
+  assert.ok(delayTimer(env), 'when() replays the signal instead of waiting forever');
+});
+
+test('a DOM event on window opens the gate too', () => {
+  const { env } = gateEnv({ startOn: 'intro:done' });
+  assert.equal(delayTimer(env), undefined);
+  env.dispatchWindow('intro:done');
+  assert.ok(delayTimer(env), 'dispatchEvent works for pages that do not know digi2');
+});
+
+test('the failsafe opens the gate when the milestone never arrives', () => {
+  const { env } = gateEnv({ startOn: 'intro:done' });
+  const failsafe = env.timers.find((t) => t.ms === 10000);
+  assert.ok(failsafe, 'a ten-second failsafe is armed by default');
+  failsafe.fn();
+  assert.ok(delayTimer(env), 'the popup is not lost to an intro that never finished');
+});
+
+test('timeout tunes the failsafe and false waits forever', () => {
+  const tuned = gateEnv({ startOn: { event: 'intro:done', timeout: 3 } });
+  assert.ok(tuned.env.timers.find((t) => t.ms === 3000));
+
+  const never = gateEnv({ startOn: { event: 'intro:done', timeout: false } });
+  assert.equal(never.env.timers.length, 0, 'no failsafe at all');
+});
+
+test('startOn is read from the element, with its own timeout attribute', () => {
+  const { env } = gateEnv({ startOn: null }, {
+    'd2-popup-start-on': 'intro:done',
+    'd2-popup-start-timeout': '4',
+  });
+  assert.equal(delayTimer(env), undefined, 'the attribute gates it');
+  assert.ok(env.timers.find((t) => t.ms === 4000), 'and tunes the failsafe');
+});
+
+test('the gate holds the page back, not the visitor', () => {
+  const { env, inst } = gateEnv({ startOn: 'intro:done', openAfterDelay: null });
+  env.window.digi2.popups.show('promo');
+  assert.equal(inst.isVisible, true, 'a click still opens the popup mid-intro');
+});
+
+
+// ---------------------------------------------------------------------------
+// minPageViews — a gate that combines with any trigger
+// ---------------------------------------------------------------------------
+
+function viewsEnv(options, attrs, store) {
+  const env = createEnvironment({ store: store || {} });
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', Object.assign({ class: 'popup__overlay' }, attrs || {})));
+  const inst = env.window.digi2.popups.create('promo', Object.assign({
+    animation: 'none', cookieName: null, openAfterDelay: 30,
+  }, options || {}));
+  return { env, inst };
+}
+
+const fire = (env, ms) => {
+  const t = env.timers.find((x) => x.ms === ms);
+  if (t) t.fn();
+  return !!t;
+};
+
+test('minPageViews holds an automatic open back until enough pages are seen', () => {
+  const first = viewsEnv({ minPageViews: 2 });
+  assert.equal(fire(first.env, 30000), true, 'the delay trigger still runs');
+  assert.equal(first.inst.isVisible, false, 'but the popup stays shut on page one');
+  assert.equal(first.inst.pendingShow, false, 'and the request is dropped, not parked');
+
+  // Second page of the same visit — the counter carries over in sessionStorage.
+  const second = viewsEnv({ minPageViews: 2 }, null, { popupPageViews: '1' });
+  fire(second.env, 30000);
+  assert.equal(second.inst.isVisible, true);
+});
+
+test('minPageViews never blocks a popup the visitor asked for', () => {
+  const { env, inst } = viewsEnv({ minPageViews: 5 });
+  env.window.digi2.popups.show('promo');
+  assert.equal(inst.isVisible, true, 'a click on page one still opens it');
+});
+
+test('minPageViews reads from the element too', () => {
+  const { env, inst } = viewsEnv(null, { 'd2-popup-min-pageviews': '3' });
+  fire(env, 30000);
+  assert.equal(inst.isVisible, false);
+});
+
+test('a page carrying two popups counts one page view, not two', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.body.appendChild(createElement('div', { class: 'p-a' }));
+  env.body.appendChild(createElement('div', { class: 'p-b' }));
+  env.window.digi2.popups.create('a', { popupSelector: '.p-a', animation: 'none', cookieName: null });
+  env.window.digi2.popups.create('b', { popupSelector: '.p-b', animation: 'none', cookieName: null });
+  assert.equal(env.window.digi2.popups.get('a')._getPageViews(), 1);
 });
