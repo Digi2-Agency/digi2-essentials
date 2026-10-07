@@ -3043,6 +3043,12 @@ digi2.log('module', 'action', data)
 
 ---
 
+## Sekrety
+
+Repo nie ma trwałych sekretów, więc `secrets/dev.yaml` celowo nie istnieje. Build (terser) i testy (node:test) nie potrzebują żadnych zmiennych, a moduły działają w przeglądarce odwiedzającego, gdzie każda wartość jest jawna. Dlatego sekret nigdy nie trafia do `webflow-scripts/` ani `dist/`. Gdyby skrypt narzędziowy (np. deploy) potrzebował sekretu, obowiązuje standard agencji: kod czyta wyłącznie zmienne środowiskowe i przy braku zmiennej kończy się błędem z jej nazwą. Nazwy trafiają do `.env.template`, a wartości do `secrets/dev.yaml` zaszyfrowanego SOPS (odbiorcy age w `.sops.yaml`, `sops secrets/dev.yaml`). Skrypt uruchamiasz przez `sops exec-env secrets/dev.yaml '<komenda>'`. Lokalny `.env` to wyjątek i nigdy nie trafia do gita (`.gitignore`).
+
+---
+
 ## Build
 
 ```bash

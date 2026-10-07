@@ -1,1 +1,8 @@
 node_modules/
+
+# Poświadczenia — nigdy do repo (wartości: secrets/dev.yaml, zaszyfrowane SOPS)
+.env
+.env.*
+!.env.template
+*.dec.yaml
+keys.txt
