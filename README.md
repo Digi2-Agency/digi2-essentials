@@ -1985,7 +1985,7 @@ own is only needed when you want the defaults.
 | List filtered | `view_item_list` | `item_list_name`, `filters`, `filter_count`, `matching`, `total` |
 | List sorted | `view_item_list` | `item_list_name`, `sort_field`, `sort_direction` |
 | More rows loaded | `view_item_list` | `item_list_name`, `loaded` |
-| Product row expanded | `select_item` | `item_list_name`, `item_id` |
+| Product row expanded | `select_item` | `item_list_name`, `item_id`; inside a `[d2-cms-item]` also `item_name`, `item_<field>`, `interaction: 'expand'` — see below |
 | Image opened | `select_content` | `content_type: 'image'`, `item_id`, `index`, `total` |
 | Form submitted (valid) | `form_submit` | `form_id`, `form_name` |
 | **Server accepted the submission** | `form_submit_success` | `form_id`, `form_name`, `form_location`, `lead_source`, `lead_medium`, `lead_campaign`, `has_gclid`, `has_fbclid`, `consent_marketing` |
@@ -2006,6 +2006,59 @@ custom names in the same snake_case style and GA4 reports them as-is.
 
 Video events belong to the `popups` group, so `d2-datalayer-disable="popups"`
 silences them along with the open/close pair.
+
+### Product expands carry the product
+
+A tab or accordion opening inside a `[d2-cms-item]` pushes `select_item` with
+that row's fields, read the same way `cms.js` reads them — inline
+`d2-cms-field-x="…"` on the item and nested `[d2-cms-field="x"]`, nested first.
+The cms module doesn't have to be loaded; the attributes are enough.
+
+```html
+<div d2-accordion-item d2-cms-item
+     d2-cms-field-name="B.1.05" d2-cms-field-floor="1"
+     d2-cms-field-area="52,30 m²" d2-cms-field-price="689 000 zł"
+     d2-cms-field-status="Dostępne">…</div>
+```
+
+```js
+{ event: 'select_item', item_list_id: 'lokale', item_list_name: 'lokale',
+  item_id: 'B.1.05', item_name: 'B.1.05', item_floor: 1, item_area: 52.3,
+  item_price: 689000, item_status: 'Dostępne', interaction: 'expand' }
+```
+
+| Param | Source |
+|---|---|
+| `item_id` | field `id` → `name` → `title` → the tab id |
+| `item_name` | field `name`, else `title` |
+| `item_<field>` | every other field; the key is lowercased, non `[a-z0-9_]` → `_` |
+| `item_list_id` / `item_list_name` | nearest ancestor `d2-cms-list` value, else the tab group |
+| `interaction` | `'expand'` |
+
+Edge cases, and why:
+
+- **Only on open.** `tabs:change` fires on open, never on close, so collapsing a
+  row reports nothing.
+- **Not on load.** `tabs.js` now emits `{ group, tab, panel, trigger, initial }`;
+  `initial` is true for `d2-tab-default` / `d2-accordion-open`. A product row
+  opened that way is skipped — nobody expanded it. A plain tab keeps reporting
+  its default-open as before, so existing sites see no change there.
+- **Numbers.** A value that is digits with an optional decimal comma/dot, spaces
+  as thousands separators and a trailing unit (`"52,30 m²"`, `"689 000 zł"`) is
+  sent as a number, so GA4 can sum and compare it. Anything else stays text:
+  `"B1.05"` (letters first), `"52 m2"` (a digit in the unit), `"1.250.000 zł"`
+  (ambiguous separators). `d2-cms-field-type-<name>="number"` (or
+  `d2-cms-field-type` on a nested field) forces the loose parse cms uses.
+  `id` and `name` are always text — flat "12" is a label.
+- **Fixed keys win.** `item_list_*`, `item_id`, `item_name` and `interaction` are
+  set after the fields, so a field called `list_name` can't overwrite them.
+- **GA4 limits.** Text is cut at 100 characters. GA4 keeps 25 params per event,
+  so a row with a long tail of `d2-cms-field-*` loses the excess there, not here.
+- **Neutral on purpose.** No `view_flat`, no `ViewContent`: GTM maps this one
+  payload onto the vertical's event, and the library stays the same for a flat
+  search and a car dealer.
+- Rows outside a `[d2-cms-item]` keep the old payload (`item_list_name` = group,
+  `item_id` = tab id).
 
 ### A/B events land twice
 

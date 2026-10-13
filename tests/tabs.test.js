@@ -866,3 +866,50 @@ test('closing mid-open does not let the stale open callback re-inflate the panel
   assert.equal(env.monthlyPanel.style.display, 'none', 'the stale open callback did not re-open it');
   assert.equal(inst._animating, false, 'lock released');
 });
+
+test('tabs:change hands over the panel, the trigger and whether it was the default-open', () => {
+  const body = createElement('body');
+  const group = createElement('div', {
+    'd2-tab-group': 'rows', 'd2-tab-mode': 'accordion', 'd2-tab-animation': 'none', 'd2-tab-default': 'r-1',
+  });
+  const rows = ['r-1', 'r-2'].map((id) => {
+    const trigger = createElement('div', { 'd2-tab-trigger': id });
+    const panel = createElement('div', { 'd2-tab-instance': id });
+    group.appendChild(trigger);
+    group.appendChild(panel);
+    return { trigger, panel };
+  });
+  body.appendChild(group);
+
+  const seen = [];
+  const listeners = { 'tabs:change': [(d) => seen.push(d)] };
+  const document = {
+    body, readyState: 'complete', addEventListener() {},
+    querySelector() { return group; },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  const window = {
+    digi2: {
+      log() {},
+      on(name, fn) { (listeners[name] = listeners[name] || []).push(fn); },
+      emit(name, data) { (listeners[name] || []).forEach((fn) => fn(data)); },
+    },
+    location: { hash: '' },
+    addEventListener() {},
+  };
+  const context = vm.createContext({
+    window, document, console, setTimeout, clearTimeout, history: { replaceState() {} },
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+
+  assert.equal(seen.length, 1, 'default-open emits once');
+  assert.equal(seen[0].tab, 'r-1');
+  assert.equal(seen[0].initial, true, 'default-open is flagged');
+
+  rows[1].trigger.click();
+  const last = seen[seen.length - 1];
+  assert.equal(last.tab, 'r-2');
+  assert.equal(last.initial, false);
+  assert.equal(last.panel, rows[1].panel);
+  assert.equal(last.trigger, rows[1].trigger);
+});

@@ -27,7 +27,10 @@
  *   list filtered       → view_item_list     (+ filters, matching, total)
  *   list sorted         → view_item_list     (+ sort_field, sort_direction)
  *   more rows loaded    → view_item_list     (+ loaded)
- *   product expanded    → select_item        (tab/accordion opened)
+ *   product expanded    → select_item        (tab/accordion opened; inside a
+ *                                            [d2-cms-item]: + item_name and
+ *                                            item_<field> per d2-cms-field,
+ *                                            interaction: 'expand')
  *   image opened        → select_content     (content_type: 'image')
  *   form submitted      → form_submit          (client-side validation passed)
  *   server accepted it  → form_submit_success   (+ generate_lead with d2-datalayer-lead="success")
@@ -140,6 +143,104 @@
     return out;
   }
 
+  // ---- product row (tab/accordion inside a [d2-cms-item]) ------------------
+
+  function hasA(el, name) {
+    return !!(el && el.hasAttribute && (el.hasAttribute(name) || el.hasAttribute('data-' + name)));
+  }
+
+  function getA(el, name) {
+    if (!el || !el.getAttribute) return null;
+    var v = el.getAttribute(name);
+    return v != null ? v : el.getAttribute('data-' + name);
+  }
+
+  function closestWith(el, name) {
+    for (var n = el; n; n = n.parentElement) {
+      if (hasA(n, name)) return n;
+    }
+    return null;
+  }
+
+  function cmsItemOf(el) { return closestWith(el, 'd2-cms-item'); }
+
+  // The same two sources cms.js reads: nested [d2-cms-field="x"] elements
+  // (their text) and inline d2-cms-field-x="…" on the item, nested first.
+  // Read here rather than through digi2.cms so the push works on a page that
+  // marks its rows for analytics without loading the cms module.
+  function readFields(item) {
+    var fields = {};
+    var types = {};
+    var nested = item.querySelectorAll ? item.querySelectorAll('[d2-cms-field]') : [];
+    for (var i = 0; i < nested.length; i++) {
+      var key = String(nested[i].getAttribute('d2-cms-field') || '').trim().toLowerCase();
+      if (!key || key in fields) continue;
+      fields[key] = String(nested[i].textContent || '').trim();
+      var t = nested[i].getAttribute('d2-cms-field-type');
+      if (t) types[key] = String(t).trim().toLowerCase();
+    }
+    var attrs = item.attributes || [];
+    for (var a = 0; a < attrs.length; a++) {
+      var an = String(attrs[a].name).toLowerCase().replace(/^data-/, '');
+      if (an.indexOf('d2-cms-field-') !== 0) continue;
+      var suffix = an.slice('d2-cms-field-'.length);
+      if (!suffix || suffix.indexOf('type-') === 0 || suffix in fields) continue;
+      fields[suffix] = String(attrs[a].value || '').trim();
+      var it = getA(item, 'd2-cms-field-type-' + suffix);
+      if (it) types[suffix] = String(it).trim().toLowerCase();
+    }
+    return { fields: fields, types: types };
+  }
+
+  // "52,30 m²", "1 250 000 zł", "3" → numbers, so GA4 can sum and compare
+  // them. Anything with letters before the digits or more digits after the
+  // unit ("B1.05", "52 m2") stays text; d2-cms-field-type="number" forces
+  // the loose parse ("1.250.000,00 PLN").
+  function toNumber(raw, forced) {
+    var s = String(raw).replace(/[\s  ]/g, '');
+    if (forced) {
+      s = s.replace(/[^\d,.\-]/g, '');
+      var lastDot = s.lastIndexOf('.');
+      var lastComma = s.lastIndexOf(',');
+      if (lastDot !== -1 && lastComma !== -1) {
+        s = lastDot > lastComma ? s.replace(/,/g, '') : s.replace(/\./g, '').replace(',', '.');
+      } else if (lastComma !== -1) {
+        var parts = s.split(',');
+        s = parts.length === 2 && parts[1].length <= 2 ? parts[0] + '.' + parts[1] : s.replace(/,/g, '');
+      }
+      var f = parseFloat(s);
+      return isNaN(f) ? null : f;
+    }
+    var m = s.match(/^[$€£]?(-?\d+(?:[.,]\d+)?)[^\d.,]*$/);
+    return m ? parseFloat(m[1].replace(',', '.')) : null;
+  }
+
+  var NUMBER_TYPES = { number: 1, num: 1, int: 1, float: 1 };
+
+  function productPayload(item, d) {
+    var r = readFields(item);
+    var f = r.fields;
+    var listEl = closestWith(item, 'd2-cms-list');
+    var list = (listEl && String(getA(listEl, 'd2-cms-list') || '').trim()) || d.group;
+    var nameKey = f.name ? 'name' : (f.title ? 'title' : null);
+
+    var out = { event: 'select_item' };
+    Object.keys(f).forEach(function (k) {
+      if (k === 'id' || k === nameKey) return;
+      var v = f[k];
+      var n = toNumber(v, !!NUMBER_TYPES[r.types[k]]);
+      out['item_' + k.replace(/[^a-z0-9_]/g, '_')] = n !== null ? n : v.slice(0, 100);
+    });
+    // Set last so a field that happens to be called list_name can't overwrite them.
+    out.item_list_id = list;
+    out.item_list_name = list;
+    // id and name stay text: flat "12" is a label, not a quantity.
+    out.item_id = f.id || (nameKey && f[nameKey]) || d.tab;
+    out.item_name = nameKey ? f[nameKey] : undefined;
+    out.interaction = 'expand';
+    return out;
+  }
+
   // ---- bridge --------------------------------------------------------------
 
   function listen(name, group, map) {
@@ -225,7 +326,15 @@
     });
 
     // A tab/accordion opening is how a product row gets expanded in these builds.
+    // Inside a [d2-cms-item] the push carries the product's own fields; a
+    // plain tab (view switch, FAQ) reports the bare group/tab as before.
     listen('tabs:change', 'tabs', function (d) {
+      var item = cmsItemOf(d.panel) || cmsItemOf(d.trigger);
+      if (item) {
+        // The default-open on page load is not a visitor expanding anything.
+        if (d.initial) return null;
+        return productPayload(item, d);
+      }
       return {
         event: 'select_item',
         item_list_id: d.group,

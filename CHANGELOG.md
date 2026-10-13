@@ -5,6 +5,46 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.8.0 — 2026-10-14
+
+### Rozwinięcie produktu w wyszukiwarce trafia do dataLayer z danymi produktu
+
+Do tej pory otwarcie wiersza w wyszukiwarce wysyłało `select_item` z samą nazwą
+grupy i wygenerowanym id taba (`accordion-1-5`). Z tego nie dało się powiedzieć,
+**który** lokal ktoś obejrzał.
+
+Teraz tab albo akordeon otwarty wewnątrz `[d2-cms-item]` wysyła dane tego wiersza,
+czyli te same `d2-cms-field-*`, które i tak są na stronie dla filtrów i sortowania:
+
+```html
+<div d2-accordion-item d2-cms-item
+     d2-cms-field-name="B.1.05" d2-cms-field-floor="1"
+     d2-cms-field-area="52,30 m²" d2-cms-field-price="689 000 zł"
+     d2-cms-field-status="Dostępne">…</div>
+```
+
+```js
+{ event: 'select_item', interaction: 'expand',
+  item_list_id: 'lokale', item_list_name: 'lokale',   // najbliższy d2-cms-list, bez niego nazwa grupy
+  item_id: 'B.1.05', item_name: 'B.1.05',             // pole id, bez niego name / title
+  item_floor: 1, item_area: 52.3, item_price: 689000, item_status: 'Dostępne' }
+```
+
+- Wysyła tylko przy **otwarciu**. Zamknięcie i domyślne otwarcie przy ładowaniu
+  (`d2-accordion-open`, `d2-tab-default`) niczego nie wysyłają.
+- Liczby (`"52,30 m²"`, `"689 000 zł"`) idą jako liczby. `"1.250.000 zł"` zostaje
+  tekstem, chyba że dodasz `d2-cms-field-type-price="number"`.
+- Zdarzenie jest neutralne branżowo: na `view_flat` czy Meta `ViewContent` tłumaczy je GTM.
+- Na stronie musi być flaga `d2-datalayer`. Samo `d2-tabs` nic nie wysyła.
+
+**Co się zmieni na stronach, które już mają `d2-datalayer`:** `select_item` z wiersza
+`[d2-cms-item]` ma inne `item_id` (nazwa lokalu zamiast `accordion-1-5`),
+inne `item_list_name` (nazwa listy zamiast grupy) oraz nowe parametry. Nie jest też
+już wysyłany przy domyślnym otwarciu wiersza. Jeśli trigger GTM filtrował po starym
+`item_id`, sprawdź go. Taby poza `[d2-cms-item]` działają bez zmian.
+
+Dla programisty: `tabs:change` niesie teraz także `panel`, `trigger` i `initial`.
+
 ## v1.7.0 — 2026-09-30
 
 ### Popupy potrafią poczekać na koniec animacji intro

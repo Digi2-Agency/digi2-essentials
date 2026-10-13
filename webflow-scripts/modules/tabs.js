@@ -418,8 +418,16 @@
       }
 
       // Cross-module signal (e.g. cms re-owns shared counters after a switch).
+      // panel/trigger let datalayer find the [d2-cms-item] row that was
+      // expanded; initial marks the default-open on init — nobody clicked.
       if (window.digi2 && typeof window.digi2.emit === 'function') {
-        window.digi2.emit('tabs:change', { group: this.name, tab: tabId });
+        window.digi2.emit('tabs:change', {
+          group: this.name,
+          tab: tabId,
+          panel: panel,
+          trigger: this._getTrigger(tabId) || null,
+          initial: !!this._initializing,
+        });
       }
     }
 

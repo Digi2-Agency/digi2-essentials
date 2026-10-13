@@ -330,3 +330,88 @@ test('forms-detail is a known group name', () => {
   try { createEnvironment({ disable: 'forms-detail' }); } finally { console.warn = orig; }
   assert.equal(warnings.length, 0, 'no "unknown group" warning');
 });
+
+// Just enough DOM for a W27-style search row: an item with inline
+// d2-cms-field-* attributes and/or nested [d2-cms-field] spans.
+function node(attrs, parent, text) {
+  const a = Object.assign({}, attrs || {});
+  const kids = [];
+  const el = {
+    parentElement: parent || null,
+    textContent: text || '',
+    get attributes() { return Object.keys(a).map((name) => ({ name, value: a[name] })); },
+    hasAttribute(n) { return Object.prototype.hasOwnProperty.call(a, n); },
+    getAttribute(n) { return Object.prototype.hasOwnProperty.call(a, n) ? a[n] : null; },
+    querySelectorAll(sel) {
+      const m = sel.match(/^\[([^\]]+)\]$/);
+      const out = [];
+      const walk = (k) => k.forEach((c) => { if (m && c.hasAttribute(m[1])) out.push(c); walk(c._kids); });
+      walk(kids);
+      return out;
+    },
+    _kids: kids,
+  };
+  if (parent) parent._kids.push(el);
+  return el;
+}
+
+test('expanding a [d2-cms-item] row pushes select_item with the product fields', () => {
+  const env = createEnvironment();
+  const list = node({ 'd2-cms-list': 'lokale' });
+  const item = node({
+    'd2-accordion-item': '', 'd2-cms-item': '',
+    'd2-cms-field-name': 'B.1.05',
+    'd2-cms-field-floor': '1',
+    'd2-cms-field-area': '52,30 m²',
+    'd2-cms-field-price': '689 000 zł',
+    'd2-cms-field-status': 'Dostępne',
+  }, list);
+  const trigger = node({ 'd2-accordion-trigger': '' }, item);
+  const panel = node({ 'd2-accordion-body': '' }, item);
+
+  env.emit('tabs:change', { group: 'accordion-1', tab: 'accordion-1-5', panel, trigger, initial: false });
+
+  assert.deepEqual(env.dl(), [{
+    event: 'select_item',
+    item_floor: 1,
+    item_area: 52.3,
+    item_price: 689000,
+    item_status: 'Dostępne',
+    item_list_id: 'lokale',
+    item_list_name: 'lokale',
+    item_id: 'B.1.05',
+    item_name: 'B.1.05',
+    interaction: 'expand',
+  }]);
+});
+
+test('product row: id field wins for item_id, nested fields and forced number types work', () => {
+  const env = createEnvironment();
+  const item = node({ 'd2-cms-item': '', 'd2-cms-field-id': '12', 'd2-cms-field-type-price': 'number',
+    'd2-cms-field-price': '1.250.000,00 PLN' });
+  node({ 'd2-cms-field': 'title' }, item, '  Mieszkanie 12 ');
+  node({ 'd2-cms-field': 'rooms' }, item, '3');
+  node({ 'd2-cms-field': 'list_name' }, item, 'hijack');
+  const panel = node({}, item);
+
+  env.emit('tabs:change', { group: 'rows', tab: 'rows-1', panel, initial: false });
+
+  const [hit] = env.dl();
+  assert.equal(hit.item_id, '12', 'id stays text');
+  assert.equal(hit.item_name, 'Mieszkanie 12', 'title stands in for a missing name');
+  assert.equal(hit.item_price, 1250000);
+  assert.equal(hit.item_rooms, 3);
+  assert.equal(hit.item_list_name, 'rows', 'a field cannot overwrite the list name; no d2-cms-list → group');
+  assert.equal('item_title' in hit, false);
+});
+
+test('product row: the default-open on init is not reported, a plain tab still is', () => {
+  const env = createEnvironment();
+  const item = node({ 'd2-cms-item': '', 'd2-cms-field-name': 'A1' });
+  const panel = node({}, item);
+  env.emit('tabs:change', { group: 'g', tab: 'g-1', panel, initial: true });
+  assert.equal(env.dl().length, 0, 'nobody clicked');
+
+  env.emit('tabs:change', { group: 'view', tab: 'grid', panel: node({}), initial: false });
+  assert.deepEqual(env.dl(), [{ event: 'select_item', item_list_id: 'view', item_list_name: 'view', item_id: 'grid' }]);
+});

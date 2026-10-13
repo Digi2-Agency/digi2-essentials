@@ -770,6 +770,7 @@
     </button>
     <div class="sidebar-group-items">
       <a href="#datalayer">Overview</a>
+      <a href="#datalayer-products">Product Expands</a>
       <a href="#datalayer-forms">Form Events &amp; Leads</a>
     </div>
   </div>
@@ -2480,12 +2481,50 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td>Popup opened / closed</td><td><code>view_promotion</code> / <code>close_promotion</code></td></tr>
       <tr><td>Popup video finished / unmuted</td><td><code>video_complete</code> / <code>video_unmute</code></td></tr>
       <tr><td>List filtered / sorted / extended</td><td><code>view_item_list</code></td></tr>
-      <tr><td>Row expanded</td><td><code>select_item</code></td></tr>
+      <tr><td>Row expanded</td><td><code>select_item</code> — with the product's fields inside a <code>[d2-cms-item]</code>, <a href="#datalayer-products">see below</a></td></tr>
       <tr><td>Image opened</td><td><code>select_content</code></td></tr>
       <tr><td>Form events</td><td><a href="#datalayer-forms">see below</a></td></tr>
       <tr><td>A/B variant shown / clicked</td><td><code>experiment_impression</code> / <code>select_promotion</code></td></tr>
     </table>
     <p class="muted">The ab-tests module also pushes <code>digi2_ab_assigned</code> / <code>digi2_ab_click</code> on its own, so with both modules loaded one assignment reaches the dataLayer twice under two names. Both keep firing by default — sites have GTM triggers on the <code>digi2_*</code> names — and <code>d2-ab-datalayer="false"</code> switches the module's own push off where the bridge is doing the job.</p>
+  </section>
+
+  <section id="datalayer-products">
+    <h2>Product Expands</h2>
+    <p>A tab or accordion that opens inside a <code>[d2-cms-item]</code> is a visitor expanding a product row, so its <code>select_item</code> carries that product. The fields come from the same attributes the <a href="#cms">CMS module</a> already reads — nothing extra to mark up.</p>
+    <pre><code>&lt;div <span class="attr">d2-accordion</span>&gt;
+  &lt;div <span class="attr">d2-accordion-item</span> <span class="attr">d2-cms-item</span>
+       <span class="prop">d2-cms-field-name</span>=<span class="string">"B.1.05"</span> <span class="prop">d2-cms-field-floor</span>=<span class="string">"1"</span>
+       <span class="prop">d2-cms-field-area</span>=<span class="string">"52,30 m²"</span> <span class="prop">d2-cms-field-price</span>=<span class="string">"689 000 zł"</span>
+       <span class="prop">d2-cms-field-status</span>=<span class="string">"Available"</span>&gt;
+    &lt;div <span class="attr">d2-accordion-trigger</span>&gt;…&lt;/div&gt;
+    &lt;div <span class="attr">d2-accordion-body</span>&gt;…&lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;</code></pre>
+    <pre><code><span class="comment">// pushed when the row opens (never when it closes)</span>
+{ <span class="prop">event</span>: <span class="string">'select_item'</span>, <span class="prop">interaction</span>: <span class="string">'expand'</span>,
+  <span class="prop">item_list_id</span>: <span class="string">'lokale'</span>, <span class="prop">item_list_name</span>: <span class="string">'lokale'</span>,
+  <span class="prop">item_id</span>: <span class="string">'B.1.05'</span>, <span class="prop">item_name</span>: <span class="string">'B.1.05'</span>,
+  <span class="prop">item_floor</span>: <span class="num">1</span>, <span class="prop">item_area</span>: <span class="num">52.3</span>, <span class="prop">item_price</span>: <span class="num">689000</span>, <span class="prop">item_status</span>: <span class="string">'Available'</span> }</code></pre>
+
+    <table>
+      <tr><th>Param</th><th>Value</th></tr>
+      <tr><td><code>item_id</code></td><td>Field <code>id</code>; without it <code>name</code> (or <code>title</code>); without either, the tab id</td></tr>
+      <tr><td><code>item_name</code></td><td>Field <code>name</code>, or <code>title</code> when there is no <code>name</code></td></tr>
+      <tr><td><code>item_&lt;field&gt;</code></td><td>Every other field of the row, inline <code>d2-cms-field-x</code> or nested <code>[d2-cms-field="x"]</code></td></tr>
+      <tr><td><code>item_list_id</code> / <code>item_list_name</code></td><td>The nearest <code>d2-cms-list</code> value; without one, the tab group name</td></tr>
+      <tr><td><code>interaction</code></td><td>Always <code>'expand'</code> — tells these apart from a plain tab switch</td></tr>
+    </table>
+
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td><code>"52,30 m²"</code>, <code>"689 000 zł"</code>, <code>"3"</code></td><td>Sent as numbers (spaces, a trailing unit and a decimal comma are fine)</td></tr>
+      <tr><td><code>"B1.05"</code>, <code>"52 m2"</code>, <code>"1.250.000 zł"</code></td><td>Sent as text — add <code>d2-cms-field-type-price="number"</code> (or <code>d2-cms-field-type</code> on a nested field) to force a number</td></tr>
+      <tr><td><code>id</code> / <code>name</code></td><td>Always text — flat "12" is a label</td></tr>
+      <tr><td>Row opened by <code>d2-accordion-open</code> / <code>d2-tab-default</code></td><td>Not pushed — nobody clicked</td></tr>
+      <tr><td>Tab outside any <code>[d2-cms-item]</code></td><td>Unchanged: <code>item_list_name</code> = group, <code>item_id</code> = tab id</td></tr>
+    </table>
+    <p class="muted">The payload is industry-neutral on purpose: GTM maps it to a vertical event (e.g. <code>view_flat</code> for real estate) and to Meta <code>ViewContent</code>. Text values are cut at 100 characters, GA4's limit; GA4 also keeps only 25 params per event, so keep long descriptions out of <code>d2-cms-field-*</code> on rows you want reported. The page needs <code>d2-datalayer</code> on the loader tag — <code>d2-tabs</code> alone pushes nothing.</p>
   </section>
 
   <section id="datalayer-forms">
