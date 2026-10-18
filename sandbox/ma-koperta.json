@@ -1,0 +1,50 @@
+{
+  "version": "0",
+  "site": "osiedle-demo-sandbox",
+  "project2destate": null,
+  "storage": { "retentionDays": 90, "consentRequired": false },
+  "channels": {
+    "email": { "webhook": "http://localhost:5175/sandbox-hook/email" },
+    "sms": { "webhook": "http://localhost:5175/sandbox-hook/sms" },
+    "ai_call": { "webhook": "http://localhost:5175/sandbox-hook/ai_call" }
+  },
+  "demoState": { "crmCallResult": null, "crmCallSeq": 0, "timeScale": 60 },
+  "scenarios": [
+    {
+      "scenarioId": "powrot-do-lokalu", "name": "Powrót do lokalu", "revision": 1,
+      "publishedAt": "2026-10-19T12:00:00+02:00", "active": true,
+      "nodes": [
+        { "id": "t1", "type": "trigger", "when": { "event": "unit_view", "unitIds": [], "minCount": 1 } },
+        { "id": "t2", "type": "trigger", "when": { "event": "return_visit", "afterHours": 1 } },
+        { "id": "c1", "type": "condition", "if": { "lead": false } },
+        { "id": "a1", "type": "action", "do": "popup", "template": "last-unit", "cta": "open_unit", "frequency": "once_per_unit" },
+        { "id": "a2", "type": "action", "do": "datalayer", "event": "ma_segment", "params": { "segment": "powrot-do-lokalu" } }
+      ],
+      "edges": [["t1", "t2"], ["t2", "c1"], ["c1", "a1"], ["c1", "a2"]]
+    },
+    {
+      "scenarioId": "preferencja-2-pokoje", "name": "Preferencja pokoi (2)", "revision": 1,
+      "publishedAt": "2026-10-19T12:00:00+02:00", "active": true,
+      "nodes": [
+        { "id": "t1", "type": "trigger", "when": { "event": "type_view", "rooms": 2, "minCount": 3 } },
+        { "id": "c1", "type": "condition", "if": { "pref.rooms": 2, "lead": false } },
+        { "id": "a1", "type": "action", "do": "datalayer", "event": "ma_segment", "params": { "segment": "2-pokoje" } },
+        { "id": "a2", "type": "action", "do": "popup", "template": "promo-rooms", "cta": "open_unit", "frequency": "once_per_days:3" }
+      ],
+      "edges": [["t1", "c1"], ["c1", "a1"], ["a1", "a2"]]
+    },
+    {
+      "scenarioId": "lead-bez-kontaktu", "name": "Lead bez kontaktu", "revision": 1,
+      "publishedAt": "2026-10-19T12:00:00+02:00", "active": true,
+      "nodes": [
+        { "id": "t1", "type": "trigger", "when": { "event": "lead" } },
+        { "id": "a1", "type": "action", "do": "datalayer", "event": "ma_segment_exit", "params": { "segment": "sprzedaz" } },
+        { "id": "t2", "type": "trigger", "when": { "event": "crm_call_result", "result": "no_answer" } },
+        { "id": "t3", "type": "trigger", "when": { "event": "return_visit" } },
+        { "id": "a2", "type": "action", "do": "webhook", "channel": "email", "template": "handlowiec-lead-na-stronie", "testOnly": true },
+        { "id": "a3", "type": "action", "do": "webhook", "channel": "sms", "template": "propozycja-terminu", "testOnly": true, "delayMinutes": 15 }
+      ],
+      "edges": [["t1", "a1"], ["a1", "t2"], ["t2", "t3"], ["t3", "a2"], ["a2", "a3"]]
+    }
+  ]
+}

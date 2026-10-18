@@ -5,6 +5,49 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.1 — 2026-10-19 (przedpremierowa, nie `@latest`)
+
+### Nowy moduł `d2-ma` — marketing automation na stronie (demo, kontrakt v0)
+
+Wersja **wyłącznie do dema** „AI Marketing Automation dla deweloperów”. Tag
+przedpremierowy nie przesuwa `@latest`, więc **strony klientów niczego nie
+dostają**. Stronę demo ładuje się przypiętą wersją:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
+  d2-ma="https://digi2.app/api/ma/scenario/osiedle-demo.json"
+  d2-ma-consent-required="false"
+  d2-popups></script>
+```
+
+Co robi:
+
+- **Zapamiętuje obejrzane lokale** z 3D Estate (`oa3de__unit-open` w `dataLayer`,
+  deep link `?sm-unit=`) i z mapy 2destate (`onProductClick`). Wszystko w
+  przeglądarce odwiedzającego (IndexedDB `d2ma`, 90 dni), bez danych osobowych.
+  Ten sam lokal w ciągu 5 s liczy się raz.
+- **Wykonuje scenariusze z digi2.app**: wyzwalacze (obejrzał lokal / typ, wrócił,
+  lead, wynik telefonu z CRM w demo), warunki (preferencja pokoi i piętra, lead,
+  liczba wizyt) i akcje: popup „ostatnio oglądany” na module popupów (świeży
+  status z 2destate, sprzedanego nie pokazuje), segment `ma_segment` /
+  `ma_segment_exit` w `dataLayer` dla grup GA4, webhook do Make (tylko
+  `testOnly: true`).
+- **Do pokazu:** `demoState.timeScale` (minuta zamiast godziny), przycisk
+  `d2-ma-simulate-return`, przycisk `d2-ma-clear`, sekcja „co o Tobie wie strona”
+  (`d2-ma-profile`, `d2-ma-history`), podświetlenie preferowanych lokali na mapie
+  2destate (`d2-ma-highlight`).
+- **Zgody:** przy `storage.consentRequired: true` nic nie jest zapisywane bez zgody
+  z Consent Mode (`d2-gtm`), a wycofanie zgody kasuje bazę. Demo działa bez zgód
+  wyłącznie na naszej kopii (decyzja Piotra z 18.10.2026); produkcja u klienta =
+  baner zgód.
+
+Strona testowa: `sandbox/ma.html`. Szczegóły: README, sekcja „Marketing
+Automation”.
+
+**Co się zmieni na stronach, które już mają essentials:** nic, dopóki nie dodasz
+flagi `d2-ma`. Loader zna nową flagę (`d2-ma`, `d2-ma-*`) i udostępnia `digi2.ma`
+jako proxy, tak jak pozostałe moduły.
+
 ## v1.8.0 — 2026-10-14
 
 ### Rozwinięcie produktu w wyszukiwarce trafia do dataLayer z danymi produktu

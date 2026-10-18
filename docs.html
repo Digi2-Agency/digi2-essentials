@@ -777,6 +777,18 @@
 
   <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Marketing Automation
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#ma">Overview</a>
+      <a href="#ma-scenarios">Scenarios &amp; Rules</a>
+      <a href="#ma-webflow">Webflow Setup</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group is-collapsed">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       Tabs & Accordions
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -2571,6 +2583,161 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     </table>
     <p class="muted">Field values are never pushed — no emails, phone numbers or message bodies, only names of things and flags. Detection runs on every <code>.w-form</code>, registered with <code>create()</code> or not, so a confirmed lead is reported even on pages that never call it. A success state already visible when the page loads is ignored — only a transition into it counts, or every pageview of a page with a stray visible <code>.w-form-done</code> would report a lead.</p>
     <p class="muted">The gap between <code>form_submit</code> and <code>form_submit_success</code> is a free outage indicator: if they diverge, the form is failing between the browser and Webflow.</p>
+  </section>
+
+  <section id="ma">
+    <h2>Marketing Automation (d2-ma)</h2>
+    <div class="callout callout--warn">
+      <span class="ic">⚠︎</span>
+      <p><strong>Demo contract v0.</strong> The scenario format is defined in the engine repo, <code>docs/architecture/marketing-automation.md</code> §13, and may change without notice until spec M1. Load a pinned version (<code>@v1.9.0-ma.1</code> or a commit), never <code>@latest</code>.</p>
+    </div>
+    <p>Remembers which units a visitor looked at, keeps that profile in their own browser (IndexedDB <code>d2ma</code>), and runs the scenarios published from digi2.app: a popup with the last unit they viewed, a <code>dataLayer</code> segment for GA4 audiences, a webhook to Make for e-mail / SMS / AI call.</p>
+    <pre><code>&lt;script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
+  <span class="attr">d2-ma</span>=<span class="string">"https://digi2.app/api/ma/scenario/osiedle-demo.json"</span>
+  <span class="attr">d2-ma-consent-required</span>=<span class="string">"false"</span>
+  <span class="attr">d2-popups</span>&gt;&lt;/script&gt;</code></pre>
+
+    <table>
+      <tr><th>Loader attribute</th><th>Default</th><th>Effect</th></tr>
+      <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests)</td></tr>
+      <tr><td><code>d2-ma-consent-required</code></td><td>required</td><td>The envelope's <code>storage.consentRequired</code> decides; this applies when the envelope can't be read. <code>"true"</code> forces consent whatever the envelope says</td></tr>
+      <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category (module <code>d2-gtm</code>) that unlocks storage</td></tr>
+      <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
+      <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map</td></tr>
+      <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
+    </table>
+
+    <h3>Where unit views come from</h3>
+    <table>
+      <tr><th>Source</th><th>Signal</th></tr>
+      <tr><td>3D Estate</td><td><code>dataLayer</code> event <code>oa3de__unit-open</code>. The duplicate <code>oa3de_unit_open</code> is ignored</td></tr>
+      <tr><td>3D Estate deep link</td><td><code>?sm-unit=</code> on page load (the app sends no event then) — only the unit id; the first full event of that unit fills the rest</td></tr>
+      <tr><td>2destate map</td><td><code>window.d2estate.onProductClick</code></td></tr>
+      <tr><td>Anything else</td><td><code>digi2.ma.track({ unitId, name, rooms, floor, area, price, … })</code></td></tr>
+      <tr><td>Lead</td><td><code>dataLayer</code> <code>generate_lead</code> or <code>oa3de__contact-form-make-inquiry</code></td></tr>
+    </table>
+    <p class="muted">The same unit within 5 s counts once. Every source becomes one shape: <code>{ unitId, name, rooms, floor, area, price, pricePerSqm, building, status, isPromo, url, image, source }</code>; prices are copied as the source gives them.</p>
+
+    <h3>What the browser keeps</h3>
+    <table>
+      <tr><th>Store</th><th>Content</th></tr>
+      <tr><td><code>views</code></td><td>Every unit view with a timestamp</td></tr>
+      <tr><td><code>counters</code></td><td>Views per unit, per room count, per floor; visits; last visit; lead flag</td></tr>
+      <tr><td><code>state</code></td><td><code>visitorId</code> (random UUID), visit clock, scenario progress, frequency records, deferred actions, last seen <code>crmCallSeq</code></td></tr>
+    </table>
+    <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all; withdrawing consent deletes the database.</p>
+
+    <h3>Module API</h3>
+    <pre><code>digi2.ma.<span class="fn">profile</span>()          <span class="comment">// { visitorId, visits, lead, views, pref: { rooms, floor }, lastUnit, segment, … }</span>
+digi2.ma.<span class="fn">history</span>()          <span class="comment">// unit views, oldest first</span>
+digi2.ma.<span class="fn">track</span>(unit)        <span class="comment">// record a view from another source</span>
+digi2.ma.<span class="fn">lead</span>()             <span class="comment">// mark the visitor as a lead</span>
+digi2.ma.<span class="fn">load</span>(urlOrObject)  <span class="comment">// read an envelope</span>
+digi2.ma.<span class="fn">reload</span>()           <span class="comment">// re-read it: new revision, new CRM call result</span>
+digi2.ma.<span class="fn">simulateReturn</span>()   <span class="comment">// demo: end the visit as if afterHours had passed</span>
+digi2.ma.<span class="fn">clear</span>()            <span class="comment">// delete the d2ma database (Promise)</span>
+digi2.ma.<span class="fn">highlight</span>()        <span class="comment">// re-apply the map highlight</span>
+
+digi2.<span class="fn">on</span>(<span class="string">'ma:action'</span>, <span class="keyword">function</span> (a) { <span class="comment">/* { scenarioId, nodeId, do, … } */</span> });
+<span class="comment">// also 'ma:ready', 'ma:view', 'ma:change'</span></code></pre>
+  </section>
+
+  <section id="ma-scenarios">
+    <h2>Scenarios &amp; Rules</h2>
+    <p>digi2.app publishes one envelope per site with any number of scenarios. Each scenario is a graph: <strong>triggers</strong> start a path, <strong>conditions</strong> let it through, <strong>actions</strong> do something.</p>
+    <pre><code>{ <span class="prop">"version"</span>: <span class="string">"0"</span>, <span class="prop">"site"</span>: <span class="string">"osiedle-demo"</span>, <span class="prop">"project2destate"</span>: <span class="string">"&lt;uuid&gt;"</span>,
+  <span class="prop">"storage"</span>: { <span class="prop">"retentionDays"</span>: <span class="num">90</span>, <span class="prop">"consentRequired"</span>: <span class="keyword">false</span> },
+  <span class="prop">"channels"</span>: { <span class="prop">"email"</span>: { <span class="prop">"webhook"</span>: <span class="string">"https://hook.eu1.make.com/…"</span> } },
+  <span class="prop">"demoState"</span>: { <span class="prop">"crmCallResult"</span>: <span class="keyword">null</span>, <span class="prop">"crmCallSeq"</span>: <span class="num">0</span>, <span class="prop">"timeScale"</span>: <span class="num">60</span> },
+  <span class="prop">"scenarios"</span>: [ { <span class="prop">"scenarioId"</span>: <span class="string">"powrot-do-lokalu"</span>, <span class="prop">"revision"</span>: <span class="num">1</span>, <span class="prop">"active"</span>: <span class="keyword">true</span>,
+    <span class="prop">"nodes"</span>: [
+      { <span class="prop">"id"</span>: <span class="string">"t1"</span>, <span class="prop">"type"</span>: <span class="string">"trigger"</span>, <span class="prop">"when"</span>: { <span class="prop">"event"</span>: <span class="string">"unit_view"</span>, <span class="prop">"unitIds"</span>: [] } },
+      { <span class="prop">"id"</span>: <span class="string">"t2"</span>, <span class="prop">"type"</span>: <span class="string">"trigger"</span>, <span class="prop">"when"</span>: { <span class="prop">"event"</span>: <span class="string">"return_visit"</span>, <span class="prop">"afterHours"</span>: <span class="num">1</span> } },
+      { <span class="prop">"id"</span>: <span class="string">"c1"</span>, <span class="prop">"type"</span>: <span class="string">"condition"</span>, <span class="prop">"if"</span>: { <span class="prop">"lead"</span>: <span class="keyword">false</span> } },
+      { <span class="prop">"id"</span>: <span class="string">"a1"</span>, <span class="prop">"type"</span>: <span class="string">"action"</span>, <span class="prop">"do"</span>: <span class="string">"popup"</span>, <span class="prop">"template"</span>: <span class="string">"last-unit"</span>, <span class="prop">"cta"</span>: <span class="string">"open_unit"</span>, <span class="prop">"frequency"</span>: <span class="string">"once_per_unit"</span> },
+      { <span class="prop">"id"</span>: <span class="string">"a2"</span>, <span class="prop">"type"</span>: <span class="string">"action"</span>, <span class="prop">"do"</span>: <span class="string">"datalayer"</span>, <span class="prop">"event"</span>: <span class="string">"ma_segment"</span>, <span class="prop">"params"</span>: { <span class="prop">"segment"</span>: <span class="string">"powrot-do-lokalu"</span> } }
+    ],
+    <span class="prop">"edges"</span>: [[<span class="string">"t1"</span>,<span class="string">"t2"</span>], [<span class="string">"t2"</span>,<span class="string">"c1"</span>], [<span class="string">"c1"</span>,<span class="string">"a1"</span>], [<span class="string">"c1"</span>,<span class="string">"a2"</span>]] } ] }</code></pre>
+
+    <h3>Nodes</h3>
+    <table>
+      <tr><th>Node</th><th>Parameters</th><th>Meaning</th></tr>
+      <tr><td><code>unit_view</code></td><td><code>unitIds</code> (empty = any), <code>minCount</code> (1)</td><td>Viewed a unit from the list at least N times</td></tr>
+      <tr><td><code>type_view</code></td><td><code>rooms</code> and/or <code>floor</code>, <code>minCount</code></td><td>Viewed units of that type at least N times</td></tr>
+      <tr><td><code>return_visit</code></td><td><code>afterHours</code> (1)</td><td>A new visit at least that long after the previous one ended</td></tr>
+      <tr><td><code>lead</code></td><td>—</td><td>The visitor became a lead</td></tr>
+      <tr><td><code>crm_call_result</code></td><td><code>result</code> (<code>answered</code> | <code>no_answer</code>), <code>minDurationSec</code>, <code>hours: [from, to]</code></td><td>Demo: <code>demoState.crmCallSeq</code> rose after the previous step and the result matches. <code>minDurationSec</code> needs <code>demoState.crmCallDurationSec</code></td></tr>
+      <tr><td>condition</td><td><code>pref.rooms</code>, <code>pref.floor</code>, <code>lead</code>, <code>visits: { min }</code></td><td>All must hold at the moment the path arrives</td></tr>
+      <tr><td><code>popup</code></td><td><code>template</code>, <code>cta</code> (<code>open_unit</code> | <code>contact</code>)</td><td>Popup with the path's unit — see <a href="#ma-webflow">Webflow Setup</a></td></tr>
+      <tr><td><code>datalayer</code></td><td><code>event</code> (<code>ma_segment</code> | <code>ma_segment_exit</code>), <code>params.segment</code></td><td>Pushes <code>{ event, segment, ma_scenario }</code></td></tr>
+      <tr><td><code>webhook</code></td><td><code>channel</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code>), <code>template</code>, <code>testOnly: true</code></td><td>POST to <code>channels.&lt;channel&gt;.webhook</code>. Without <code>testOnly: true</code> it isn't sent</td></tr>
+    </table>
+    <p class="muted">Every action also takes <code>frequency</code> and <code>delayMinutes</code>.</p>
+
+    <h3>Rules</h3>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>trigger → trigger</td><td>A sequence in time: the second one only counts when it happens <strong>after</strong> the first (viewed X, then came back)</td></tr>
+      <tr><td>action → trigger</td><td>The path waits after the action for that event</td></tr>
+      <tr><td>Several edges out of one node</td><td>Run in the order of <code>edges</code></td></tr>
+      <tr><td><code>frequency</code></td><td><code>once_per_visit</code> (default) | <code>once_per_unit</code> | <code>once_per_days:N</code>, counted per scenario. A skipped action <strong>doesn't end the branch</strong> — what follows it runs at once</td></tr>
+      <tr><td><code>delayMinutes</code></td><td>Kept in <code>d2ma</code> and run when due while the visitor is on the page, or on the next visit; void after 24 h</td></tr>
+      <tr><td>Two popups at the same moment</td><td>The scenario earlier in the list wins; the other waits for the next visit. <code>datalayer</code> and <code>webhook</code> all run</td></tr>
+      <tr><td>Popup for a sold unit</td><td>Not shown. Status and price are refreshed first from the map on the page, else from the 2destate Products API</td></tr>
+      <tr><td>New <code>revision</code></td><td>That scenario's path and frequency start over</td></tr>
+      <tr><td>Scenario published after the visitor already viewed units</td><td>Its first <code>unit_view</code> / <code>type_view</code> counts the history, so "viewed → came back" works on the first return. Actions behind it wait for a new event</td></tr>
+      <tr><td>Unknown <code>type</code>, <code>event</code>, <code>do</code>, channel</td><td>That node (and what hangs only on it) is skipped with a <code>console.warn</code>; the rest runs. Unknown fields are ignored</td></tr>
+      <tr><td>Node with no edges / a non-trigger with no incoming edge</td><td>Ignored (the latter with a warning)</td></tr>
+      <tr><td><code>version</code> other than <code>"0"</code></td><td>No scenario runs; history is still recorded</td></tr>
+      <tr><td>Envelope unreachable (network, 404, bad JSON)</td><td>No actions, silence for the visitor; history is recorded if consent isn't required</td></tr>
+      <tr><td><code>active: false</code></td><td>The scenario doesn't run; its deferred actions are dropped</td></tr>
+    </table>
+
+    <h3>Demo time</h3>
+    <p><code>demoState.timeScale: 60</code> turns an hour into a minute for <code>afterHours</code>, <code>delayMinutes</code>, <code>once_per_days</code> and the 30-minute visit gap. The <code>[d2-ma-simulate-return]</code> button ends the visit as if the longest <code>afterHours</code> had passed. With <code>consentRequired: true</code>, <code>demoState</code> is ignored.</p>
+    <p class="muted">The webhook body: <code>{ scenarioId, revision, nodeId, channel, template, unit, segment, visitorId, testOnly: true, ts }</code> — <code>unit</code> is the path's unit, <code>segment</code> the last one pushed on that path. The address is public, so rate limits, a template whitelist and recipients from Make's own configuration are Make's job, not the page's.</p>
+  </section>
+
+  <section id="ma-webflow">
+    <h2>Marketing Automation in Webflow</h2>
+    <p>Everything is optional: without a popup of your own the module shows a built-in one, without the profile elements nothing is rendered.</p>
+
+    <h3>Popup for a template</h3>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Popup Wrapper <span class="muted">(fixed, full-screen, display: none)</span></span>
+        <span class="chip chip--attr"><span class="k">attr</span> d2-ma-popup = last-unit</span>
+      </div>
+      <div class="wf-children">
+        <div class="wf-el"><span class="wf-elname">Image</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-field = image</span></div>
+        <div class="wf-el"><span class="wf-elname">Unit name</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-field = name</span></div>
+        <div class="wf-el"><span class="wf-elname">"2 pok. · 44,6 m² · piętro 1"</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-field = summary</span></div>
+        <div class="wf-el"><span class="wf-elname">Price</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-field = price</span></div>
+        <div class="wf-el"><span class="wf-elname">Link block</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-cta</span></div>
+        <div class="wf-el"><span class="wf-elname">Close button</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-close</span></div>
+      </div>
+    </div>
+    <table>
+      <tr><th>Field</th><th>Shows</th></tr>
+      <tr><td><code>name</code>, <code>building</code>, <code>unitId</code>, <code>status</code></td><td>As stored</td></tr>
+      <tr><td><code>rooms</code>, <code>floor</code></td><td>The number</td></tr>
+      <tr><td><code>area</code></td><td><code>44,6 m²</code></td></tr>
+      <tr><td><code>price</code> / <code>pricePerSqm</code></td><td><code>612 000 zł</code> / <code>13 722 zł/m²</code></td></tr>
+      <tr><td><code>summary</code></td><td>Rooms · area · floor, whichever are known</td></tr>
+      <tr><td><code>image</code> (on an Image)</td><td>Sets <code>src</code>; hidden when the unit has none</td></tr>
+    </table>
+    <p class="muted">A field with no value is hidden. <code>d2-ma-cta</code> with <code>cta: "open_unit"</code> gets the unit's link; for a 2destate unit whose map is on the page it highlights the unit on the map instead (mark the map wrapper <code>d2-ma-map</code> to scroll to it). With <code>cta: "contact"</code> it keeps its own href. No <code>create()</code> embed is needed — the module registers the popup as <code>d2-ma-&lt;template&gt;</code> on the popups module, so the one-popup-at-a-time rule applies. The page needs <code>d2-popups</code> or the module loads it on demand.</p>
+
+    <h3>"What the site knows about you"</h3>
+    <table>
+      <tr><th>Attribute</th><th>Content</th></tr>
+      <tr><td><code>d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|segment|visitorId"</code></td><td>Text from the profile, <code>—</code> when unknown</td></tr>
+      <tr><td><code>d2-ma-profile="last.name"</code> (any field)</td><td>That field of the last viewed unit</td></tr>
+      <tr><td><code>d2-ma-history</code> (+ <code>d2-ma-history-limit="10"</code>)</td><td>Viewed units, newest first. A child <code>[d2-ma-history-item]</code> is a row template with <code>[d2-ma-field]</code> inside (plus <code>time</code>)</td></tr>
+      <tr><td><code>d2-ma-clear</code> (button)</td><td>Deletes the d2ma database</td></tr>
+      <tr><td><code>d2-ma-simulate-return</code> (button)</td><td>Demo: start a return visit now</td></tr>
+    </table>
+    <p class="muted">A working page with fake units, both search engines simulated and a webhook that never leaves the browser: <code>sandbox/ma.html</code>.</p>
   </section>
 
   <section id="events">

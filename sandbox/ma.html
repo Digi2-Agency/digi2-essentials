@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: d2-ma</title>
+
+<!--
+  Strona testowa modułu d2-ma (marketing automation, kontrakt v0 z §13
+  docs/architecture/marketing-automation.md w repo silnika).
+
+  Wszystko jest tu fikcyjne: lokale „Osiedla Demo", zdarzenia 3D Estate
+  wypychane przyciskami tak, jak robi to makieta (dwie nazwy na zdarzenie),
+  udawana mapa 2destate (window.d2estate) i webhook, który nie wychodzi
+  z przeglądarki - fetch na /sandbox-hook/ jest przechwytywany i logowany
+  w panelu. Bez formularzy i bez danych osobowych.
+
+  Jak uruchomić
+  -------------
+    npx serve -l 5175 .            # albo: python3 -m http.server 5175
+    otwórz http://localhost:5175/sandbox/ma.html
+
+  Koperta: sandbox/ma-koperta.json (timeScale 60 = minuta zamiast godziny).
+  Wynik telefonu z CRM: przycisk „nie odebrał" podmienia demoState
+  i woła digi2.ma.load() - jak przycisk w panelu digi2.app.
+-->
+
+<style>
+  :root { --tlo: #fbfaf8; --papier: #fff; --tekst: #1a1d1c; --cichy: #6b7370; --linia: #e5e3df; --akcent: #1f6f5c; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--tlo); color: var(--tekst); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  .strona { max-width: 1080px; margin: 0 auto; padding: 0 16px 80px; }
+  h1 { font-size: 28px; margin: 28px 0 4px; letter-spacing: -0.02em; }
+  h2 { font-size: 18px; margin: 28px 0 10px; }
+  p.lead { color: var(--cichy); margin: 0 0 16px; }
+  .siatka { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .karta { background: var(--papier); border: 1px solid var(--linia); border-radius: 12px; padding: 14px; }
+  .karta h3 { margin: 0 0 4px; font-size: 17px; }
+  .karta p { margin: 0 0 10px; color: var(--cichy); font-size: 14px; }
+  button { font: inherit; font-size: 14px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--linia); background: #fff; cursor: pointer; }
+  button.glowny { background: var(--akcent); border-color: var(--akcent); color: #fff; }
+  .rzad { display: flex; flex-wrap: wrap; gap: 8px; }
+  .wie { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .wie div { background: var(--papier); border: 1px solid var(--linia); border-radius: 10px; padding: 8px 10px; font-size: 13px; color: var(--cichy); }
+  .wie b { display: block; color: var(--tekst); font-size: 16px; word-break: break-all; }
+  ol.historia { margin: 0; padding-left: 20px; font-size: 14px; }
+  pre.log { background: #14171f; color: #d7dde8; border-radius: 10px; padding: 12px; font-size: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; }
+
+  /* Popup „ostatnio oglądany" zbudowany jak w Designerze: overlay ukryty na starcie. */
+  .popup-ma { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 18, 24, .55); z-index: 50; }
+  .popup-ma__karta { position: relative; width: 100%; max-width: 400px; background: #fff; border-radius: 16px; overflow: hidden; }
+  .popup-ma__obraz { width: 100%; height: 160px; object-fit: cover; display: block; background: #dfe7e3; }
+  .popup-ma__tresc { padding: 18px 20px 20px; }
+  .popup-ma__tresc small { color: var(--cichy); }
+  .popup-ma__tresc h3 { margin: 2px 0 4px; font-size: 22px; }
+  .popup-ma__cena { font-size: 20px; font-weight: 700; margin: 6px 0 14px; }
+  .popup-ma__cta { display: block; text-align: center; padding: 12px; border-radius: 10px; background: var(--akcent); color: #fff; text-decoration: none; font-weight: 600; }
+  .popup-ma__zamknij { position: absolute; top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 18px; border: 0; background: rgba(255,255,255,.92); font-size: 22px; line-height: 1; }
+</style>
+</head>
+<body>
+<div class="strona">
+  <h1>Osiedle Demo — sandbox d2-ma</h1>
+  <p class="lead">Dane fikcyjne. Klik w lokal = zdarzenie wyszukiwarki; reszta dzieje się w module według <code>ma-koperta.json</code>.</p>
+
+  <h2>Lokale z „3D Estate” (dataLayer <code>oa3de__unit-open</code>)</h2>
+  <div class="siatka" id="lokale-3de"></div>
+
+  <h2>Lokale z „mapy 2destate” (<code>d2estate.onProductClick</code>)</h2>
+  <div class="siatka" id="lokale-2de" d2-ma-map></div>
+
+  <h2>Formularz (bez wysyłki)</h2>
+  <div class="rzad">
+    <button type="button" id="lead">Udaj wysłany formularz (<code>generate_lead</code>)</button>
+    <button type="button" id="crm-no">Panel: telefon „nie odebrał”</button>
+    <button type="button" id="crm-yes">Panel: telefon „odebrał”</button>
+  </div>
+
+  <h2>Co o Tobie wie strona</h2>
+  <div class="wie">
+    <div>Wizyty <b d2-ma-profile="visits"></b></div>
+    <div>Obejrzane lokale <b d2-ma-profile="views"></b></div>
+    <div>Preferencja: pokoje <b d2-ma-profile="pref.rooms"></b></div>
+    <div>Preferencja: piętro <b d2-ma-profile="pref.floor"></b></div>
+    <div>Lead <b d2-ma-profile="lead"></b></div>
+    <div>Ostatni segment <b d2-ma-profile="segment"></b></div>
+    <div>Ostatni lokal <b d2-ma-profile="last.name"></b></div>
+    <div>Identyfikator <b d2-ma-profile="visitorId"></b></div>
+  </div>
+  <ol class="historia" d2-ma-history d2-ma-history-limit="10"></ol>
+  <div class="rzad" style="margin-top:12px">
+    <button type="button" class="glowny" d2-ma-simulate-return>Symuluj powrót</button>
+    <button type="button" d2-ma-clear>Wyczyść dane</button>
+  </div>
+
+  <h2>Dziennik (dataLayer ma_*, webhooki, zdarzenia modułu)</h2>
+  <pre class="log" id="log"></pre>
+</div>
+
+<!-- Popup szablonu last-unit z Designera; promo-rooms nie ma własnego, więc moduł użyje wbudowanego. -->
+<div class="popup-ma" d2-ma-popup="last-unit">
+  <div class="popup-ma__karta" role="dialog" aria-modal="true" aria-label="Ostatnio oglądany lokal">
+    <button type="button" class="popup-ma__zamknij" d2-ma-close aria-label="Zamknij">&times;</button>
+    <img class="popup-ma__obraz" d2-ma-field="image" alt="">
+    <div class="popup-ma__tresc">
+      <small>Wróć do lokalu, który oglądałeś</small>
+      <h3 d2-ma-field="name"></h3>
+      <div d2-ma-field="summary"></div>
+      <div class="popup-ma__cena" d2-ma-field="price"></div>
+      <a class="popup-ma__cta" href="#" d2-ma-cta>Zobacz lokal</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---- Dziennik ------------------------------------------------------------
+  var logEl = document.getElementById('log');
+  function log(line, data) {
+    var t = new Date().toLocaleTimeString('pl-PL');
+    logEl.textContent = t + '  ' + line + (data ? '  ' + JSON.stringify(data) : '') + '\n' + logEl.textContent;
+  }
+
+  // ---- Webhook, który nie wychodzi z przeglądarki ----------------------------
+  var realFetch = window.fetch.bind(window);
+  window.fetch = function (url, init) {
+    if (String(url).indexOf('/sandbox-hook/') >= 0) {
+      log('WEBHOOK ' + String(url).split('/sandbox-hook/')[1], JSON.parse(init.body));
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    }
+    return realFetch(url, init);
+  };
+
+  window.dataLayer = window.dataLayer || [];
+  var push = window.dataLayer.push;
+  window.dataLayer.push = function (e) {
+    if (e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0) log('dataLayer ' + e.event, e);
+    return push.apply(window.dataLayer, arguments);
+  };
+
+  // ---- Fikcyjne lokale -------------------------------------------------------
+  var LOKALE_3DE = [
+    { id: 'DEMO-OSD_A-1-01', name: 'A.1.01', custom: { rooms: 2, floor: 1, area: 42.1, price: 589400, priceOfferPerSqm: 14000, building: 1, status: 1, isPromo: false } },
+    { id: 'DEMO-OSD_A-1-02', name: 'A.1.02', custom: { rooms: 2, floor: 1, area: 47.3, price: 650375, priceOfferPerSqm: 13750, building: 1, status: 1, isPromo: true } },
+    { id: 'DEMO-OSD_A-2-05', name: 'A.2.05', custom: { rooms: 3, floor: 2, area: 61.8, price: 834300, priceOfferPerSqm: 13500, building: 1, status: 2, isPromo: false } },
+    { id: 'DEMO-OSD_B-3-07', name: 'B.3.07', custom: { rooms: 2, floor: 3, area: 39.9, price: '', priceOfferPerSqm: '', building: 2, status: 3, isNotAvailable: true } }
+  ];
+  var LOKALE_2DE = [
+    { id: 'demo-p-101', name: 'C.0.01', rooms: 2, floor: 0, area: 44.6, price_gross: 612000, price_gross_m2: 13722, promo_active: false, status: 'available', building_name: 'C' },
+    { id: 'demo-p-102', name: 'C.0.02', rooms: 2, floor: 0, area: 46.2, price_gross: 640000, price_gross_m2: 13853, promo_active: true, promo_price_gross: 599000, promo_price_gross_m2: 12965, status: 'available', building_name: 'C' },
+    { id: 'demo-p-201', name: 'C.1.04', rooms: 4, floor: 1, area: 78.0, price_gross: 1015000, price_gross_m2: 13013, promo_active: false, status: 'available', building_name: 'C' }
+  ];
+
+  function karta(root, l, rooms, area, label, onClick) {
+    var d = document.createElement('div');
+    d.className = 'karta';
+    var h = document.createElement('h3'); h.textContent = l.name; d.appendChild(h);
+    var p = document.createElement('p'); p.textContent = rooms + ' pok. · ' + area + ' m² · ' + label; d.appendChild(p);
+    var b = document.createElement('button'); b.type = 'button'; b.textContent = 'Otwórz lokal'; b.onclick = onClick; d.appendChild(b);
+    root.appendChild(d);
+  }
+
+  LOKALE_3DE.forEach(function (l) {
+    var status = l.custom.status === 1 ? 'dostępny' : l.custom.status === 2 ? 'rezerwacja' : 'sprzedany';
+    karta(document.getElementById('lokale-3de'), l, l.custom.rooms, l.custom.area, status, function () {
+      var us = '?sm-unit=' + l.id + '&sm-media=BuildingView';
+      // Makieta wypycha każde zdarzenie dwa razy - moduł słucha jednej nazwy.
+      ['oa3de__unit-open', 'oa3de_unit_open'].forEach(function (ev) {
+        window.dataLayer.push({ event: ev, data: { unit: l, origin: 'list' }, timestamp: Date.now(), appData: { us: us } });
+      });
+    });
+  });
+
+  // ---- Udawana mapa 2destate: ten sam kształt API co window.d2estate ---------
+  var klikniecia = [];
+  window.d2estate = {
+    onProductClick: function (f) { klikniecia.push(f); return function () {}; },
+    onMapLoad: function () { return function () {}; },
+    onFloorChange: function () { return function () {}; },
+    getProducts: function () { return LOKALE_2DE; }
+  };
+  LOKALE_2DE.forEach(function (l) {
+    karta(document.getElementById('lokale-2de'), l, l.rooms, l.area, l.status, function () {
+      klikniecia.forEach(function (f) { f(l, { mapName: 'osiedle-demo', objectTitle: l.name }); });
+    });
+  });
+
+  document.getElementById('lead').onclick = function () { window.dataLayer.push({ event: 'generate_lead', form_name: 'sandbox' }); log('generate_lead'); };
+
+  // Przycisk panelu: nowa koperta z podniesionym crmCallSeq.
+  var seq = 0;
+  function wynik(result) {
+    realFetch('ma-koperta.json', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (k) {
+      seq = Math.max(seq, (k.demoState && k.demoState.crmCallSeq) || 0) + 1;
+      k.demoState.crmCallResult = result;
+      k.demoState.crmCallSeq = seq;
+      log('panel: wynik telefonu ' + result + ' (crmCallSeq ' + seq + ')');
+      return window.digi2.ma.load(k);
+    });
+  }
+  document.getElementById('crm-no').onclick = function () { wynik('no_answer'); };
+  document.getElementById('crm-yes').onclick = function () { wynik('answered'); };
+</script>
+
+<script src="../webflow-scripts/digi2-loader.js"
+  d2-ma="ma-koperta.json"
+  d2-ma-consent-required="false"
+  d2-popups
+  d2-debug-mode></script>
+<script>
+  ['ma:ready', 'ma:view', 'ma:action'].forEach(function (n) {
+    window.digi2.on(n, function (d) { log(n, d); });
+  });
+</script>
+</body>
+</html>

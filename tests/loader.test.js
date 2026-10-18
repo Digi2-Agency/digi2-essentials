@@ -30,13 +30,15 @@ function createElement(attrs, widthFor) {
   return el;
 }
 
-function loadLoader({ innerWidth = 1200, elements = [], display = 'block' } = {}) {
+function loadLoader({ innerWidth = 1200, elements = [], display = 'block', scriptAttrs = {} } = {}) {
   const script = {
     src: 'https://cdn.test/dist/digi2-loader.min.js',
-    getAttribute: (n) => (n === 'src' ? 'https://cdn.test/dist/digi2-loader.min.js' : null),
-    hasAttribute: () => false,
-    attributes: [],
+    getAttribute: (n) => (n === 'src' ? 'https://cdn.test/dist/digi2-loader.min.js'
+      : Object.prototype.hasOwnProperty.call(scriptAttrs, n) ? scriptAttrs[n] : null),
+    hasAttribute: (n) => Object.prototype.hasOwnProperty.call(scriptAttrs, n),
+    attributes: Object.keys(scriptAttrs).map((name) => ({ name })),
   };
+  const injected = [];
 
   const resizeHandlers = [];
   const window = {
@@ -53,7 +55,7 @@ function loadLoader({ innerWidth = 1200, elements = [], display = 'block' } = {}
     querySelectorAll: (sel) => (sel === '[d2-static-width]' ? elements : []),
     querySelector: () => null,
     currentScript: script,
-    head: { appendChild() {} },
+    head: { appendChild(el) { injected.push(el.src); } },
     body: { appendChild() {} },
     documentElement: {},
     createElement: () => ({ setAttribute() {}, addEventListener() {} }),
@@ -65,7 +67,7 @@ function loadLoader({ innerWidth = 1200, elements = [], display = 'block' } = {}
     setTimeout, MutationObserver: class { observe() {} },
   });
 
-  const env = { window, document, resizeHandlers, context };
+  const env = { window, document, resizeHandlers, context, injected };
   elements.forEach((el) => { el._env = env; });
   vm.runInContext(fs.readFileSync(loaderPath, 'utf8'), context, { filename: loaderPath });
   return env;
@@ -119,4 +121,13 @@ test('the locked width is re-measured when the breakpoint bucket flips', () => {
 
   assert.equal(el.style.minWidth, '100px', 'a desktop lock does not cage the mobile layout');
   assert.equal(el.style.textAlign, 'right', 'and the anchor follows the new breakpoint');
+});
+
+test('d2-ma and its d2-ma-* options load one module, the envelope URL is kept raw', () => {
+  const url = 'https://digi2.app/api/ma/scenario/demo.json?v=1;x@2';
+  const env = loadLoader({ scriptAttrs: {
+    'd2-ma': url, 'd2-ma-highlight': '', 'd2-ma-consent-required': 'false', 'd2-ma-refresh': '30',
+  } });
+  assert.deepEqual(env.injected, ['https://cdn.test/dist/modules/ma.min.js']);
+  assert.equal(env.window.digi2._maEndpoint, url);
 });

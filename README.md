@@ -119,6 +119,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
+| `d2-ma="<url>"` | ma | 31.9 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
 Total (all modules): **193.6 KB min** / **57.5 KB** gzipped.
 
@@ -1055,6 +1056,187 @@ version of the page before midnight without touching the campaign.
 `sandbox/promo.html` is a full page wired up this way — promo bar, popup,
 buttons and sections, with a live readout of the state. `sandbox/imagemappro.html`
 does the same around an embedded map.
+
+---
+
+## Marketing Automation (d2-ma)
+
+> **Demo — contract v0.** The format lives in the engine repo,
+> `docs/architecture/marketing-automation.md` §13, and may change without a
+> transition period until spec M1. Load a pinned build (`@v1.9.0-ma.1` or a
+> commit). A new tag that becomes `@latest` reaches every client site at once,
+> and this module is not ready for that.
+
+The page remembers which units a visitor looked at, keeps the profile in the
+visitor's own browser and runs the scenarios published from digi2.app.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
+  d2-ma="https://digi2.app/api/ma/scenario/osiedle-demo.json"
+  d2-ma-consent-required="false"
+  d2-popups
+></script>
+```
+
+| Loader attribute | Default | Description |
+|---|---|---|
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS |
+| `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
+| `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
+| `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
+| `d2-ma-highlight` | off | Highlight units with the preferred room count on the 2destate map |
+| `d2-ma-refresh="30"` | off | Re-read the envelope every N s (≥ 5) |
+
+The envelope URL is read raw, not through `digi2.attr()`: a query string may
+contain `;` or `@`.
+
+### Sources → `unit_view`
+
+| Source | How |
+|---|---|
+| 3D Estate | wraps `dataLayer.push` and listens to **one** name, `oa3de__unit-open` (the app pushes every event twice; `oa3de_unit_open` is ignored). Entries already in `dataLayer` when the module loads are read too |
+| 3D Estate deep link | `?sm-unit=` on load — the app sends no `unit-open` then. Saved with `unitId` and `url` only (`partial`); the first full event of that unit fills the gaps in place |
+| 2destate | `window.d2estate.onProductClick`; polls for `d2estate` up to 30 s and listens to `2destateLoaded` |
+| Other | `digi2.ma.track(unit)` |
+| Lead | `generate_lead` or `oa3de__contact-form-make-inquiry` |
+
+Normalised shape: `{ unitId, name, rooms, floor, area, price, pricePerSqm,
+building, status, isPromo, url, image, source }`. 3D Estate statuses map by
+number (`1` available, `2` reserved, `3` or `isNotAvailable` sold, other →
+`other`) because the names are the developer's own dictionary. 2destate price is
+`promo_price_gross` while `promo_active`, else `price_gross`; `building` is
+`building_name` when the map sends it, otherwise `null`; `image` is read from
+`popup_image` / `marketing_image` / `image` until 2destate settles the
+marketing field. The same `unitId` within 5 s counts once (two apps on a page,
+or the double push).
+
+### Storage
+
+IndexedDB `d2ma`, three stores: `views` (key `id`), `counters` (record
+`profile`), `state` (record `main`). The module loads everything into memory at
+start, works in memory and writes through, one write at a time — so `clear()`
+can never be overtaken by a write issued before it. No IndexedDB (private mode,
+blocked) → an in-memory store; the page behaves the same, the profile lives
+until reload.
+
+- **Visit:** a new one after 30 min without activity (page load, unit view,
+  click / key / scroll / touch, throttled to one write per 15 s). A timer that
+  runs a deferred action is not activity and doesn't extend the visit.
+- **Profile:** computed from history on demand — `pref.rooms` is the most
+  viewed room count, a tie goes to the most recently viewed; same for
+  `pref.floor`.
+- **Retention:** `storage.retentionDays` (90), pruned at start; at most 2000 views.
+- **Consent:** with `consentRequired` and no consent nothing is recorded — not
+  even into a buffer to replay later. `consent:updated` granting the category
+  starts the module; withdrawing it while required deletes the database.
+- **`visitorId`:** `crypto.randomUUID()` — the only identifier that leaves the
+  page (webhook body).
+
+### Scenario engine (§13.3a)
+
+Each event (`unit_view`, `return_visit`, `lead`, `crm_call_result`) runs through
+the active scenarios in envelope order. A node's progress is `{ at, unit,
+segment }` in `state.scenarios[scenarioId].nodes`.
+
+- **Arming:** a root trigger is always armed; any other trigger is armed once a
+  predecessor is done, and only events at or after that moment count (rule 1 and
+  2). Counting triggers count views since then — a root counts the whole
+  history.
+- **Same event, two triggers:** the firing set is decided on the state *before*
+  the event, so a trigger armed by another trigger that fired on this very
+  event waits for the next one.
+- **Path unit:** the unit of the view that fired the nearest unit trigger,
+  carried along the path; a path without one uses the last viewed unit.
+  `once_per_unit` keys on it, the popup shows it, the webhook sends it.
+- **Frequency** per scenario + node: `visit` (visit number), `units` (list),
+  `at` (time). A skipped action marks itself done and its successors run at
+  once (rule 6). Popups record frequency when the decision is made and undo it
+  if the unit turns out to be sold — otherwise a popup deferred from the last
+  visit and the same popup from a new trigger could both open.
+- **`delayMinutes`:** stored in `state.pending` with `due` and `created`; a
+  timer runs it while the page is open, otherwise the next start does. Void 24 h
+  after `created` (real time, `timeScale` doesn't shorten it).
+- **Popup conflict:** one popup per event pass; the next one is stored with
+  `afterVisit` and runs on a later visit.
+- **Fresh status:** from `d2estate.getProducts()` when the map is on the page,
+  else `POST {api}/projects/{project2destate}/products` with `product_ids` (only
+  for 2destate UUIDs, 3 s timeout). Sold or no longer returned → no popup. A
+  failed request falls back to the stored unit.
+- **`crm_call_result`:** `demoState.crmCallSeq` is read at start and on
+  `reload()` / `load()`. Arming a CRM trigger snapshots the current seq; it fires
+  when a later seq arrives with the matching `result`. A root CRM trigger only
+  snapshots on first sight, so a result already sitting in the envelope isn't
+  new. `minDurationSec` needs `demoState.crmCallDurationSec`, which the
+  contract doesn't define yet — without it the node doesn't fire.
+- **New `revision`:** the scenario's progress, frequency and deferred actions
+  start over. A root `unit_view` / `type_view` back-fills from history without
+  running actions, so "viewed → came back" works on the first return after
+  publishing.
+- **Validation:** unknown `type` / `event` / `do` / channel / datalayer event,
+  or a popup template that isn't a plain name → node skipped with
+  `console.warn`. A node with no edges is ignored; a non-trigger with no
+  incoming edge is ignored with a warning. `version` ≠ `"0"` → no scenario,
+  history still recorded.
+
+### Time in the demo
+
+`demoState.timeScale` (1–3600) divides `afterHours`, `delayMinutes`,
+`once_per_days` **and the 30-minute visit gap**. The contract names the first
+three; without the gap a one-minute `afterHours` would still wait half an hour
+for a new visit. `simulateReturn()` adds `max(gap, longest afterHours) + 1 s`
+to a clock offset kept in `state.shift` and starts the visit, so everything
+behaves as if that time had passed — deferred actions included.
+
+### Actions
+
+- **popup** — `digi2.popups.create('d2-ma-<template>', { popupSelector, cookieName: null, dataTagTrigger: false })`
+  on `[d2-ma-popup="<template>"]` or a built-in card, then `show({ auto: true })`,
+  so it waits its turn behind anything on screen. Values go in via `textContent`
+  only. Built-in labels exist for `last-unit` and `promo-rooms`.
+- **datalayer** — `{ event, segment, ma_scenario }`.
+- **webhook** — `POST` JSON `{ scenarioId, revision, nodeId, channel, template,
+  unit, segment, visitorId, testOnly: true, ts }`, `keepalive`, no credentials.
+  Refused without `testOnly: true` on the node, and for anything but `https://`
+  (or `http://localhost` for testing). The address is public: rate limits,
+  template whitelist and recipients are Make's job (§13.4).
+
+### Map (`d2-ma-highlight`, CTA)
+
+The object for a product is found by walking `ImageMapPro.instances[map].store.state.artboards`
+for `assigned_product`. `highlightObject()` switches the map to the object's
+artboard, so the highlight only covers the artboard on screen, once per
+artboard + room count — the switch fires `onFloorChange` again and would loop
+otherwise. The popup CTA for a 2destate unit with the map on the page calls
+`highlightObject` + `showTooltip` instead of navigating; the link it carries
+(`?d2-unit=<id>`) does the same after load on another page.
+
+### API
+
+```js
+digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
+digi2.ma.history()          // views, oldest first
+digi2.ma.track(unit)        // another source
+digi2.ma.lead()
+digi2.ma.load(urlOrObject)  // read an envelope
+digi2.ma.reload()
+digi2.ma.simulateReturn()
+digi2.ma.clear()            // Promise
+digi2.ma.highlight()
+// events: ma:ready { tracking, store }, ma:view { unit }, ma:action { scenarioId, nodeId, do, … }, ma:change
+```
+
+### Page elements
+
+`[d2-ma-popup]` with `[d2-ma-field]`, `[d2-ma-cta]`, `[d2-ma-close]`;
+`[d2-ma-profile]`, `[d2-ma-history]` (+ `[d2-ma-history-item]` template,
+`d2-ma-history-limit`), `[d2-ma-clear]`, `[d2-ma-simulate-return]`,
+`[d2-ma-map]`. Every one also works as `data-d2-ma-*`.
+
+### Sandbox
+
+`sandbox/ma.html` + `sandbox/ma-koperta.json`: fake units, both search engines
+simulated, a lead button (no form), "phone result" buttons acting as the panel,
+and a webhook that never leaves the browser.
 
 ---
 
@@ -3113,7 +3295,7 @@ webflow-scripts/              ← source files
   digi2-loader.js
   digi2.js                    ← standalone build (no loader)
   modules/
-    google.js, ab-tests.js, popups.js, promo.js, cookies.js, forms.js,
+    google.js, ab-tests.js, popups.js, promo.js, ma.js, cookies.js, forms.js,
     tabs.js, sliders.js, animate.js, toasts.js, scroll.js,
     lazy.js, countdown.js, filter.js, cms.js, format.js,
     copy.js, interactions.js

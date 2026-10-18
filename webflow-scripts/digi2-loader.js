@@ -22,11 +22,18 @@
  *   d2-promo    →  modules/promo.js     Show/hide elements from a running 2destate promotion
  *   d2-lightbox →  modules/lightbox.js  Image lightbox — custom Designer modal or built-in fallback
  *                                       Optional value picks the built-in bottom UI: d2-lightbox="thumbs" | "counter"
+ *   d2-ma="URL" →  modules/ma.js        Marketing automation: unit views → profile in IndexedDB →
+ *                                       scenario rules from digi2.app (popup, dataLayer, webhook)
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
  *   d2-gtm="GTM-XXXXXXX"               GTM container ID — auto-loads google module
  *   d2-ab-tests="configName"           A/B test map on window[configName]
+ *   d2-ma="URL"                        Scenario envelope JSON (digi2.app /api/ma/scenario/<site>.json)
+ *   d2-ma-consent-required="false"     Fallback when the envelope cannot be read (default: required)
+ *   d2-ma-consent="analytics_storage"  Consent Mode category that unlocks the d2ma database
+ *   d2-ma-highlight                    Highlight the visitor's preferred units on the 2destate map
+ *   d2-ma-refresh="30"                 Re-read the envelope every N seconds (demo)
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
@@ -63,6 +70,15 @@
  *   digi2.abTests.assign('pricing')        Assign or return existing variant
  *   digi2.abTests.rewriteLinks()           Re-apply link rewriting
  *   digi2.abTests.list()                   List active test names
+ *
+ *   digi2.ma.profile()                     { visitorId, visits, lead, pref, lastUnit, … }
+ *   digi2.ma.history()                     Viewed units (unit_view), oldest first
+ *   digi2.ma.track(unit)                   Record a unit_view from another source
+ *   digi2.ma.lead()                        Mark the visitor as a lead
+ *   digi2.ma.load(urlOrEnvelope)           Read a scenario envelope
+ *   digi2.ma.reload()                      Re-read it (new revision, CRM call result)
+ *   digi2.ma.simulateReturn()              End the visit as if afterHours had passed (demo)
+ *   digi2.ma.clear()                       Delete the d2ma database
  *
  * ─── Popups Options ─────────────────────────────────────────────────────────
  *
@@ -511,6 +527,7 @@
     abTests: 'ab-tests',
     lightbox: 'lightbox',
     promo: 'promo',
+    ma: 'ma',
   };
 
   function createProxy(namespace, moduleName) {
@@ -720,6 +737,11 @@
         var promoState = el.getAttribute('d2-promo-state');
         if (promoState) window.digi2._promoState = promoState;
         _pushModule(into, 'promo');
+      } else if (name === 'd2-ma') {
+        // Adres koperty scenariuszy - surowo, bo może mieć ';' i '@'.
+        var maUrl = el.getAttribute('d2-ma');
+        if (maUrl) window.digi2._maEndpoint = maUrl;
+        _pushModule(into, 'ma');
       } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules') {
         // not a module flag
       } else if (name.indexOf('d2-') === 0) {
@@ -731,6 +753,7 @@
         if (m.indexOf('country-picker') === 0) m = 'country-picker'; // -only/-preferred/-flags → module
         if (m.indexOf('webflow-') === 0) m = 'webflow'; // webflow-interaction → module
         if (m.indexOf('datalayer-') === 0) m = 'datalayer'; // datalayer-only/-disable → module
+        if (m.indexOf('ma-') === 0) m = 'ma'; // ma-consent/-highlight/-refresh → module
         _pushModule(into, m);
       }
     }
@@ -748,6 +771,7 @@
         if (m.indexOf('country-picker') === 0) m = 'country-picker';
         if (m.indexOf('webflow-') === 0) m = 'webflow';
         if (m.indexOf('datalayer-') === 0) m = 'datalayer';
+        if (m.indexOf('ma-') === 0) m = 'ma';
         _pushModule(into, m);
       });
     }

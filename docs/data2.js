@@ -888,4 +888,71 @@
     ]
   };
 
+
+  /* ════════════════════════ MARKETING AUTOMATION ════════════════════════ */
+  M.ma = {
+    name: 'Marketing automation (d2-ma) — demo',
+    short: 'Marketing automation',
+    cat: 'Marketing',
+    flag: 'd2-ma="https://digi2.app/api/ma/scenario/<site>.json"',
+    icon: 'chart',
+    auto: true,
+    tagline: 'Strona pamięta, jakie lokale oglądał odwiedzający, i wykonuje scenariusze z digi2.app: popup z ostatnim lokalem, segment w dataLayer, webhook do Make.',
+    desc: '<b>Kontrakt v0 (demo)</b> — format scenariusza opisuje repo silnika, <code>docs/architecture/marketing-automation.md</code> §13, i może się zmienić bez okresu przejściowego. Ładuj przypiętą wersję (<code>@v1.9.0-ma.1</code> albo commit), nigdy <code>@latest</code>. Moduł słucha dwóch wyszukiwarek — 3D Estate (<code>oa3de__unit-open</code> w <code>dataLayer</code>, duplikat <code>oa3de_unit_open</code> pomijany; przy wejściu deep linkiem <code>?sm-unit=</code>) i mapy 2destate (<code>window.d2estate.onProductClick</code>) — i sprowadza je do jednego kształtu <code>unit_view</code>. Ten sam lokal w ciągu 5 s liczy się raz. Historia, liczniki i stan scenariuszy leżą w przeglądarce odwiedzającego (IndexedDB <code>d2ma</code>, 90 dni), identyfikator to losowy UUID — bez danych osobowych. Przy <code>storage.consentRequired: true</code> nic nie jest zapisywane bez zgody z Consent Mode (moduł <code>d2-gtm</code>), a wycofanie zgody kasuje bazę. Koperta scenariuszy przychodzi z digi2.app; gdy nie da się jej pobrać, strona działa jak bez modułu.',
+
+    structures: [
+      { title: 'Popup „ostatnio oglądany" (szablon last-unit)', desc: 'Opcjonalny — bez niego moduł pokaże wbudowany. Wrapper ukryty na starcie (display: none), resztę robi moduł popupów; nie trzeba osadzać create().', tree: [
+        { l: 'Div — wrapper (fixed, full-screen)', t: 'div', a: [['d2-ma-popup', 'last-unit']], c: [
+          { l: 'Div — karta', t: 'div', c: [
+            { l: 'Image — zdjęcie lokalu', t: 'img', a: [['d2-ma-field', 'image']], n: 'ukryte, gdy lokal nie ma zdjęcia' },
+            { l: 'Heading — nazwa', t: 'heading', a: [['d2-ma-field', 'name']] },
+            { l: 'Text — pokoje · metraż · piętro', t: 'text', a: [['d2-ma-field', 'summary']] },
+            { l: 'Text — cena', t: 'text', a: [['d2-ma-field', 'price']], n: '612 000 zł' },
+            { l: 'Link — zobacz lokal', t: 'link', a: [['d2-ma-cta']], n: 'open_unit → link do lokalu' },
+            { l: 'Link — zamknij', t: 'link', a: [['d2-ma-close']] }
+          ]}
+        ]}
+      ]},
+      { title: 'Sekcja „co o Tobie wie strona"', desc: 'Pokaz demo: profil, historia i przyciski.', tree: [
+        { l: 'Div — sekcja', t: 'div', c: [
+          { l: 'Text — liczba wizyt', t: 'text', a: [['d2-ma-profile', 'visits']] },
+          { l: 'Text — preferencja pokoi', t: 'text', a: [['d2-ma-profile', 'pref.rooms']] },
+          { l: 'Text — ostatni lokal', t: 'text', a: [['d2-ma-profile', 'last.name']] },
+          { l: 'List — historia', t: 'list', a: [['d2-ma-history'], ['d2-ma-history-limit', '10']] },
+          { l: 'Button — symuluj powrót', t: 'button', a: [['d2-ma-simulate-return']] },
+          { l: 'Button — wyczyść dane', t: 'button', a: [['d2-ma-clear']] }
+        ]}
+      ]}
+    ],
+
+    attrs: [
+      { g: 'Tag loadera', a: 'd2-ma', v: 'URL koperty', el: 'tag loadera', req: true, d: 'Koperta scenariuszy z digi2.app (<code>/api/ma/scenario/&lt;site&gt;.json</code>). Pusta wartość = <code>digi2.ma.load()</code> z JS (np. plik lokalny do testów).' },
+      { g: 'Tag loadera', a: 'd2-ma-consent-required', v: 'true | false', el: 'tag loadera', d: 'Decyduje <code>storage.consentRequired</code> z koperty; atrybut obowiązuje, gdy koperty nie da się pobrać. <code>true</code> wymusza zgodę bez względu na kopertę.', n: 'bez atrybutu i bez koperty: zgoda wymagana' },
+      { g: 'Tag loadera', a: 'd2-ma-consent', v: 'kategoria Consent Mode', el: 'tag loadera', d: 'Kategoria, która odblokowuje zapis. Domyślnie <code>analytics_storage</code>.' },
+      { g: 'Tag loadera', a: 'd2-ma-products-api', v: 'URL', el: 'tag loadera', d: 'Skąd świeży status lokalu przed popupem. Domyślnie <code>https://api.2destate.com/api/v1</code> (domena strony musi być na białej liście projektu).' },
+      { g: 'Tag loadera', a: 'd2-ma-highlight', v: '(puste)', el: 'tag loadera', d: 'Podświetla na mapie 2destate dostępne lokale z preferowaną liczbą pokoi — tylko na piętrze, które jest na ekranie. Kolejności listy nie zmienia.' },
+      { g: 'Tag loadera', a: 'd2-ma-refresh', v: 'sekundy (≥ 5)', el: 'tag loadera', d: 'Co ile czytać kopertę ponownie — wynik telefonu wysłany z panelu dociera do otwartej strony.' },
+      { g: 'Popup', a: 'd2-ma-popup', v: 'nazwa szablonu', el: 'wrapper popupu', d: 'Własny popup dla szablonu z węzła <code>popup</code> (<code>last-unit</code>, <code>promo-rooms</code>…). Bez niego moduł buduje wbudowany. Rejestrowany na module popupów jako <code>d2-ma-&lt;szablon&gt;</code>, więc działa reguła „jeden popup naraz".' },
+      { g: 'Popup', a: 'd2-ma-field', v: 'name | price | pricePerSqm | area | rooms | floor | building | summary | image | status | unitId', el: 'w popupie / w wierszu historii', d: 'Pole lokalu. <code>price</code> → „612 000 zł", <code>area</code> → „44,6 m²", <code>summary</code> → „2 pok. · 44,6 m² · parter", <code>image</code> na obrazku ustawia <code>src</code>. Pole bez wartości jest ukrywane. W wierszu historii także <code>time</code>.' },
+      { g: 'Popup', a: 'd2-ma-cta', v: '—', el: 'link w popupie', d: 'Przy <code>cta: "open_unit"</code> dostaje link do lokalu; lokal 2destate z mapą na tej samej stronie podświetla na mapie zamiast przechodzić. Przy <code>contact</code> zostaje własny href.' },
+      { g: 'Popup', a: 'd2-ma-close', v: '—', el: 'w popupie', d: 'Zamyka popup (klik w tło też).' },
+      { g: 'Popup', a: 'd2-ma-map', v: '—', el: 'wrapper mapy', d: 'Dokąd przewinąć stronę, gdy CTA otwiera lokal na mapie.' },
+      { g: 'Profil', a: 'd2-ma-profile', v: 'visits | views | lead | pref.rooms | pref.floor | segment | visitorId | last.<pole>', el: 'tekst', d: 'Wartość z profilu; „—", gdy nieznana.' },
+      { g: 'Profil', a: 'd2-ma-history', v: '—', el: 'lista', d: 'Obejrzane lokale, od najnowszego. <code>d2-ma-history-limit</code> = ile (domyślnie 20). Dziecko <code>d2-ma-history-item</code> = szablon wiersza z <code>d2-ma-field</code> w środku.' },
+      { g: 'Profil', a: 'd2-ma-clear', v: '—', el: 'przycisk', d: 'Kasuje całą bazę <code>d2ma</code>; profil zaczyna się od nowa.' },
+      { g: 'Profil', a: 'd2-ma-simulate-return', v: '—', el: 'przycisk', d: 'Demo: zamyka wizytę tak, jakby minęło najdłuższe <code>afterHours</code> — następne wejście to powrót.' }
+    ],
+
+    api: {
+      desc: 'Węzły: wyzwalacze <code>unit_view</code> (<code>unitIds</code>, <code>minCount</code>), <code>type_view</code> (<code>rooms</code>/<code>floor</code>, <code>minCount</code>), <code>return_visit</code> (<code>afterHours</code>, liczone od końca poprzedniej wizyty), <code>lead</code> (<code>generate_lead</code> albo <code>oa3de__contact-form-make-inquiry</code>), <code>crm_call_result</code> (demo: <code>demoState.crmCallSeq</code> wzrósł po poprzednim kroku); warunki <code>pref.rooms</code>, <code>pref.floor</code>, <code>lead</code>, <code>visits: { min }</code>; akcje <code>popup</code>, <code>datalayer</code> (<code>ma_segment</code> | <code>ma_segment_exit</code>), <code>webhook</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code>, zawsze <code>testOnly: true</code> — bez tego nie wychodzi). Reguły: trigger → trigger = kolejność w czasie; action → trigger = czekanie na zdarzenie po akcji; kilka krawędzi = w kolejności <code>edges</code>; <code>frequency</code> (<code>once_per_visit</code> domyślnie, <code>once_per_unit</code>, <code>once_per_days:N</code>) liczone per scenariusz, a akcja pominięta przez frequency nie kończy gałęzi; <code>delayMinutes</code> odkłada akcję w d2ma (ważna 24 h); dwa popupy naraz — wygrywa wcześniejszy scenariusz, drugi czeka do następnej wizyty; sprzedanego lokalu popup nie pokazuje; nowa <code>revision</code> = ścieżka od zera; nieznany typ / zdarzenie / akcja = węzeł pominięty z <code>console.warn</code>; <code>version</code> ≠ "0" = żaden scenariusz. <code>demoState.timeScale: 60</code> = minuta zamiast godziny (afterHours, delayMinutes, once_per_days i 30-minutowa przerwa między wizytami).',
+      code: "// Profil i historia (np. sekcja „co o Tobie wie strona\")\ndigi2.ma.profile();     // { visitorId, visits, lead, views, pref: { rooms, floor }, lastUnit, segment, … }\ndigi2.ma.history();     // obejrzane lokale, od najstarszego\n\n// Inne źródło obejrzeń niż 3D Estate / 2destate\ndigi2.ma.track({ unitId: 'B.1.05', name: 'B.1.05', rooms: 2, floor: 1, area: 52.3, price: 689000 });\ndigi2.ma.lead();        // znacznik lead bez dataLayer\n\n// Koperta\ndigi2.ma.load('/ma-koperta.json');   // URL albo obiekt\ndigi2.ma.reload();                   // nowa rewizja, nowy wynik telefonu\n\n// Pokaz\ndigi2.ma.simulateReturn();           // jak przycisk d2-ma-simulate-return\ndigi2.ma.clear();                    // kasuje bazę d2ma (Promise)\ndigi2.ma.highlight();                // ponowne podświetlenie lokali na mapie\n\n// Zdarzenia\ndigi2.on('ma:action', function (a) { /* { scenarioId, nodeId, do, … } */ });\n// także 'ma:ready', 'ma:view', 'ma:change'\n\n// Treść webhooka (POST JSON, bez danych osobowych):\n// { scenarioId, revision, nodeId, channel, template, unit, segment,\n//   visitorId, testOnly: true, ts }"
+    },
+
+    examples: [
+      { title: 'Strona demo na .webflow.io', desc: 'Przypięta wersja (nie <code>@latest</code>), koperta z digi2.app, demo bez zgód (decyzja Piotra z 18.10.2026 — tylko kopia demo; produkcja = baner zgód i <code>consentRequired: true</code>).', code: '<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"\n  d2-ma="https://digi2.app/api/ma/scenario/osiedle-demo.json"\n  d2-ma-consent-required="false"\n  d2-ma-highlight\n  d2-ma-refresh="30"\n  d2-popups></script>' },
+      { title: 'Scenariusz „Powrót do lokalu"', desc: 'Obejrzał dowolny lokal → wrócił po godzinie → bez leada → popup z ostatnim lokalem (raz na lokal) i segment do GA4.', code: '{ "scenarioId": "powrot-do-lokalu", "revision": 1, "active": true,\n  "nodes": [\n    { "id": "t1", "type": "trigger", "when": { "event": "unit_view", "unitIds": [] } },\n    { "id": "t2", "type": "trigger", "when": { "event": "return_visit", "afterHours": 1 } },\n    { "id": "c1", "type": "condition", "if": { "lead": false } },\n    { "id": "a1", "type": "action", "do": "popup", "template": "last-unit",\n      "cta": "open_unit", "frequency": "once_per_unit" },\n    { "id": "a2", "type": "action", "do": "datalayer", "event": "ma_segment",\n      "params": { "segment": "powrot-do-lokalu" } }\n  ],\n  "edges": [["t1","t2"], ["t2","c1"], ["c1","a1"], ["c1","a2"]] }' },
+      { title: 'Strona testowa w repo', desc: 'Fikcyjne lokale, obie wyszukiwarki udawane, webhook nie wychodzi z przeglądarki.', code: 'npx serve -l 5175 .\n# http://localhost:5175/sandbox/ma.html  (koperta: sandbox/ma-koperta.json)' }
+    ]
+  };
+
 })(window.D2DOCS.modules);
