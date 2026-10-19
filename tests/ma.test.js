@@ -291,7 +291,7 @@ test('3D Estate: unit-open daje unit_view w kształcie §13.1, duplikat nazwy je
   assert.deepEqual(h[0].unit, {
     unitId: 'PL-WRO-0167_01-D-02', name: '01-D-02', rooms: 2, floor: 1, area: 49.85,
     price: 829212, pricePerSqm: 16634, building: '2', status: 'available', isPromo: false,
-    url: 'https://demo.example/oferta?sm-unit=PL-WRO-0167_01-D-02', image: null, source: '3destate',
+    url: 'https://demo.example/oferta?sm-unit=PL-WRO-0167_01-D-02', image: null, promoText: null, source: '3destate',
   });
 });
 
@@ -516,6 +516,36 @@ test('mapa: preferencja z tej wizyty podświetla się po zmianie piętra; powtó
   env.zmianaPietra();
   env.klatka(); env.klatka();
   assert.deepEqual(wywolania, ['B1'], 'B1 tak, A1 (tytuł także na p1) nie');
+});
+
+test('2destate: obrazek z pola rejestru obrazek-popup, hasło z haslo-promocji', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.klik({ id: 'u1', name: 'A/1/02', rooms: 2, status: 'available', 'obrazek-popup': 'https://cdn.example/a.jpg', image: 'https://cdn.example/plan.png', 'haslo-promocji': 'Rabat 5%' });
+  await env.gotowe();
+  const u = env.ma.history()[0].unit;
+  assert.equal(u.image, 'https://cdn.example/a.jpg');
+  assert.equal(u.promoText, 'Rabat 5%');
+  env.klik({ id: 'u2', name: 'A/1/03', rooms: 2, status: 'available', image: 'https://cdn.example/plan.png' });
+  await env.gotowe();
+  assert.equal(env.ma.history()[1].unit.image, 'https://cdn.example/plan.png', 'bez pola rejestru: image');
+  assert.equal(env.ma.history()[1].unit.promoText, null);
+});
+
+test('mapa: grupa o tym samym tytule co kształt nie wyłącza jego podświetlenia', async () => {
+  const wywolania = [];
+  const mapa = {
+    artboardController: { currentArtboardId: 'p1' },
+    store: { state: { artboards: [{ id: 'p1', children: [
+      { title: 'A/1/02', type: 'group', children: [{ title: 'A/1/02', assigned_product: 'u1' }] },
+    ] }] } },
+    products: [{ id: 'u1', name: 'A/1/02', rooms: 2, status: 'available' }],
+  };
+  const imp = { instances: { mapa }, highlightObject(m, t) { wywolania.push(t); } };
+  const env = await start({ koperta: koperta([]), cfg: { 'd2-ma-highlight': '' }, imp });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  env.ma.highlight();
+  assert.deepEqual(wywolania, ['A/1/02']);
 });
 
 test('mapa: highlightObject przełączający piętro synchronicznie nie odpala następnego kształtu w tej samej klatce', async () => {

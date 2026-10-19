@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 34.9 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 35.2 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **315.2 KB min** / **100.0 KB** gzipped.
+Total (all modules): **315.4 KB min** / **100.1 KB** gzipped.
 
 ---
 
@@ -1151,8 +1151,10 @@ number (`1` available, `2` reserved, `3` or `isNotAvailable` sold, other →
 `other`) because the names are the developer's own dictionary. 2destate price is
 `promo_price_gross` while `promo_active`, else `price_gross`; `building` is
 `building_name` when the map sends it, otherwise `null`; `image` is read from
-`popup_image` / `marketing_image` / `image` until 2destate settles the
-marketing field. The same `unitId` within 5 s counts once (two apps on a page,
+the registry field `obrazek-popup`, then `marketing_image` / `image`;
+`promoText` (`d2-ma-field="promoText"`) from the registry field
+`haslo-promocji`. Registry keys in 2destate must contain a hyphen, so the
+earlier guess `popup_image` can't exist and is no longer read. The same `unitId` within 5 s counts once (two apps on a page,
 or the double push).
 
 ### Storage
@@ -1272,7 +1274,8 @@ clears highlights (so does hovering a shape), and the module puts them back on
 re-applying on that would loop. A map that was never highlighted (a new
 visitor whose room preference formed during this visit) counts as changed.
 `highlightObject` looks a title up across the whole map, so a shape whose
-title repeats on another artboard is skipped, because it could switch the floor. The popup CTA for a 2destate unit with the map on the page calls
+title repeats on another artboard is skipped, because it could switch the floor
+(group titles don't count; with `d2-debug` the log says how many were skipped). The popup CTA for a 2destate unit with the map on the page calls
 `highlightObject` + `showTooltip` instead of navigating; the link it carries
 (`?d2-unit=<id>`) does the same after load on another page.
 

@@ -43,7 +43,7 @@
  * ─── Page elements ──────────────────────────────────────────────────────────
  *
  *   [d2-ma-popup="last-unit"]     Designer popup for that template (else built-in)
- *     [d2-ma-field="name|price|image|rooms|floor|area|pricePerSqm|building|summary"]
+ *     [d2-ma-field="name|price|image|rooms|floor|area|pricePerSqm|building|summary|promoText"]
  *     [d2-ma-cta]                 open_unit → href of the unit; contact → keeps its href
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
@@ -444,7 +444,7 @@
       building: c.building == null || c.building === '' ? null : String(c.building),
       status: status3de(c), isPromo: !!c.isPromo,
       url: smUnitLink(u.id),
-      image: null, source: '3destate'
+      image: null, promoText: null, source: '3destate'
     };
   }
 
@@ -464,7 +464,9 @@
       unitId: String(p.id), name: str(p.name), rooms: num(p.rooms), floor: num(p.floor),
       area: num(p.area), price: num(price), pricePerSqm: num(perSqm), building: str(building),
       status: statusOf(p.status), isPromo: promo, url: unitLink(p.id),
-      image: str(p.popup_image || p.marketing_image || p.image), source: '2destate'
+      // Pola rejestru 2destate mają klucze z myślnikiem.
+      image: str(p['obrazek-popup'] || p.marketing_image || p.image),
+      promoText: str(p['haslo-promocji']), source: '2destate'
     };
   }
 
@@ -1411,10 +1413,17 @@
       products.forEach(function (p) { byId[String(p.id)] = p; });
       // highlightObject szuka po tytule w całej mapie: tytuł powtórzony na innym
       // piętrze mógłby przełączyć piętro - takie kształty pomijamy.
+      // Liczą się tylko pojedyncze kształty - grupa o tym samym tytule nie jest lokalem.
       var titles = {};
+      var dupes = 0;
       artboardsOf(map).forEach(function (board) {
-        walkObjects(board.children, function (n) { if (n.title) titles[n.title] = (titles[n.title] || 0) + 1; });
+        walkObjects(board.children, function (n) {
+          if (!n.title || n.type === 'group' || (Array.isArray(n.children) && n.children.length)) return;
+          titles[n.title] = (titles[n.title] || 0) + 1;
+          if (titles[n.title] === 2) dupes++;
+        });
       });
+      if (dupes) _log('map "' + mapName + '": ' + dupes + ' shape title(s) repeat across floors - skipped in highlight');
       artboardsOf(map).forEach(function (board) {
         if (board.id !== current) return;
         walkObjects(board.children, function (n) {
@@ -1517,7 +1526,7 @@
     intake({ type: 'view', unit: {
       unitId: id, name: null, rooms: null, floor: null, area: null, price: null, pricePerSqm: null,
       building: null, status: null, isPromo: null, url: smUnitLink(id),
-      image: null, source: '3destate', partial: true
+      image: null, promoText: null, source: '3destate', partial: true
     } });
   }
 
@@ -1875,7 +1884,7 @@
         area: num(unit.area), price: num(unit.price), pricePerSqm: num(unit.pricePerSqm),
         building: str(unit.building), status: unit.status == null ? null : statusOf(unit.status),
         isPromo: !!unit.isPromo, url: (unit.url ? cleanUrl(String(unit.url)) : null) || pageBase(),
-        image: str(unit.image), source: str(unit.source) || 'page'
+        image: str(unit.image), promoText: str(unit.promoText), source: str(unit.source) || 'page'
       };
       intake({ type: 'view', unit: u });
     },

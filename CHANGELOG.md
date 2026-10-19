@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.2 — 2026-10-19 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — pola rejestru 2destate
+
+- **Obrazek w popupie** (`d2-ma-field="image"`) z pola rejestru 2destate
+  `obrazek-popup`, potem `marketing_image` / `image`. Klucze rejestru mają
+  myślnik, więc wcześniejsze `popup_image` nie było czytane z niczego.
+- **Nowe pole `d2-ma-field="promoText"`**: hasło promocji z pola rejestru
+  `haslo-promocji`. Puste pole jest ukrywane jak każde inne.
+- Podświetlenie mapy: grupa o tym samym tytule co kształt nie wyłącza już
+  podświetlenia tego kształtu. Pominięte kształty z powtórzonym tytułem widać
+  w logu (`d2-debug`).
+
 ## v1.9.0-ma.1 — 2026-10-19 (przedpremierowa, nie `@latest`)
 
 ### Nowy moduł `d2-ma` — marketing automation na stronie (demo, kontrakt v0)
