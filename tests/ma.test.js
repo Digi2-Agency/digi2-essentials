@@ -496,6 +496,28 @@ test('mapa: highlightObject zgłaszający onFloorChange na tym samym piętrze ni
   assert.deepEqual(wywolania, ['A1', 'A2', 'A3'], 'każdy kształt raz, w kolejnych klatkach');
 });
 
+test('mapa: preferencja z tej wizyty podświetla się po zmianie piętra; powtórzony tytuł pomijany', async () => {
+  const wolny = (id) => ({ id, name: id, rooms: 2, status: 'available' });
+  const wywolania = [];
+  const mapa = {
+    artboardController: { currentArtboardId: 'p1' },
+    store: { state: { artboards: [
+      { id: 'p1', children: [{ title: 'A1', assigned_product: 'u1' }] },
+      { id: 'p2', children: [{ title: 'B1', assigned_product: 'u2' }, { title: 'A1', assigned_product: 'u3' }] },
+    ] } },
+    products: [wolny('u1'), wolny('u2'), wolny('u3')],
+  };
+  const imp = { instances: { mapa }, highlightObject(m, t) { wywolania.push(t); } };
+  // Nowy odwiedzający: przy starcie nie ma preferencji, więc nic się nie podświetla.
+  const env = await start({ koperta: koperta([]), cfg: { 'd2-ma-highlight': '' }, imp });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  mapa.artboardController.currentArtboardId = 'p2';
+  env.zmianaPietra();
+  env.klatka(); env.klatka();
+  assert.deepEqual(wywolania, ['B1'], 'B1 tak, A1 (tytuł także na p1) nie');
+});
+
 test('mapa: highlightObject przełączający piętro synchronicznie nie odpala następnego kształtu w tej samej klatce', async () => {
   const wolny = (id) => ({ id, name: id, rooms: 2, status: 'available' });
   const wywolania = [];
@@ -606,8 +628,10 @@ test('Consent Mode: kolejność źródeł — update, tag Google, default, defau
   // (osobna tablica na każde wejście: moduł podpina się pod dataLayer raz)
   const regiony = () => [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL', 'DE'] }), gtag('consent', 'default', { analytics_storage: 'granted' })];
   assert.equal(await zapisuje({ dataLayer: regiony(), googleTag: ics(false) }), false);
-  // Bez tagu Google: default bez region rozstrzyga.
-  assert.equal(await zapisuje({ dataLayer: regiony() }), true);
+  // Bez tagu Google (wolny gtag.js, adblock): regionalna odmowa wygrywa z ogólnym default.
+  assert.equal(await zapisuje({ dataLayer: regiony() }), false);
+  // Sam default bez region rozstrzyga.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted' })] }), true);
   // Sam default z region: odmowa liczy się, zgoda nie.
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), false);
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted', region: ['PL'] })] }), false);

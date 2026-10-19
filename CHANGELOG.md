@@ -36,15 +36,16 @@ Co robi:
   `d2-ma-simulate-return`, przycisk `d2-ma-clear`, sekcja „co o Tobie wie strona”
   (`d2-ma-profile`, `d2-ma-history`), podświetlenie preferowanych lokali na mapie
   2destate (`d2-ma-highlight`): tylko lokale z piętra na ekranie, bez grup,
-  po jednym na klatkę animacji. Po zmianie piętra podświetlenie wraca.
+  bez kształtów, których tytuł powtarza się na innym piętrze, po jednym na
+  klatkę animacji. Po zmianie piętra podświetlenie wraca.
 - **Zgody:** gdy koperta ma `storage.consentRequired: true` **albo** tag ma
   `d2-ma-consent-required="true"`, bez zgody nic nie jest zapisywane i żadna
   akcja nie rusza, a obejrzenia sprzed zgody przepadają. Wycofanie zgody
   kasuje bazę od razu, w tej samej wizycie. Zgoda jest czytana z każdego
   banera, który mówi Consent Mode. Rozstrzyga pierwsze źródło, które zna
   kategorię: `gtag('consent', 'update', …)` w `dataLayer` (także sprzed startu
-  modułu), potem stan tagu Google (szablon CMP w GTM), potem `default` bez
-  `region`, a `default` z `region` liczy się tylko jako odmowa. Na końcu moduł
+  modułu), potem stan tagu Google (szablon CMP w GTM), potem `default` z `region`
+  (tylko jako odmowa), potem `default` bez `region`. Na końcu moduł
   `d2-gtm`. Demo na digi2.agency działa z banerem zgód (decyzja
   Piotra z 19.10.2026). `demoState` z koperty z `consentRequired: false` działa
   po zgodzie.

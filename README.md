@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 34.8 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 34.9 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **315.0 KB min** / **100.0 KB** gzipped.
+Total (all modules): **315.2 KB min** / **100.0 KB** gzipped.
 
 ---
 
@@ -1101,9 +1101,11 @@ Consent Mode. The first source that knows the category decides:
    without a `gtag` command. It is checked again on every `dataLayer` event,
    so a grant or a denial made this way applies at the CMP's next event, in
    the same visit.
-3. A `gtag('consent', 'default', {...})` without `region`.
-4. A `default` with `region` counts only as a denial. The module doesn't know
-   the visitor's country, so it never takes a regional grant.
+3. A `default` with `region` counts only as a denial, and it is checked before
+   a general `default`. Without the Google tag's state (a slow gtag.js, an
+   adblocker) the module doesn't know the visitor's country, so it never takes
+   a regional grant and never lets a general grant override a regional denial.
+4. A `gtag('consent', 'default', {...})` without `region`.
 5. Only when none of those knows the category: the `google` module
    (`d2-gtm`), meaning `digi2.google.consent` and its `consent:updated` event.
 
@@ -1267,7 +1269,10 @@ drops queued shapes whose artboard is no longer on screen. A floor change
 clears highlights (so does hovering a shape), and the module puts them back on
 `onFloorChange`, but only when the map's artboard actually changed:
 `highlightObject` fires `onFloorChange` itself, even on the same floor, and
-re-applying on that would loop. The popup CTA for a 2destate unit with the map on the page calls
+re-applying on that would loop. A map that was never highlighted (a new
+visitor whose room preference formed during this visit) counts as changed.
+`highlightObject` looks a title up across the whole map, so a shape whose
+title repeats on another artboard is skipped, because it could switch the floor. The popup CTA for a 2destate unit with the map on the page calls
 `highlightObject` + `showTooltip` instead of navigating; the link it carries
 (`?d2-unit=<id>`) does the same after load on another page.
 

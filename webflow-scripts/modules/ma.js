@@ -1382,9 +1382,11 @@
   function floorChanged() {
     var I = imp();
     var moved = false;
-    Object.keys(hlFloor).forEach(function (mapName) {
-      var map = I && I.instances && I.instances[mapName];
-      if (currentArtboard(map) === hlFloor[mapName]) return;
+    // Mapa, której jeszcze nie podświetlaliśmy (nowy odwiedzający, preferencja
+    // powstała w tej wizycie), też się liczy - blokadą jest highlighted[key].
+    Object.keys((I && I.instances) || {}).forEach(function (mapName) {
+      var map = I.instances[mapName];
+      if (hlFloor[mapName] !== undefined && currentArtboard(map) === hlFloor[mapName]) return;
       moved = true;
       delete hlFloor[mapName];
       Object.keys(highlighted).forEach(function (k) { if (k.indexOf(mapName + '|') === 0) delete highlighted[k]; });
@@ -1407,11 +1409,17 @@
       hlFloor[mapName] = current;
       var byId = {};
       products.forEach(function (p) { byId[String(p.id)] = p; });
+      // highlightObject szuka po tytule w całej mapie: tytuł powtórzony na innym
+      // piętrze mógłby przełączyć piętro - takie kształty pomijamy.
+      var titles = {};
+      artboardsOf(map).forEach(function (board) {
+        walkObjects(board.children, function (n) { if (n.title) titles[n.title] = (titles[n.title] || 0) + 1; });
+      });
       artboardsOf(map).forEach(function (board) {
         if (board.id !== current) return;
         walkObjects(board.children, function (n) {
           var p = n.assigned_product != null ? byId[String(n.assigned_product)] : null;
-          if (!p || !n.title || n.type === 'group' || (Array.isArray(n.children) && n.children.length)) return;
+          if (!p || !n.title || titles[n.title] > 1 || n.type === 'group' || (Array.isArray(n.children) && n.children.length)) return;
           var u = from2destate(p);
           if (u.rooms === rooms && u.status === 'available') {
             hlQueue.push({ map: mapName, title: n.title, artboard: current });
@@ -1653,15 +1661,17 @@
   }
 
   // Kolejność źródeł Consent Mode: update z dataLayer rozstrzyga, potem stan
-  // tagu Google (liczy region), potem default bez region, a default z region
-  // tylko jako odmowa. Gdy żadne nie zna kategorii - moduł google biblioteki
+  // tagu Google (liczy region), potem default z region (tylko jako odmowa),
+  // potem default bez region. Gdy żadne nie zna kategorii - moduł google biblioteki
   // albo jego zapis w localStorage.
   function hasConsent() {
     if (gtagConsent.update) return gtagConsent.update === 'granted';
     var tag = googleTagConsent();
     if (tag) return tag === 'granted';
-    if (gtagConsent['default']) return gtagConsent['default'] === 'granted';
+    // Regionalna odmowa przed ogólnym default: bez stanu tagu Google (wolny
+    // gtag.js, adblock) nie wiemy, czy odwiedzający nie jest w tamtym regionie.
     if (gtagConsent.regionDenied) return false;
+    if (gtagConsent['default']) return gtagConsent['default'] === 'granted';
     var c = null;
     try {
       if (window.digi2.modules && window.digi2.modules.check && window.digi2.modules.check('google')) {

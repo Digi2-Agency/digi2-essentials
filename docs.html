@@ -2603,7 +2603,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>d2-ma-consent-required</code></td><td>required</td><td>The envelope's <code>storage.consentRequired</code> decides; this applies when the envelope can't be read. <code>"true"</code> forces consent whatever the envelope says</td></tr>
       <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category that unlocks storage. Read from any banner that speaks Consent Mode, see below</td></tr>
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
-      <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map: single shapes on the floor on screen only, one per animation frame, re-applied after a floor change. List order is unchanged</td></tr>
+      <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map: single shapes on the floor on screen only (a title repeated on another floor is skipped), one per animation frame, re-applied after a floor change. List order is unchanged</td></tr>
       <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Demo only. Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
     </table>
     <div class="callout callout--warn">
@@ -2616,8 +2616,8 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><th>Source</th><th>When it applies</th></tr>
       <tr><td>1. <code>gtag('consent', 'update', {...})</code> in the <code>dataLayer</code></td><td>Decides. Includes commands pushed before the module started. A denial deletes the database</td></tr>
       <tr><td>2. Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM; already accounts for <code>region</code>. Re-checked on every <code>dataLayer</code> event, so a grant or a denial applies in the same visit</td></tr>
-      <tr><td>3. <code>gtag('consent', 'default', {...})</code> without <code>region</code></td><td>When neither source above knows the category</td></tr>
-      <tr><td>4. <code>default</code> with <code>region</code></td><td>Counts only as a denial; a regional grant is never taken</td></tr>
+      <tr><td>3. <code>default</code> with <code>region</code></td><td>Counts only as a denial, and beats a general <code>default</code> (without the Google tag state the visitor's country is unknown); a regional grant is never taken</td></tr>
+      <tr><td>4. <code>gtag('consent', 'default', {...})</code> without <code>region</code></td><td>When no source above knows the category</td></tr>
       <tr><td>5. Module <code>d2-gtm</code> (<code>digi2.google.consent</code>, <code>consent:updated</code>)</td><td>Only when no source above knows the category</td></tr>
     </table>
     <p class="muted">Only real <code>gtag()</code> commands count (an <code>arguments</code> object). A plain array <code>['consent', …]</code> is ignored, as the Google tag ignores it. A denial that arrives while the database is opening keeps it closed.</p>
