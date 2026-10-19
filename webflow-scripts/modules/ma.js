@@ -453,10 +453,12 @@
   }
 
   // Pole rejestru 2destate: mapa podaje je płasko i pod fields, Products API
-  // v2 tylko pod fields (kluczem jest slug).
+  // v2 tylko pod fields (kluczem jest slug). Tylko tekst - obiekt z API dałby
+  // w popupie „[object Object]" i zły adres obrazka.
   function regField(p, key) {
-    if (p[key] != null && p[key] !== '') return p[key];
-    return p.fields && typeof p.fields === 'object' ? p.fields[key] : null;
+    if (typeof p[key] === 'string' && p[key] !== '') return p[key];
+    var f = p.fields && typeof p.fields === 'object' ? p.fields[key] : null;
+    return typeof f === 'string' && f !== '' ? f : null;
   }
 
   function from2destate(p) {

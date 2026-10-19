@@ -534,6 +534,11 @@ test('2destate: obrazek z pola rejestru obrazek-popup, hasło z haslo-promocji',
   await env.gotowe();
   assert.equal(env.ma.history()[2].unit.image, 'https://cdn.example/c.jpg');
   assert.equal(env.ma.history()[2].unit.promoText, 'Ostatnie 3');
+  // Nie-tekst z rejestru (obiekt, liczba) = brak pola, nie „[object Object]".
+  env.klik({ id: 'u4', name: 'A/1/05', rooms: 2, status: 'available', image: 'https://cdn.example/plan.png', 'obrazek-popup': { url: 'https://cdn.example/d.jpg' }, fields: { 'haslo-promocji': 5 } });
+  await env.gotowe();
+  assert.equal(env.ma.history()[3].unit.image, 'https://cdn.example/plan.png');
+  assert.equal(env.ma.history()[3].unit.promoText, null);
 });
 
 test('mapa: grupa o tym samym tytule co kształt nie wyłącza jego podświetlenia', async () => {
