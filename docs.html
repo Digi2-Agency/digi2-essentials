@@ -2740,7 +2740,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:action'</span>, <span 
       <tr><td><code>area</code></td><td><code>44,6 m²</code></td></tr>
       <tr><td><code>price</code> / <code>pricePerSqm</code></td><td><code>612 000 zł</code> / <code>13 722 zł/m²</code></td></tr>
       <tr><td><code>summary</code></td><td>Rooms · area · floor, whichever are known</td></tr>
-      <tr><td><code>promoText</code></td><td>The promotion slogan from the 2destate registry field <code>haslo-promocji</code></td></tr>
+      <tr><td><code>promoText</code></td><td>The promotion slogan from the 2destate registry field <code>haslo-promocji</code>, only while the promotion is on</td></tr>
       <tr><td><code>image</code> (on an Image)</td><td>Sets <code>src</code> when it is <code>https:</code>; hidden otherwise or when the unit has none. From 2destate: registry field <code>obrazek-popup</code>, then <code>marketing_image</code> / <code>image</code></td></tr>
     </table>
     <p class="muted">A field with no value is hidden. <code>d2-ma-cta</code> with <code>cta: "open_unit"</code> gets the unit's link (only <code>https:</code> or the page's own origin); for a 2destate unit whose map is on the page it highlights the unit on the map instead (mark the map wrapper <code>d2-ma-map</code> to scroll to it). With <code>cta: "contact"</code> it keeps its own href. No <code>create()</code> embed is needed — the module registers the popup as <code>d2-ma-&lt;template&gt;</code> on the popups module, so the one-popup-at-a-time rule applies. The page needs <code>d2-popups</code> or the module loads it on demand.</p>

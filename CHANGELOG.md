@@ -13,7 +13,8 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   `obrazek-popup`, potem `marketing_image` / `image`. Klucze rejestru mają
   myślnik, więc wcześniejsze `popup_image` nie było czytane z niczego.
 - **Nowe pole `d2-ma-field="promoText"`**: hasło promocji z pola rejestru
-  `haslo-promocji`. Puste pole jest ukrywane jak każde inne. Oba pola są
+  `haslo-promocji`, tylko gdy promocja jest włączona (`promo_active`). Puste
+  pole jest ukrywane jak każde inne. Oba pola są
   czytane z mapy (płasko) i ze świeżego statusu z Products API (pod `fields`).
 - Świeży status z Products API (strona bez mapy) odświeża w popupie tylko
   status, cenę, promocję, obrazek i hasło. Nazwa i budynek zostają takie,

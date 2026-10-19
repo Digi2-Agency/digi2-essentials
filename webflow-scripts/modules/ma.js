@@ -475,7 +475,8 @@
       status: statusOf(p.status), isPromo: promo, url: unitLink(p.id),
       // Pola rejestru 2destate mają klucze z myślnikiem.
       image: str(regField(p, 'obrazek-popup') || p.marketing_image || p.image),
-      promoText: str(regField(p, 'haslo-promocji')), source: '2destate'
+      // Hasło tylko przy włączonej promocji - pole w rejestrze zostaje po jej końcu.
+      promoText: promo ? str(regField(p, 'haslo-promocji')) : null, source: '2destate'
     };
   }
 
@@ -1111,13 +1112,14 @@
   var CLEARABLE = ['promoText', 'image'];
 
   // only: lista pól do odświeżenia; bez niej - wszystko poza url i source.
-  // Puste pole świeżych danych nie nadpisuje zapisanego (poza CLEARABLE).
-  function merge(stored, fresh, only) {
+  // Puste pole świeżych danych nie nadpisuje zapisanego, chyba że jest na
+  // liście clear.
+  function merge(stored, fresh, only, clear) {
     var out = _clone(stored);
     Object.keys(fresh).forEach(function (k) {
       if (k === 'url' || k === 'source') return;
       if (only && only.indexOf(k) < 0) return;
-      if (fresh[k] != null || CLEARABLE.indexOf(k) >= 0) out[k] = fresh[k];
+      if (fresh[k] != null || (clear && clear.indexOf(k) >= 0)) out[k] = fresh[k];
     });
     return out;
   }
@@ -1131,7 +1133,7 @@
   // API 2destate. Zwraca null, gdy lokalu nie wolno już promować.
   function freshUnit(unit) {
     var p = mapProduct(unit.unitId);
-    if (p) return Promise.resolve(merge(unit, from2destate(p)));
+    if (p) return Promise.resolve(merge(unit, from2destate(p), null, CLEARABLE));
     var project = envelope && envelope.project;
     if (unit.source !== '2destate' || !project || !UUID_RE.test(unit.unitId) || typeof fetch !== 'function') {
       return Promise.resolve(unit);
@@ -1147,7 +1149,11 @@
       var row = Array.isArray(list) ? list[0] : (list && Array.isArray(list.data) ? list.data[0] : null);
       // Publiczne API nie zwraca lokalu wycofanego z oferty - tego też nie promujemy.
       if (!row) return null;
-      return merge(unit, from2destate(row), API_FRESH);
+      var u = from2destate(row);
+      if (!u) return unit;
+      // Wiersz bez obiektu fields nie mówi nic o polach rejestru - nie czyścimy.
+      var known = row.fields && typeof row.fields === 'object';
+      return merge(unit, u, API_FRESH, known ? CLEARABLE : null);
     }, function (e) {
       _log('status refresh failed, using stored unit', e);
       return unit;

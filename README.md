@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 35.5 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 35.6 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **315.7 KB min** / **100.2 KB** gzipped.
+Total (all modules): **315.8 KB min** / **100.3 KB** gzipped.
 
 ---
 
@@ -1162,7 +1162,12 @@ the changing fields from it: `status`, price, promotion, `image` and
 and an empty fresh field doesn't overwrite a stored one, except `promoText` and
 `image`. A promotion removed in 2destate must not keep showing from
 IndexedDB, so an empty slogan or image from a successful fresh read (map or
-API) clears the stored one. A failed read keeps the stored unit.
+API) clears the stored one. From the API this happens only when the row
+carries a `fields` object; without it the registry state is unknown and
+nothing is cleared. A failed read, or a row without `id`, keeps the stored
+unit. `promoText` is read only while the promotion is on (`promo_active`). The
+slogan field stays in the 2destate registry after a promotion ends, and a
+switched-off promotion never shows it.
 Registry keys in 2destate must contain a hyphen, so the
 earlier guess `popup_image` can't exist and is no longer read. The same `unitId` within 5 s counts once (two apps on a page,
 or the double push).

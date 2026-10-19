@@ -520,7 +520,7 @@ test('mapa: preferencja z tej wizyty podświetla się po zmianie piętra; powtó
 
 test('2destate: obrazek z pola rejestru obrazek-popup, hasło z haslo-promocji', async () => {
   const env = await start({ koperta: koperta([]) });
-  env.klik({ id: 'u1', name: 'A/1/02', rooms: 2, status: 'available', 'obrazek-popup': 'https://cdn.example/a.jpg', image: 'https://cdn.example/plan.png', 'haslo-promocji': 'Rabat 5%' });
+  env.klik({ id: 'u1', name: 'A/1/02', rooms: 2, status: 'available', 'obrazek-popup': 'https://cdn.example/a.jpg', image: 'https://cdn.example/plan.png', 'haslo-promocji': 'Rabat 5%', promo_active: true });
   await env.gotowe();
   const u = env.ma.history()[0].unit;
   assert.equal(u.image, 'https://cdn.example/a.jpg');
@@ -530,15 +530,19 @@ test('2destate: obrazek z pola rejestru obrazek-popup, hasło z haslo-promocji',
   assert.equal(env.ma.history()[1].unit.image, 'https://cdn.example/plan.png', 'bez pola rejestru: image');
   assert.equal(env.ma.history()[1].unit.promoText, null);
   // Products API v2: pola rejestru tylko pod fields.
-  env.klik({ id: 'u3', name: 'A/1/04', rooms: 2, status: 'available', fields: { 'obrazek-popup': 'https://cdn.example/c.jpg', 'haslo-promocji': 'Ostatnie 3' } });
+  env.klik({ id: 'u3', name: 'A/1/04', rooms: 2, status: 'available', promo_active: true, fields: { 'obrazek-popup': 'https://cdn.example/c.jpg', 'haslo-promocji': 'Ostatnie 3' } });
   await env.gotowe();
   assert.equal(env.ma.history()[2].unit.image, 'https://cdn.example/c.jpg');
   assert.equal(env.ma.history()[2].unit.promoText, 'Ostatnie 3');
   // Nie-tekst z rejestru (obiekt, liczba) = brak pola, nie „[object Object]".
-  env.klik({ id: 'u4', name: 'A/1/05', rooms: 2, status: 'available', image: 'https://cdn.example/plan.png', 'obrazek-popup': { url: 'https://cdn.example/d.jpg' }, fields: { 'haslo-promocji': 5 } });
+  env.klik({ id: 'u4', name: 'A/1/05', rooms: 2, status: 'available', image: 'https://cdn.example/plan.png', 'obrazek-popup': { url: 'https://cdn.example/d.jpg' }, promo_active: true, fields: { 'haslo-promocji': 5 } });
   await env.gotowe();
   assert.equal(env.ma.history()[3].unit.image, 'https://cdn.example/plan.png');
   assert.equal(env.ma.history()[3].unit.promoText, null);
+  // Promocja wyłączona, hasło zostało w rejestrze: nie pokazujemy go.
+  env.klik({ id: 'u5', name: 'A/1/06', rooms: 2, status: 'available', promo_active: false, 'haslo-promocji': 'Rabat 5%' });
+  await env.gotowe();
+  assert.equal(env.ma.history()[4].unit.promoText, null);
 });
 
 test('mapa: grupa o tym samym tytule co kształt nie wyłącza jego podświetlenia', async () => {
@@ -877,7 +881,7 @@ test('popup: z Products API tylko pola zmienne, budynek i nazwa zostają z klikn
   p1.klik({ id, name: 'B.1.05', building_name: 'Budynek B', rooms: 2, status: 'available', price_gross: 600000 });
   await p1.gotowe();
   const api = () => [{ id, name: 'inna nazwa', building_id: 7, status: 'available', price_gross: 580000,
-    fields: { 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' } }];
+    promo_active: true, fields: { 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' } }];
   const p2 = await powrot(p1, 2 * H, { mapa: false, api, szablon: s });
   assert.equal(p2.popupy.length, 1);
   assert.equal(pola.name.textContent, 'B.1.05');
@@ -893,7 +897,7 @@ test('popup: promocja usunięta w 2destate znika po świeżym odczycie (API i ma
   const lista = ['image', 'promoText'].map((k) => (pola[k] = element({ 'd2-ma-field': k }, k === 'image' ? 'IMG' : 'DIV')));
   const s = element({ 'd2-ma-popup': 'last-unit' });
   s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
-  const produkt = { id, name: 'B.1.05', rooms: 2, status: 'available', 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' };
+  const produkt = { id, name: 'B.1.05', rooms: 2, status: 'available', promo_active: true, 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' };
   const p1 = await start({ koperta: koperta([POWROT]), szablon: s });
   p1.klik(produkt);
   await p1.gotowe();
@@ -913,6 +917,31 @@ test('popup: promocja usunięta w 2destate znika po świeżym odczycie (API i ma
   const m2 = await powrot(m1, 2 * H, { szablon: s, produkty: [{ id, name: 'B.1.05', rooms: 2, status: 'available' }] });
   assert.equal(m2.popupy.length, 1);
   assert.equal(pola.promoText.style.display, 'none', 'mapa bez hasła = brak hasła');
+});
+
+test('popup: wiersz API bez fields nie czyści hasła ani obrazka; wiersz bez id zostawia zapis', async () => {
+  const id = '12345678-1234-4234-8234-123456789012';
+  const pola = {};
+  const lista = ['image', 'promoText', 'name'].map((k) => (pola[k] = element({ 'd2-ma-field': k }, k === 'image' ? 'IMG' : 'DIV')));
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
+  const produkt = { id, name: 'B.1.05', rooms: 2, status: 'available', promo_active: true, 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' };
+  const p1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  p1.klik(produkt);
+  await p1.gotowe();
+  const p2 = await powrot(p1, 2 * H, { mapa: false, szablon: s, api: () => [{ id, status: 'available', promo_active: true }] });
+  assert.equal(p2.popupy.length, 1);
+  assert.equal(pola.promoText.textContent, 'Rabat 5%', 'bez fields: nie wiemy, nie czyścimy');
+  assert.equal(pola.image.getAttribute('src'), 'https://cdn.example/a.jpg');
+  // Wiersz bez id: bez wyjątku, popup z zapisanego lokalu.
+  const m1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  m1.klik(produkt);
+  await m1.gotowe();
+  pola.name.textContent = '';
+  const m2 = await powrot(m1, 2 * H, { mapa: false, szablon: s, api: () => [{ status: 'sold' }] });
+  assert.equal(m2.popupy.length, 1);
+  assert.equal(pola.name.textContent, 'B.1.05');
+  assert.equal(m2.ostrzezenia.length, 0);
 });
 
 test('Lead bez kontaktu: lead → wyjście z grupy → nieodebrany telefon → powrót → e-mail, SMS po 15 min', async () => {
