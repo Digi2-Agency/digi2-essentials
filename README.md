@@ -1161,7 +1161,9 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   and 2) — the same millisecond is not "after". An event of a visit is always
   after the visit start (a view that opened it, a deep link buffered before the
   store opened), and a CRM result read at page load counts as just before it, so
-  "no answer → came back" works within one load. Counting triggers count views since then — a root counts the whole
+  "no answer → came back" works within one load. A condition or action reached by an event
+  is stamped with `max(event time, now)`, so the view that started a path is
+  never counted again by a trigger after that action. Counting triggers count views since then — a root counts the whole
   history.
 - **Same event, two triggers:** the firing set is decided on the state *before*
   the event, so a trigger armed by another trigger that fired on this very

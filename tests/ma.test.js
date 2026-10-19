@@ -874,3 +874,27 @@ test('U6: lead w tej samej milisekundzie co obejrzenie nie jest „po" nim', asy
   await env.gotowe();
   assert.equal(env.segmenty().length, 1);
 });
+
+test('U7: obejrzenie, które uruchomiło ścieżkę, nie liczy się do następnego wyzwalacza za akcją', async () => {
+  const sc = {
+    scenarioId: 'u7', revision: 1, active: true,
+    nodes: [
+      { id: 't1', type: 'trigger', when: { event: 'unit_view', unitIds: ['A_1'] } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'first' } },
+      { id: 't2', type: 'trigger', when: { event: 'type_view', rooms: 2, minCount: 2 } },
+      { id: 'a2', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'second' } },
+    ],
+    edges: [['t1', 'a1'], ['a1', 't2'], ['t2', 'a2']],
+  };
+  const env = await start({ koperta: koperta([sc]) });
+  // Pierwsze obejrzenie otwiera wizytę - jego czas jest podbity do visitStart + 1.
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['first'], 'po a1 było tylko jedno obejrzenie');
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_3'));
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['first', 'second']);
+});

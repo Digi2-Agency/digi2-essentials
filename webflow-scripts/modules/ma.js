@@ -810,6 +810,7 @@
         if (ctx) firing.push({ node: node, ctx: ctx });
       });
       firing.forEach(function (f) {
+        f.ctx.t = evt.t;
         _log('trigger → ' + sc.id + '/' + f.node.id, evt.type);
         done(st, f.node, f.ctx, evt.t);
         propagate(sc, st, f.node, f.ctx, pass, {});
@@ -817,8 +818,13 @@
     });
   }
 
+  // Krok zapisuje się nie wcześniej niż zdarzenie, które go uruchomiło. Czas
+  // zdarzenia bywa o 1 ms po now() (obejrzenie otwierające wizytę), a krok
+  // zapisany wcześniej niż ono policzyłby je następnemu wyzwalaczowi jako „po".
   function done(st, node, ctx, t) {
-    st.nodes[node.id] = { at: t != null ? t : now(), unit: ctx.unit || null, segment: ctx.segment || null };
+    var at = t != null ? t : now();
+    if (ctx.t != null && ctx.t > at) at = ctx.t;
+    st.nodes[node.id] = { at: at, unit: ctx.unit || null, segment: ctx.segment || null };
   }
 
   function propagate(sc, st, node, ctx, pass, seen) {
@@ -896,7 +902,7 @@
   }
 
   function runAction(sc, st, node, ctx, pass, seen) {
-    var c = { unit: ctx.unit || lastUnit(), segment: ctx.segment || null };
+    var c = { unit: ctx.unit || lastUnit(), segment: ctx.segment || null, t: ctx.t };
     // Reguła 6: pominięta akcja nie kończy gałęzi i nie czeka swojego opóźnienia.
     if (skippedByFrequency(st, node, c.unit)) {
       _log('skipped by frequency → ' + sc.id + '/' + node.id);
@@ -945,7 +951,7 @@
       var payload = { event: node.event, segment: segment, ma_scenario: sc.id };
       window.dataLayer = window.dataLayer || [];
       window.dataLayer.push(payload);
-      ctx = { unit: ctx.unit, segment: segment };
+      ctx = { unit: ctx.unit, segment: segment, t: ctx.t };
       state.lastSegment = segment;
       recordFrequency(st, node, ctx.unit);
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'datalayer', event: node.event, segment: segment });
