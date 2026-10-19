@@ -170,7 +170,8 @@
   var dueTimer = null;
   var writeChain = Promise.resolve();
   var booted = false;
-  var gtagConsent = {};      // ostatnie komendy gtag('consent', …) z dataLayer
+  var gtagConsent = {};      // komendy gtag('consent', …) z dataLayer: update, default, regionDenied
+  var revoked = false;       // odmowa w trakcie otwierania magazynu
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -537,7 +538,8 @@
   function intake(evt) {
     if (blocked) return;
     if (!tracking) {
-      if (buffer.length < MAX_BUFFER) buffer.push({ evt: evt, real: Date.now() });
+      // Zdarzenie sprzed zgody nie wraca, gdy zgoda przyjdzie w trakcie startu.
+      if (buffer.length < MAX_BUFFER) buffer.push({ evt: evt, real: Date.now(), consent: hasConsent() });
       return;
     }
     handle(evt);
@@ -1347,6 +1349,7 @@
   var highlighted = {};
   var hlQueue = [];
   var hlBusy = false;
+  var hlFloor = {};          // piętro na ekranie przy ostatnim podświetleniu, per mapa
 
   function nextFrame(fn) {
     if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(fn);
@@ -1363,19 +1366,31 @@
     if (!item) return;
     var I = imp();
     var map = I && I.instances && I.instances[item.map];
+    // Blokada przed wywołaniem: highlightObject potrafi synchronicznie zgłosić
+    // onFloorChange, a ten wraca tutaj.
+    hlBusy = true;
     // Piętro zmieniło się w trakcie kolejki - ten kształt już nie jest na ekranie.
     if (map && currentArtboard(map) === item.artboard) {
       try { I.highlightObject(item.map, item.title); } catch (e) {}
     }
-    hlBusy = true;
     nextFrame(function () { hlBusy = false; pumpHighlight(); });
   }
 
-  // Zmiana piętra gasi podświetlenia: po powrocie na piętro trzeba je nałożyć znowu.
+  // Zmiana piętra gasi podświetlenia: po powrocie na piętro trzeba je nałożyć
+  // znowu. Sam highlightObject też zgłasza onFloorChange (przełącza artboard
+  // nawet na tym samym piętrze) - liczy się tylko realna zmiana piętra mapy.
   function floorChanged() {
-    highlighted = {};
-    hlQueue = [];
-    highlightProfile();
+    var I = imp();
+    var moved = false;
+    Object.keys(hlFloor).forEach(function (mapName) {
+      var map = I && I.instances && I.instances[mapName];
+      if (currentArtboard(map) === hlFloor[mapName]) return;
+      moved = true;
+      delete hlFloor[mapName];
+      Object.keys(highlighted).forEach(function (k) { if (k.indexOf(mapName + '|') === 0) delete highlighted[k]; });
+      hlQueue = hlQueue.filter(function (q) { return q.map !== mapName; });
+    });
+    if (moved) highlightProfile();
   }
   function highlightProfile() {
     if (!tracking || _cfg('d2-ma-highlight') === null) return;
@@ -1389,6 +1404,7 @@
       var key = mapName + '|' + current + '|' + rooms;
       if (!current || highlighted[key]) return;
       highlighted[key] = true;
+      hlFloor[mapName] = current;
       var byId = {};
       products.forEach(function (p) { byId[String(p.id)] = p; });
       artboardsOf(map).forEach(function (board) {
@@ -1412,11 +1428,16 @@
 
   function onDataLayer(entry) {
     if (!entry || typeof entry !== 'object') return;
-    if (entry[0] === 'consent') { onConsentCommand(entry); return; }
+    if (isGtagCommand(entry)) { onConsentCommand(entry); return; }
     if (typeof entry.event !== 'string') return;
     // Baner z szablonu GTM zmienia zgodę bez komendy gtag - widać ją dopiero
-    // w stanie tagu Google, więc sprawdzamy go przy każdym zdarzeniu.
-    if (blocked && googleTagConsent() === 'granted') consentChanged(true);
+    // w stanie tagu Google, więc sprawdzamy go przy każdym zdarzeniu. Komenda
+    // update z dataLayer ma pierwszeństwo, a stan tagu może za nią nie nadążać.
+    if (!gtagConsent.update) {
+      var tag = googleTagConsent();
+      if (blocked && tag === 'granted') consentChanged(true);
+      else if ((tracking || opening) && tag === 'denied') consentChanged(false);
+    }
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
       var unit = from3destate(entry);
@@ -1594,17 +1615,31 @@
   }
 
   // gtag('consent', 'default'|'update', {...}) wkłada do dataLayer obiekt
-  // arguments: [0] 'consent', [1] rodzaj, [2] stan kategorii.
+  // arguments: [0] 'consent', [1] rodzaj, [2] stan kategorii. Zwykłej tablicy
+  // ['consent', …] tag Google nie wykonuje, więc i my jej nie liczymy.
+  function isGtagCommand(entry) {
+    return Object.prototype.toString.call(entry) === '[object Arguments]' && entry[0] === 'consent';
+  }
+
   function onConsentCommand(args) {
     var kind = args[1], st = args[2];
     if ((kind !== 'default' && kind !== 'update') || !st || typeof st !== 'object') return;
     var cat = consentCategory();
-    if (st[cat] !== 'granted' && st[cat] !== 'denied') return;
-    // Domyślna wartość nie nadpisuje decyzji, którą baner już zgłosił.
-    if (kind === 'default' && gtagConsent.update) return;
-    gtagConsent[kind] = st[cat];
-    if (kind === 'update') consentChanged(st[cat] === 'granted');
-    else if (st[cat] === 'granted' && blocked) consentChanged(true);
+    var v = st[cat];
+    if (v !== 'granted' && v !== 'denied') return;
+    if (kind === 'update') {
+      gtagConsent.update = v;
+      consentChanged(v === 'granted');
+      return;
+    }
+    // default z region dotyczy tylko tamtych krajów; nie wiemy, gdzie jest
+    // odwiedzający, więc liczy się wyłącznie jako odmowa.
+    if (st.region != null) {
+      if (v === 'denied') gtagConsent.regionDenied = true;
+      return;
+    }
+    gtagConsent['default'] = v;
+    if (v === 'granted' && blocked && hasConsent()) consentChanged(true);
   }
 
   // Stan zgody tagu Google (gtag.js / GTM), także ustawiony szablonem CMP.
@@ -1617,12 +1652,16 @@
     } catch (x) { return null; }
   }
 
-  // Źródło Consent Mode na stronie: dataLayer i tag Google, a gdy ich brak -
-  // moduł google biblioteki albo jego zapis w localStorage.
+  // Kolejność źródeł Consent Mode: update z dataLayer rozstrzyga, potem stan
+  // tagu Google (liczy region), potem default bez region, a default z region
+  // tylko jako odmowa. Gdy żadne nie zna kategorii - moduł google biblioteki
+  // albo jego zapis w localStorage.
   function hasConsent() {
-    var dl = gtagConsent.update || gtagConsent['default'] || null;
+    if (gtagConsent.update) return gtagConsent.update === 'granted';
     var tag = googleTagConsent();
-    if (dl || tag) return dl === 'granted' || tag === 'granted';
+    if (tag) return tag === 'granted';
+    if (gtagConsent['default']) return gtagConsent['default'] === 'granted';
+    if (gtagConsent.regionDenied) return false;
     var c = null;
     try {
       if (window.digi2.modules && window.digi2.modules.check && window.digi2.modules.check('google')) {
@@ -1635,8 +1674,12 @@
   }
 
   function consentChanged(granted) {
+    if (granted) revoked = false;
     if (granted && blocked) { blocked = false; openStore(); }
-    if (!granted && tracking && consentRequired(envelope)) wipe('consent withdrawn');
+    if (!granted && consentRequired(envelope)) {
+      if (tracking) wipe('consent withdrawn');
+      else if (opening) revoked = true;
+    }
   }
 
   // Zgoda wymagana, a jej nie ma: przestajemy i kasujemy to, co było zebrane
@@ -1696,12 +1739,21 @@
   function openStore() {
     if (tracking) return Promise.resolve();
     if (opening) return opening;
+    revoked = false;
     store = window.digi2._maStore || idbStore() || memoryStore();
     opening = store.load().then(null, function (e) {
       _log('IndexedDB unavailable, profile kept in memory', e);
       store = memoryStore();
       return store.load();
     }).then(function (data) {
+      if (revoked) {
+        // Odmowa przyszła, gdy baza się otwierała.
+        opening = null;
+        revoked = false;
+        wipe('consent withdrawn while opening');
+        _emit('ma:ready', { tracking: false });
+        return;
+      }
       views = (data.views || []).slice().sort(function (a, b) { return a.ts - b.ts; });
       state = data.state || freshState();
       if (!state.scenarios) state.scenarios = {};
@@ -1715,8 +1767,12 @@
       if (crm) dispatch(crm);
       if (visit) dispatch(visit);
       var queued = buffer;
+      var required = consentRequired(envelope);
       buffer = [];
-      queued.forEach(function (q) { handle(q.evt, q.real + (state.shift || 0)); });
+      queued.forEach(function (q) {
+        if (required && !q.consent) return;
+        handle(q.evt, q.real + (state.shift || 0));
+      });
       runDue();
       afterChange();
       highlightProfile();
@@ -1863,7 +1919,7 @@
         _emit('ma:change', { cleared: true });
       });
     },
-    highlight: function () { highlighted = {}; hlQueue = []; highlightProfile(); },
+    highlight: function () { highlighted = {}; hlFloor = {}; hlQueue = []; highlightProfile(); },
     _real: true
   };
 

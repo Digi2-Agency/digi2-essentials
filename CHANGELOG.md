@@ -39,10 +39,13 @@ Co robi:
   po jednym na klatkę animacji. Po zmianie piętra podświetlenie wraca.
 - **Zgody:** gdy koperta ma `storage.consentRequired: true` **albo** tag ma
   `d2-ma-consent-required="true"`, bez zgody nic nie jest zapisywane i żadna
-  akcja nie rusza. Wycofanie zgody kasuje bazę. Zgoda jest czytana z każdego
-  banera, który mówi Consent Mode: z komend `gtag('consent', …)` w `dataLayer`
-  (także tych sprzed startu modułu), ze stanu tagu Google (szablon CMP w GTM)
-  albo z modułu `d2-gtm`. Demo na digi2.agency działa z banerem zgód (decyzja
+  akcja nie rusza, a obejrzenia sprzed zgody przepadają. Wycofanie zgody
+  kasuje bazę od razu, w tej samej wizycie. Zgoda jest czytana z każdego
+  banera, który mówi Consent Mode. Rozstrzyga pierwsze źródło, które zna
+  kategorię: `gtag('consent', 'update', …)` w `dataLayer` (także sprzed startu
+  modułu), potem stan tagu Google (szablon CMP w GTM), potem `default` bez
+  `region`, a `default` z `region` liczy się tylko jako odmowa. Na końcu moduł
+  `d2-gtm`. Demo na digi2.agency działa z banerem zgód (decyzja
   Piotra z 19.10.2026). `demoState` z koperty z `consentRequired: false` działa
   po zgodzie.
 

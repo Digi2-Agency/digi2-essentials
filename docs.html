@@ -2614,11 +2614,14 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     <h3>Where consent comes from</h3>
     <table>
       <tr><th>Source</th><th>When it applies</th></tr>
-      <tr><td><code>gtag('consent', 'default' | 'update', {...})</code> in the <code>dataLayer</code></td><td>Any banner that calls gtag, including commands pushed before the module started. An <code>update</code> wins over a <code>default</code>. An <code>update</code> that denies the category deletes the database</td></tr>
-      <tr><td>Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM. Re-checked on every <code>dataLayer</code> event, so a grant shows up at the CMP's next event. A denial takes effect on the next page load</td></tr>
-      <tr><td>Module <code>d2-gtm</code> (<code>digi2.google.consent</code>, <code>consent:updated</code>)</td><td>Only when neither source above knows the category</td></tr>
+      <tr><td>1. <code>gtag('consent', 'update', {...})</code> in the <code>dataLayer</code></td><td>Decides. Includes commands pushed before the module started. A denial deletes the database</td></tr>
+      <tr><td>2. Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM; already accounts for <code>region</code>. Re-checked on every <code>dataLayer</code> event, so a grant or a denial applies in the same visit</td></tr>
+      <tr><td>3. <code>gtag('consent', 'default', {...})</code> without <code>region</code></td><td>When neither source above knows the category</td></tr>
+      <tr><td>4. <code>default</code> with <code>region</code></td><td>Counts only as a denial; a regional grant is never taken</td></tr>
+      <tr><td>5. Module <code>d2-gtm</code> (<code>digi2.google.consent</code>, <code>consent:updated</code>)</td><td>Only when no source above knows the category</td></tr>
     </table>
-    <p>Consent is required when the envelope says <code>consentRequired: true</code> <em>or</em> the tag says <code>d2-ma-consent-required="true"</code>. The attribute can force consent but never switch it off. <code>demoState</code> follows the envelope only, so a demo envelope with <code>false</code> plus the attribute waits for the banner, then runs with the demo data. Before consent nothing is stored and no action runs. Events seen while waiting are dropped.</p>
+    <p class="muted">Only real <code>gtag()</code> commands count (an <code>arguments</code> object). A plain array <code>['consent', …]</code> is ignored, as the Google tag ignores it. A denial that arrives while the database is opening keeps it closed.</p>
+    <p>Consent is required when the envelope says <code>consentRequired: true</code> <em>or</em> the tag says <code>d2-ma-consent-required="true"</code>. The attribute can force consent but never switch it off. <code>demoState</code> follows the envelope only, so a demo envelope with <code>false</code> plus the attribute waits for the banner, then runs with the demo data. Before consent nothing is stored and no action runs. Events seen while waiting are dropped, including those seen while the envelope was loading.</p>
 
     <h3>Where unit views come from</h3>
     <table>

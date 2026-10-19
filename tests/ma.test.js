@@ -475,6 +475,55 @@ test('mapa: podświetla lokale z bieżącego piętra po jednym na klatkę, bez g
   assert.deepEqual(wywolania, ['A1', 'A2', 'A4']);
 });
 
+test('mapa: highlightObject zgłaszający onFloorChange na tym samym piętrze nie zapętla kolejki', async () => {
+  const wolny = (id) => ({ id, name: id, rooms: 2, status: 'available' });
+  const wywolania = [];
+  const mapa = {
+    artboardController: { currentArtboardId: 'p1' },
+    store: { state: { artboards: [{ id: 'p1', children: [
+      { title: 'A1', assigned_product: 'u1' }, { title: 'A2', assigned_product: 'u2' }, { title: 'A3', assigned_product: 'u3' },
+    ] }] } },
+    products: [wolny('u1'), wolny('u2'), wolny('u3')],
+  };
+  let env;
+  // Jak imagemappro: przełącza artboard (tu: ten sam) i od razu zgłasza zmianę piętra.
+  const imp = { instances: { mapa }, highlightObject(m, t) { wywolania.push(t); env.zmianaPietra(); } };
+  env = await start({ koperta: koperta([]), cfg: { 'd2-ma-highlight': '' }, imp });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  env.ma.highlight();
+  env.klatka(); env.klatka(); env.klatka(); env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'A2', 'A3'], 'każdy kształt raz, w kolejnych klatkach');
+});
+
+test('mapa: highlightObject przełączający piętro synchronicznie nie odpala następnego kształtu w tej samej klatce', async () => {
+  const wolny = (id) => ({ id, name: id, rooms: 2, status: 'available' });
+  const wywolania = [];
+  const mapa = {
+    artboardController: { currentArtboardId: 'p1' },
+    store: { state: { artboards: [
+      { id: 'p1', children: [{ title: 'A1', assigned_product: 'u1' }] },
+      { id: 'p2', children: [{ title: 'B1', assigned_product: 'u2' }] },
+    ] } },
+    products: [wolny('u1'), wolny('u2')],
+  };
+  let env;
+  const imp = {
+    instances: { mapa },
+    highlightObject(m, t) {
+      wywolania.push(t);
+      if (t === 'A1') { mapa.artboardController.currentArtboardId = 'p2'; env.zmianaPietra(); }
+    },
+  };
+  env = await start({ koperta: koperta([]), cfg: { 'd2-ma-highlight': '' }, imp });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  env.ma.highlight();
+  assert.deepEqual(wywolania, ['A1'], 'B1 czeka na następną klatkę');
+  env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'B1']);
+});
+
 // gtag() wkłada do dataLayer obiekt arguments, nie tablicę.
 function gtag() { return arguments; }
 
@@ -537,6 +586,68 @@ test('Consent Mode z banera: komendy gtag w dataLayer odblokowują i wycofują',
   p2.dataLayer.push(unitOpen('A_2'));
   await p2.gotowe();
   assert.equal(p2._dysk.views.length, 1, 'zgoda nadana w trakcie wizyty');
+});
+
+test('Consent Mode: kolejność źródeł — update, tag Google, default, default z region tylko jako odmowa', async () => {
+  const k = koperta([], { storage: { consentRequired: true } });
+  const zapisuje = async (opts) => {
+    const env = await start(Object.assign({ koperta: k }, opts));
+    env.dataLayer.push(unitOpen('A_1'));
+    await env.gotowe();
+    return (env._dysk.views || []).length === 1;
+  };
+  const ics = (v) => ({ ics: { entries: { analytics_storage: { default: v } } } });
+  // update z dataLayer rozstrzyga, nawet wbrew stanowi tagu Google, który za nim nie nadąża.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'update', { analytics_storage: 'granted' })], googleTag: ics(false) }), true);
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })], googleTag: ics(true) }), false);
+  // Bez update: tag Google przed default.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied' })], googleTag: ics(true) }), true);
+  // default z region dla EOG + default granted: tag Google (liczy region) ma odmowę → odmowa.
+  // (osobna tablica na każde wejście: moduł podpina się pod dataLayer raz)
+  const regiony = () => [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL', 'DE'] }), gtag('consent', 'default', { analytics_storage: 'granted' })];
+  assert.equal(await zapisuje({ dataLayer: regiony(), googleTag: ics(false) }), false);
+  // Bez tagu Google: default bez region rozstrzyga.
+  assert.equal(await zapisuje({ dataLayer: regiony() }), true);
+  // Sam default z region: odmowa liczy się, zgoda nie.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), false);
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted', region: ['PL'] })] }), false);
+  // Zwykła tablica to nie komenda gtag - tag Google jej nie wykona.
+  assert.equal(await zapisuje({ dataLayer: [['consent', 'update', { analytics_storage: 'granted' }]] }), false);
+});
+
+test('Consent Mode z szablonu CMP: odmowa w stanie tagu Google kasuje bazę w tej samej wizycie', async () => {
+  const tag = { ics: { entries: { analytics_storage: { default: false, update: true } } } };
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), googleTag: tag });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env._dysk.views.length, 1);
+  tag.ics.entries.analytics_storage.update = false;
+  env.dataLayer.push({ event: 'cookie_consent_update' });
+  await env.gotowe();
+  assert.equal(env._dysk.cleared, 1, 'odmowa z szablonu kasuje bazę od razu');
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.ok(!env._dysk.views.length);
+});
+
+test('Consent Mode: odmowa w trakcie otwierania bazy nie otwiera jej', async () => {
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }) });
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await env.gotowe();
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.ok(!(env._dysk.views || []).length);
+  assert.equal(env.ma.profile(), null);
+});
+
+test('Consent Mode: obejrzenie sprzed zgody nie wraca, gdy zgoda przyjdzie w trakcie startu', async () => {
+  const dl = [unitOpen('A_1'), gtag('consent', 'update', { analytics_storage: 'granted' }), unitOpen('A_2')];
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), dataLayer: dl });
+  assert.deepEqual(env._dysk.views.map((v) => v.unit.unitId), ['A_2'], 'tylko to, co po zgodzie');
+  // Bez wymaganej zgody bufor wraca w całości.
+  const p2 = await start({ koperta: koperta([]), dataLayer: [unitOpen('A_1')] });
+  assert.equal(p2._dysk.views.length, 1);
 });
 
 test('Consent Mode z szablonu CMP w GTM: stan tagu Google odblokowuje', async () => {

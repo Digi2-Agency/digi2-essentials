@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 34.2 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 34.8 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **193.6 KB min** / **57.5 KB** gzipped.
+Total (all modules): **315.0 KB min** / **100.0 KB** gzipped.
 
 ---
 
@@ -1091,26 +1091,33 @@ The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
 
 Consent is read from whatever banner the page has, as long as it speaks
-Consent Mode, in this order:
+Consent Mode. The first source that knows the category decides:
 
-1. `gtag('consent', 'default' | 'update', {...})` commands in the `dataLayer`,
-   including ones pushed before the module started (a CMP restoring a saved
-   choice). An `update` wins over a `default`. An `update` that denies the
-   category deletes the `d2ma` database.
-2. The Google tag's own consent state (`google_tag_data.ics`), which is where
-   a CMP template inside GTM writes without a `gtag` command. It is checked
-   again on every `dataLayer` event, so a grant made this way is picked up at
-   the CMP's next event. A denial made this way takes effect on the next page
-   load.
-3. Only when neither of those knows the category: the `google` module
+1. A `gtag('consent', 'update', {...})` command in the `dataLayer`, including
+   one pushed before the module started (a CMP restoring a saved choice). An
+   `update` that denies the category deletes the `d2ma` database.
+2. The Google tag's own consent state (`google_tag_data.ics`, which already
+   accounts for `region`). This is where a CMP template inside GTM writes
+   without a `gtag` command. It is checked again on every `dataLayer` event,
+   so a grant or a denial made this way applies at the CMP's next event, in
+   the same visit.
+3. A `gtag('consent', 'default', {...})` without `region`.
+4. A `default` with `region` counts only as a denial. The module doesn't know
+   the visitor's country, so it never takes a regional grant.
+5. Only when none of those knows the category: the `google` module
    (`d2-gtm`), meaning `digi2.google.consent` and its `consent:updated` event.
+
+Only real `gtag()` commands count (an `arguments` object). A plain array
+`['consent', …]` is ignored, because the Google tag doesn't run it either. A
+denial that arrives while the database is opening keeps it closed.
 
 Either an envelope with `consentRequired: true` or the attribute
 `d2-ma-consent-required="true"` makes consent required. The attribute can
 force consent but never switch it off. `demoState` follows only the envelope,
 so a demo envelope with `false` plus the attribute `"true"` waits for the
 banner and then runs with the demo data. Before consent nothing is stored and
-no action runs. Events seen while waiting are dropped, not replayed.
+no action runs. Events seen while waiting are dropped, not replayed, including
+ones seen while the envelope was loading.
 
 > **On a client site always put `d2-ma-consent-required="true"` on the tag.**
 > Without the attribute the envelope decides, and an envelope published with
@@ -1258,7 +1265,9 @@ screen only, never groups, once per artboard + room count. Back-to-back calls
 drop shapes, so the module queues them one `requestAnimationFrame` apart and
 drops queued shapes whose artboard is no longer on screen. A floor change
 clears highlights (so does hovering a shape), and the module puts them back on
-`onFloorChange`. The popup CTA for a 2destate unit with the map on the page calls
+`onFloorChange`, but only when the map's artboard actually changed:
+`highlightObject` fires `onFloorChange` itself, even on the same floor, and
+re-applying on that would loop. The popup CTA for a 2destate unit with the map on the page calls
 `highlightObject` + `showTooltip` instead of navigating; the link it carries
 (`?d2-unit=<id>`) does the same after load on another page.
 
