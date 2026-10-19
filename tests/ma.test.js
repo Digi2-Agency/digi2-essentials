@@ -1449,10 +1449,12 @@ test('form_abandon: fokus bez wysłania → po idleSeconds; tylko id formularza,
   env.okno('pagehide');
   await env.gotowe();
   assert.equal(env.segmenty().length, 1, 'raz na formularz na wizytę');
+  const p2 = await powrot(env, 5 * MIN);
+  assert.equal(p2.segmenty().length, 0, 'wyjście po porzuceniu w tej wizycie nie liczy się drugi raz');
   void form;
 });
 
-test('form_abandon: wysłany formularz się nie liczy; pagehide liczy; d2-ma-ignore i formIds', async () => {
+test('form_abandon: wysłany formularz się nie liczy; d2-ma-ignore i formIds', async () => {
   const k = koperta([scenariusz('porzucony', { event: 'form_abandon', formIds: ['kontakt', 'ukryty'] },
     [Object.assign(DL('ma_form_abandon'), { frequency: 'once_per_days:0' })])]);
   const env = await start({ koperta: k });
@@ -1463,6 +1465,7 @@ test('form_abandon: wysłany formularz się nie liczy; pagehide liczy; d2-ma-ign
   env.okno('pagehide');
   await env.gotowe();
   assert.equal(env.segmenty().length, 0, 'wysłany');
+  assert.equal((await powrot(env, 5 * MIN)).segmenty().length, 0, 'wysłany — także po wyjściu');
 
   const env2 = await start({ koperta: k });
   const inny = formularz({ id: 'newsletter' });
@@ -1471,9 +1474,43 @@ test('form_abandon: wysłany formularz się nie liczy; pagehide liczy; d2-ma-ign
   env2.dom('focusin', { target: inny.pole });
   env2.dom('focusin', { target: ign.pole });
   env2.dom('focusin', { target: b.pole });
+  await env2.minie(61000);
+  assert.deepEqual(env2.segmenty().map((e) => e.form_id), ['kontakt'], 'tylko formIds, bez d2-ma-ignore');
   env2.okno('pagehide');
   await env2.gotowe();
-  assert.deepEqual(env2.segmenty().map((e) => e.form_id), ['kontakt'], 'tylko formIds, bez d2-ma-ignore');
+  assert.deepEqual((await powrot(env2, 5 * MIN)).segmenty().map((e) => e.form_id), [], 'po wyjściu też tylko formIds');
+});
+
+test('form_abandon przy pagehide: tylko fakt w d2ma, akcje przy następnej odsłonie (≤ 24 h), nic w chwili wyjścia', async () => {
+  const k = koperta([scenariusz('porzucony', { event: 'form_abandon' },
+    [DL('ma_form_abandon'), { do: 'webhook', channel: 'email', testOnly: true }])]);
+  const env = await start({ koperta: k });
+  const { pole, form } = formularz({ 'data-name': 'Kontakt' });
+  env.dom('focusin', { target: pole });
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0, 'bez dataLayer przy wyjściu');
+  assert.equal(env.webhooki.length, 0, 'bez webhooka przy wyjściu');
+  const fakt = env._dysk.state.formExits;
+  assert.equal(fakt.length, 1);
+  assert.deepEqual([fakt[0].formId, fakt[0].name, fakt[0].fields], ['kontakt', 'Kontakt', 1]);
+  assert.ok(!JSON.stringify(fakt).includes('jan@') && !JSON.stringify(fakt).includes('"email"'));
+
+  const p2 = await powrot(env, 10 * MIN);
+  assert.deepEqual(p2.segmenty().map((e) => e.form_id), ['kontakt'], 'na następnej odsłonie');
+  assert.equal(p2.webhooki.length, 1);
+  assert.deepEqual([...(p2._dysk.state.formExits || [])], [], 'fakt zużyty');
+  const p3 = await powrot(p2, 10 * MIN);
+  assert.equal(p3.segmenty().length, 0, 'raz');
+
+  // Starszy niż 24 h przepada.
+  const e2 = await start({ koperta: k });
+  e2.dom('focusin', { target: formularz().pole });
+  e2.okno('pagehide');
+  await e2.gotowe();
+  const late = await powrot(e2, 25 * H);
+  assert.equal(late.segmenty().length, 0);
+  void form;
 });
 
 test('content: tekst z polami w [d2-ma-slot] przez textContent; brak wartości = bez zmiany; Wyczyść przywraca', async () => {
@@ -1527,7 +1564,8 @@ test('map_mark: ranking z profilu bez sprzedanych; markProducts, a bez niego pi�
   env.dataLayer.push(unitOpen('X_2', { rooms: 2, floor: 1 }));
   await env.gotowe();
   assert.deepEqual(wywolania, ['piętro p1', 'A4'], 'najlepszy: 2 pokoje i 1. piętro, bez dymka');
-  assert.deepEqual([...env.zdarzenia['ma:action'].find((a) => a.do === 'map_mark').units], ['u4', 'u5'], 'u2 sprzedany odpada');
+  assert.deepEqual([...env.zdarzenia['ma:action'].find((a) => a.do === 'map_mark').units], ['u4', 'u3'],
+    'u2 sprzedany odpada; w grupie kolejność z getProducts(), także zarezerwowany');
 
   const oznaczone = [];
   const env2 = await start({ koperta: k, produkty, imp });
@@ -1535,7 +1573,18 @@ test('map_mark: ranking z profilu bez sprzedanych; markProducts, a bez niego pi�
   env2.dataLayer.push(unitOpen('X_1', { rooms: 2, floor: 1 }));
   env2.dataLayer.push(unitOpen('X_2', { rooms: 2, floor: 1 }));
   await env2.gotowe();
-  assert.deepEqual(oznaczone, [['mapa', ['u4', 'u5'], 'd2-preferred']]);
+  assert.deepEqual(oznaczone, [['mapa', ['u4', 'u3'], 'd2-preferred']]);
+
+  // className z prefiksem imp- (np. imp-object-hidden ukryłby lokale) albo d2-ma- → domyślna.
+  for (const zla of ['imp-object-hidden', 'd2-ma-x']) {
+    const ozn = [];
+    const kz = koperta([scenariusz('mapa', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'map_mark', by: 'rooms', className: zla }])]);
+    const e = await start({ koperta: kz, produkty, imp });
+    e.window.d2estate.markProducts = (m, ids, o) => { ozn.push(o.className); return 1; };
+    e.dataLayer.push(unitOpen('X_1', { rooms: 2, floor: 1 }));
+    await e.gotowe();
+    assert.deepEqual(ozn, ['d2-preferred'], zla);
+  }
 });
 
 test('map_mark: strona bez 2destate — pominięty; mapa w trakcie ładowania — po onMapLoad', async () => {
@@ -1557,45 +1606,6 @@ test('map_mark: strona bez 2destate — pominięty; mapa w trakcie ładowania �
   assert.deepEqual(oznaczone, [['u9']], 'po onMapLoad');
   env.mapaGotowa();
   assert.equal(oznaczone.length, 1, 'raz');
-});
-
-test('kanał via "digi2": POST na digi2.app/api/ma/channel/<site>, bez adresu z koperty; via make tylko hook.eu1.make.com; cooldown', async () => {
-  const k = koperta([scenariusz('handlowiec', { event: 'lead' },
-    [{ do: 'webhook', channel: 'sales_notify', template: 'lead-na-stronie', testOnly: true, cooldownMinutes: 1440 }])],
-  { channels: { sales_notify: { via: 'digi2', webhook: 'https://evil.example/x' }, email: { via: 'make', webhook: 'https://hook.example.com/x' } } });
-  const env = await start({ koperta: k, zgoda: { analytics_storage: 'granted' } });
-  env.dataLayer.push(unitOpen('A_1'));
-  env.dataLayer.push({ event: 'generate_lead', email: 'jan@example.com' });
-  await env.gotowe();
-  assert.equal(env.webhooki.length, 1);
-  assert.equal(env.webhooki[0].url, 'https://digi2.app/api/ma/channel/osiedle-demo');
-  const b = env.webhooki[0].body;
-  assert.equal(b.channel, 'sales_notify');
-  assert.equal(b.testOnly, true);
-  assert.ok(!JSON.stringify(b).includes('jan@'), 'bez danych formularza');
-  // Drugi lead w ciągu doby: cooldown.
-  env.ma.lead();
-  await env.minie(2 * H);
-  env.dataLayer.push({ event: 'generate_lead' });
-  await env.gotowe();
-  assert.equal(env.webhooki.length, 1, 'cooldownMinutes 1440');
-
-  const k2 = koperta([scenariusz('mail', { event: 'lead' }, [{ do: 'webhook', channel: 'email', testOnly: true }])],
-    { channels: { email: { via: 'make', webhook: 'https://hook.example.com/x' } } });
-  const env2 = await start({ koperta: k2 });
-  env2.dataLayer.push({ event: 'generate_lead' });
-  await env2.gotowe();
-  assert.equal(env2.webhooki.length, 0, 'via make spoza hook.eu1.make.com');
-});
-
-test('formularz testowy: [d2-ma-test-lead] dostaje visitorId po zgodzie, po wycofaniu pusty', async () => {
-  const pole = element({ 'd2-ma-test-lead': '', type: 'hidden', name: 'visitor' }, 'INPUT');
-  const env = await start({ koperta: koperta([scenariusz('x', { event: 'exit_intent' }, [DL('ma_exit_intent')])],
-    { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, elementy: [pole] });
-  assert.equal(pole.value, env.ma.profile().visitorId);
-  env.zgoda({ analytics_storage: 'denied' });
-  await env.gotowe();
-  assert.equal(pole.value, '');
 });
 
 test('minScript wyższy niż ma.4 ostrzega, scenariusze bez nowych węzłów działają', async () => {
@@ -1635,4 +1645,101 @@ test('§13.8.1 test zgodności: return_visit → popup i → engagement (utm) �
     wyniki.push(JSON.stringify([p1.segmenty(), p1.popupy, p2.segmenty(), p2.popupy]));
   }
   assert.equal(wyniki[0], wyniki[1]);
+});
+
+test('content: roomsLabel z odmianą, pricePerSqm; pole spoza §13.9.2 albo unit.image w tekście = węzeł pominięty', async () => {
+  const slot = element({ 'd2-ma-slot': 's' }, 'P');
+  const k = (text) => koperta([scenariusz('t', { event: 'unit_view' }, [{ do: 'content', slot: 's', text, frequency: 'once_per_days:0' }])]);
+  for (const [rooms, label] of [[1, '1 pokój'], [2, '2 pokoje'], [4, '4 pokoje'], [5, '5 pokoi'], [12, '12 pokoi'], [14, '14 pokoi'], [22, '22 pokoje'], [25, '25 pokoi']]) {
+    const env = await start({ koperta: k('{{unit.roomsLabel}} · {{unit.pricePerSqm}}'), elementy: [slot] });
+    env.dataLayer.push(unitOpen('A_' + rooms, { rooms }));
+    await env.gotowe();
+    assert.equal(slot.textContent.replace(/\s/g, ' '), label + ' · 16 634 zł/m²');
+  }
+  const pref = await start({ koperta: k('{{pref.roomsLabel}} dla Ciebie'), elementy: [slot] });
+  pref.dataLayer.push(unitOpen('B_1', { rooms: 3 }));
+  await pref.gotowe();
+  assert.equal(slot.textContent, '3 pokoje dla Ciebie');
+  for (const zly of ['{{unit.image}}', '{{unit.promoText}}', '{{unit.cokolwiek}}']) {
+    const env = await start({ koperta: k('Lokal ' + zly) });
+    assert.ok(env.ostrzezenia.some((w) => w.includes('field outside §13.9.2')), zly);
+  }
+});
+
+test('content.templateId z templates.content[] koperty; wbudowany jako zapas; nieznany = węzeł pominięty', async () => {
+  const slot = element({ 'd2-ma-slot': 's' }, 'P');
+  const sc = (templateId) => scenariusz('t-' + templateId, { event: 'unit_view' }, [{ do: 'content', slot: 's', templateId }]);
+  const k = koperta([sc('naglowek-2')], { templates: { content: [
+    { templateId: 'naglowek-2', text: '{{unit.roomsLabel}} — zobacz {{unit.name}}' },
+    { templateId: 'zly', text: '{{unit.image}}' },
+  ] } });
+  const env = await start({ koperta: k, elementy: [slot] });
+  env.dataLayer.push(unitOpen('A_7'));
+  await env.gotowe();
+  assert.equal(slot.textContent, '2 pokoje — zobacz 7');
+  assert.ok(env.ostrzezenia.some((w) => w.includes('content template "zly" is not valid')));
+
+  const zapas = await start({ koperta: koperta([sc('last-unit')]), elementy: [slot] });
+  zapas.dataLayer.push(unitOpen('A_8'));
+  await zapas.gotowe();
+  assert.equal(slot.textContent, 'Wróć do lokalu 8');
+
+  const brak = await start({ koperta: koperta([sc('nie-ma')]) });
+  assert.ok(brak.ostrzezenia.some((w) => w.includes('templateId "nie-ma" is not in templates.content')));
+});
+
+test('Wyczyść zeruje sygnały odsłony: engagement może odpalić znowu, timery formularzy nie wiszą', async () => {
+  const k = koperta([scenariusz('z', { event: 'engagement', minSeconds: 10 }, [DL('ma_engaged')])]);
+  const env = await start({ koperta: k });
+  await env.minie(11000);
+  assert.equal(env.segmenty().length, 1);
+  await env.ma.clear();
+  env.window.pageYOffset = 10;
+  env.okno('scroll');
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 2, 'po Wyczyść profil od zera, wyzwalacz znowu');
+});
+
+test('content pominięty przez frequency: ma_content za nim nadal zna slot', async () => {
+  const slot = element({ 'd2-ma-slot': 'hero' }, 'H1');
+  const k = koperta([scenariusz('n', { event: 'unit_view' }, [
+    { do: 'content', slot: 'hero', text: '{{unit.name}}' },
+    Object.assign(DL('ma_content'), { frequency: 'once_per_days:0' }),
+  ])]);
+  const env = await start({ koperta: k, elementy: [slot] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => e.slot), ['hero', 'hero']);
+});
+
+test('kanał z via (§13.10) strona pomija — MA-D30; sales_notify nieznany; cooldownMinutes na webhooku v0', async () => {
+  const k = koperta([scenariusz('kanaly', { event: 'lead' }, [
+    { do: 'webhook', channel: 'sms', testOnly: true },
+    { do: 'webhook', channel: 'ai_call', testOnly: true },
+    { do: 'webhook', channel: 'email', testOnly: true, cooldownMinutes: 1440 },
+  ]), scenariusz('handlowiec', { event: 'lead' }, [{ do: 'webhook', channel: 'sales_notify', testOnly: true }])],
+  { channels: {
+    email: { webhook: 'https://hook.eu1.make.com/demo-email' },
+    sms: { via: 'digi2', webhook: 'https://hook.eu1.make.com/sms' },
+    ai_call: { via: 'make', webhook: 'https://hook.eu1.make.com/call', temporary: true },
+  } });
+  const env = await start({ koperta: k });
+  env.dataLayer.push({ event: 'generate_lead', email: 'jan@example.com' });
+  await env.gotowe();
+  assert.deepEqual(env.webhooki.map((w) => w.url), ['https://hook.eu1.make.com/demo-email'], 'tylko kanał v0 bez via');
+  assert.ok(!JSON.stringify(env.webhooki).includes('jan@'));
+  assert.ok(env.ostrzezenia.some((w) => w.includes('"sms" has via "digi2"')));
+  assert.ok(env.ostrzezenia.some((w) => w.includes('"ai_call" has via "make"')));
+  assert.ok(env.ostrzezenia.some((w) => w.includes('unknown channel "sales_notify"')));
+  // Drugi lead w ciągu doby: cooldown.
+  await env.minie(2 * H);
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 1, 'cooldownMinutes 1440');
+  await env.minie(23 * H);
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 2, 'po dobie znowu');
 });

@@ -53,8 +53,6 @@
  *   [d2-ma-simulate-return]       Button — end the visit as if afterHours had passed
  *   [d2-ma-slot="hero-title"]     Text the content action may replace (textContent only)
  *   form[d2-ma-ignore]            Never counted by form_abandon
- *   [d2-ma-test-lead]             Test form (§13.8.4): an input gets visitorId as value,
- *                                 a form gets a hidden d2_ma_visitor_id field
  *
  * ─── Contract v1 nodes (ma.4, §13.8) — listening only when the envelope uses them
  *
@@ -64,13 +62,14 @@
  *                                 deepest scroll; optional utm filter (first entry of
  *                                 the visit). Once a page view.
  *   trigger form_abandon          Focus in a form, no submit, then idleSeconds or
- *                                 pagehide. Only the form id and the number of fields
- *                                 touched — never values or field names.
+ *                                 pagehide (stored, run on the next page view). Only the
+ *                                 form id and the number of fields touched — never values
+ *                                 or field names.
  *   action content                [d2-ma-slot] text with {{pref.*}} / {{unit.*}} fields,
- *                                 or a templateId from CONTENT_TEMPLATES
+ *                                 or a templateId from the envelope's templates.content[]
  *   action map_mark               Units matching the profile on the 2destate map
- *   channels.<k>.via              "digi2" → POST digi2.app/api/ma/channel/<site>,
- *                                 "make" → hook.eu1.make.com only
+ *   channels.<k>.via              Any via → the page sends nothing (MA-D30: e-mail, SMS
+ *                                 and calls go from our side, never from the browser)
  *   cooldownMinutes               Minimum gap between runs of an action
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
@@ -125,19 +124,20 @@
   var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1, ma_exit_intent: 1, ma_engaged: 1, ma_form_abandon: 1, ma_content: 1 };
   // Parametry zdarzeń dataLayer z wyzwalacza albo akcji na ścieżce (§13.8.3).
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id'], ma_content: ['slot', 'template_id'] };
-  var CHANNELS = { email: 1, sms: 1, ai_call: 1, sales_notify: 1 };
+  var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
   var SCRIPT_VERSION = 4;    // ma.4 - porównywane z minScript koperty
-  var CHANNEL_API = 'https://digi2.app/api/ma/channel/';
-  var MAKE_HOOK_RE = /^https:\/\/hook\.eu1\.make\.com\//i;
-  var SITE_RE = /^[A-Za-z0-9_-]{1,80}$/;
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
-  var CLASS_RE = /^[a-z0-9-]{1,40}$/;
+  // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
+  var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
   var MAP_BY = { rooms: 1, floor: 1, both: 1 };
-  var CONTENT_FIELDS = ['pref.rooms', 'pref.floor', 'unit.name', 'unit.rooms', 'unit.floor', 'unit.area',
-    'unit.price', 'unit.building'];
-  // Szablony treści dla content.templateId (§13.8.3, lista ma.4).
+  // Pola tekstu z listy §13.9.2 (bez unit.image - tylko w bloku obrazu - i bez
+  // unit.promoText, które w 2destate jeszcze nie istnieje).
+  var CONTENT_FIELDS = ['pref.rooms', 'pref.floor', 'pref.roomsLabel', 'unit.name', 'unit.rooms', 'unit.roomsLabel',
+    'unit.floor', 'unit.area', 'unit.price', 'unit.pricePerSqm', 'unit.building'];
+  var FIELD_RE = /\{\{\s*([a-zA-Z.]+)\s*\}\}/g;
+  // Zapas dla content.templateId, gdy koperta nie ma templates.content[] z tym id.
   var CONTENT_TEMPLATES = {
-    'pref-rooms': 'Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie',
+    'pref-rooms': '{{pref.roomsLabel}} — wybrane dla Ciebie',
     'last-unit': 'Wróć do lokalu {{unit.name}}',
     'last-unit-price': '{{unit.name}} — {{unit.price}}'
   };
@@ -638,7 +638,7 @@
     var env = {
       raw: raw, scenarios: [], channels: raw.channels && typeof raw.channels === 'object' ? raw.channels : {},
       storage: raw.storage && typeof raw.storage === 'object' ? raw.storage : {},
-      project: str(raw.project2destate), site: str(raw.site), demoState: null
+      project: str(raw.project2destate), demoState: null
     };
     var min = /^ma\.(\d+)$/.exec(String(raw.minScript || ''));
     if (min && parseInt(min[1], 10) > SCRIPT_VERSION) {
@@ -649,6 +649,8 @@
       _warn('envelope version "' + raw.version + '" is not "' + CONTRACT_VERSION + '" — no scenario runs');
       return env;
     }
+    env.contentTemplates = contentLibrary(raw.templates);
+    compiling = env;
     if (env.storage.consentRequired !== true && raw.demoState && typeof raw.demoState === 'object') {
       env.demoState = raw.demoState;
     }
@@ -656,7 +658,38 @@
       var sc = compileScenario(s);
       if (sc) env.scenarios.push(sc);
     });
+    compiling = null;
     return env;
+  }
+
+  var compiling = null;      // koperta w trakcie kompilacji (szablony treści dla validNode)
+
+  // Tekst content z polami wyłącznie z listy §13.9.2; inaczej null.
+  function contentTextValid(text) {
+    if (typeof text !== 'string' || !text.length || text.length > 160) return false;
+    var ok = true;
+    text.replace(FIELD_RE, function (m, key) { if (CONTENT_FIELDS.indexOf(key) < 0) ok = false; return m; });
+    return ok;
+  }
+
+  // Biblioteka szablonów treści z panelu: templates.content[] = { templateId, text }.
+  function contentLibrary(t) {
+    var lib = {};
+    var list = t && typeof t === 'object' && Array.isArray(t.content) ? t.content : [];
+    list.forEach(function (c) {
+      if (!c || !SLOT_RE.test(String(c.templateId || '')) || !contentTextValid(c.text)) {
+        _warn('content template "' + (c && c.templateId) + '" is not valid (id [a-z0-9-], text ≤ 160, fields from §13.9.2) — skipped');
+        return;
+      }
+      lib[c.templateId] = c.text;
+    });
+    return lib;
+  }
+
+  function contentTemplate(id) {
+    var lib = (compiling || envelope || {}).contentTemplates || {};
+    if (Object.prototype.hasOwnProperty.call(lib, id)) return lib[id];
+    return Object.prototype.hasOwnProperty.call(CONTENT_TEMPLATES, id) ? CONTENT_TEMPLATES[id] : null;
   }
 
   function compileScenario(s) {
@@ -727,10 +760,18 @@
         return false;
       }
       if (node['do'] === 'content') {
-        var hasText = typeof node.text === 'string' && node.text.length > 0 && node.text.length <= 160;
-        var hasTpl = node.templateId != null && Object.prototype.hasOwnProperty.call(CONTENT_TEMPLATES, node.templateId);
+        var hasText = node.text != null;
+        var hasTpl = node.templateId != null;
         if (!SLOT_RE.test(String(node.slot || '')) || hasText === hasTpl) {
           _warn(where + ' — content needs a slot and exactly one of text / a known templateId, skipped');
+          return false;
+        }
+        if (hasText && !contentTextValid(node.text)) {
+          _warn(where + ' — content text over 160 characters or with a field outside §13.9.2, skipped');
+          return false;
+        }
+        if (hasTpl && contentTemplate(String(node.templateId)) == null) {
+          _warn(where + ' — content templateId "' + node.templateId + '" is not in templates.content, skipped');
           return false;
         }
       }
@@ -874,11 +915,12 @@
       var f = evt.data || {};
       if (!formListed(w, f.formId)) return null;
       if (!f.exit && (f.idle == null || f.idle < idleOf(w))) return null;
-      // Raz na formularz na wizytę (§13.8.2).
-      if (!state.abandon || state.abandon.visit !== state.visits) state.abandon = { visit: state.visits, keys: [] };
-      var fk = sc.id + '/' + node.id + '/' + (f.formId || '');
-      if (state.abandon.keys.indexOf(fk) >= 0) return null;
-      state.abandon.keys.push(fk);
+      // Raz na formularz na wizytę (§13.8.2) - tej, w której go porzucono.
+      var fk = (f.visit != null ? f.visit : state.visits) + '|' + sc.id + '/' + node.id + '/' + (f.formId || '');
+      var done = state.abandoned || (state.abandoned = []);
+      if (done.indexOf(fk) >= 0) return null;
+      done.push(fk);
+      if (done.length > 50) done.shift();
       ctx.signal = { form_id: f.formId || null };
       return ctx;
     }
@@ -1021,6 +1063,8 @@
     // Reguła 6: pominięta akcja nie kończy gałęzi i nie czeka swojego opóźnienia.
     if (skippedByFrequency(st, node, c.unit)) {
       _log('skipped by frequency → ' + sc.id + '/' + node.id);
+      // Treść z tej akcji już stoi na stronie - ma_content za nią zna swój slot.
+      if (node['do'] === 'content') c.signal = { slot: node.slot, template_id: node.templateId == null ? null : node.templateId };
       done(st, node, c);
       propagate(sc, st, node, c, pass, seen);
       return;
@@ -1169,17 +1213,15 @@
     return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url);
   }
 
-  // Adres kanału (§13.10.1): via "digi2" = endpoint digi2.app tej strony,
-  // via "make" = tymczasowy webhook Make, bez via = webhook z koperty v0.
-  function channelUrl(ch) {
+  // Adres kanału: webhook z koperty v0. Kanał z via (§13.10) strona pomija -
+  // e-mail, SMS i telefon zleca wyłącznie lead po naszej stronie (MA-D30).
+  function channelUrl(ch, name) {
     if (!ch || typeof ch !== 'object') return '';
-    if (ch.via === 'digi2') {
-      var site = envelope.site;
-      return site && SITE_RE.test(site) ? CHANNEL_API + encodeURIComponent(site) : '';
+    if (ch.via != null) {
+      _warn('channel "' + name + '" has via "' + ch.via + '" — the page does not send it (MA-D30)');
+      return '';
     }
     var url = typeof ch.webhook === 'string' ? ch.webhook : '';
-    if (ch.via === 'make') return MAKE_HOOK_RE.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url) ? url : '';
-    if (ch.via != null) return '';
     return url && webhookUrlAllowed(url) ? url : '';
   }
 
@@ -1189,7 +1231,7 @@
       _warn(where + ' has no testOnly: true — not sent (contract v0 sends to agency test contacts only)');
       return false;
     }
-    var url = channelUrl(envelope.channels[node.channel]);
+    var url = channelUrl(envelope.channels[node.channel], node.channel);
     if (!url) {
       _warn(where + ' — channel "' + node.channel + '" has no usable webhook address');
       return false;
@@ -1222,21 +1264,33 @@
 
   var slotOriginals = [];    // { el, text } - oryginał wraca przy „Wyczyść"
 
+  // „1 pokój", „2 pokoje", „5 pokoi", „12 pokoi", „22 pokoje".
+  function roomsLabel(n) {
+    if (n == null) return null;
+    var word = 'pokoi';
+    if (n === 1) word = 'pokój';
+    else if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) word = 'pokoje';
+    return n + ' ' + word;
+  }
+
   function contentValue(key, unit) {
     if (key === 'pref.rooms' || key === 'pref.floor') {
       var p = prefOf(key.slice(5));
       return p == null ? null : String(p);
     }
+    if (key === 'pref.roomsLabel') return roomsLabel(prefOf('rooms'));
     var f = key.slice(5);
+    if (f === 'roomsLabel') return roomsLabel(unit ? unit.rooms : null);
     if (f === 'rooms' || f === 'floor') return unit && unit[f] != null ? String(unit[f]) : null;
     return fieldValue(f, unit);
   }
 
   // null, gdy któreś pole nie ma wartości - na stronę nie trafia „null" ani dziura.
   function contentText(node, unit) {
-    var tpl = node.text != null ? String(node.text) : CONTENT_TEMPLATES[node.templateId];
+    var tpl = node.text != null ? String(node.text) : contentTemplate(String(node.templateId));
+    if (tpl == null) return null;
     var missing = false;
-    var out = tpl.replace(/\{\{\s*([a-zA-Z.]+)\s*\}\}/g, function (m, key) {
+    var out = tpl.replace(FIELD_RE, function (m, key) {
       var v = CONTENT_FIELDS.indexOf(key) >= 0 ? contentValue(key, unit) : null;
       if (v == null || v === '') missing = true;
       return v == null ? '' : v;
@@ -1265,7 +1319,7 @@
   // Akcja map_mark - lokale z preferencji na mapie 2destate (§13.8.3)
   // ---------------------------------------------------------------------------
 
-  var markWaiting = null;    // map_mark, który czeka na onMapLoad
+  var markWaiting = [];      // map_mark, które czekają na onMapLoad
   var lastMapName = null;    // nazwa mapy z ostatniego kliknięcia
 
   function mapNames() {
@@ -1275,8 +1329,9 @@
     return names;
   }
 
-  // Ranking z profilu: pasujące pokoje ważą więcej niż piętro, wolne przed
-  // zarezerwowanymi, sprzedanych nie ma. Zwraca listę id, najlepszy pierwszy.
+  // Ranking z profilu (§13.8.3): przy both najpierw pasujące w obu, potem w
+  // jednym (pokoje przed piętrem), w grupie kolejność z getProducts(); bez
+  // sprzedanych. Zwraca listę id, najlepszy pierwszy.
   function rankUnits(products, by) {
     var rooms = prefOf('rooms');
     var floor = prefOf('floor');
@@ -1287,9 +1342,9 @@
       var score = 0;
       if (by !== 'floor' && rooms != null && u.rooms === rooms) score += 2;
       if (by !== 'rooms' && floor != null && u.floor === floor) score += 1;
-      if (score > 0) list.push({ id: u.unitId, score: score, free: u.status === 'available' ? 1 : 0, i: i });
+      if (score > 0) list.push({ id: u.unitId, score: score, i: i });
     });
-    list.sort(function (a, b) { return (b.score - a.score) || (b.free - a.free) || (a.i - b.i); });
+    list.sort(function (a, b) { return (b.score - a.score) || (a.i - b.i); });
     return list.map(function (x) { return x.id; });
   }
 
@@ -1303,7 +1358,7 @@
     try { products = api.getProducts() || []; } catch (e) {}
     if (!products.length) {
       // Mapa jeszcze się ładuje - oznaczamy po onMapLoad.
-      markWaiting = { sc: sc, node: node };
+      markWaiting.push({ sc: sc, node: node });
       _log('map_mark waits for the map → ' + sc.id + '/' + node.id);
       return;
     }
@@ -1774,7 +1829,9 @@
         api.onMapLoad(function () {
           openFromUrl();
           highlightProfile();
-          if (markWaiting && tracking) { var m = markWaiting; markWaiting = null; mapMark(m.sc, m.node); }
+          var waiting = tracking ? markWaiting : [];
+          markWaiting = [];
+          waiting.forEach(function (m) { mapMark(m.sc, m.node); });
         });
       }
       if (typeof api.onFloorChange === 'function') api.onFloorChange(floorChanged);
@@ -1991,35 +2048,43 @@
         if (e && forms[i].form === e.target) { forms[i].submitted = true; forms[i].timers.forEach(clearTimeout); }
       }
     }, true);
-    if (window.addEventListener) {
-      window.addEventListener('pagehide', function () {
-        forms.forEach(function (ent) { abandon(ent, null, true); });
-      });
-    }
+    if (window.addEventListener) window.addEventListener('pagehide', formsOnExit);
   }
 
-  // Formularz testowy (§13.8.4): [d2-ma-test-lead] na polu wpisuje visitorId,
-  // na formularzu - dokłada ukryte pole d2_ma_visitor_id. Tylko po zgodzie.
-  function fillTestLead() {
-    if (!document.querySelectorAll) return;
-    var id = tracking && state ? state.visitorId : '';
-    var els = document.querySelectorAll('[d2-ma-test-lead], [data-d2-ma-test-lead]');
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      var input = el;
-      if (el.tagName === 'FORM') {
-        input = el.querySelector('input[name="d2_ma_visitor_id"]');
-        if (!input) {
-          if (!id) continue;
-          input = document.createElement('input');
-          input.setAttribute('type', 'hidden');
-          input.setAttribute('name', 'd2_ma_visitor_id');
-          el.appendChild(input);
-        }
-      } else if (el.tagName !== 'INPUT') {
-        continue;
-      }
-      input.value = id;
+  // Przy wyjściu ze strony tylko fakt w d2ma - akcje gałęzi idą przy następnej
+  // odsłonie (jak odłożone, ważne 24 h). Żadnego webhooka ani dataLayer teraz.
+  function formsOnExit() {
+    if (!tracking || !state) return;
+    var added = false;
+    forms.forEach(function (ent) {
+      if (ent.submitted || !ent.fields.length || ent.exitSaved) return;
+      ent.exitSaved = true;
+      state.formExits = state.formExits || [];
+      state.formExits.push({ formId: ent.id, name: ent.form.getAttribute('data-name') || null,
+        fields: ent.fields.length, t: now(), created: Date.now(), visit: state.visits });
+      added = true;
+    });
+    if (added) save();
+  }
+
+  // Zapisane wyjścia z formularza z poprzedniej odsłony.
+  function replayFormExits() {
+    var list = state.formExits || [];
+    if (!list.length) return;
+    state.formExits = [];
+    list.forEach(function (x) {
+      if (Date.now() - x.created > PENDING_TTL_MS) { _log('form exit older than 24 h dropped → ' + x.formId); return; }
+      dispatch({ type: 'form_abandon', t: now(), data: { formId: x.formId, fields: x.fields, exit: true, visit: x.visit } });
+    });
+  }
+
+  function resetSignals() {
+    forms.forEach(function (ent) { ent.timers.forEach(clearTimeout); });
+    forms = [];
+    engFired = {};
+    if (eng) {
+      if (eng.timer) { clearTimeout(eng.timer); eng.timer = null; }
+      eng.signalled = {};
     }
   }
 
@@ -2027,7 +2092,6 @@
     hookExitIntent();
     hookEngagement();
     hookForms();
-    fillTestLead();
   }
 
   // ---------------------------------------------------------------------------
@@ -2212,9 +2276,9 @@
     state = null;
     buffer = [];
     if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
-    markWaiting = null;
+    markWaiting = [];
     restoreSlots();
-    fillTestLead();
+    resetSignals();
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
     _queue(function () { return s.clear(); });
     render();
@@ -2298,6 +2362,7 @@
       });
       // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
       hookSignals();
+      replayFormExits();
       runDue();
       afterChange();
       highlightProfile();
@@ -2429,8 +2494,9 @@
       var wasTracking = tracking;
       views = [];
       highlighted = {};
-      markWaiting = null;
+      markWaiting = [];
       restoreSlots();
+      resetSignals();
       if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
       var s = store;
       state = wasTracking ? freshState() : null;
@@ -2444,7 +2510,6 @@
           buffer = [];
           queued.forEach(function (q) { handle(q.evt, q.real + (state.shift || 0)); });
         }
-        fillTestLead();
         render();
         _emit('ma:change', { cleared: true });
       });

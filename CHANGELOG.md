@@ -22,24 +22,23 @@ nie dostaje też żadnego nowego nasłuchu.
 - **`form_abandon`**: ktoś zaczął wypełniać formularz i go nie wysłał
   (bezczynność albo wyjście ze strony). Moduł wie tylko, który to formularz i ile
   pól dotknięto, a nigdy, co w nich wpisano. Formularz z `d2-ma-ignore` jest
-  pomijany.
+  pomijany. Przy wyjściu ze strony nic nie jest wysyłane: scenariusz wykona się
+  przy następnej odsłonie (najpóźniej po 24 h przepada).
 - **Akcja `content`**: podmienia tekst elementu z `d2-ma-slot="<nazwa>"`, np.
-  nagłówek „2 pokoje z ogródkiem”. Pola `{{pref.rooms}}`, `{{unit.name}}` itd.
-  Tylko tekst, nigdy HTML. Gdy pole nie ma wartości, tekst zostaje bez zmian.
-  Przycisk „Wyczyść” przywraca oryginał.
+  nagłówek „2 pokoje z ogródkiem”. Pola `{{pref.roomsLabel}}` („2 pokoje”,
+  „5 pokoi”), `{{unit.name}}`, `{{unit.pricePerSqm}}` itd. Szablony tekstu
+  przychodzą z panelu w kopercie. Tylko tekst, nigdy HTML. Gdy pole nie ma
+  wartości, tekst zostaje bez zmian. Przycisk „Wyczyść” przywraca oryginał.
 - **Akcja `map_mark`**: na mapie 2destate wyróżnia lokale pasujące do
   preferencji gościa, bez sprzedanych. Na dzisiejszym 2destate przełącza piętro
   i podświetla najlepszy lokal.
 - **Nowe zdarzenia GA4** z akcji `datalayer`: `ma_exit_intent`, `ma_engaged`,
   `ma_form_abandon`, `ma_content`. Bez danych osobowych i bez treści pól.
-- **Kanały wysyłane przez nasz system**: `channels.<k>.via: "digi2"` wysyła na
-  `digi2.app/api/ma/channel/<site>`, `via: "make"` tylko na
-  `hook.eu1.make.com`. Doszedł kanał `sales_notify` (powiadomienie handlowca,
-  tylko `testOnly`).
+- **Kanały z `via`** (§13.10) strona pomija: e-mail, SMS ani telefonu nie
+  zleca przeglądarka, tylko lead po naszej stronie (decyzja Piotra MA-D30).
+  Webhook z koperty v0 działa jak dotąd.
 - **`cooldownMinutes`** na akcji: najmniejszy odstęp między jej wykonaniami,
   także między wizytami.
-- **`d2-ma-test-lead`**: formularz testowy demo dostaje `visitorId` w ukrytym
-  polu, tylko po zgodzie.
 
 ## v1.9.0-ma.3 — 2026-10-19 (przedpremierowa, nie `@latest`)
 

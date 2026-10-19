@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 45.7 KB | Marketing automation (demo, contract v0 + §13.8): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 46.8 KB | Marketing automation (demo, contract v0 + §13.8): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **325.9 KB min** / **103.9 KB** gzipped.
+Total (all modules): **327.0 KB min** / **104.3 KB** gzipped.
 
 ---
 
@@ -1284,31 +1284,41 @@ behaves as if that time had passed — deferred actions included.
   profile's segment.
 - **webhook** — `POST` JSON `{ scenarioId, revision, nodeId, channel, template,
   unit, segment, visitorId, testOnly: true, ts }`, `keepalive`, no credentials.
-  Refused without `testOnly: true` on the node. Where it goes depends on the
-  channel (§13.10): `via: "digi2"` → `https://digi2.app/api/ma/channel/<site>`
-  (`site` from the envelope; a `webhook` on such a channel is ignored);
-  `via: "make"` → its `webhook`, only on `https://hook.eu1.make.com/`; no `via`
-  (envelope v0) → its `webhook`, `https://` (or `http://localhost` for
-  testing); any other `via` → nothing sent. Channels: `email`, `sms`,
-  `ai_call`, `sales_notify`. Recipients, rate limits and templates are the
-  server's job. ma.3 ignores `via`: a channel without a `webhook` sends
-  nothing there, but the rest of the branch still runs.
+  Refused without `testOnly: true` on the node, and for anything but
+  `https://` (or `http://localhost` for testing). Channels: `email`, `sms`,
+  `ai_call`. A channel with any `via` (§13.10) is never sent from the page —
+  `console.warn`, the branch goes on: per MA-D30 (Piotr, 20.10) the browser
+  never orders an e-mail, SMS or call; only a lead on our side does. There is
+  no `sales_notify` channel (unknown channel → node skipped). The address is
+  public: rate limits, template whitelist and recipients are Make's job
+  (§13.4).
 - **content** (ma.4) — `slot` + exactly one of `text` (≤ 160 chars) or
-  `templateId`. Fields in double braces: `{{pref.rooms}}`, `{{pref.floor}}`,
-  `{{unit.name|rooms|floor|area|price|building}}` (area and price formatted as
-  in the popup). Written with `textContent` into every
+  `templateId`. Fields in double braces, the §13.9.2 list: `{{pref.rooms}}`,
+  `{{pref.floor}}`, `{{pref.roomsLabel}}`, `{{unit.name}}`, `{{unit.rooms}}`,
+  `{{unit.roomsLabel}}`, `{{unit.floor}}`, `{{unit.area}}`, `{{unit.price}}`,
+  `{{unit.pricePerSqm}}`, `{{unit.building}}`. `roomsLabel` declines the noun
+  ("1 pokój", "2 pokoje", "5 pokoi", "12 pokoi", "22 pokoje"); area and prices
+  are formatted as in the popup. A field outside the list (also
+  `{{unit.image}}` and the not-yet-existing `{{unit.promoText}}`) makes the node
+  invalid at compile time, with `console.warn`. `templateId` comes from the
+  envelope's `templates.content[]` (`{ templateId, text }`, the panel's
+  library, validated like `text`); the built-in ones are only a fallback. Written with `textContent` into every
   `[d2-ma-slot="<slot>"]`; the original text comes back on `clear()` and when
   consent is withdrawn. A field without a value, an unknown field or no slot
   on the page → nothing changes **and the branch stops**, so a following
-  `ma_content` never reports a change that didn't happen. Templates in ma.4:
-  `pref-rooms` ("Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie"),
+  `ma_content` never reports a change that didn't happen. Built-in fallback
+  templates: `pref-rooms` ("{{pref.roomsLabel}} — wybrane dla Ciebie"),
   `last-unit` ("Wróć do lokalu {{unit.name}}"), `last-unit-price`
-  ("{{unit.name}} — {{unit.price}}").
+  ("{{unit.name}} — {{unit.price}}"). A content action skipped by `frequency`
+  still hands its `slot` to a following `ma_content`.
 - **map_mark** (ma.4) — 2destate only. Ranks `d2estate.getProducts()` against
   the profile: matching rooms count 2, matching floor 1 (`by`: `rooms`,
-  `floor`, `both`), sold units out, available before reserved, then map order;
-  takes `limit` (1–20, default 5). With `d2estate.markProducts(mapName, ids,
-  { className })` (default class `d2-preferred`) it marks them all; `null` back
+  `floor`, `both` — both first, then rooms, then floor), sold units out, within
+  a group the order of `getProducts()`; takes `limit` (1–20, default 5). With
+  `d2estate.markProducts(mapName, ids, { className })` it marks them all.
+  `className` must match `^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$` — `imp-*` are the
+  map's own classes (`imp-object-hidden` would hide units) — else the default
+  `d2-preferred`; `null` back
   means the map applies it after load, `0` means nothing matched. Without
   `markProducts` (2destate 1.6.9): `ImageMapPro.changeArtboard` to the best
   unit's floor and `highlightObject` on it, no tooltip. An empty
@@ -1359,13 +1369,16 @@ nodes gets no extra listener. Before consent nothing is collected.
   (not hidden, submit or button; not inside `[d2-ma-ignore]`), then no
   `submit` and `idleSeconds` (10–600, default 60) without activity, or
   `pagehide`. `formIds` limits it to forms by `id`, `data-name` or `name`.
-  Once per form per visit (`state.abandon`). Only the form id and the number
-  of fields touched leave the listener — never values or field names.
+  Once per form per visit — the visit it was abandoned in (`state.abandoned`).
+  On `pagehide` nothing is sent: the module only stores the fact in
+  `state.formExits` (`formId`, `data-name`, number of fields, time) and runs
+  the branch on the next page view, like a deferred action, void after 24 h —
+  no webhook, no `dataLayer`, no `sendBeacon` while the page closes. Only the
+  form id, its `data-name` and the number of fields touched leave the
+  listener — never values or field names.
 
-`[d2-ma-test-lead]` (§13.8.4, demo test form only): on an `input` the module
-sets its value to `visitorId`; on a `form` it adds a hidden
-`d2_ma_visitor_id` field. Filled once the store opens with consent, emptied
-when consent is withdrawn.
+`clear()` and a consent wipe also reset the page's signals (form timers,
+fired `engagement` triggers), so a trigger can fire again on the same page.
 
 ### API
 
@@ -1396,8 +1409,7 @@ tracking still on.
 `[d2-ma-popup]` with `[d2-ma-field]`, `[d2-ma-cta]`, `[d2-ma-close]`;
 `[d2-ma-profile]`, `[d2-ma-history]` (+ `[d2-ma-history-item]` template,
 `d2-ma-history-limit`), `[d2-ma-clear]`, `[d2-ma-simulate-return]`,
-`[d2-ma-map]`, and from ma.4 `[d2-ma-slot]`, `[d2-ma-ignore]`,
-`[d2-ma-test-lead]`. Every one also works as `data-d2-ma-*`.
+`[d2-ma-map]`, and from ma.4 `[d2-ma-slot]`, `[d2-ma-ignore]`. Every one also works as `data-d2-ma-*`.
 
 ### Sandbox
 

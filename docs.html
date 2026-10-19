@@ -2692,7 +2692,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>condition</td><td><code>pref.rooms</code>, <code>pref.floor</code>, <code>lead</code>, <code>visits: { min }</code></td><td>All must hold at the moment the path arrives</td></tr>
       <tr><td><code>popup</code></td><td><code>template</code>, <code>cta</code> (<code>open_unit</code> | <code>contact</code>)</td><td>Popup with the path's unit — see <a href="#ma-webflow">Webflow Setup</a></td></tr>
       <tr><td><code>datalayer</code></td><td><code>event</code> (<code>ma_segment</code> | <code>ma_segment_exit</code>; from ma.4 also <code>ma_exit_intent</code>, <code>ma_engaged</code>, <code>ma_form_abandon</code>, <code>ma_content</code>), <code>params.segment</code></td><td>Pushes <code>{ event, segment, ma_scenario }</code>; the ma.4 events add their own fields — see <a href="#ma-v1">ma.4 nodes</a></td></tr>
-      <tr><td><code>webhook</code></td><td><code>channel</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code> | <code>sales_notify</code>), <code>template</code>, <code>testOnly: true</code></td><td>POST to the channel's address (<code>via</code>, see <a href="#ma-v1">ma.4 nodes</a>). Without <code>testOnly: true</code> it isn't sent</td></tr>
+      <tr><td><code>webhook</code></td><td><code>channel</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code>), <code>template</code>, <code>testOnly: true</code></td><td>POST to <code>channels.&lt;channel&gt;.webhook</code>. Without <code>testOnly: true</code> it isn't sent; a channel with <code>via</code> never (see <a href="#ma-v1">ma.4 nodes</a>)</td></tr>
     </table>
     <p class="muted">Every action also takes <code>frequency</code>, <code>delayMinutes</code> and (ma.4) <code>cooldownMinutes</code>.</p>
 
@@ -2738,50 +2738,38 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>UTM</td><td>Only <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, read on the first page of the visit and kept for the whole visit. Case doesn't matter; every given list must match, one value in a list is enough. <code>minSeconds: 0, minScrollPct: 0</code> + <code>utm</code> = "came from the campaign", fires on load</td></tr>
       <tr><td>Hidden tab</td><td>Doesn't count towards <code>minSeconds</code></td></tr>
       <tr><td>Page too short to scroll</td><td>Counts as 100% scrolled</td></tr>
-      <tr><td>What a form tells the module</td><td>The form id and how many fields were touched. <strong>Never values or field names</strong></td></tr>
+      <tr><td>What a form tells the module</td><td>The form id, its <code>data-name</code> and how many fields were touched. <strong>Never values or field names</strong></td></tr>
+      <tr><td>Visitor leaves the page with a half-filled form</td><td>Nothing is sent while the page closes. The fact is stored and the scenario runs on the next page view (void after 24 h)</td></tr>
       <tr><td>Forms left out</td><td>Any form inside <code>[d2-ma-ignore]</code>; hidden fields and buttons don't count as touching</td></tr>
     </table>
 
     <h3>Actions</h3>
     <table>
       <tr><th>Action</th><th>Parameters</th><th>Does</th></tr>
-      <tr><td><code>content</code></td><td><code>slot</code> (<code>[a-z0-9-]</code>) + <code>text</code> (≤ 160) <em>or</em> <code>templateId</code></td><td>Replaces the text of every <code>[d2-ma-slot="&lt;slot&gt;"]</code> (text only, never HTML). Fields: <code>{{pref.rooms}}</code>, <code>{{pref.floor}}</code>, <code>{{unit.name}}</code>, <code>{{unit.rooms}}</code>, <code>{{unit.floor}}</code>, <code>{{unit.area}}</code>, <code>{{unit.price}}</code>, <code>{{unit.building}}</code></td></tr>
+      <tr><td><code>content</code></td><td><code>slot</code> (<code>[a-z0-9-]</code>) + <code>text</code> (≤ 160) <em>or</em> <code>templateId</code> from the envelope's <code>templates.content[]</code></td><td>Replaces the text of every <code>[d2-ma-slot="&lt;slot&gt;"]</code> (text only, never HTML). Fields: <code>{{pref.rooms}}</code>, <code>{{pref.floor}}</code>, <code>{{pref.roomsLabel}}</code>, <code>{{unit.name}}</code>, <code>{{unit.rooms}}</code>, <code>{{unit.roomsLabel}}</code>, <code>{{unit.floor}}</code>, <code>{{unit.area}}</code>, <code>{{unit.price}}</code>, <code>{{unit.pricePerSqm}}</code>, <code>{{unit.building}}</code>. <code>roomsLabel</code> = "1 pokój", "2 pokoje", "5 pokoi"</td></tr>
       <tr><td><code>map_mark</code></td><td><code>by</code> (<code>rooms</code> | <code>floor</code> | <code>both</code>), <code>limit</code> (1–20, 5), <code>className</code> (<code>d2-preferred</code>)</td><td>2destate map only: marks the units that fit the visitor's preference best, sold ones left out</td></tr>
       <tr><td><code>datalayer</code></td><td><code>ma_exit_intent</code> | <code>ma_engaged</code> | <code>ma_form_abandon</code> | <code>ma_content</code></td><td>Adds <code>seconds</code> + <code>scroll_pct</code>, <code>form_id</code>, or <code>slot</code> + <code>template_id</code> from the step before it. No personal data, no field values, no UTM</td></tr>
-      <tr><td><code>webhook</code> on <code>sales_notify</code></td><td><code>template</code>, <code>testOnly: true</code></td><td>"The test lead is on the site now" for the agency's test contact. Body without any form data</td></tr>
     </table>
     <table>
       <tr><th>Case</th><th>Behaviour</th></tr>
       <tr><td><code>content</code>: a field has no value, or no slot on the page</td><td>The text stays as it was and the branch <strong>stops</strong>, so a following <code>ma_content</code> never reports a change that didn't happen</td></tr>
       <tr><td><code>content</code> and "Clear" / consent withdrawn</td><td>The original text comes back</td></tr>
-      <tr><td><code>content</code> templates</td><td><code>pref-rooms</code> — "Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie"; <code>last-unit</code> — "Wróć do lokalu {{unit.name}}"; <code>last-unit-price</code> — "{{unit.name}} — {{unit.price}}"</td></tr>
-      <tr><td><code>map_mark</code> ranking</td><td>Matching rooms weigh more than a matching floor; available before reserved; then map order</td></tr>
+      <tr><td><code>content</code> templates</td><td>From the panel's library in the envelope (<code>templates.content[]</code>: <code>{ templateId, text }</code>, checked like <code>text</code>). Built-in fallbacks: <code>pref-rooms</code> — "{{pref.roomsLabel}} — wybrane dla Ciebie"; <code>last-unit</code> — "Wróć do lokalu {{unit.name}}"; <code>last-unit-price</code> — "{{unit.name}} — {{unit.price}}"</td></tr>
+      <tr><td><code>content</code> with a field outside the list (also <code>{{unit.image}}</code>)</td><td>The node is skipped with a <code>console.warn</code></td></tr>
+      <tr><td><code>map_mark</code> ranking</td><td>With <code>both</code>: units matching both first, then rooms, then floor; within a group the map's own order</td></tr>
+      <tr><td><code>map_mark</code> <code>className</code></td><td>No <code>imp-</code> (the map's own classes — <code>imp-object-hidden</code> would hide units) and no <code>d2-ma-</code>; otherwise <code>d2-preferred</code></td></tr>
       <tr><td><code>map_mark</code> without <code>markProducts</code> in 2destate</td><td>Switches the map to the best unit's floor and highlights that one unit (no tooltip) — works on 2destate 1.6.9</td></tr>
       <tr><td><code>map_mark</code> before the map loaded / without 2destate</td><td>Waits for the map / skipped with a <code>console.info</code>, the branch goes on</td></tr>
       <tr><td><code>cooldownMinutes</code> (0–10080)</td><td>Minimum gap between two runs of the action in this scenario, across visits, on top of <code>frequency</code></td></tr>
     </table>
 
     <h3>Channels</h3>
-    <pre><code><span class="prop">"site"</span>: <span class="string">"osiedle-demo"</span>,
-<span class="prop">"minScript"</span>: <span class="string">"ma.4"</span>,
-<span class="prop">"channels"</span>: {
-  <span class="prop">"sales_notify"</span>: { <span class="prop">"via"</span>: <span class="string">"digi2"</span> },  <span class="comment">// POST https://digi2.app/api/ma/channel/osiedle-demo</span>
-  <span class="prop">"crm_external"</span>: { <span class="prop">"via"</span>: <span class="string">"make"</span>, <span class="prop">"webhook"</span>: <span class="string">"https://hook.eu1.make.com/…"</span>, <span class="prop">"temporary"</span>: <span class="keyword">true</span> }
-}</code></pre>
-    <table>
-      <tr><th><code>via</code></th><th>Where the action posts</th></tr>
-      <tr><td><code>"digi2"</code></td><td><code>https://digi2.app/api/ma/channel/&lt;site&gt;</code>; any <code>webhook</code> on the channel is ignored</td></tr>
-      <tr><td><code>"make"</code></td><td>The channel's <code>webhook</code>, only on <code>https://hook.eu1.make.com/</code></td></tr>
-      <tr><td>none (envelope v0)</td><td>The channel's <code>webhook</code>, <code>https://</code> only</td></tr>
-      <tr><td>anything else</td><td>Nothing is sent</td></tr>
-    </table>
-    <p class="muted">ma.3 doesn't know <code>via</code>: a channel without a <code>webhook</code> sends nothing, and the rest of that branch still runs.</p>
+    <p>A channel with <code>via</code> (§13.10) is <strong>never sent from the page</strong> — a <code>console.warn</code>, and the branch goes on. E-mail, SMS and calls are ordered only by a lead on our side, never by the browser (MA-D30). A channel with just a <code>webhook</code> (envelope v0) works as before. There is no <code>sales_notify</code> channel.</p>
 
     <h3>Page elements</h3>
     <div class="wf-map">
       <div class="wf-el"><span class="wf-elname">Heading the content action may rewrite</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-slot = hero-title</span></div>
       <div class="wf-el"><span class="wf-elname">Form <code>form_abandon</code> must never count</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-ignore</span></div>
-      <div class="wf-el"><span class="wf-elname">Demo test form <span class="muted">(hidden input gets the visitorId; on the form a hidden d2_ma_visitor_id field is added; after consent only)</span></span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-test-lead</span></div>
     </div>
   </section>
 
