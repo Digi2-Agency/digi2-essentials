@@ -2655,7 +2655,12 @@ digi2.ma.<span class="fn">clear</span>()            <span class="comment">// del
 digi2.ma.<span class="fn">highlight</span>()        <span class="comment">// re-apply the map highlight</span>
 
 digi2.<span class="fn">on</span>(<span class="string">'ma:action'</span>, <span class="keyword">function</span> (a) { <span class="comment">/* { scenarioId, nodeId, do, … } */</span> });
-<span class="comment">// also 'ma:ready', 'ma:view', 'ma:change'</span></code></pre>
+<span class="comment">// also 'ma:ready', 'ma:view', 'ma:change'</span>
+
+<span class="comment">// "no consent" state: also fires when consent is withdrawn mid-visit</span>
+digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span class="keyword">function</span> (c) {
+  <span class="keyword">if</span> (c.tracking === <span class="keyword">false</span>) { <span class="comment">/* database wiped, profile() === null */</span> }
+});</code></pre>
   </section>
 
   <section id="ma-scenarios">

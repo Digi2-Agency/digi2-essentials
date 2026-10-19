@@ -1309,6 +1309,15 @@ digi2.ma.highlight()
 // events: ma:ready { tracking, store }, ma:view { unit }, ma:action { scenarioId, nodeId, do, … }, ma:change
 ```
 
+`ma:change` also fires when the module wipes the database for lack of consent:
+`{ cleared: true, tracking: false, reason }`, where `reason` is
+`consent withdrawn`, `consent withdrawn while opening`, `consent required`
+or `envelope now requires consent`. After it `profile()` returns `null`.
+Before this, a withdrawal mid-visit cleared the `[d2-ma-profile]` fields
+without any event, so a page section with its own "no consent" state could
+not tell. `digi2.ma.clear()` keeps emitting `{ cleared: true }`, with
+tracking still on.
+
 ### Page elements
 
 `[d2-ma-popup]` with `[d2-ma-field]`, `[d2-ma-cta]`, `[d2-ma-close]`;

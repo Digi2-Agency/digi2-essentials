@@ -1207,6 +1207,9 @@ test('wycofanie zgody kasuje bazę', async () => {
   assert.equal(env._dysk.cleared, 1);
   assert.ok(!env._dysk.views.length);
   assert.equal(env.ma.profile(), null);
+  const zmiany = env.zdarzenia['ma:change'] || [];
+  assert.deepEqual({ ...zmiany[zmiany.length - 1] }, { cleared: true, tracking: false, reason: 'consent withdrawn' },
+    'strona dostaje zdarzenie, żeby pokazać „brak zgody"');
   env.dataLayer.push(unitOpen('A_2'));
   await env.gotowe();
   assert.ok(!env._dysk.views.length, 'po wycofaniu nic nie wraca do bazy');

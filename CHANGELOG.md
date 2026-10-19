@@ -5,6 +5,16 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.3 — 2026-10-19 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — zdarzenie przy wycofaniu zgody
+
+- Gdy gość wycofa zgodę w trakcie wizyty (albo koperta zacznie wymagać
+  zgody), moduł kasuje bazę i wysyła `ma:change` z
+  `{ cleared: true, tracking: false, reason }`. Sekcja „co o Tobie wie
+  strona” może na nim pokazać stan „brak zgody”. Wcześniej pola
+  `[d2-ma-profile]` czyściły się bez żadnego zdarzenia.
+
 ## v1.9.0-ma.2 — 2026-10-19 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — pola rejestru 2destate

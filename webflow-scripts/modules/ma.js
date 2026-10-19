@@ -65,6 +65,8 @@
  *   digi2.ma.highlight()          Re-apply the map highlight
  *
  *   digi2.on('ma:ready' | 'ma:view' | 'ma:action' | 'ma:change', fn)
+ *     ma:change { cleared: true, tracking: false, reason } — consent withdrawn
+ *     or required; the database is wiped and profile() returns null
  */
 (function () {
   'use strict';
@@ -1742,6 +1744,7 @@
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
     _queue(function () { return s.clear(); });
     render();
+    _emit('ma:change', { cleared: true, tracking: false, reason: reason });
   }
 
   var consentHooked = false;
