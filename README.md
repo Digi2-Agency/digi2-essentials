@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 35.6 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 45.7 KB | Marketing automation (demo, contract v0 + §13.8): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **315.8 KB min** / **100.3 KB** gzipped.
+Total (all modules): **325.9 KB min** / **103.9 KB** gzipped.
 
 ---
 
@@ -1200,7 +1200,8 @@ until reload.
 
 ### Scenario engine (§13.3a)
 
-Each event (`unit_view`, `return_visit`, `lead`, `crm_call_result`) runs through
+Each event (`unit_view`, `return_visit`, `lead`, `crm_call_result`, and from ma.4
+`exit_intent`, `engagement`, `form_abandon`) runs through
 the active scenarios in envelope order. A node's progress is `{ at, unit,
 segment }` in `state.scenarios[scenarioId].nodes`.
 
@@ -1247,7 +1248,15 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   or a popup template that isn't a plain name → node skipped with
   `console.warn`. A node with no edges is ignored; a non-trigger with no
   incoming edge is ignored with a warning. `version` ≠ `"0"` → no scenario,
-  history still recorded.
+  history still recorded. The successors of a skipped node never run (its
+  branch stops); other branches of the same node do. An unknown **condition
+  key** is ignored and the path goes on — so new filters live in `when` of new
+  triggers, never in `if` (§13.8.1): an older script stops at the trigger it
+  doesn't know instead of letting the action through. `minScript` higher than
+  `ma.4` → `console.warn`, nothing else.
+- **`cooldownMinutes`** (0–10080) on any action: minimum gap between its runs
+  in this scenario, across visits, on top of `frequency`. Shortened by
+  `timeScale` like `once_per_days`.
 
 ### Time in the demo
 
@@ -1267,12 +1276,44 @@ behaves as if that time had passed — deferred actions included.
   it is `https:` or the page's own origin — otherwise the image is hidden and
   the link keeps its own `href`. Built-in labels exist for `last-unit` and
   `promo-rooms`.
-- **datalayer** — `{ event, segment, ma_scenario }`.
+- **datalayer** — `{ event, segment, ma_scenario }`. From ma.4 also
+  `ma_exit_intent`, `ma_engaged` (+ `seconds`, `scroll_pct` from the trigger),
+  `ma_form_abandon` (+ `form_id`) and `ma_content` (+ `slot`, `template_id`
+  from the content action before it). Those carry `segment` only when the node
+  has `params.segment`, and only `ma_segment` / `ma_segment_exit` change the
+  profile's segment.
 - **webhook** — `POST` JSON `{ scenarioId, revision, nodeId, channel, template,
   unit, segment, visitorId, testOnly: true, ts }`, `keepalive`, no credentials.
-  Refused without `testOnly: true` on the node, and for anything but `https://`
-  (or `http://localhost` for testing). The address is public: rate limits,
-  template whitelist and recipients are Make's job (§13.4).
+  Refused without `testOnly: true` on the node. Where it goes depends on the
+  channel (§13.10): `via: "digi2"` → `https://digi2.app/api/ma/channel/<site>`
+  (`site` from the envelope; a `webhook` on such a channel is ignored);
+  `via: "make"` → its `webhook`, only on `https://hook.eu1.make.com/`; no `via`
+  (envelope v0) → its `webhook`, `https://` (or `http://localhost` for
+  testing); any other `via` → nothing sent. Channels: `email`, `sms`,
+  `ai_call`, `sales_notify`. Recipients, rate limits and templates are the
+  server's job. ma.3 ignores `via`: a channel without a `webhook` sends
+  nothing there, but the rest of the branch still runs.
+- **content** (ma.4) — `slot` + exactly one of `text` (≤ 160 chars) or
+  `templateId`. Fields in double braces: `{{pref.rooms}}`, `{{pref.floor}}`,
+  `{{unit.name|rooms|floor|area|price|building}}` (area and price formatted as
+  in the popup). Written with `textContent` into every
+  `[d2-ma-slot="<slot>"]`; the original text comes back on `clear()` and when
+  consent is withdrawn. A field without a value, an unknown field or no slot
+  on the page → nothing changes **and the branch stops**, so a following
+  `ma_content` never reports a change that didn't happen. Templates in ma.4:
+  `pref-rooms` ("Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie"),
+  `last-unit` ("Wróć do lokalu {{unit.name}}"), `last-unit-price`
+  ("{{unit.name}} — {{unit.price}}").
+- **map_mark** (ma.4) — 2destate only. Ranks `d2estate.getProducts()` against
+  the profile: matching rooms count 2, matching floor 1 (`by`: `rooms`,
+  `floor`, `both`), sold units out, available before reserved, then map order;
+  takes `limit` (1–20, default 5). With `d2estate.markProducts(mapName, ids,
+  { className })` (default class `d2-preferred`) it marks them all; `null` back
+  means the map applies it after load, `0` means nothing matched. Without
+  `markProducts` (2destate 1.6.9): `ImageMapPro.changeArtboard` to the best
+  unit's floor and `highlightObject` on it, no tooltip. An empty
+  `getProducts()` waits for `onMapLoad`; no 2destate on the page →
+  `console.info`, the branch goes on.
 
 ### Map (`d2-ma-highlight`, CTA)
 
@@ -1293,6 +1334,38 @@ title repeats on another artboard is skipped, because it could switch the floor
 (group titles don't count; with `d2-debug` the log says how many were skipped). The popup CTA for a 2destate unit with the map on the page calls
 `highlightObject` + `showTooltip` instead of navigating; the link it carries
 (`?d2-unit=<id>`) does the same after load on another page.
+
+### Contract v1 triggers (ma.4, §13.8)
+
+Listeners go on only when an active scenario of the envelope has that trigger,
+and only after the store opened with consent — a client page without these
+nodes gets no extra listener. Before consent nothing is collected.
+
+- **`exit_intent`** — `mouseout` with no `relatedTarget` and `clientY ≤ 0`,
+  once a visit (`state.exitVisit`). No listener when
+  `matchMedia('(hover: none)')` matches: touch screens have no reliable exit
+  signal.
+- **`engagement`** — `minSeconds` (active time on this page view, counted only
+  while `visibilityState` is not `hidden`), `minScrollPct` (deepest scroll,
+  `scrollY / (scrollHeight − innerHeight)`; a page that doesn't scroll is 100),
+  optional `utm: { source?, medium?, campaign? }`. At least one of the three,
+  else the node is skipped. One timer to the nearest threshold, no polling.
+  Each trigger fires once a page view. UTM is read from `utm_source`,
+  `utm_medium`, `utm_campaign` only (≤ 100 chars), stored as `state.utm` when
+  a visit starts and kept for the whole visit; lists match case-insensitively,
+  every given list must match, one value in a list is enough. `minSeconds: 0,
+  minScrollPct: 0` + `utm` = "came from the campaign", fires on load.
+- **`form_abandon`** — `focusin` / `input` / `change` on a field of a `form`
+  (not hidden, submit or button; not inside `[d2-ma-ignore]`), then no
+  `submit` and `idleSeconds` (10–600, default 60) without activity, or
+  `pagehide`. `formIds` limits it to forms by `id`, `data-name` or `name`.
+  Once per form per visit (`state.abandon`). Only the form id and the number
+  of fields touched leave the listener — never values or field names.
+
+`[d2-ma-test-lead]` (§13.8.4, demo test form only): on an `input` the module
+sets its value to `visitorId`; on a `form` it adds a hidden
+`d2_ma_visitor_id` field. Filled once the store opens with consent, emptied
+when consent is withdrawn.
 
 ### API
 
@@ -1323,7 +1396,8 @@ tracking still on.
 `[d2-ma-popup]` with `[d2-ma-field]`, `[d2-ma-cta]`, `[d2-ma-close]`;
 `[d2-ma-profile]`, `[d2-ma-history]` (+ `[d2-ma-history-item]` template,
 `d2-ma-history-limit`), `[d2-ma-clear]`, `[d2-ma-simulate-return]`,
-`[d2-ma-map]`. Every one also works as `data-d2-ma-*`.
+`[d2-ma-map]`, and from ma.4 `[d2-ma-slot]`, `[d2-ma-ignore]`,
+`[d2-ma-test-lead]`. Every one also works as `data-d2-ma-*`.
 
 ### Sandbox
 

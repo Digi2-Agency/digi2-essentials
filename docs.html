@@ -783,6 +783,7 @@
     <div class="sidebar-group-items">
       <a href="#ma">Overview</a>
       <a href="#ma-scenarios">Scenarios &amp; Rules</a>
+      <a href="#ma-v1">Exit, Engagement, Forms, Content, Map</a>
       <a href="#ma-webflow">Webflow Setup</a>
     </div>
   </div>
@@ -2690,10 +2691,10 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>crm_call_result</code></td><td><code>result</code> (<code>answered</code> | <code>no_answer</code>), <code>minDurationSec</code>, <code>hours: [from, to]</code></td><td>Demo: <code>demoState.crmCallSeq</code> rose after the previous step and the result matches. <code>minDurationSec</code> needs <code>demoState.crmCallDurationSec</code></td></tr>
       <tr><td>condition</td><td><code>pref.rooms</code>, <code>pref.floor</code>, <code>lead</code>, <code>visits: { min }</code></td><td>All must hold at the moment the path arrives</td></tr>
       <tr><td><code>popup</code></td><td><code>template</code>, <code>cta</code> (<code>open_unit</code> | <code>contact</code>)</td><td>Popup with the path's unit — see <a href="#ma-webflow">Webflow Setup</a></td></tr>
-      <tr><td><code>datalayer</code></td><td><code>event</code> (<code>ma_segment</code> | <code>ma_segment_exit</code>), <code>params.segment</code></td><td>Pushes <code>{ event, segment, ma_scenario }</code></td></tr>
-      <tr><td><code>webhook</code></td><td><code>channel</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code>), <code>template</code>, <code>testOnly: true</code></td><td>POST to <code>channels.&lt;channel&gt;.webhook</code>. Without <code>testOnly: true</code> it isn't sent</td></tr>
+      <tr><td><code>datalayer</code></td><td><code>event</code> (<code>ma_segment</code> | <code>ma_segment_exit</code>; from ma.4 also <code>ma_exit_intent</code>, <code>ma_engaged</code>, <code>ma_form_abandon</code>, <code>ma_content</code>), <code>params.segment</code></td><td>Pushes <code>{ event, segment, ma_scenario }</code>; the ma.4 events add their own fields — see <a href="#ma-v1">ma.4 nodes</a></td></tr>
+      <tr><td><code>webhook</code></td><td><code>channel</code> (<code>email</code> | <code>sms</code> | <code>ai_call</code> | <code>sales_notify</code>), <code>template</code>, <code>testOnly: true</code></td><td>POST to the channel's address (<code>via</code>, see <a href="#ma-v1">ma.4 nodes</a>). Without <code>testOnly: true</code> it isn't sent</td></tr>
     </table>
-    <p class="muted">Every action also takes <code>frequency</code> and <code>delayMinutes</code>.</p>
+    <p class="muted">Every action also takes <code>frequency</code>, <code>delayMinutes</code> and (ma.4) <code>cooldownMinutes</code>.</p>
 
     <h3>Rules</h3>
     <table>
@@ -2708,6 +2709,8 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>New <code>revision</code></td><td>That scenario's path and frequency start over</td></tr>
       <tr><td>Scenario published after the visitor already viewed units</td><td>Its first <code>unit_view</code> / <code>type_view</code> counts the history, so "viewed → came back" works on the first return. Actions behind it wait for a new event</td></tr>
       <tr><td>Unknown <code>type</code>, <code>event</code>, <code>do</code>, channel</td><td>That node (and what hangs only on it) is skipped with a <code>console.warn</code>; the rest runs. Unknown fields are ignored</td></tr>
+      <tr><td>Unknown condition key</td><td>Ignored — the path <strong>goes on</strong>. That's why ma.4 filters (UTM, time, scroll, forms) sit in <code>when</code> of new triggers, never in <code>if</code>: an older script stops at a trigger it doesn't know</td></tr>
+      <tr><td><code>minScript</code> above <code>ma.4</code></td><td>A <code>console.warn</code>; scenarios without newer nodes run as usual</td></tr>
       <tr><td>Node with no edges / a non-trigger with no incoming edge</td><td>Ignored (the latter with a warning)</td></tr>
       <tr><td><code>version</code> other than <code>"0"</code></td><td>No scenario runs; history is still recorded</td></tr>
       <tr><td>Envelope unreachable (network, 404, bad JSON)</td><td>No actions, silence for the visitor; history is recorded if consent isn't required</td></tr>
@@ -2717,6 +2720,69 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     <h3>Demo time</h3>
     <p><code>demoState.timeScale: 60</code> turns an hour into a minute for <code>afterHours</code>, <code>delayMinutes</code>, <code>once_per_days</code> and the 30-minute visit gap. The <code>[d2-ma-simulate-return]</code> button ends the visit as if the longest <code>afterHours</code> had passed. With <code>consentRequired: true</code>, <code>demoState</code> is ignored.</p>
     <p class="muted">The webhook body: <code>{ scenarioId, revision, nodeId, channel, template, unit, segment, visitorId, testOnly: true, ts }</code> — <code>unit</code> is the path's unit, <code>segment</code> the last one pushed on that path. The address is public, so rate limits, a template whitelist and recipients from Make's own configuration are Make's job, not the page's.</p>
+  </section>
+
+  <section id="ma-v1">
+    <h2>Exit, Engagement, Forms, Content, Map</h2>
+    <p>Contract v1 nodes (§13.8), from <code>v1.9.0-ma.4</code>. The page listens for them only when an active scenario of the envelope uses them, and only once the visitor gave consent — a site without these nodes behaves exactly as before.</p>
+
+    <h3>Triggers</h3>
+    <table>
+      <tr><th>Trigger</th><th>Parameters</th><th>Fires when</th></tr>
+      <tr><td><code>exit_intent</code></td><td>—</td><td>The mouse leaves the window through the top edge. Once a visit. <strong>Never on touch screens</strong> — there is no reliable signal; use <code>engagement</code> there</td></tr>
+      <tr><td><code>engagement</code></td><td><code>minSeconds</code> (0–1800), <code>minScrollPct</code> (0–100), <code>utm: { source?, medium?, campaign? }</code> — at least one</td><td>On this page view: active time (tab visible) ≥ <code>minSeconds</code> <strong>and</strong> deepest scroll ≥ <code>minScrollPct</code> <strong>and</strong> the visit's UTM matches. Once a page view</td></tr>
+      <tr><td><code>form_abandon</code></td><td><code>formIds</code> (form <code>id</code> / <code>data-name</code>; empty = any), <code>idleSeconds</code> (10–600, default 60)</td><td>A field got focus, the form wasn't sent, and nothing happened for <code>idleSeconds</code> — or the visitor left the page. Once per form per visit</td></tr>
+    </table>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>UTM</td><td>Only <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, read on the first page of the visit and kept for the whole visit. Case doesn't matter; every given list must match, one value in a list is enough. <code>minSeconds: 0, minScrollPct: 0</code> + <code>utm</code> = "came from the campaign", fires on load</td></tr>
+      <tr><td>Hidden tab</td><td>Doesn't count towards <code>minSeconds</code></td></tr>
+      <tr><td>Page too short to scroll</td><td>Counts as 100% scrolled</td></tr>
+      <tr><td>What a form tells the module</td><td>The form id and how many fields were touched. <strong>Never values or field names</strong></td></tr>
+      <tr><td>Forms left out</td><td>Any form inside <code>[d2-ma-ignore]</code>; hidden fields and buttons don't count as touching</td></tr>
+    </table>
+
+    <h3>Actions</h3>
+    <table>
+      <tr><th>Action</th><th>Parameters</th><th>Does</th></tr>
+      <tr><td><code>content</code></td><td><code>slot</code> (<code>[a-z0-9-]</code>) + <code>text</code> (≤ 160) <em>or</em> <code>templateId</code></td><td>Replaces the text of every <code>[d2-ma-slot="&lt;slot&gt;"]</code> (text only, never HTML). Fields: <code>{{pref.rooms}}</code>, <code>{{pref.floor}}</code>, <code>{{unit.name}}</code>, <code>{{unit.rooms}}</code>, <code>{{unit.floor}}</code>, <code>{{unit.area}}</code>, <code>{{unit.price}}</code>, <code>{{unit.building}}</code></td></tr>
+      <tr><td><code>map_mark</code></td><td><code>by</code> (<code>rooms</code> | <code>floor</code> | <code>both</code>), <code>limit</code> (1–20, 5), <code>className</code> (<code>d2-preferred</code>)</td><td>2destate map only: marks the units that fit the visitor's preference best, sold ones left out</td></tr>
+      <tr><td><code>datalayer</code></td><td><code>ma_exit_intent</code> | <code>ma_engaged</code> | <code>ma_form_abandon</code> | <code>ma_content</code></td><td>Adds <code>seconds</code> + <code>scroll_pct</code>, <code>form_id</code>, or <code>slot</code> + <code>template_id</code> from the step before it. No personal data, no field values, no UTM</td></tr>
+      <tr><td><code>webhook</code> on <code>sales_notify</code></td><td><code>template</code>, <code>testOnly: true</code></td><td>"The test lead is on the site now" for the agency's test contact. Body without any form data</td></tr>
+    </table>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td><code>content</code>: a field has no value, or no slot on the page</td><td>The text stays as it was and the branch <strong>stops</strong>, so a following <code>ma_content</code> never reports a change that didn't happen</td></tr>
+      <tr><td><code>content</code> and "Clear" / consent withdrawn</td><td>The original text comes back</td></tr>
+      <tr><td><code>content</code> templates</td><td><code>pref-rooms</code> — "Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie"; <code>last-unit</code> — "Wróć do lokalu {{unit.name}}"; <code>last-unit-price</code> — "{{unit.name}} — {{unit.price}}"</td></tr>
+      <tr><td><code>map_mark</code> ranking</td><td>Matching rooms weigh more than a matching floor; available before reserved; then map order</td></tr>
+      <tr><td><code>map_mark</code> without <code>markProducts</code> in 2destate</td><td>Switches the map to the best unit's floor and highlights that one unit (no tooltip) — works on 2destate 1.6.9</td></tr>
+      <tr><td><code>map_mark</code> before the map loaded / without 2destate</td><td>Waits for the map / skipped with a <code>console.info</code>, the branch goes on</td></tr>
+      <tr><td><code>cooldownMinutes</code> (0–10080)</td><td>Minimum gap between two runs of the action in this scenario, across visits, on top of <code>frequency</code></td></tr>
+    </table>
+
+    <h3>Channels</h3>
+    <pre><code><span class="prop">"site"</span>: <span class="string">"osiedle-demo"</span>,
+<span class="prop">"minScript"</span>: <span class="string">"ma.4"</span>,
+<span class="prop">"channels"</span>: {
+  <span class="prop">"sales_notify"</span>: { <span class="prop">"via"</span>: <span class="string">"digi2"</span> },  <span class="comment">// POST https://digi2.app/api/ma/channel/osiedle-demo</span>
+  <span class="prop">"crm_external"</span>: { <span class="prop">"via"</span>: <span class="string">"make"</span>, <span class="prop">"webhook"</span>: <span class="string">"https://hook.eu1.make.com/…"</span>, <span class="prop">"temporary"</span>: <span class="keyword">true</span> }
+}</code></pre>
+    <table>
+      <tr><th><code>via</code></th><th>Where the action posts</th></tr>
+      <tr><td><code>"digi2"</code></td><td><code>https://digi2.app/api/ma/channel/&lt;site&gt;</code>; any <code>webhook</code> on the channel is ignored</td></tr>
+      <tr><td><code>"make"</code></td><td>The channel's <code>webhook</code>, only on <code>https://hook.eu1.make.com/</code></td></tr>
+      <tr><td>none (envelope v0)</td><td>The channel's <code>webhook</code>, <code>https://</code> only</td></tr>
+      <tr><td>anything else</td><td>Nothing is sent</td></tr>
+    </table>
+    <p class="muted">ma.3 doesn't know <code>via</code>: a channel without a <code>webhook</code> sends nothing, and the rest of that branch still runs.</p>
+
+    <h3>Page elements</h3>
+    <div class="wf-map">
+      <div class="wf-el"><span class="wf-elname">Heading the content action may rewrite</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-slot = hero-title</span></div>
+      <div class="wf-el"><span class="wf-elname">Form <code>form_abandon</code> must never count</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-ignore</span></div>
+      <div class="wf-el"><span class="wf-elname">Demo test form <span class="muted">(hidden input gets the visitorId; on the form a hidden d2_ma_visitor_id field is added; after consent only)</span></span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-test-lead</span></div>
+    </div>
   </section>
 
   <section id="ma-webflow">

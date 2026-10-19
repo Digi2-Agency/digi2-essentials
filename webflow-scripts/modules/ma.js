@@ -51,6 +51,27 @@
  *     [d2-ma-history-item]        Optional row template with [d2-ma-field] inside
  *   [d2-ma-clear]                 Button — wipe the d2ma database
  *   [d2-ma-simulate-return]       Button — end the visit as if afterHours had passed
+ *   [d2-ma-slot="hero-title"]     Text the content action may replace (textContent only)
+ *   form[d2-ma-ignore]            Never counted by form_abandon
+ *   [d2-ma-test-lead]             Test form (§13.8.4): an input gets visitorId as value,
+ *                                 a form gets a hidden d2_ma_visitor_id field
+ *
+ * ─── Contract v1 nodes (ma.4, §13.8) — listening only when the envelope uses them
+ *
+ *   trigger exit_intent           Mouse leaves through the top edge, once a visit.
+ *                                 Nothing on touch screens.
+ *   trigger engagement            Active seconds on this page (tab visible) and the
+ *                                 deepest scroll; optional utm filter (first entry of
+ *                                 the visit). Once a page view.
+ *   trigger form_abandon          Focus in a form, no submit, then idleSeconds or
+ *                                 pagehide. Only the form id and the number of fields
+ *                                 touched — never values or field names.
+ *   action content                [d2-ma-slot] text with {{pref.*}} / {{unit.*}} fields,
+ *                                 or a templateId from CONTENT_TEMPLATES
+ *   action map_mark               Units matching the profile on the 2destate map
+ *   channels.<k>.via              "digi2" → POST digi2.app/api/ma/channel/<site>,
+ *                                 "make" → hook.eu1.make.com only
+ *   cooldownMinutes               Minimum gap between runs of an action
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
@@ -98,10 +119,28 @@
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var TEMPLATE_RE = /^[A-Za-z0-9_-]+$/;
 
-  var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1 };
-  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1 };
-  var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1 };
-  var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
+  var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1,
+    exit_intent: 1, engagement: 1, form_abandon: 1 };
+  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1 };
+  var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1, ma_exit_intent: 1, ma_engaged: 1, ma_form_abandon: 1, ma_content: 1 };
+  // Parametry zdarzeń dataLayer z wyzwalacza albo akcji na ścieżce (§13.8.3).
+  var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id'], ma_content: ['slot', 'template_id'] };
+  var CHANNELS = { email: 1, sms: 1, ai_call: 1, sales_notify: 1 };
+  var SCRIPT_VERSION = 4;    // ma.4 - porównywane z minScript koperty
+  var CHANNEL_API = 'https://digi2.app/api/ma/channel/';
+  var MAKE_HOOK_RE = /^https:\/\/hook\.eu1\.make\.com\//i;
+  var SITE_RE = /^[A-Za-z0-9_-]{1,80}$/;
+  var SLOT_RE = /^[a-z0-9-]{1,64}$/;
+  var CLASS_RE = /^[a-z0-9-]{1,40}$/;
+  var MAP_BY = { rooms: 1, floor: 1, both: 1 };
+  var CONTENT_FIELDS = ['pref.rooms', 'pref.floor', 'unit.name', 'unit.rooms', 'unit.floor', 'unit.area',
+    'unit.price', 'unit.building'];
+  // Szablony treści dla content.templateId (§13.8.3, lista ma.4).
+  var CONTENT_TEMPLATES = {
+    'pref-rooms': 'Mieszkania {{pref.rooms}}-pokojowe wybrane dla Ciebie',
+    'last-unit': 'Wróć do lokalu {{unit.name}}',
+    'last-unit-price': '{{unit.name}} — {{unit.price}}'
+  };
 
   function _log(action, data) {
     if (window.digi2.log) window.digi2.log('ma', action, data);
@@ -174,6 +213,7 @@
   var booted = false;
   var gtagConsent = {};      // komendy gtag('consent', …) z dataLayer: update, default, regionDenied
   var revoked = false;       // odmowa w trakcie otwierania magazynu
+  var pageUtm = null;        // utm_source / utm_medium / utm_campaign z adresu tej odsłony
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -507,6 +547,8 @@
       }
       state.visits += 1;
       state.visitStart = t;
+      // UTM z pierwszego wejścia w wizycie (§13.8.2); do profilu tylko po zgodzie.
+      state.utm = pageUtm;
     }
     state.lastSeen = t;
     return ev;
@@ -577,6 +619,13 @@
       state.lead = true;
       state.leadAt = t;
       dispatch({ type: 'lead', t: t });
+    } else if (evt.type === 'exit_intent') {
+      // Raz na wizytę (§13.8.2).
+      if (state.exitVisit === state.visits) return;
+      state.exitVisit = state.visits;
+      dispatch({ type: 'exit_intent', t: t });
+    } else if (evt.type === 'engagement' || evt.type === 'form_abandon') {
+      dispatch({ type: evt.type, t: t, data: evt.data });
     }
   }
 
@@ -589,8 +638,13 @@
     var env = {
       raw: raw, scenarios: [], channels: raw.channels && typeof raw.channels === 'object' ? raw.channels : {},
       storage: raw.storage && typeof raw.storage === 'object' ? raw.storage : {},
-      project: str(raw.project2destate), demoState: null
+      project: str(raw.project2destate), site: str(raw.site), demoState: null
     };
+    var min = /^ma\.(\d+)$/.exec(String(raw.minScript || ''));
+    if (min && parseInt(min[1], 10) > SCRIPT_VERSION) {
+      _warn('envelope needs d2-ma ' + raw.minScript + ', this is ma.' + SCRIPT_VERSION
+        + ' — nodes it does not know stop their branch');
+    }
     if (String(raw.version) !== CONTRACT_VERSION) {
       _warn('envelope version "' + raw.version + '" is not "' + CONTRACT_VERSION + '" — no scenario runs');
       return env;
@@ -651,6 +705,11 @@
     if (node.type === 'trigger') {
       var ev = node.when && node.when.event;
       if (!TRIGGERS[ev]) { _warn(where + ' — unknown trigger event "' + ev + '", skipped'); return false; }
+      var w = node.when;
+      if (ev === 'engagement' && !(num(w.minSeconds) > 0 || num(w.minScrollPct) > 0 || (w.utm && typeof w.utm === 'object'))) {
+        _warn(where + ' — engagement needs minSeconds, minScrollPct or utm, skipped');
+        return false;
+      }
       return true;
     }
     if (node.type === 'condition') {
@@ -665,6 +724,18 @@
       }
       if (node['do'] === 'datalayer' && !DL_EVENTS[node.event]) {
         _warn(where + ' — unknown datalayer event "' + node.event + '", skipped');
+        return false;
+      }
+      if (node['do'] === 'content') {
+        var hasText = typeof node.text === 'string' && node.text.length > 0 && node.text.length <= 160;
+        var hasTpl = node.templateId != null && Object.prototype.hasOwnProperty.call(CONTENT_TEMPLATES, node.templateId);
+        if (!SLOT_RE.test(String(node.slot || '')) || hasText === hasTpl) {
+          _warn(where + ' — content needs a slot and exactly one of text / a known templateId, skipped');
+          return false;
+        }
+      }
+      if (node['do'] === 'map_mark' && !MAP_BY[node.by]) {
+        _warn(where + ' — map_mark by "' + node.by + '" is not rooms, floor or both, skipped');
         return false;
       }
       if (node['do'] === 'webhook' && !CHANNELS[node.channel]) {
@@ -790,7 +861,27 @@
       if (after == null || after < 0) after = 1;
       return evt.gap >= scaled(after * HOUR_MS) ? ctx : null;
     }
-    if (evt.type === 'lead') return ctx;
+    if (evt.type === 'lead' || evt.type === 'exit_intent') return ctx;
+    if (evt.type === 'engagement') {
+      var e = evt.data || {};
+      var key = sc.id + '/' + node.id;
+      if (engFired[key] || !engagementMet(w, e.seconds, e.scrollPct)) return null;
+      engFired[key] = true;
+      ctx.signal = { seconds: e.seconds, scroll_pct: e.scrollPct };
+      return ctx;
+    }
+    if (evt.type === 'form_abandon') {
+      var f = evt.data || {};
+      if (!formListed(w, f.formId)) return null;
+      if (!f.exit && (f.idle == null || f.idle < idleOf(w))) return null;
+      // Raz na formularz na wizytę (§13.8.2).
+      if (!state.abandon || state.abandon.visit !== state.visits) state.abandon = { visit: state.visits, keys: [] };
+      var fk = sc.id + '/' + node.id + '/' + (f.formId || '');
+      if (state.abandon.keys.indexOf(fk) >= 0) return null;
+      state.abandon.keys.push(fk);
+      ctx.signal = { form_id: f.formId || null };
+      return ctx;
+    }
     if (evt.type === 'crm_call_result') {
       var seen = st.crm[node.id];
       st.crm[node.id] = evt.seq;
@@ -827,7 +918,7 @@
         var arm = armOf(sc, st, node);
         if (!arm) return;
         var ctx = check(sc, st, node, { type: node.when.event, t: evt.t, unit: evt.unit, gap: evt.gap,
-          seq: evt.seq, result: evt.result, duration: evt.duration }, arm);
+          seq: evt.seq, result: evt.result, duration: evt.duration, data: evt.data }, arm);
         if (ctx) firing.push({ node: node, ctx: ctx });
       });
       firing.forEach(function (f) {
@@ -906,6 +997,9 @@
     var f = frequencyOf(node);
     var r = st.freq[node.id];
     if (!r) return false;
+    // cooldownMinutes: odstęp między wykonaniami, także między wizytami (§13.8.1).
+    var cool = num(node.cooldownMinutes);
+    if (cool > 0 && r.at != null && now() - r.at < scaled(Math.min(cool, 10080) * 60 * 1000)) return true;
     if (f.kind === 'visit') return r.visit === state.visits;
     if (f.kind === 'unit') return (r.units || []).indexOf(unitKey(unit)) >= 0;
     return r.at != null && now() - r.at < scaled(f.days * DAY_MS);
@@ -923,7 +1017,7 @@
   }
 
   function runAction(sc, st, node, ctx, pass, seen) {
-    var c = { unit: ctx.unit || lastUnit(), segment: ctx.segment || null, t: ctx.t };
+    var c = { unit: ctx.unit || lastUnit(), segment: ctx.segment || null, t: ctx.t, signal: ctx.signal || null };
     // Reguła 6: pominięta akcja nie kończy gałęzi i nie czeka swojego opóźnienia.
     if (skippedByFrequency(st, node, c.unit)) {
       _log('skipped by frequency → ' + sc.id + '/' + node.id);
@@ -969,13 +1063,39 @@
       });
     } else if (kind === 'datalayer') {
       var segment = node.params && node.params.segment != null ? String(node.params.segment) : null;
-      var payload = { event: node.event, segment: segment, ma_scenario: sc.id };
+      var segEvent = node.event === 'ma_segment' || node.event === 'ma_segment_exit';
+      var payload = { event: node.event };
+      if (segEvent || segment != null) payload.segment = segment;
+      payload.ma_scenario = sc.id;
+      (DL_PARAMS[node.event] || []).forEach(function (k) {
+        if (ctx.signal && ctx.signal[k] != null) payload[k] = ctx.signal[k];
+      });
       window.dataLayer = window.dataLayer || [];
       window.dataLayer.push(payload);
-      ctx = { unit: ctx.unit, segment: segment, t: ctx.t };
-      state.lastSegment = segment;
+      // Segment profilu zmieniają tylko zdarzenia segmentu, nie ma_engaged itp.
+      if (segEvent) {
+        ctx = { unit: ctx.unit, segment: segment, t: ctx.t, signal: ctx.signal };
+        state.lastSegment = segment;
+      }
       recordFrequency(st, node, ctx.unit);
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'datalayer', event: node.event, segment: segment });
+    } else if (kind === 'content') {
+      var text = contentText(node, ctx.unit);
+      var n = text == null ? 0 : setSlot(node.slot, text);
+      // Pole bez wartości albo brak slotu na stronie: treść się nie zmienia, a dalsze
+      // kroki (np. ma_content) by o tym kłamały - gałąź się kończy.
+      if (!n) {
+        _log((text == null ? 'content skipped — a field has no value → ' : 'content skipped — no [d2-ma-slot] → ')
+          + sc.id + '/' + node.id);
+        return;
+      }
+      recordFrequency(st, node, ctx.unit);
+      ctx = { unit: ctx.unit, segment: ctx.segment, t: ctx.t,
+        signal: { slot: node.slot, template_id: node.templateId == null ? null : node.templateId } };
+      _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'content', slot: node.slot });
+    } else if (kind === 'map_mark') {
+      recordFrequency(st, node, ctx.unit);
+      mapMark(sc, node);
     } else if (kind === 'webhook') {
       if (sendWebhook(sc, node, ctx)) {
         recordFrequency(st, node, ctx.unit);
@@ -1049,15 +1169,28 @@
     return /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url);
   }
 
+  // Adres kanału (§13.10.1): via "digi2" = endpoint digi2.app tej strony,
+  // via "make" = tymczasowy webhook Make, bez via = webhook z koperty v0.
+  function channelUrl(ch) {
+    if (!ch || typeof ch !== 'object') return '';
+    if (ch.via === 'digi2') {
+      var site = envelope.site;
+      return site && SITE_RE.test(site) ? CHANNEL_API + encodeURIComponent(site) : '';
+    }
+    var url = typeof ch.webhook === 'string' ? ch.webhook : '';
+    if (ch.via === 'make') return MAKE_HOOK_RE.test(url) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(url) ? url : '';
+    if (ch.via != null) return '';
+    return url && webhookUrlAllowed(url) ? url : '';
+  }
+
   function sendWebhook(sc, node, ctx) {
     var where = 'scenario "' + sc.id + '": webhook "' + node.id + '"';
     if (node.testOnly !== true) {
       _warn(where + ' has no testOnly: true — not sent (contract v0 sends to agency test contacts only)');
       return false;
     }
-    var ch = envelope.channels[node.channel];
-    var url = ch && typeof ch.webhook === 'string' ? ch.webhook : '';
-    if (!url || !webhookUrlAllowed(url)) {
+    var url = channelUrl(envelope.channels[node.channel]);
+    if (!url) {
       _warn(where + ' — channel "' + node.channel + '" has no usable webhook address');
       return false;
     }
@@ -1081,6 +1214,122 @@
     }
     _log('webhook → ' + node.channel, body);
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Akcja content - tekst w [d2-ma-slot], wyłącznie przez textContent (§13.8.3)
+  // ---------------------------------------------------------------------------
+
+  var slotOriginals = [];    // { el, text } - oryginał wraca przy „Wyczyść"
+
+  function contentValue(key, unit) {
+    if (key === 'pref.rooms' || key === 'pref.floor') {
+      var p = prefOf(key.slice(5));
+      return p == null ? null : String(p);
+    }
+    var f = key.slice(5);
+    if (f === 'rooms' || f === 'floor') return unit && unit[f] != null ? String(unit[f]) : null;
+    return fieldValue(f, unit);
+  }
+
+  // null, gdy któreś pole nie ma wartości - na stronę nie trafia „null" ani dziura.
+  function contentText(node, unit) {
+    var tpl = node.text != null ? String(node.text) : CONTENT_TEMPLATES[node.templateId];
+    var missing = false;
+    var out = tpl.replace(/\{\{\s*([a-zA-Z.]+)\s*\}\}/g, function (m, key) {
+      var v = CONTENT_FIELDS.indexOf(key) >= 0 ? contentValue(key, unit) : null;
+      if (v == null || v === '') missing = true;
+      return v == null ? '' : v;
+    });
+    return missing ? null : out;
+  }
+
+  function setSlot(slot, text) {
+    if (!document.querySelectorAll) return 0;
+    var els = document.querySelectorAll('[d2-ma-slot="' + slot + '"], [data-d2-ma-slot="' + slot + '"]');
+    for (var i = 0; i < els.length; i++) {
+      var known = false;
+      for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === els[i]) known = true;
+      if (!known) slotOriginals.push({ el: els[i], text: els[i].textContent });
+      els[i].textContent = text;
+    }
+    return els.length;
+  }
+
+  function restoreSlots() {
+    slotOriginals.forEach(function (o) { o.el.textContent = o.text; });
+    slotOriginals = [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Akcja map_mark - lokale z preferencji na mapie 2destate (§13.8.3)
+  // ---------------------------------------------------------------------------
+
+  var markWaiting = null;    // map_mark, który czeka na onMapLoad
+  var lastMapName = null;    // nazwa mapy z ostatniego kliknięcia
+
+  function mapNames() {
+    var I = imp();
+    var names = I && I.instances ? Object.keys(I.instances) : [];
+    if (!names.length && lastMapName) names.push(lastMapName);
+    return names;
+  }
+
+  // Ranking z profilu: pasujące pokoje ważą więcej niż piętro, wolne przed
+  // zarezerwowanymi, sprzedanych nie ma. Zwraca listę id, najlepszy pierwszy.
+  function rankUnits(products, by) {
+    var rooms = prefOf('rooms');
+    var floor = prefOf('floor');
+    var list = [];
+    products.forEach(function (p, i) {
+      var u = from2destate(p);
+      if (!u || u.status === 'sold') return;
+      var score = 0;
+      if (by !== 'floor' && rooms != null && u.rooms === rooms) score += 2;
+      if (by !== 'rooms' && floor != null && u.floor === floor) score += 1;
+      if (score > 0) list.push({ id: u.unitId, score: score, free: u.status === 'available' ? 1 : 0, i: i });
+    });
+    list.sort(function (a, b) { return (b.score - a.score) || (b.free - a.free) || (a.i - b.i); });
+    return list.map(function (x) { return x.id; });
+  }
+
+  function mapMark(sc, node) {
+    var api = mapApi();
+    if (!api || typeof api.getProducts !== 'function') {
+      if (window.console && console.info) console.info('[digi2.ma] map_mark skipped — no 2destate map on this page');
+      return;
+    }
+    var products = [];
+    try { products = api.getProducts() || []; } catch (e) {}
+    if (!products.length) {
+      // Mapa jeszcze się ładuje - oznaczamy po onMapLoad.
+      markWaiting = { sc: sc, node: node };
+      _log('map_mark waits for the map → ' + sc.id + '/' + node.id);
+      return;
+    }
+    var limit = Math.min(Math.max(num(node.limit) || 5, 1), 20);
+    var ids = rankUnits(products, node.by).slice(0, limit);
+    if (!ids.length) { _log('map_mark — nothing on the map matches the profile'); return; }
+    var className = CLASS_RE.test(String(node.className || '')) ? node.className : 'd2-preferred';
+    try {
+      if (typeof api.markProducts === 'function') {
+        // null = mapa jeszcze się ładuje i nałoży oznaczenie sama, 0 = nic nie pasuje.
+        mapNames().forEach(function (m) {
+          if (api.markProducts(m, ids, { className: className }) === 0) _log('map_mark — map "' + m + '" marked nothing');
+        });
+      } else {
+        // Fallback z 2destate 1.6.9: piętro i podświetlenie najlepszego lokalu, bez dymka.
+        var o = mapObjectFor(ids[0]);
+        var I = imp();
+        if (!o || !I) { _log('map_mark — best unit has no shape on the map'); return; }
+        if (typeof I.changeArtboard === 'function' && o.artboard != null) I.changeArtboard(o.map, o.artboard);
+        if (typeof I.highlightObject === 'function') I.highlightObject(o.map, o.title);
+      }
+    } catch (e) {
+      _warn('map_mark failed', e);
+      return;
+    }
+    _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'map_mark', units: ids });
   }
 
   // ---------------------------------------------------------------------------
@@ -1516,11 +1765,18 @@
       var api = mapApi();
       if (mapHooked || !api || typeof api.onProductClick !== 'function') return mapHooked;
       mapHooked = true;
-      api.onProductClick(function (product) {
+      api.onProductClick(function (product, meta) {
+        if (meta && meta.mapName) lastMapName = String(meta.mapName);
         var unit = from2destate(product);
         if (unit) intake({ type: 'view', unit: unit });
       });
-      if (typeof api.onMapLoad === 'function') api.onMapLoad(function () { openFromUrl(); highlightProfile(); });
+      if (typeof api.onMapLoad === 'function') {
+        api.onMapLoad(function () {
+          openFromUrl();
+          highlightProfile();
+          if (markWaiting && tracking) { var m = markWaiting; markWaiting = null; mapMark(m.sc, m.node); }
+        });
+      }
       if (typeof api.onFloorChange === 'function') api.onFloorChange(floorChanged);
       return true;
     }
@@ -1557,6 +1813,221 @@
       building: null, status: null, isPromo: null, url: smUnitLink(id),
       image: null, promoText: null, source: '3destate', partial: true
     } });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sygnały z §13.8: wyjście, zaangażowanie, porzucony formularz. Nasłuch
+  // tylko wtedy, gdy koperta ma taki wyzwalacz, i dopiero po zgodzie.
+  // ---------------------------------------------------------------------------
+
+  function usesTrigger(ev) {
+    return !!envelope && envelope.scenarios.some(function (sc) {
+      return sc.triggers.some(function (n) { return n.when.event === ev; });
+    });
+  }
+
+  function readUtm() {
+    var u = {};
+    var any = false;
+    ['source', 'medium', 'campaign'].forEach(function (k) {
+      var v = param('utm_' + k);
+      if (v) { u[k] = String(v).slice(0, 100); any = true; }
+    });
+    return any ? u : null;
+  }
+
+  // Każda podana lista musi pasować (I), w liście wystarczy jedna wartość (LUB).
+  function utmMatches(f) {
+    if (!f || typeof f !== 'object') return true;
+    var u = (state && state.utm) || {};
+    return ['source', 'medium', 'campaign'].every(function (k) {
+      var list = f[k];
+      if (!Array.isArray(list) || !list.length) return true;
+      var v = u[k] == null ? null : String(u[k]).toLowerCase();
+      return v != null && list.some(function (x) { return String(x).toLowerCase() === v; });
+    });
+  }
+
+  function engagementMet(w, seconds, scrollPct) {
+    return seconds >= (num(w.minSeconds) || 0) && scrollPct >= (num(w.minScrollPct) || 0) && utmMatches(w.utm);
+  }
+
+  var exitHooked = false;
+  function hookExitIntent() {
+    if (exitHooked || !usesTrigger('exit_intent') || !document.addEventListener) return;
+    // Ekrany dotykowe nie dają wiarygodnego sygnału wyjścia (§13.8.2).
+    try { if (window.matchMedia && window.matchMedia('(hover: none)').matches) return; } catch (e) {}
+    exitHooked = true;
+    document.addEventListener('mouseout', function (e) {
+      if (!e || e.relatedTarget || e.toElement || !(e.clientY <= 0)) return;
+      intake({ type: 'exit_intent' });
+    });
+  }
+
+  // Zaangażowanie na tej odsłonie: aktywny czas (karta widoczna) i największe
+  // przewinięcie. Bez odpytywania - jeden timer do najbliższego progu.
+  var eng = null;
+  var engFired = {};         // wyzwalacz engagement, który odpalił na tej odsłonie
+
+  function scrollPct() {
+    var de = document.documentElement || {};
+    var h = Math.max(de.scrollHeight || 0, (document.body && document.body.scrollHeight) || 0);
+    var vh = window.innerHeight || de.clientHeight || 0;
+    if (!h || h <= vh) return 100;
+    var y = window.pageYOffset || de.scrollTop || 0;
+    return Math.min(100, Math.max(0, Math.round(y / (h - vh) * 100)));
+  }
+
+  function activeMs() {
+    return eng.active + (eng.since != null ? Date.now() - eng.since : 0);
+  }
+
+  function engCheck() {
+    if (!eng || !envelope || !tracking) return;
+    if (eng.timer) { clearTimeout(eng.timer); eng.timer = null; }
+    var ms = activeMs();
+    var seconds = Math.floor(ms / 1000);
+    var hit = false;
+    var wait = null;
+    envelope.scenarios.forEach(function (sc) {
+      sc.triggers.forEach(function (n) {
+        var key = sc.id + '/' + n.id;
+        if (n.when.event !== 'engagement' || eng.signalled[key]) return;
+        if (engagementMet(n.when, seconds, eng.scroll)) { eng.signalled[key] = true; hit = true; return; }
+        var left = (num(n.when.minSeconds) || 0) * 1000 - ms;
+        if (left > 0 && eng.since != null && (wait === null || left < wait)) wait = left;
+      });
+    });
+    if (wait !== null) eng.timer = setTimeout(engCheck, wait + 20);
+    if (hit) intake({ type: 'engagement', data: { seconds: seconds, scrollPct: eng.scroll } });
+  }
+
+  function hookEngagement() {
+    if (eng || !usesTrigger('engagement') || !document.addEventListener) return;
+    eng = { active: 0, since: document.visibilityState === 'hidden' ? null : Date.now(), scroll: scrollPct(),
+      timer: null, signalled: {} };
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        if (eng.since != null) { eng.active += Date.now() - eng.since; eng.since = null; }
+      } else if (eng.since == null) {
+        eng.since = Date.now();
+      }
+      engCheck();
+    });
+    window.addEventListener('scroll', function () {
+      var p = scrollPct();
+      if (p > eng.scroll) { eng.scroll = p; engCheck(); }
+    }, { passive: true });
+    engCheck();
+  }
+
+  // Porzucony formularz: fokus w polu, potem brak wysłania i bezczynność albo
+  // wyjście ze strony. Bez wartości i nazw pól - tylko id formularza i liczba pól.
+  var forms = [];
+  var formsHooked = false;
+
+  function idleOf(w) {
+    var n = num(w.idleSeconds);
+    return n == null ? 60 : Math.min(Math.max(n, 10), 600);
+  }
+
+  function formListed(w, formId) {
+    var ids = Array.isArray(w.formIds) ? w.formIds.map(String) : [];
+    return !ids.length || (formId != null && ids.indexOf(formId) >= 0);
+  }
+
+  function formKeyOf(form) {
+    return form.getAttribute('id') || form.getAttribute('data-name') || form.getAttribute('name') || null;
+  }
+
+  function formEntry(target) {
+    var t = target;
+    if (!t || !t.tagName || !/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return null;
+    var type = String(t.getAttribute('type') || '').toLowerCase();
+    if (type === 'hidden' || type === 'submit' || type === 'button') return null;
+    var form = t.closest ? t.closest('form') : null;
+    if (!form || form.closest('[d2-ma-ignore], [data-d2-ma-ignore]')) return null;
+    for (var i = 0; i < forms.length; i++) if (forms[i].form === form) return forms[i];
+    var ent = { form: form, id: formKeyOf(form), fields: [], timers: [], submitted: false };
+    forms.push(ent);
+    return ent;
+  }
+
+  function abandon(ent, idle, exit) {
+    if (ent.submitted || !ent.fields.length) return;
+    intake({ type: 'form_abandon', data: { formId: ent.id, fields: ent.fields.length, idle: idle, exit: exit } });
+  }
+
+  function armForm(ent) {
+    ent.timers.forEach(clearTimeout);
+    ent.timers = [];
+    var idles = [];
+    envelope.scenarios.forEach(function (sc) {
+      sc.triggers.forEach(function (n) {
+        if (n.when.event !== 'form_abandon' || !formListed(n.when, ent.id)) return;
+        var s = idleOf(n.when);
+        if (idles.indexOf(s) < 0) idles.push(s);
+      });
+    });
+    idles.forEach(function (s) {
+      ent.timers.push(setTimeout(function () { abandon(ent, s, false); }, s * 1000));
+    });
+  }
+
+  function onFormActivity(e) {
+    if (!tracking || !envelope) return;
+    var ent = formEntry(e && e.target);
+    if (!ent || ent.submitted) return;
+    if (ent.fields.indexOf(e.target) < 0) ent.fields.push(e.target);
+    armForm(ent);
+  }
+
+  function hookForms() {
+    if (formsHooked || !usesTrigger('form_abandon') || !document.addEventListener) return;
+    formsHooked = true;
+    ['focusin', 'input', 'change'].forEach(function (n) { document.addEventListener(n, onFormActivity, true); });
+    document.addEventListener('submit', function (e) {
+      for (var i = 0; i < forms.length; i++) {
+        if (e && forms[i].form === e.target) { forms[i].submitted = true; forms[i].timers.forEach(clearTimeout); }
+      }
+    }, true);
+    if (window.addEventListener) {
+      window.addEventListener('pagehide', function () {
+        forms.forEach(function (ent) { abandon(ent, null, true); });
+      });
+    }
+  }
+
+  // Formularz testowy (§13.8.4): [d2-ma-test-lead] na polu wpisuje visitorId,
+  // na formularzu - dokłada ukryte pole d2_ma_visitor_id. Tylko po zgodzie.
+  function fillTestLead() {
+    if (!document.querySelectorAll) return;
+    var id = tracking && state ? state.visitorId : '';
+    var els = document.querySelectorAll('[d2-ma-test-lead], [data-d2-ma-test-lead]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var input = el;
+      if (el.tagName === 'FORM') {
+        input = el.querySelector('input[name="d2_ma_visitor_id"]');
+        if (!input) {
+          if (!id) continue;
+          input = document.createElement('input');
+          input.setAttribute('type', 'hidden');
+          input.setAttribute('name', 'd2_ma_visitor_id');
+          el.appendChild(input);
+        }
+      } else if (el.tagName !== 'INPUT') {
+        continue;
+      }
+      input.value = id;
+    }
+  }
+
+  function hookSignals() {
+    hookExitIntent();
+    hookEngagement();
+    hookForms();
+    fillTestLead();
   }
 
   // ---------------------------------------------------------------------------
@@ -1741,6 +2212,9 @@
     state = null;
     buffer = [];
     if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
+    markWaiting = null;
+    restoreSlots();
+    fillTestLead();
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
     _queue(function () { return s.clear(); });
     render();
@@ -1822,6 +2296,8 @@
         if (required && !q.consent) return;
         handle(q.evt, q.real + (state.shift || 0));
       });
+      // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
+      hookSignals();
       runDue();
       afterChange();
       highlightProfile();
@@ -1863,6 +2339,7 @@
     hookMap();
     bindUi();
     deepLinkView();
+    pageUtm = readUtm();
     envelopeUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     fetchEnvelope(envelopeUrl).then(function (raw) {
       envelope = compile(raw);
@@ -1890,6 +2367,7 @@
     }
     var before = crmSeq;
     applyEnvelope(env);
+    hookSignals();
     var crm = crmEvent();
     if (crm && crm.seq !== before) dispatch(crm);
     runDue();
@@ -1951,6 +2429,8 @@
       var wasTracking = tracking;
       views = [];
       highlighted = {};
+      markWaiting = null;
+      restoreSlots();
       if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
       var s = store;
       state = wasTracking ? freshState() : null;
@@ -1964,6 +2444,7 @@
           buffer = [];
           queued.forEach(function (q) { handle(q.evt, q.real + (state.shift || 0)); });
         }
+        fillTestLead();
         render();
         _emit('ma:change', { cleared: true });
       });

@@ -5,7 +5,7 @@ const test = require('node:test');
 const vm = require('node:vm');
 
 const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'ma.js');
-const kod = fs.readFileSync(modulePath, 'utf8');
+const kodModulu = fs.readFileSync(modulePath, 'utf8');
 
 const MIN = 60 * 1000;
 const H = 60 * MIN;
@@ -51,6 +51,14 @@ function element(attrs, tagName) {
     querySelectorAll() { return []; },
     appendChild(c) { return c; },
     addEventListener() {},
+    closest(sel) {
+      // Tylko to, czego używa moduł: 'form' i atrybut d2-ma-ignore.
+      for (let el = this; el; el = el.parent) {
+        if (sel === 'form' && el.tagName === 'FORM') return el;
+        if (sel.indexOf('d2-ma-ignore') >= 0 && el.getAttribute && el.getAttribute('d2-ma-ignore') !== null) return el;
+      }
+      return null;
+    },
   };
 }
 
@@ -64,6 +72,9 @@ function element(attrs, tagName) {
  *   zgoda     stan Consent Mode w localStorage
  *   googleTag window.google_tag_data (stan zgody tagu Google / szablonu CMP)
  *   produkty  wynik d2estate.getProducts()
+ *   elementy  elementy strony dla querySelectorAll (sloty, formularz testowy)
+ *   dotyk     matchMedia('(hover: none)') = true
+ *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  */
 function strona(opts) {
   const o = opts || {};
@@ -79,7 +90,11 @@ function strona(opts) {
   const klikProduktu = [];
   const zmianyPietra = [];
   const klatki = [];
+  const naMape = [];
   const cfgEl = element(Object.assign({ 'd2-ma': '' }, o.cfg || {}));
+  const naDokumencie = {};
+  const naOknie = {};
+  const elementy = o.elementy || [];
 
   class FakeDate extends Date {
     constructor(...a) { if (a.length) super(...a); else super(zegar.t); }
@@ -103,8 +118,10 @@ function strona(opts) {
 
   const document = {
     readyState: 'complete',
+    visibilityState: 'visible',
     body: element(),
-    addEventListener() {},
+    documentElement: { scrollHeight: 3000, clientHeight: 1000, scrollTop: 0 },
+    addEventListener(n, f) { (naDokumencie[n] = naDokumencie[n] || []).push(f); },
     createElement: () => element(),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
@@ -112,10 +129,18 @@ function strona(opts) {
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       return null;
     },
-    querySelectorAll() { return []; },
+    querySelectorAll(sel) {
+      return elementy.filter((el) => Object.keys(el.attributes).some((a) => {
+        const v = el.attributes[a];
+        return sel.indexOf('[' + a + ']') >= 0 || sel.indexOf('[' + a + '="' + v + '"]') >= 0;
+      }));
+    },
   };
 
   const window = {
+    innerHeight: 1000,
+    pageYOffset: 0,
+    addEventListener(n, f) { (naOknie[n] = naOknie[n] || []).push(f); },
     document,
     dataLayer,
     location: { origin: 'https://demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
@@ -138,11 +163,12 @@ function strona(opts) {
   };
   if (o.googleTag) window.google_tag_data = o.googleTag;
   if (o.imp) window.ImageMapPro = o.imp;
+  if (o.dotyk) window.matchMedia = (q) => ({ matches: q === '(hover: none)' });
   window.requestAnimationFrame = (f) => { klatki.push(f); };
   if (o.mapa !== false) {
     window.d2estate = {
       onProductClick(f) { klikProduktu.push(f); },
-      onMapLoad() {},
+      onMapLoad(f) { naMape.push(f); },
       onFloorChange(f) { zmianyPietra.push(f); },
       getProducts: () => o.produkty || [],
     };
@@ -153,7 +179,7 @@ function strona(opts) {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
     }
-    if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0) {
+    if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
       webhooki.push({ url, body: JSON.parse(init.body) });
       return Promise.resolve({ ok: true, status: 200 });
     }
@@ -174,7 +200,7 @@ function strona(opts) {
     JSON, Math, Intl, URL, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array,
     fetch,
   });
-  vm.runInContext(kod, context, { filename: modulePath });
+  vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
     window, zegar, dataLayer, popupy, webhooki, ostrzezenia, zdarzenia, ma: window.digi2.ma,
@@ -183,10 +209,20 @@ function strona(opts) {
     /** Upływ czasu na otwartej stronie: odpalają się timery, które dojrzały. */
     async minie(ms) {
       zegar.t += ms;
-      timery.sort((a, b) => a.at - b.at);
-      while (timery.length && timery[0].at <= zegar.t) timery.shift().fn();
+      // Timer ustawiony przez inny timer też odpala, jeśli dojrzał.
+      for (;;) {
+        timery.sort((a, b) => a.at - b.at);
+        if (!timery.length || timery[0].at > zegar.t) break;
+        timery.shift().fn();
+      }
       await env.gotowe();
     },
+    naDokumencie, naOknie, document,
+    /** Zdarzenie DOM na dokumencie albo oknie (sluchacze modułu). */
+    dom(n, e) { (naDokumencie[n] || []).forEach((f) => f(e || {})); },
+    okno(n, e) { (naOknie[n] || []).forEach((f) => f(e || {})); },
+    /** Mapa 2destate zgłasza onMapLoad. */
+    mapaGotowa() { naMape.forEach((f) => f()); },
     klik(produkt) { klikProduktu.forEach((f) => f(produkt, { mapName: 'mapa' })); },
     /** Jedna klatka animacji: odpala to, co czekało na requestAnimationFrame. */
     klatka() { klatki.splice(0).forEach((f) => f()); },
@@ -1289,4 +1325,314 @@ test('U7: obejrzenie, które uruchomiło ścieżkę, nie liczy się do następne
   env.dataLayer.push(unitOpen('A_3'));
   await env.gotowe();
   assert.deepEqual(env.segmenty().map((e) => e.segment), ['first', 'second']);
+});
+
+// ---------------------------------------------------------------------------
+// §13.8 (ma.4): wyjście, zaangażowanie, porzucony formularz, treść, mapa, kanały
+// ---------------------------------------------------------------------------
+
+/** Scenariusz z jednym wyzwalaczem i akcjami po kolei. */
+function scenariusz(id, when, akcje, extra) {
+  const nodes = [{ id: 't1', type: 'trigger', when }].concat(akcje.map((a, i) => Object.assign({ id: 'a' + (i + 1), type: 'action' }, a)));
+  const edges = akcje.map((a, i) => [i ? 'a' + i : 't1', 'a' + (i + 1)]);
+  return Object.assign({ scenarioId: id, revision: 1, active: true, nodes, edges }, extra || {});
+}
+
+const DL = (event, params) => ({ do: 'datalayer', event, params });
+
+test('§13.8 opt-in: koperta bez nowych wyzwalaczy nie dokłada nasłuchu na stronie', async () => {
+  const env = await start({ koperta: koperta([POWROT, POKOJE, LEAD]) });
+  for (const n of ['mouseout', 'focusin', 'input', 'submit', 'visibilitychange']) {
+    assert.equal((env.naDokumencie[n] || []).length, 0, n);
+  }
+  assert.equal((env.naOknie.scroll || []).length, 0);
+  assert.equal((env.naOknie.pagehide || []).length, 0);
+});
+
+test('exit_intent: mysz przez górną krawędź, raz na wizytę; dotyk i brak zgody — nic', async () => {
+  const k = koperta([scenariusz('wyjscie', { event: 'exit_intent' }, [Object.assign(DL('ma_exit_intent'), { frequency: 'once_per_days:0' })])]);
+  const env = await start({ koperta: k });
+  env.dom('mouseout', { clientY: 40, relatedTarget: null });
+  env.dom('mouseout', { clientY: -2, relatedTarget: { tagName: 'DIV' } });
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0, 'ruch wewnątrz strony to nie wyjście');
+  env.dom('mouseout', { clientY: -2, relatedTarget: null });
+  env.dom('mouseout', { clientY: 0, relatedTarget: null });
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => ({ ...e })), [{ event: 'ma_exit_intent', ma_scenario: 'wyjscie' }]);
+
+  const dotyk = await start({ koperta: k, dotyk: true });
+  assert.equal((dotyk.naDokumencie.mouseout || []).length, 0, 'ekran dotykowy: bez nasłuchu');
+
+  const bez = await start({ koperta: koperta(k.scenarios, { storage: { consentRequired: true } }) });
+  assert.equal((bez.naDokumencie.mouseout || []).length, 0, 'bez zgody: bez nasłuchu');
+  assert.equal(bez.ma.profile(), null);
+});
+
+test('engagement: aktywny czas (bez ukrytej karty) i przewinięcie, raz na odsłonę', async () => {
+  const k = koperta([scenariusz('zaangazowany', { event: 'engagement', minSeconds: 30, minScrollPct: 50 },
+    [DL('ma_engaged', { segment: 'nie-zmienia' })])]);
+  const env = await start({ koperta: k });
+  await env.minie(31000);
+  assert.equal(env.segmenty().length, 0, 'czas jest, przewinięcia brak');
+  env.window.pageYOffset = 1200; // 60% z 3000 − 1000
+  env.okno('scroll');
+  await env.gotowe();
+  const e = env.segmenty();
+  assert.equal(e.length, 1);
+  assert.equal(e[0].event, 'ma_engaged');
+  assert.ok(e[0].seconds >= 30 && e[0].scroll_pct === 60, JSON.stringify(e[0]));
+  env.window.pageYOffset = 2000;
+  env.okno('scroll');
+  await env.minie(60000);
+  assert.equal(env.segmenty().length, 1, 'raz na odsłonę');
+  assert.equal(env.ma.profile().segment, null, 'segment z params ma_engaged nie zmienia segmentu profilu');
+
+  // Ukryta karta nie liczy się do czasu.
+  const k2 = koperta([scenariusz('czas', { event: 'engagement', minSeconds: 20 }, [DL('ma_engaged')])]);
+  const env2 = await start({ koperta: k2 });
+  await env2.minie(10000);
+  env2.document.visibilityState = 'hidden';
+  env2.dom('visibilitychange');
+  await env2.minie(60000);
+  assert.equal(env2.segmenty().length, 0, 'w tle czas stoi');
+  env2.document.visibilityState = 'visible';
+  env2.dom('visibilitychange');
+  await env2.minie(9000);
+  assert.equal(env2.segmenty().length, 0, '19 s aktywnie');
+  await env2.minie(2000);
+  assert.equal(env2.segmenty().length, 1, '21 s aktywnie');
+});
+
+test('engagement: filtr utm z adresu pierwszego wejścia w wizycie, bez wielkości liter; profil bez segmentu z ma_engaged', async () => {
+  // once_per_days:0 - akcja za każdym razem, żeby było widać wyzwalacz na drugiej odsłonie.
+  const z = (id, utm) => scenariusz(id, { event: 'engagement', minSeconds: 0, minScrollPct: 0, utm },
+    [Object.assign(DL('ma_engaged'), { frequency: 'once_per_days:0' })]);
+  const k = koperta([z('fb', { source: ['facebook', 'instagram'], campaign: ['2-pokoje'] }), z('google', { source: ['google'] })]);
+  const env = await start({ koperta: k, search: '?utm_source=Facebook&utm_campaign=2-POKOJE&gclid=abc' });
+  assert.deepEqual(env.segmenty().map((e) => e.ma_scenario), ['fb'], 'od razu, tylko pasujący');
+  assert.equal(env.ma.profile().segment, null, 'ma_engaged nie zmienia segmentu');
+  assert.deepEqual({ ...env._dysk.state.utm }, { source: 'Facebook', campaign: '2-POKOJE' }, 'bez gclid i innych parametrów');
+  // Druga odsłona w tej samej wizycie bez UTM w adresie: wizyta nadal „z kampanii".
+  const p2 = await powrot(env, 5 * MIN, { search: '' });
+  assert.deepEqual(p2.segmenty().map((e) => e.ma_scenario), ['fb']);
+  // Kolejna odsłona tej wizyty z innym UTM: liczy się pierwsze wejście.
+  const p3 = await powrot(p2, 5 * MIN, { search: '?utm_source=google' });
+  assert.deepEqual(p3.segmenty().map((e) => e.ma_scenario), ['fb']);
+});
+
+/** Formularz z polem e-mail (bez wartości w module). */
+function formularz(attrs) {
+  const form = element(Object.assign({ id: 'kontakt' }, attrs || {}), 'FORM');
+  const pole = element({ type: 'email', name: 'email' }, 'INPUT');
+  pole.parent = form;
+  pole.value = 'jan@example.com';
+  return { form, pole };
+}
+
+test('form_abandon: fokus bez wysłania → po idleSeconds; tylko id formularza, nigdy wartości', async () => {
+  const k = koperta([scenariusz('porzucony', { event: 'form_abandon', idleSeconds: 60 },
+    [Object.assign(DL('ma_form_abandon'), { frequency: 'once_per_days:0' })])]);
+  const env = await start({ koperta: k });
+  const { form, pole } = formularz();
+  env.dom('focusin', { target: pole });
+  await env.minie(30000);
+  env.dom('input', { target: pole }); // pisze dalej - licznik od nowa
+  await env.minie(45000);
+  assert.equal(env.segmenty().length, 0);
+  await env.minie(20000);
+  const e = env.segmenty();
+  assert.deepEqual(e.map((x) => ({ ...x })), [{ event: 'ma_form_abandon', ma_scenario: 'porzucony', form_id: 'kontakt' }]);
+  assert.ok(!JSON.stringify(env._dysk).includes('jan@example.com') && !JSON.stringify(env.dataLayer).includes('jan@'),
+    'wartość pola nie trafia ani do bazy, ani do dataLayer');
+  assert.ok(!JSON.stringify(env._dysk).includes('"email"'), 'nazwa pola też nie');
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 1, 'raz na formularz na wizytę');
+  void form;
+});
+
+test('form_abandon: wysłany formularz się nie liczy; pagehide liczy; d2-ma-ignore i formIds', async () => {
+  const k = koperta([scenariusz('porzucony', { event: 'form_abandon', formIds: ['kontakt', 'ukryty'] },
+    [Object.assign(DL('ma_form_abandon'), { frequency: 'once_per_days:0' })])]);
+  const env = await start({ koperta: k });
+  const a = formularz();
+  env.dom('focusin', { target: a.pole });
+  env.dom('submit', { target: a.form });
+  await env.minie(10 * MIN);
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0, 'wysłany');
+
+  const env2 = await start({ koperta: k });
+  const inny = formularz({ id: 'newsletter' });
+  const ign = formularz({ id: 'ukryty', 'd2-ma-ignore': '' });
+  const b = formularz();
+  env2.dom('focusin', { target: inny.pole });
+  env2.dom('focusin', { target: ign.pole });
+  env2.dom('focusin', { target: b.pole });
+  env2.okno('pagehide');
+  await env2.gotowe();
+  assert.deepEqual(env2.segmenty().map((e) => e.form_id), ['kontakt'], 'tylko formIds, bez d2-ma-ignore');
+});
+
+test('content: tekst z polami w [d2-ma-slot] przez textContent; brak wartości = bez zmiany; Wyczyść przywraca', async () => {
+  const slot = element({ 'd2-ma-slot': 'hero-title' }, 'H1');
+  slot.textContent = 'Mieszkania w Pabianicach';
+  const tresc = (text) => scenariusz('naglowek', { event: 'type_view', rooms: 2, minCount: 1 },
+    [{ do: 'content', slot: 'hero-title', text }, DL('ma_content')]);
+  const env = await start({ koperta: koperta([tresc('{{pref.rooms}} pokoje — zobacz {{unit.name}} za {{unit.price}}')]), elementy: [slot] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(slot.textContent.replace(/\s/g, ' '), '2 pokoje — zobacz 1 za 829 212 zł');
+  assert.deepEqual({ ...env.segmenty()[0] }, { event: 'ma_content', ma_scenario: 'naglowek', slot: 'hero-title' });
+  await env.ma.clear();
+  assert.equal(slot.textContent, 'Mieszkania w Pabianicach');
+
+  const slot2 = element({ 'd2-ma-slot': 'hero-title' }, 'H1');
+  slot2.textContent = 'Oryginał';
+  const env2 = await start({ koperta: koperta([tresc('{{unit.building}} — {{unit.name}}')]), elementy: [slot2] });
+  env2.dataLayer.push(unitOpen('A_1', { building: null }));
+  await env2.gotowe();
+  assert.equal(slot2.textContent, 'Oryginał', 'pole bez wartości: treść bez zmian');
+  assert.equal(env2.segmenty().length, 0, 'ma_content nie idzie, skoro nic się nie zmieniło');
+});
+
+test('content: szablon z listy ma.4; zły węzeł (text i templateId, slot spoza [a-z0-9-]) jest pomijany', async () => {
+  const slot = element({ 'd2-ma-slot': 'cta' }, 'P');
+  slot.textContent = '—';
+  const k = koperta([
+    scenariusz('szablon', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'content', slot: 'cta', templateId: 'last-unit' }]),
+    scenariusz('zly', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'content', slot: 'cta', text: 'x', templateId: 'last-unit' }]),
+    scenariusz('zly-slot', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'content', slot: 'a"]', text: 'x' }]),
+  ]);
+  const env = await start({ koperta: k, elementy: [slot] });
+  env.dataLayer.push(unitOpen('B_7'));
+  await env.gotowe();
+  assert.equal(slot.textContent, 'Wróć do lokalu 7');
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('content needs a slot')).length, 2);
+});
+
+test('map_mark: ranking z profilu bez sprzedanych; markProducts, a bez niego piętro + highlightObject', async () => {
+  const p = (id, rooms, floor, status) => ({ id, name: id, rooms, floor, status });
+  const produkty = [p('u1', 3, 1, 'available'), p('u2', 2, 1, 'sold'), p('u3', 2, 0, 'reserved'), p('u4', 2, 1, 'available'), p('u5', 2, 3, 'available')];
+  const mapa = { artboardController: { currentArtboardId: 'p0' }, store: { state: { artboards: [
+    { id: 'p1', children: [{ title: 'A4', assigned_product: 'u4' }] },
+  ] } }, products: produkty };
+  const wywolania = [];
+  const imp = { instances: { mapa }, changeArtboard(m, a) { wywolania.push('piętro ' + a); }, highlightObject(m, t) { wywolania.push(t); } };
+  const k = koperta([scenariusz('mapa', { event: 'type_view', rooms: 2, minCount: 2 }, [{ do: 'map_mark', by: 'both', limit: 2 }])]);
+  const env = await start({ koperta: k, produkty, imp });
+  env.dataLayer.push(unitOpen('X_1', { rooms: 2, floor: 1 }));
+  env.dataLayer.push(unitOpen('X_2', { rooms: 2, floor: 1 }));
+  await env.gotowe();
+  assert.deepEqual(wywolania, ['piętro p1', 'A4'], 'najlepszy: 2 pokoje i 1. piętro, bez dymka');
+  assert.deepEqual([...env.zdarzenia['ma:action'].find((a) => a.do === 'map_mark').units], ['u4', 'u5'], 'u2 sprzedany odpada');
+
+  const oznaczone = [];
+  const env2 = await start({ koperta: k, produkty, imp });
+  env2.window.d2estate.markProducts = (m, ids, o) => { oznaczone.push([m, [...ids], o.className]); return 2; };
+  env2.dataLayer.push(unitOpen('X_1', { rooms: 2, floor: 1 }));
+  env2.dataLayer.push(unitOpen('X_2', { rooms: 2, floor: 1 }));
+  await env2.gotowe();
+  assert.deepEqual(oznaczone, [['mapa', ['u4', 'u5'], 'd2-preferred']]);
+});
+
+test('map_mark: strona bez 2destate — pominięty; mapa w trakcie ładowania — po onMapLoad', async () => {
+  const k = koperta([scenariusz('mapa', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }, DL('ma_segment', { segment: 'dalej' })])]);
+  const bez = await start({ koperta: k, mapa: false });
+  bez.dataLayer.push(unitOpen('A_1'));
+  await bez.gotowe();
+  assert.deepEqual(bez.segmenty().map((e) => e.segment), ['dalej'], 'gałąź idzie dalej');
+
+  const produkty = [];
+  const oznaczone = [];
+  const env = await start({ koperta: k, produkty, imp: { instances: { mapa: {} } } });
+  env.window.d2estate.markProducts = (m, ids) => { oznaczone.push([...ids]); return 1; };
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(oznaczone.length, 0, 'getProducts() puste - czeka');
+  produkty.push({ id: 'u9', name: 'u9', rooms: 2, floor: 1, status: 'available' });
+  env.mapaGotowa();
+  assert.deepEqual(oznaczone, [['u9']], 'po onMapLoad');
+  env.mapaGotowa();
+  assert.equal(oznaczone.length, 1, 'raz');
+});
+
+test('kanał via "digi2": POST na digi2.app/api/ma/channel/<site>, bez adresu z koperty; via make tylko hook.eu1.make.com; cooldown', async () => {
+  const k = koperta([scenariusz('handlowiec', { event: 'lead' },
+    [{ do: 'webhook', channel: 'sales_notify', template: 'lead-na-stronie', testOnly: true, cooldownMinutes: 1440 }])],
+  { channels: { sales_notify: { via: 'digi2', webhook: 'https://evil.example/x' }, email: { via: 'make', webhook: 'https://hook.example.com/x' } } });
+  const env = await start({ koperta: k, zgoda: { analytics_storage: 'granted' } });
+  env.dataLayer.push(unitOpen('A_1'));
+  env.dataLayer.push({ event: 'generate_lead', email: 'jan@example.com' });
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 1);
+  assert.equal(env.webhooki[0].url, 'https://digi2.app/api/ma/channel/osiedle-demo');
+  const b = env.webhooki[0].body;
+  assert.equal(b.channel, 'sales_notify');
+  assert.equal(b.testOnly, true);
+  assert.ok(!JSON.stringify(b).includes('jan@'), 'bez danych formularza');
+  // Drugi lead w ciągu doby: cooldown.
+  env.ma.lead();
+  await env.minie(2 * H);
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 1, 'cooldownMinutes 1440');
+
+  const k2 = koperta([scenariusz('mail', { event: 'lead' }, [{ do: 'webhook', channel: 'email', testOnly: true }])],
+    { channels: { email: { via: 'make', webhook: 'https://hook.example.com/x' } } });
+  const env2 = await start({ koperta: k2 });
+  env2.dataLayer.push({ event: 'generate_lead' });
+  await env2.gotowe();
+  assert.equal(env2.webhooki.length, 0, 'via make spoza hook.eu1.make.com');
+});
+
+test('formularz testowy: [d2-ma-test-lead] dostaje visitorId po zgodzie, po wycofaniu pusty', async () => {
+  const pole = element({ 'd2-ma-test-lead': '', type: 'hidden', name: 'visitor' }, 'INPUT');
+  const env = await start({ koperta: koperta([scenariusz('x', { event: 'exit_intent' }, [DL('ma_exit_intent')])],
+    { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, elementy: [pole] });
+  assert.equal(pole.value, env.ma.profile().visitorId);
+  env.zgoda({ analytics_storage: 'denied' });
+  await env.gotowe();
+  assert.equal(pole.value, '');
+});
+
+test('minScript wyższy niż ma.4 ostrzega, scenariusze bez nowych węzłów działają', async () => {
+  const env = await start({ koperta: koperta([POWROT], { minScript: 'ma.9' }) });
+  assert.ok(env.ostrzezenia.some((w) => w.includes('needs d2-ma ma.9')));
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env.ma.history().length, 1);
+});
+
+test('§13.8.1 test zgodności: return_visit → popup i → engagement (utm) → popup; ma.3 tylko pierwsza gałąź', async () => {
+  const sc = {
+    scenarioId: 'zgodnosc', revision: 1, active: true,
+    nodes: [
+      { id: 't1', type: 'trigger', when: { event: 'return_visit', afterHours: 1 } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'powrot' } },
+      { id: 't2', type: 'trigger', when: { event: 'engagement', minSeconds: 0, minScrollPct: 0, utm: { source: ['facebook'] } } },
+      { id: 'a2', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'kampania' } },
+    ],
+    edges: [['t1', 'a1'], ['t1', 't2'], ['t2', 'a2']],
+  };
+  const kod3 = fs.readFileSync(path.join(__dirname, 'fixtures', 'ma-v1.9.0-ma.3.js'), 'utf8');
+  for (const [nazwa, kod, oczekiwane] of [['ma.4', null, ['powrot', 'kampania']], ['ma.3', kod3, ['powrot']]]) {
+    const p1 = await start({ koperta: koperta([sc]), kod });
+    p1.dataLayer.push(unitOpen('A_1'));
+    await p1.gotowe();
+    const p2 = await powrot(p1, 2 * H, { search: '?utm_source=facebook' });
+    assert.deepEqual(p2.segmenty().map((e) => e.segment), oczekiwane, nazwa);
+    if (nazwa === 'ma.3') assert.ok(p2.ostrzezenia.some((w) => w.includes('unknown trigger event "engagement"')));
+  }
+  // Koperta bez węzłów §13.8: ten sam wynik na obu.
+  const wyniki = [];
+  for (const kod of [null, kod3]) {
+    const p1 = await start({ koperta: koperta([POWROT, POKOJE]), kod });
+    for (const id of ['A_1', 'A_2', 'A_3']) { p1.dataLayer.push(unitOpen(id)); await p1.minie(6000); }
+    const p2 = await powrot(p1, 2 * H);
+    wyniki.push(JSON.stringify([p1.segmenty(), p1.popupy, p2.segmenty(), p2.popupy]));
+  }
+  assert.equal(wyniki[0], wyniki[1]);
 });

@@ -5,6 +5,42 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.4 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — nowe wyzwalacze i akcje (kontrakt §13.8)
+
+Wszystko poniżej działa tylko wtedy, gdy koperta scenariusza ma dany węzeł, i
+dopiero po zgodzie. Strona bez tych węzłów zachowuje się dokładnie jak na ma.3,
+nie dostaje też żadnego nowego nasłuchu.
+
+- **`exit_intent`**: gość wyprowadza mysz przez górną krawędź okna, raz na
+  wizytę. Na telefonach i tabletach nie działa (nie ma wiarygodnego sygnału).
+- **`engagement`**: czas na stronie (liczony tylko przy widocznej karcie),
+  przewinięcie w % i filtr UTM (`utm_source` / `utm_medium` / `utm_campaign`
+  z pierwszej strony wizyty). Sam filtr UTM z zerowym czasem = „przyszedł
+  z kampanii”, odpala od razu.
+- **`form_abandon`**: ktoś zaczął wypełniać formularz i go nie wysłał
+  (bezczynność albo wyjście ze strony). Moduł wie tylko, który to formularz i ile
+  pól dotknięto, a nigdy, co w nich wpisano. Formularz z `d2-ma-ignore` jest
+  pomijany.
+- **Akcja `content`**: podmienia tekst elementu z `d2-ma-slot="<nazwa>"`, np.
+  nagłówek „2 pokoje z ogródkiem”. Pola `{{pref.rooms}}`, `{{unit.name}}` itd.
+  Tylko tekst, nigdy HTML. Gdy pole nie ma wartości, tekst zostaje bez zmian.
+  Przycisk „Wyczyść” przywraca oryginał.
+- **Akcja `map_mark`**: na mapie 2destate wyróżnia lokale pasujące do
+  preferencji gościa, bez sprzedanych. Na dzisiejszym 2destate przełącza piętro
+  i podświetla najlepszy lokal.
+- **Nowe zdarzenia GA4** z akcji `datalayer`: `ma_exit_intent`, `ma_engaged`,
+  `ma_form_abandon`, `ma_content`. Bez danych osobowych i bez treści pól.
+- **Kanały wysyłane przez nasz system**: `channels.<k>.via: "digi2"` wysyła na
+  `digi2.app/api/ma/channel/<site>`, `via: "make"` tylko na
+  `hook.eu1.make.com`. Doszedł kanał `sales_notify` (powiadomienie handlowca,
+  tylko `testOnly`).
+- **`cooldownMinutes`** na akcji: najmniejszy odstęp między jej wykonaniami,
+  także między wizytami.
+- **`d2-ma-test-lead`**: formularz testowy demo dostaje `visitorId` w ukrytym
+  polu, tylko po zgodzie.
+
 ## v1.9.0-ma.3 — 2026-10-19 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — zdarzenie przy wycofaniu zgody
