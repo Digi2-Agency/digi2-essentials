@@ -452,6 +452,13 @@
     return pageBase() + '?d2-unit=' + encodeURIComponent(id);
   }
 
+  // Pole rejestru 2destate: mapa podaje je płasko i pod fields, Products API
+  // v2 tylko pod fields (kluczem jest slug).
+  function regField(p, key) {
+    if (p[key] != null && p[key] !== '') return p[key];
+    return p.fields && typeof p.fields === 'object' ? p.fields[key] : null;
+  }
+
   function from2destate(p) {
     if (!p || p.id == null) return null;
     var promo = !!p.promo_active;
@@ -465,8 +472,8 @@
       area: num(p.area), price: num(price), pricePerSqm: num(perSqm), building: str(building),
       status: statusOf(p.status), isPromo: promo, url: unitLink(p.id),
       // Pola rejestru 2destate mają klucze z myślnikiem.
-      image: str(p['obrazek-popup'] || p.marketing_image || p.image),
-      promoText: str(p['haslo-promocji']), source: '2destate'
+      image: str(regField(p, 'obrazek-popup') || p.marketing_image || p.image),
+      promoText: str(regField(p, 'haslo-promocji')), source: '2destate'
     };
   }
 

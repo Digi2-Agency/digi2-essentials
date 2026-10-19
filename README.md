@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 35.2 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 35.3 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **315.4 KB min** / **100.1 KB** gzipped.
+Total (all modules): **315.5 KB min** / **100.2 KB** gzipped.
 
 ---
 
@@ -1153,7 +1153,9 @@ number (`1` available, `2` reserved, `3` or `isNotAvailable` sold, other →
 `building_name` when the map sends it, otherwise `null`; `image` is read from
 the registry field `obrazek-popup`, then `marketing_image` / `image`;
 `promoText` (`d2-ma-field="promoText"`) from the registry field
-`haslo-promocji`. Registry keys in 2destate must contain a hyphen, so the
+`haslo-promocji`. The map sends registry fields both flat and under `fields`,
+while Products API v2 sends them only under `fields`, so both places are read.
+Registry keys in 2destate must contain a hyphen, so the
 earlier guess `popup_image` can't exist and is no longer read. The same `unitId` within 5 s counts once (two apps on a page,
 or the double push).
 

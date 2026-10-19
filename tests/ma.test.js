@@ -529,6 +529,11 @@ test('2destate: obrazek z pola rejestru obrazek-popup, hasło z haslo-promocji',
   await env.gotowe();
   assert.equal(env.ma.history()[1].unit.image, 'https://cdn.example/plan.png', 'bez pola rejestru: image');
   assert.equal(env.ma.history()[1].unit.promoText, null);
+  // Products API v2: pola rejestru tylko pod fields.
+  env.klik({ id: 'u3', name: 'A/1/04', rooms: 2, status: 'available', fields: { 'obrazek-popup': 'https://cdn.example/c.jpg', 'haslo-promocji': 'Ostatnie 3' } });
+  await env.gotowe();
+  assert.equal(env.ma.history()[2].unit.image, 'https://cdn.example/c.jpg');
+  assert.equal(env.ma.history()[2].unit.promoText, 'Ostatnie 3');
 });
 
 test('mapa: grupa o tym samym tytule co kształt nie wyłącza jego podświetlenia', async () => {
