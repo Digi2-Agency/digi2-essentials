@@ -19,7 +19,11 @@
  *                                 decides; this is what applies when it cannot be read.
  *                                 "true" forces consent whatever the envelope says.
  *                                 Without either: consent required.
- *   d2-ma-consent="analytics_storage"   Consent Mode category that unlocks storage
+ *   d2-ma-consent="analytics_storage"   Consent Mode category that unlocks storage.
+ *                                 Read from any banner that speaks Consent Mode:
+ *                                 gtag('consent', 'default'|'update', …) in the
+ *                                 dataLayer, the Google tag's own consent state
+ *                                 (CMP templates in GTM), or the google module.
  *   d2-ma-products-api="https://api.2destate.com/api/v1"   Fresh status before a popup
  *   d2-ma-highlight               Highlight units matching pref.rooms on the 2destate map
  *   d2-ma-refresh="30"            Re-read the envelope every N seconds (demo: a CRM call
@@ -166,6 +170,7 @@
   var dueTimer = null;
   var writeChain = Promise.resolve();
   var booted = false;
+  var gtagConsent = {};      // ostatnie komendy gtag('consent', …) z dataLayer
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -1320,6 +1325,9 @@
     var o = mapObjectFor(productId);
     var I = imp();
     if (!o || !I) return false;
+    // Jeden lokal świadomie, także z innego piętra - kolejka podświetleń
+    // z obecnego piętra przestaje mieć sens.
+    hlQueue = [];
     try {
       var anchor = document.querySelector('[d2-ma-map], [data-d2-ma-map]');
       if (anchor && anchor.scrollIntoView) anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1332,10 +1340,43 @@
     return true;
   }
 
-  // highlightObject przełącza mapę na piętro obiektu, więc podświetlamy tylko
-  // lokale z piętra, które jest na ekranie - raz na piętro, bo samo podświetlenie
-  // wywołuje zmianę piętra i wróciłoby tu w pętli.
+  // highlightObject przełącza mapę na piętro obiektu, a obiekt albo grupa spoza
+  // piętra potrafi zablokować kolejkę imagemappro - podświetlamy więc tylko
+  // pojedyncze kształty z piętra, które jest na ekranie, raz na piętro.
+  // Seria wywołań bez przerwy gubi kształty: między wywołaniami jedna klatka.
   var highlighted = {};
+  var hlQueue = [];
+  var hlBusy = false;
+
+  function nextFrame(fn) {
+    if (typeof window.requestAnimationFrame === 'function') window.requestAnimationFrame(fn);
+    else setTimeout(fn, 16);
+  }
+
+  function currentArtboard(map) {
+    return map && map.artboardController && map.artboardController.currentArtboardId;
+  }
+
+  function pumpHighlight() {
+    if (hlBusy) return;
+    var item = hlQueue.shift();
+    if (!item) return;
+    var I = imp();
+    var map = I && I.instances && I.instances[item.map];
+    // Piętro zmieniło się w trakcie kolejki - ten kształt już nie jest na ekranie.
+    if (map && currentArtboard(map) === item.artboard) {
+      try { I.highlightObject(item.map, item.title); } catch (e) {}
+    }
+    hlBusy = true;
+    nextFrame(function () { hlBusy = false; pumpHighlight(); });
+  }
+
+  // Zmiana piętra gasi podświetlenia: po powrocie na piętro trzeba je nałożyć znowu.
+  function floorChanged() {
+    highlighted = {};
+    hlQueue = [];
+    highlightProfile();
+  }
   function highlightProfile() {
     if (!tracking || _cfg('d2-ma-highlight') === null) return;
     var rooms = prefOf('rooms');
@@ -1343,7 +1384,7 @@
     if (rooms == null || !I || !I.instances || typeof I.highlightObject !== 'function') return;
     Object.keys(I.instances).forEach(function (mapName) {
       var map = I.instances[mapName];
-      var current = map && map.artboardController && map.artboardController.currentArtboardId;
+      var current = currentArtboard(map);
       var products = (map && Array.isArray(map.products)) ? map.products : [];
       var key = mapName + '|' + current + '|' + rooms;
       if (!current || highlighted[key]) return;
@@ -1354,14 +1395,15 @@
         if (board.id !== current) return;
         walkObjects(board.children, function (n) {
           var p = n.assigned_product != null ? byId[String(n.assigned_product)] : null;
-          if (!p || !n.title) return;
+          if (!p || !n.title || n.type === 'group' || (Array.isArray(n.children) && n.children.length)) return;
           var u = from2destate(p);
           if (u.rooms === rooms && u.status === 'available') {
-            try { I.highlightObject(mapName, n.title); } catch (e) {}
+            hlQueue.push({ map: mapName, title: n.title, artboard: current });
           }
         });
       });
     });
+    pumpHighlight();
   }
 
   // ---------------------------------------------------------------------------
@@ -1369,7 +1411,12 @@
   // ---------------------------------------------------------------------------
 
   function onDataLayer(entry) {
-    if (!entry || typeof entry !== 'object' || typeof entry.event !== 'string') return;
+    if (!entry || typeof entry !== 'object') return;
+    if (entry[0] === 'consent') { onConsentCommand(entry); return; }
+    if (typeof entry.event !== 'string') return;
+    // Baner z szablonu GTM zmienia zgodę bez komendy gtag - widać ją dopiero
+    // w stanie tagu Google, więc sprawdzamy go przy każdym zdarzeniu.
+    if (blocked && googleTagConsent() === 'granted') consentChanged(true);
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
       var unit = from3destate(entry);
@@ -1407,7 +1454,7 @@
         if (unit) intake({ type: 'view', unit: unit });
       });
       if (typeof api.onMapLoad === 'function') api.onMapLoad(function () { openFromUrl(); highlightProfile(); });
-      if (typeof api.onFloorChange === 'function') api.onFloorChange(function () { highlightProfile(); });
+      if (typeof api.onFloorChange === 'function') api.onFloorChange(floorChanged);
       return true;
     }
     if (attach()) return;
@@ -1546,7 +1593,36 @@
     return _cfg('d2-ma-consent') || DEFAULT_CONSENT;
   }
 
+  // gtag('consent', 'default'|'update', {...}) wkłada do dataLayer obiekt
+  // arguments: [0] 'consent', [1] rodzaj, [2] stan kategorii.
+  function onConsentCommand(args) {
+    var kind = args[1], st = args[2];
+    if ((kind !== 'default' && kind !== 'update') || !st || typeof st !== 'object') return;
+    var cat = consentCategory();
+    if (st[cat] !== 'granted' && st[cat] !== 'denied') return;
+    // Domyślna wartość nie nadpisuje decyzji, którą baner już zgłosił.
+    if (kind === 'default' && gtagConsent.update) return;
+    gtagConsent[kind] = st[cat];
+    if (kind === 'update') consentChanged(st[cat] === 'granted');
+    else if (st[cat] === 'granted' && blocked) consentChanged(true);
+  }
+
+  // Stan zgody tagu Google (gtag.js / GTM), także ustawiony szablonem CMP.
+  function googleTagConsent() {
+    try {
+      var e = window.google_tag_data.ics.entries[consentCategory()];
+      if (!e) return null;
+      var v = e.update !== undefined ? e.update : e['default'];
+      return v === true ? 'granted' : v === false ? 'denied' : null;
+    } catch (x) { return null; }
+  }
+
+  // Źródło Consent Mode na stronie: dataLayer i tag Google, a gdy ich brak -
+  // moduł google biblioteki albo jego zapis w localStorage.
   function hasConsent() {
+    var dl = gtagConsent.update || gtagConsent['default'] || null;
+    var tag = googleTagConsent();
+    if (dl || tag) return dl === 'granted' || tag === 'granted';
     var c = null;
     try {
       if (window.digi2.modules && window.digi2.modules.check && window.digi2.modules.check('google')) {
@@ -1556,6 +1632,11 @@
       }
     } catch (e) { c = null; }
     return !!(c && c[consentCategory()] === 'granted');
+  }
+
+  function consentChanged(granted) {
+    if (granted && blocked) { blocked = false; openStore(); }
+    if (!granted && tracking && consentRequired(envelope)) wipe('consent withdrawn');
   }
 
   // Zgoda wymagana, a jej nie ma: przestajemy i kasujemy to, co było zebrane
@@ -1579,9 +1660,7 @@
     if (consentHooked || typeof window.digi2.on !== 'function') return;
     consentHooked = true;
     window.digi2.on('consent:updated', function (s) {
-      var granted = !!(s && s[consentCategory()] === 'granted');
-      if (granted && blocked) { blocked = false; openStore(); }
-      if (!granted && tracking && consentRequired(envelope)) wipe('consent withdrawn');
+      consentChanged(!!(s && s[consentCategory()] === 'granted'));
     });
   }
 
@@ -1784,7 +1863,7 @@
         _emit('ma:change', { cleared: true });
       });
     },
-    highlight: function () { highlighted = {}; highlightProfile(); },
+    highlight: function () { highlighted = {}; hlQueue = []; highlightProfile(); },
     _real: true
   };
 

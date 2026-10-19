@@ -119,7 +119,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 31.9 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 34.2 KB | Marketing automation (demo, contract v0): unit views → profile in IndexedDB → scenarios from digi2.app |
 
 Total (all modules): **193.6 KB min** / **57.5 KB** gzipped.
 
@@ -1073,7 +1073,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 ```html
 <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
   d2-ma="https://digi2.app/api/ma/scenario/osiedle-demo.json"
-  d2-ma-consent-required="false"
+  d2-ma-consent-required="true"
   d2-popups
 ></script>
 ```
@@ -1089,6 +1089,28 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
+
+Consent is read from whatever banner the page has, as long as it speaks
+Consent Mode, in this order:
+
+1. `gtag('consent', 'default' | 'update', {...})` commands in the `dataLayer`,
+   including ones pushed before the module started (a CMP restoring a saved
+   choice). An `update` wins over a `default`. An `update` that denies the
+   category deletes the `d2ma` database.
+2. The Google tag's own consent state (`google_tag_data.ics`), which is where
+   a CMP template inside GTM writes without a `gtag` command. It is checked
+   again on every `dataLayer` event, so a grant made this way is picked up at
+   the CMP's next event. A denial made this way takes effect on the next page
+   load.
+3. Only when neither of those knows the category: the `google` module
+   (`d2-gtm`), meaning `digi2.google.consent` and its `consent:updated` event.
+
+Either an envelope with `consentRequired: true` or the attribute
+`d2-ma-consent-required="true"` makes consent required. The attribute can
+force consent but never switch it off. `demoState` follows only the envelope,
+so a demo envelope with `false` plus the attribute `"true"` waits for the
+banner and then runs with the demo data. Before consent nothing is stored and
+no action runs. Events seen while waiting are dropped, not replayed.
 
 > **On a client site always put `d2-ma-consent-required="true"` on the tag.**
 > Without the attribute the envelope decides, and an envelope published with
@@ -1230,9 +1252,13 @@ behaves as if that time had passed — deferred actions included.
 
 The object for a product is found by walking `ImageMapPro.instances[map].store.state.artboards`
 for `assigned_product`. `highlightObject()` switches the map to the object's
-artboard, so the highlight only covers the artboard on screen, once per
-artboard + room count — the switch fires `onFloorChange` again and would loop
-otherwise. The popup CTA for a 2destate unit with the map on the page calls
+artboard, and in imagemappro an object or a group off the current artboard can
+stall its queue. So the highlight covers single shapes on the artboard on
+screen only, never groups, once per artboard + room count. Back-to-back calls
+drop shapes, so the module queues them one `requestAnimationFrame` apart and
+drops queued shapes whose artboard is no longer on screen. A floor change
+clears highlights (so does hovering a shape), and the module puts them back on
+`onFloorChange`. The popup CTA for a 2destate unit with the map on the page calls
 `highlightObject` + `showTooltip` instead of navigating; the link it carries
 (`?d2-unit=<id>`) does the same after load on another page.
 

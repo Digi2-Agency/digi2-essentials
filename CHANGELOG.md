@@ -16,7 +16,7 @@ dostają**. Stronę demo ładuje się przypiętą wersją:
 ```html
 <script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
   d2-ma="https://digi2.app/api/ma/scenario/osiedle-demo.json"
-  d2-ma-consent-required="false"
+  d2-ma-consent-required="true"
   d2-popups></script>
 ```
 
@@ -35,11 +35,16 @@ Co robi:
 - **Do pokazu:** `demoState.timeScale` (minuta zamiast godziny), przycisk
   `d2-ma-simulate-return`, przycisk `d2-ma-clear`, sekcja „co o Tobie wie strona”
   (`d2-ma-profile`, `d2-ma-history`), podświetlenie preferowanych lokali na mapie
-  2destate (`d2-ma-highlight`).
-- **Zgody:** przy `storage.consentRequired: true` nic nie jest zapisywane bez zgody
-  z Consent Mode (`d2-gtm`), a wycofanie zgody kasuje bazę. Demo działa bez zgód
-  wyłącznie na naszej kopii (decyzja Piotra z 18.10.2026); produkcja u klienta =
-  baner zgód.
+  2destate (`d2-ma-highlight`): tylko lokale z piętra na ekranie, bez grup,
+  po jednym na klatkę animacji. Po zmianie piętra podświetlenie wraca.
+- **Zgody:** gdy koperta ma `storage.consentRequired: true` **albo** tag ma
+  `d2-ma-consent-required="true"`, bez zgody nic nie jest zapisywane i żadna
+  akcja nie rusza. Wycofanie zgody kasuje bazę. Zgoda jest czytana z każdego
+  banera, który mówi Consent Mode: z komend `gtag('consent', …)` w `dataLayer`
+  (także tych sprzed startu modułu), ze stanu tagu Google (szablon CMP w GTM)
+  albo z modułu `d2-gtm`. Demo na digi2.agency działa z banerem zgód (decyzja
+  Piotra z 19.10.2026). `demoState` z koperty z `consentRequired: false` działa
+  po zgodzie.
 
 - **Prywatność:** adres lokalu to ścieżka strony z samym `?sm-unit=` /
   `?d2-unit=` — `gclid`, `fbclid`, UTM ani nic innego z linku kampanii nie trafia

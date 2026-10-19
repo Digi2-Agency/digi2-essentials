@@ -62,6 +62,7 @@ function element(attrs, tagName) {
  *   cfg       atrybuty tagu loadera
  *   search    location.search
  *   zgoda     stan Consent Mode w localStorage
+ *   googleTag window.google_tag_data (stan zgody tagu Google / szablonu CMP)
  *   produkty  wynik d2estate.getProducts()
  */
 function strona(opts) {
@@ -76,6 +77,8 @@ function strona(opts) {
   const zdarzenia = {};
   const sluchacze = {};
   const klikProduktu = [];
+  const zmianyPietra = [];
+  const klatki = [];
   const cfgEl = element(Object.assign({ 'd2-ma': '' }, o.cfg || {}));
 
   class FakeDate extends Date {
@@ -133,11 +136,14 @@ function strona(opts) {
       _maEndpoint: 'koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null,
     },
   };
+  if (o.googleTag) window.google_tag_data = o.googleTag;
+  if (o.imp) window.ImageMapPro = o.imp;
+  window.requestAnimationFrame = (f) => { klatki.push(f); };
   if (o.mapa !== false) {
     window.d2estate = {
       onProductClick(f) { klikProduktu.push(f); },
       onMapLoad() {},
-      onFloorChange() {},
+      onFloorChange(f) { zmianyPietra.push(f); },
       getProducts: () => o.produkty || [],
     };
   }
@@ -182,6 +188,9 @@ function strona(opts) {
       await env.gotowe();
     },
     klik(produkt) { klikProduktu.forEach((f) => f(produkt, { mapName: 'mapa' })); },
+    /** Jedna klatka animacji: odpala to, co czekało na requestAnimationFrame. */
+    klatka() { klatki.splice(0).forEach((f) => f()); },
+    zmianaPietra() { zmianyPietra.forEach((f) => f()); },
     zgoda(stan) { (sluchacze['consent:updated'] || []).forEach((f) => f(stan)); },
   };
   return env;
@@ -420,6 +429,133 @@ test('koperta nie do pobrania i brak atrybutu: zgoda wymagana, nic nie zapisujem
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   assert.equal(env.ma.profile(), null);
+});
+
+test('mapa: podświetla lokale z bieżącego piętra po jednym na klatkę, bez grup i innych pięter', async () => {
+  const wolny = (id, rooms) => ({ id, name: id, rooms, status: 'available' });
+  const wywolania = [];
+  const mapa = {
+    artboardController: { currentArtboardId: 'p1' },
+    store: { state: { artboards: [
+      { id: 'p1', children: [
+        { title: 'Grupa', type: 'group', assigned_product: 'u1', children: [{ title: 'A1', assigned_product: 'u1' }] },
+        { title: 'A2', assigned_product: 'u2' },
+        { title: 'A3', assigned_product: 'u3' },
+        { title: 'A4', assigned_product: 'u4' },
+      ] },
+      { id: 'p2', children: [{ title: 'B1', assigned_product: 'u5' }] },
+    ] } },
+    products: [wolny('u1', 2), wolny('u2', 2), wolny('u3', 3), wolny('u4', 2), wolny('u5', 2)],
+  };
+  const imp = { instances: { mapa }, highlightObject(m, t) { wywolania.push(t); } };
+  const env = await start({ koperta: koperta([]), cfg: { 'd2-ma-highlight': '' }, imp });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  env.ma.highlight();
+  assert.deepEqual(wywolania, ['A1'], 'pierwszy kształt od razu, reszta czeka na klatkę');
+  env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'A2']);
+  env.klatka();
+  env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'A2', 'A4'], 'bez grupy, bez 3 pokoi, bez piętra p2');
+
+  // Zmiana piętra w trakcie kolejki: stare kształty odpadają, nowe piętro dostaje swoje.
+  wywolania.length = 0;
+  env.ma.highlight();
+  mapa.artboardController.currentArtboardId = 'p2';
+  env.zmianaPietra();
+  env.klatka();
+  env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'B1'], 'po zmianie piętra tylko B1');
+  // Powrót na p1 nakłada podświetlenia od nowa (zmiana piętra je zgasiła).
+  wywolania.length = 0;
+  mapa.artboardController.currentArtboardId = 'p1';
+  env.zmianaPietra();
+  env.klatka(); env.klatka(); env.klatka();
+  assert.deepEqual(wywolania, ['A1', 'A2', 'A4']);
+});
+
+// gtag() wkłada do dataLayer obiekt arguments, nie tablicę.
+function gtag() { return arguments; }
+
+test('reguła „lub”: zgoda wymagana, gdy JSON true albo atrybut true — cztery kombinacje', async () => {
+  const przypadki = [
+    { json: false, attr: null, wymagana: false },
+    { json: false, attr: 'true', wymagana: true },
+    { json: true, attr: null, wymagana: true },
+    { json: true, attr: 'true', wymagana: true },
+    { json: true, attr: 'false', wymagana: true }, // atrybut nie wyłącza zgody
+  ];
+  for (const p of przypadki) {
+    const opis = 'JSON ' + p.json + ' × atrybut ' + p.attr;
+    const env = await start({
+      koperta: koperta([POKOJE], { storage: { consentRequired: p.json }, demoState: { crmCallResult: null, crmCallSeq: 0, timeScale: 60 } }),
+      cfg: p.attr == null ? {} : { 'd2-ma-consent-required': p.attr },
+    });
+    for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+    if (!p.wymagana) {
+      assert.equal(env._dysk.views.length, 3, opis);
+      assert.equal(env.segmenty().length, 1, opis);
+      continue;
+    }
+    assert.ok(!(env._dysk.views || []).length, opis + ': nic w IndexedDB');
+    assert.ok(!env._dysk.state, opis + ': brak rekordu state');
+    assert.equal(env.segmenty().length, 0, opis + ': brak dataLayer.push akcji');
+    assert.equal(env.popupy.length, 0, opis);
+    env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+    await env.gotowe();
+    for (const id of ['A_4', 'A_5', 'A_6']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+    assert.equal(env._dysk.views.length, 3, opis + ': po zgodzie zapis rusza');
+    assert.equal(env.segmenty().length, 1, opis + ': po zgodzie scenariusz rusza');
+    // demoState działa przy JSON false także wtedy, gdy atrybut wymusza zgodę.
+    assert.equal(env.ma.profile().timeScale, p.json ? 1 : 60, opis + ': demoState');
+  }
+});
+
+test('Consent Mode z banera: komendy gtag w dataLayer odblokowują i wycofują', async () => {
+  const k = koperta([], { storage: { consentRequired: true } });
+  // Baner zgłosił zgodę, zanim moduł wystartował (zapisana decyzja z ciasteczka CMP).
+  const dl = [gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' }), gtag('consent', 'update', { analytics_storage: 'granted' })];
+  const env = await start({ koperta: k, dataLayer: dl });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env._dysk.views.length, 1, 'zgoda z dataLayer sprzed startu');
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await env.gotowe();
+  assert.equal(env._dysk.cleared, 1, 'wycofanie kasuje bazę');
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.ok(!env._dysk.views.length);
+
+  // Sama domyślna odmowa nie otwiera, inna kategoria też nie.
+  const p2 = await start({ koperta: k, dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied' })] });
+  p2.dataLayer.push(gtag('consent', 'update', { ad_storage: 'granted' }));
+  p2.dataLayer.push(unitOpen('A_1'));
+  await p2.gotowe();
+  assert.ok(!(p2._dysk.views || []).length);
+  p2.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  p2.dataLayer.push(unitOpen('A_2'));
+  await p2.gotowe();
+  assert.equal(p2._dysk.views.length, 1, 'zgoda nadana w trakcie wizyty');
+});
+
+test('Consent Mode z szablonu CMP w GTM: stan tagu Google odblokowuje', async () => {
+  const tag = { ics: { entries: { analytics_storage: { default: false } } } };
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), googleTag: tag });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.ok(!(env._dysk.views || []).length, 'domyślna odmowa');
+  tag.ics.entries.analytics_storage.update = true;
+  env.dataLayer.push({ event: 'cookie_consent_update' });
+  await env.gotowe();
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.equal(env._dysk.views.length, 1, 'zgoda z szablonu widoczna przy następnym zdarzeniu');
+
+  const p2 = await start({ koperta: koperta([], { storage: { consentRequired: true } }), googleTag: { ics: { entries: { analytics_storage: { default: false, update: true } } } } });
+  p2.dataLayer.push(unitOpen('A_1'));
+  await p2.gotowe();
+  assert.equal(p2._dysk.views.length, 1, 'zgoda z tagu Google przy starcie');
 });
 
 // ---------------------------------------------------------------------------

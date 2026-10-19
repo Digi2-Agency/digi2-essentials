@@ -2594,22 +2594,31 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     <p>Remembers which units a visitor looked at, keeps that profile in their own browser (IndexedDB <code>d2ma</code>), and runs the scenarios published from digi2.app: a popup with the last unit they viewed, a <code>dataLayer</code> segment for GA4 audiences, a webhook to Make for e-mail / SMS / AI call.</p>
     <pre><code>&lt;script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.1/dist/digi2-loader.min.js"
   <span class="attr">d2-ma</span>=<span class="string">"https://digi2.app/api/ma/scenario/osiedle-demo.json"</span>
-  <span class="attr">d2-ma-consent-required</span>=<span class="string">"false"</span>
+  <span class="attr">d2-ma-consent-required</span>=<span class="string">"true"</span>
   <span class="attr">d2-popups</span>&gt;&lt;/script&gt;</code></pre>
 
     <table>
       <tr><th>Loader attribute</th><th>Default</th><th>Effect</th></tr>
       <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests)</td></tr>
       <tr><td><code>d2-ma-consent-required</code></td><td>required</td><td>The envelope's <code>storage.consentRequired</code> decides; this applies when the envelope can't be read. <code>"true"</code> forces consent whatever the envelope says</td></tr>
-      <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category (module <code>d2-gtm</code>) that unlocks storage</td></tr>
+      <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category that unlocks storage. Read from any banner that speaks Consent Mode, see below</td></tr>
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
-      <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map</td></tr>
+      <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map: single shapes on the floor on screen only, one per animation frame, re-applied after a floor change. List order is unchanged</td></tr>
       <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Demo only. Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
     </table>
     <div class="callout callout--warn">
       <span class="ic">⚠︎</span>
       <p><strong>On a client site always set <code>d2-ma-consent-required="true"</code>.</strong> Without it the envelope decides, and one published with <code>consentRequired: false</code> would switch consent off for that site. <code>"false"</code>, <code>d2-ma-refresh</code> and <code>demoState</code> are for our demo copy only.</p>
     </div>
+
+    <h3>Where consent comes from</h3>
+    <table>
+      <tr><th>Source</th><th>When it applies</th></tr>
+      <tr><td><code>gtag('consent', 'default' | 'update', {...})</code> in the <code>dataLayer</code></td><td>Any banner that calls gtag, including commands pushed before the module started. An <code>update</code> wins over a <code>default</code>. An <code>update</code> that denies the category deletes the database</td></tr>
+      <tr><td>Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM. Re-checked on every <code>dataLayer</code> event, so a grant shows up at the CMP's next event. A denial takes effect on the next page load</td></tr>
+      <tr><td>Module <code>d2-gtm</code> (<code>digi2.google.consent</code>, <code>consent:updated</code>)</td><td>Only when neither source above knows the category</td></tr>
+    </table>
+    <p>Consent is required when the envelope says <code>consentRequired: true</code> <em>or</em> the tag says <code>d2-ma-consent-required="true"</code>. The attribute can force consent but never switch it off. <code>demoState</code> follows the envelope only, so a demo envelope with <code>false</code> plus the attribute waits for the banner, then runs with the demo data. Before consent nothing is stored and no action runs. Events seen while waiting are dropped.</p>
 
     <h3>Where unit views come from</h3>
     <table>
