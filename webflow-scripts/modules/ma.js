@@ -1106,14 +1106,26 @@
     return null;
   }
 
-  function merge(stored, fresh) {
+  // Hasło promocji i obrazek ze świeżego odczytu obowiązują także puste:
+  // promocji usuniętej w 2destate nie wolno dalej pokazywać z IndexedDB.
+  var CLEARABLE = ['promoText', 'image'];
+
+  // only: lista pól do odświeżenia; bez niej - wszystko poza url i source.
+  // Puste pole świeżych danych nie nadpisuje zapisanego (poza CLEARABLE).
+  function merge(stored, fresh, only) {
     var out = _clone(stored);
     Object.keys(fresh).forEach(function (k) {
       if (k === 'url' || k === 'source') return;
-      if (fresh[k] != null) out[k] = fresh[k];
+      if (only && only.indexOf(k) < 0) return;
+      if (fresh[k] != null || CLEARABLE.indexOf(k) >= 0) out[k] = fresh[k];
     });
     return out;
   }
+
+  // Products API ma inny model niż mapa (bez building_name, building_id zamiast
+  // nazwy) - bierzemy z niego tylko to, co się zmienia: status, cenę, promocję
+  // i pola rejestru. Reszta zostaje z zapisu kliknięcia na mapie.
+  var API_FRESH = ['status', 'price', 'pricePerSqm', 'isPromo', 'image', 'promoText'];
 
   // Świeży status i cena przed popupem: z mapy na stronie, inaczej z Products
   // API 2destate. Zwraca null, gdy lokalu nie wolno już promować.
@@ -1135,7 +1147,7 @@
       var row = Array.isArray(list) ? list[0] : (list && Array.isArray(list.data) ? list.data[0] : null);
       // Publiczne API nie zwraca lokalu wycofanego z oferty - tego też nie promujemy.
       if (!row) return null;
-      return merge(unit, from2destate(row));
+      return merge(unit, from2destate(row), API_FRESH);
     }, function (e) {
       _log('status refresh failed, using stored unit', e);
       return unit;

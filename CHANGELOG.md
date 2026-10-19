@@ -15,6 +15,11 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - **Nowe pole `d2-ma-field="promoText"`**: hasło promocji z pola rejestru
   `haslo-promocji`. Puste pole jest ukrywane jak każde inne. Oba pola są
   czytane z mapy (płasko) i ze świeżego statusu z Products API (pod `fields`).
+- Świeży status z Products API (strona bez mapy) odświeża w popupie tylko
+  status, cenę, promocję, obrazek i hasło. Nazwa i budynek zostają takie,
+  jakie zapisało kliknięcie na mapie. Hasło promocji i obrazek usunięte w
+  2destate znikają z popupu po świeżym odczycie i nie są pokazywane z
+  zapisanej historii.
 - Podświetlenie mapy: grupa o tym samym tytule co kształt nie wyłącza już
   podświetlenia tego kształtu. Pominięte kształty z powtórzonym tytułem widać
   w logu (`d2-debug`).

@@ -866,6 +866,55 @@ test('popup: status z Products API 2destate, gdy mapy nie ma na stronie', async 
   assert.equal(p2.popupy.length, 0);
 });
 
+test('popup: z Products API tylko pola zmienne, budynek i nazwa zostają z kliknięcia na mapie', async () => {
+  const id = '12345678-1234-4234-8234-123456789012';
+  const pola = {};
+  const el = (k) => (pola[k] = element({ 'd2-ma-field': k }, k === 'image' ? 'IMG' : 'DIV'));
+  const lista = ['image', 'name', 'building', 'price', 'promoText'].map(el);
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
+  const p1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  p1.klik({ id, name: 'B.1.05', building_name: 'Budynek B', rooms: 2, status: 'available', price_gross: 600000 });
+  await p1.gotowe();
+  const api = () => [{ id, name: 'inna nazwa', building_id: 7, status: 'available', price_gross: 580000,
+    fields: { 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' } }];
+  const p2 = await powrot(p1, 2 * H, { mapa: false, api, szablon: s });
+  assert.equal(p2.popupy.length, 1);
+  assert.equal(pola.name.textContent, 'B.1.05');
+  assert.equal(pola.building.textContent, 'Budynek B', 'API bez building_name nie czyści budynku');
+  assert.equal(pola.price.textContent.replace(/\s/g, ' '), '580 000 zł', 'cena świeża z API');
+  assert.equal(pola.promoText.textContent, 'Rabat 5%');
+  assert.equal(pola.image.getAttribute('src'), 'https://cdn.example/a.jpg');
+});
+
+test('popup: promocja usunięta w 2destate znika po świeżym odczycie (API i mapa)', async () => {
+  const id = '12345678-1234-4234-8234-123456789012';
+  const pola = {};
+  const lista = ['image', 'promoText'].map((k) => (pola[k] = element({ 'd2-ma-field': k }, k === 'image' ? 'IMG' : 'DIV')));
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
+  const produkt = { id, name: 'B.1.05', rooms: 2, status: 'available', 'obrazek-popup': 'https://cdn.example/a.jpg', 'haslo-promocji': 'Rabat 5%' };
+  const p1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  p1.klik(produkt);
+  await p1.gotowe();
+  assert.equal(p1.ma.history()[0].unit.promoText, 'Rabat 5%');
+  // Strona bez mapy: Products API już bez hasła i obrazka.
+  const p2 = await powrot(p1, 2 * H, { mapa: false, szablon: s, api: () => [{ id, status: 'available', fields: {} }] });
+  assert.equal(p2.popupy.length, 1);
+  assert.notEqual(pola.promoText.textContent, 'Rabat 5%', 'wygasła promocja nie wraca z IndexedDB');
+  assert.equal(pola.promoText.style.display, 'none');
+  assert.equal(pola.image.style.display, 'none');
+  // Strona z mapą (osobny odwiedzający): produkt na mapie już bez hasła.
+  pola.promoText.textContent = '';
+  pola.promoText.style.display = '';
+  const m1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  m1.klik(produkt);
+  await m1.gotowe();
+  const m2 = await powrot(m1, 2 * H, { szablon: s, produkty: [{ id, name: 'B.1.05', rooms: 2, status: 'available' }] });
+  assert.equal(m2.popupy.length, 1);
+  assert.equal(pola.promoText.style.display, 'none', 'mapa bez hasła = brak hasła');
+});
+
 test('Lead bez kontaktu: lead → wyjście z grupy → nieodebrany telefon → powrót → e-mail, SMS po 15 min', async () => {
   const k = (seq, result) => koperta([LEAD], { demoState: { crmCallResult: result, crmCallSeq: seq, timeScale: 1 } });
   const p1 = await start({ koperta: k(4, 'no_answer') });
