@@ -41,6 +41,15 @@ Co robi:
   wyłącznie na naszej kopii (decyzja Piotra z 18.10.2026); produkcja u klienta =
   baner zgód.
 
+- **Prywatność:** adres lokalu to ścieżka strony z samym `?sm-unit=` /
+  `?d2-unit=` — `gclid`, `fbclid`, UTM ani nic innego z linku kampanii nie trafia
+  do bazy ani do webhooka. Obrazek w popupie tylko z `https:`, link tylko `https:`
+  albo ta sama domena. Profil nieodwiedzany dłużej niż retencja zaczyna się od
+  nowa.
+- **Na stronie klienta zawsze `d2-ma-consent-required="true"`** — bez tego koperta
+  z `consentRequired: false` wyłączyłaby zgodę. `d2-ma-refresh` i `demoState`
+  (`timeScale`, wynik telefonu) są tylko na demo.
+
 Strona testowa: `sandbox/ma.html`. Szczegóły: README, sekcja „Marketing
 Automation”.
 

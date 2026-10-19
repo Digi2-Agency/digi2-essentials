@@ -373,6 +373,47 @@
     return (l.origin || '') + (l.pathname || '');
   }
 
+  // Adres lokalu bez reszty adresu strony: gclid, fbclid, UTM albo ?email=
+  // z linku kampanii nie mogą trafić do d2ma ani do webhooka. Zostaje tylko
+  // to, co wskazuje lokal.
+  var UNIT_PARAMS = ['sm-unit', 'd2-unit'];
+  function cleanUrl(raw) {
+    var l = window.location || {};
+    var u;
+    try { u = new URL(raw, l.href); } catch (e) { return null; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+    var q = [];
+    UNIT_PARAMS.forEach(function (k) {
+      var v = u.searchParams.get(k);
+      if (v) q.push(k + '=' + encodeURIComponent(v));
+    });
+    return u.origin + u.pathname + (q.length ? '?' + q.join('&') : '');
+  }
+
+  function smUnitLink(id) {
+    return pageBase() + '?sm-unit=' + encodeURIComponent(id);
+  }
+
+  // Do src obrazka tylko https:, do href linku https: albo ten sam origin -
+  // pole z koperty czy API nie może wstawić na stronę javascript: ani data:.
+  function safeImage(v) {
+    try {
+      var u = new URL(v, (window.location || {}).href);
+      return u.protocol === 'https:' ? u.href : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function safeLink(v) {
+    var l = window.location || {};
+    try {
+      var u = new URL(v, l.href);
+      if (u.protocol === 'https:' || (l.origin && u.origin === l.origin)) return u.href;
+    } catch (e) {}
+    return null;
+  }
+
   function status3de(c) {
     if (c.isNotAvailable === true) return 'sold';
     var s = num(c.status);
@@ -391,13 +432,12 @@
     var u = entry && entry.data && entry.data.unit;
     if (!u || u.id == null) return null;
     var c = u.custom || {};
-    var us = entry.appData && entry.appData.us;
     return {
       unitId: String(u.id), name: str(u.name), rooms: num(c.rooms), floor: num(c.floor),
       area: num(c.area), price: num(c.price), pricePerSqm: num(c.priceOfferPerSqm),
       building: c.building == null || c.building === '' ? null : String(c.building),
       status: status3de(c), isPromo: !!c.isPromo,
-      url: typeof us === 'string' && us.charAt(0) === '?' ? pageBase() + us : (window.location && window.location.href) || null,
+      url: smUnitLink(u.id),
       image: null, source: '3destate'
     };
   }
@@ -503,6 +543,9 @@
     var visit = touch();
     if (visit) dispatch(visit);
     var t = at != null ? at : now();
+    // Zdarzenie wizyty jest po jej początku (reguła 1) - także obejrzenie,
+    // które ją otworzyło, i deep link z bufora sprzed otwarcia magazynu.
+    if (state.visitStart != null && t <= state.visitStart) t = state.visitStart + 1;
     if (evt.type === 'view') {
       var v = recordView(_clone(evt.unit), t);
       if (!v) return;
@@ -654,12 +697,15 @@
     state.pending = state.pending.filter(function (p) { return ids.indexOf(p.sc) >= 0; });
   }
 
-  function crmEvent() {
+  function crmEvent(atStart) {
     if (!envelope || !envelope.demoState) return null;
     var seq = num(envelope.demoState.crmCallSeq);
     if (seq == null) return null;
     crmSeq = seq;
-    return { type: 'crm_call_result', t: now(), seq: seq, result: envelope.demoState.crmCallResult,
+    // Przy starcie wynik telefonu zapadł przed tą odsłoną, więc jest „przed"
+    // wizytą, która zaczyna się teraz - „nie odebrał → wrócił" działa w jednym
+    // wejściu. Odczyt w trakcie (reload) to zwykłe „teraz".
+    return { type: 'crm_call_result', t: atStart ? now() - 1 : now(), seq: seq, result: envelope.demoState.crmCallResult,
       duration: num(envelope.demoState.crmCallDurationSec) };
   }
 
@@ -711,12 +757,13 @@
     var ctx = { unit: arm.ctx.unit, segment: arm.ctx.segment };
     if (evt.type === 'unit_view' || evt.type === 'type_view') {
       if (!viewMatches(w, evt.unit)) return null;
-      var count = views.filter(function (v) { return v.ts >= arm.at && viewMatches(w, v.unit); }).length;
+      var count = views.filter(function (v) { return v.ts > arm.at && viewMatches(w, v.unit); }).length;
       if (count < minCount(w)) return null;
       ctx.unit = evt.unit;
       return ctx;
     }
-    if (evt.t < arm.at) return null;
+    // Reguła 1: „po" znaczy później, nie w tej samej milisekundzie.
+    if (evt.t <= arm.at) return null;
     if (evt.type === 'return_visit') {
       var after = num(w.afterHours);
       if (after == null || after < 0) after = 1;
@@ -1158,7 +1205,8 @@
       var f = fields[i];
       var v = fieldValue(_attr(f, 'd2-ma-field'), unit);
       if (f.tagName === 'IMG') {
-        if (v) { f.setAttribute('src', v); f.style.display = 'block'; } else { f.style.display = 'none'; }
+        var src = v ? safeImage(v) : null;
+        if (src) { f.setAttribute('src', src); f.style.display = 'block'; } else { f.style.display = 'none'; }
       } else {
         f.textContent = v == null ? '' : v;
         f.style.display = v == null ? 'none' : '';
@@ -1172,7 +1220,8 @@
       var a = links[i];
       a._d2maUnit = unit;
       a._d2maCta = cta;
-      if (cta === 'open_unit' && unit.url && a.tagName === 'A') a.setAttribute('href', unit.url);
+      var href = cta === 'open_unit' && unit.url ? safeLink(unit.url) : null;
+      if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
       a._d2maBound = true;
       a.addEventListener('click', function (e) {
@@ -1385,7 +1434,7 @@
     if (!id) return;
     intake({ type: 'view', unit: {
       unitId: id, name: null, rooms: null, floor: null, area: null, price: null, pricePerSqm: null,
-      building: null, status: null, isPromo: null, url: (window.location && window.location.href) || null,
+      building: null, status: null, isPromo: null, url: smUnitLink(id),
       image: null, source: '3destate', partial: true
     } });
   }
@@ -1503,6 +1552,22 @@
     return !!(c && c[consentCategory()] === 'granted');
   }
 
+  // Zgoda wymagana, a jej nie ma: przestajemy i kasujemy to, co było zebrane
+  // (wycofana zgoda, koperta przełączona na consentRequired, baza z czasów,
+  // gdy zgoda nie była wymagana).
+  function wipe(reason) {
+    _log('no consent — d2ma deleted (' + reason + ')');
+    tracking = false;
+    blocked = true;
+    views = [];
+    state = null;
+    buffer = [];
+    if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
+    var s = store || window.digi2._maStore || idbStore() || memoryStore();
+    _queue(function () { return s.clear(); });
+    render();
+  }
+
   var consentHooked = false;
   function waitForConsent() {
     if (consentHooked || typeof window.digi2.on !== 'function') return;
@@ -1510,15 +1575,7 @@
     window.digi2.on('consent:updated', function (s) {
       var granted = !!(s && s[consentCategory()] === 'granted');
       if (granted && blocked) { blocked = false; openStore(); }
-      if (!granted && tracking && consentRequired(envelope)) {
-        // Wycofana zgoda: przestajemy i kasujemy to, co było zebrane.
-        tracking = false;
-        blocked = true;
-        views = [];
-        state = null;
-        _queue(function () { return store.clear(); });
-        render();
-      }
+      if (!granted && tracking && consentRequired(envelope)) wipe('consent withdrawn');
     });
   }
 
@@ -1540,8 +1597,7 @@
 
   function decide(env) {
     if (consentRequired(env) && !hasConsent()) {
-      blocked = true;
-      buffer = [];
+      wipe('consent required');
       waitForConsent();
       _log('waiting for consent → ' + consentCategory());
       _emit('ma:ready', { tracking: false });
@@ -1570,7 +1626,7 @@
       prune();
       applyEnvelope(envelope);
       var visit = touch();
-      var crm = crmEvent();
+      var crm = crmEvent(true);
       if (crm) dispatch(crm);
       if (visit) dispatch(visit);
       var queued = buffer;
@@ -1592,6 +1648,18 @@
     var days = envelope && num(envelope.storage.retentionDays);
     if (!days || days <= 0) days = DEFAULT_RETENTION_DAYS;
     var limit = now() - days * DAY_MS;
+    // Retencja dotyczy też rekordu state: profil nieodwiedzany dłużej niż
+    // retencja zaczyna się od nowa (nowy visitorId), a stare kroki ścieżek
+    // i wpisy częstotliwości znikają.
+    if (state.lastSeen != null && state.lastSeen < limit) {
+      _log('profile older than retention — starting over');
+      state = freshState();
+    }
+    Object.keys(state.scenarios).forEach(function (id) {
+      var st = state.scenarios[id];
+      Object.keys(st.nodes || {}).forEach(function (n) { if (st.nodes[n].at < limit) delete st.nodes[n]; });
+      Object.keys(st.freq || {}).forEach(function (n) { if (st.freq[n].at != null && st.freq[n].at < limit) delete st.freq[n]; });
+    });
     var old = views.filter(function (v) { return v.ts < limit; }).map(function (v) { return v.id; });
     if (!old.length) return;
     views = views.filter(function (v) { return v.ts >= limit; });
@@ -1625,9 +1693,9 @@
       return decide(env).then(function () { return true; });
     }
     if (consentRequired(env) && !hasConsent()) {
-      tracking = false;
-      blocked = true;
       envelope = env;
+      wipe('envelope now requires consent');
+      waitForConsent();
       return Promise.resolve(true);
     }
     var before = crmSeq;
@@ -1655,7 +1723,7 @@
         unitId: String(unit.unitId), name: str(unit.name), rooms: num(unit.rooms), floor: num(unit.floor),
         area: num(unit.area), price: num(unit.price), pricePerSqm: num(unit.pricePerSqm),
         building: str(unit.building), status: unit.status == null ? null : statusOf(unit.status),
-        isPromo: !!unit.isPromo, url: str(unit.url) || (window.location && window.location.href) || null,
+        isPromo: !!unit.isPromo, url: (unit.url ? cleanUrl(String(unit.url)) : null) || pageBase(),
         image: str(unit.image), source: str(unit.source) || 'page'
       };
       intake({ type: 'view', unit: u });

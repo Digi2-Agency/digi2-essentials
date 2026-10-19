@@ -1090,6 +1090,16 @@ visitor's own browser and runs the scenarios published from digi2.app.
 The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
 
+> **On a client site always put `d2-ma-consent-required="true"` on the tag.**
+> Without the attribute the envelope decides, and an envelope published with
+> `consentRequired: false` (a demo setting, a panel mistake) would switch
+> consent off for that site. With `"true"` the page needs consent whatever the
+> envelope says. `d2-ma-consent-required="false"` is for our demo copy only.
+>
+> **Demo only:** `d2-ma-refresh` and `demoState` (`timeScale`, CRM call result).
+> A client site doesn't poll the envelope, and with consent required the module
+> ignores `demoState` anyway.
+
 ### Sources → `unit_view`
 
 | Source | How |
@@ -1101,7 +1111,11 @@ contain `;` or `@`.
 | Lead | `generate_lead` or `oa3de__contact-form-make-inquiry` |
 
 Normalised shape: `{ unitId, name, rooms, floor, area, price, pricePerSqm,
-building, status, isPromo, url, image, source }`. 3D Estate statuses map by
+building, status, isPromo, url, image, source }`. `url` is never the page
+address as it stands: it is `origin + pathname + ?sm-unit=<id>` (3D Estate) or
+`?d2-unit=<id>` (2destate), and a URL passed to `track()` keeps only those two
+parameters — `gclid`, `fbclid`, UTM or an `?email=` from a campaign link never
+reach `d2ma` or the webhook. 3D Estate statuses map by
 number (`1` available, `2` reserved, `3` or `isNotAvailable` sold, other →
 `other`) because the names are the developer's own dictionary. 2destate price is
 `promo_price_gross` while `promo_active`, else `price_gross`; `building` is
@@ -1125,10 +1139,14 @@ until reload.
 - **Profile:** computed from history on demand — `pref.rooms` is the most
   viewed room count, a tie goes to the most recently viewed; same for
   `pref.floor`.
-- **Retention:** `storage.retentionDays` (90), pruned at start; at most 2000 views.
+- **Retention:** `storage.retentionDays` (90), pruned at start; at most 2000
+  views. The `state` record too: a profile not seen for longer than that starts
+  over with a new `visitorId`, and older path steps and frequency records go.
 - **Consent:** with `consentRequired` and no consent nothing is recorded — not
-  even into a buffer to replay later. `consent:updated` granting the category
-  starts the module; withdrawing it while required deletes the database.
+  even into a buffer to replay later — and an existing `d2ma` is deleted (a
+  database from before consent was required, or an envelope switched to
+  `consentRequired: true` while the page is open). `consent:updated` granting
+  the category starts the module; withdrawing it deletes the database.
 - **`visitorId`:** `crypto.randomUUID()` — the only identifier that leaves the
   page (webhook body).
 
@@ -1139,8 +1157,11 @@ the active scenarios in envelope order. A node's progress is `{ at, unit,
 segment }` in `state.scenarios[scenarioId].nodes`.
 
 - **Arming:** a root trigger is always armed; any other trigger is armed once a
-  predecessor is done, and only events at or after that moment count (rule 1 and
-  2). Counting triggers count views since then — a root counts the whole
+  predecessor is done, and only events strictly after that moment count (rule 1
+  and 2) — the same millisecond is not "after". An event of a visit is always
+  after the visit start (a view that opened it, a deep link buffered before the
+  store opened), and a CRM result read at page load counts as just before it, so
+  "no answer → came back" works within one load. Counting triggers count views since then — a root counts the whole
   history.
 - **Same event, two triggers:** the firing set is decided on the state *before*
   the event, so a trigger armed by another trigger that fired on this very
@@ -1192,7 +1213,10 @@ behaves as if that time had passed — deferred actions included.
 - **popup** — `digi2.popups.create('d2-ma-<template>', { popupSelector, cookieName: null, dataTagTrigger: false })`
   on `[d2-ma-popup="<template>"]` or a built-in card, then `show({ auto: true })`,
   so it waits its turn behind anything on screen. Values go in via `textContent`
-  only. Built-in labels exist for `last-unit` and `promo-rooms`.
+  only. `image` goes into `src` only when it is `https:`; the CTA `href` only when
+  it is `https:` or the page's own origin — otherwise the image is hidden and
+  the link keeps its own `href`. Built-in labels exist for `last-unit` and
+  `promo-rooms`.
 - **datalayer** — `{ event, segment, ma_scenario }`.
 - **webhook** — `POST` JSON `{ scenarioId, revision, nodeId, channel, template,
   unit, segment, visitorId, testOnly: true, ts }`, `keepalive`, no credentials.

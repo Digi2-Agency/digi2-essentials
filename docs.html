@@ -2604,8 +2604,12 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category (module <code>d2-gtm</code>) that unlocks storage</td></tr>
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
       <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map</td></tr>
-      <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
+      <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Demo only. Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
     </table>
+    <div class="callout callout--warn">
+      <span class="ic">⚠︎</span>
+      <p><strong>On a client site always set <code>d2-ma-consent-required="true"</code>.</strong> Without it the envelope decides, and one published with <code>consentRequired: false</code> would switch consent off for that site. <code>"false"</code>, <code>d2-ma-refresh</code> and <code>demoState</code> are for our demo copy only.</p>
+    </div>
 
     <h3>Where unit views come from</h3>
     <table>
@@ -2616,7 +2620,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td>Anything else</td><td><code>digi2.ma.track({ unitId, name, rooms, floor, area, price, … })</code></td></tr>
       <tr><td>Lead</td><td><code>dataLayer</code> <code>generate_lead</code> or <code>oa3de__contact-form-make-inquiry</code></td></tr>
     </table>
-    <p class="muted">The same unit within 5 s counts once. Every source becomes one shape: <code>{ unitId, name, rooms, floor, area, price, pricePerSqm, building, status, isPromo, url, image, source }</code>; prices are copied as the source gives them.</p>
+    <p class="muted">The same unit within 5 s counts once. Every source becomes one shape: <code>{ unitId, name, rooms, floor, area, price, pricePerSqm, building, status, isPromo, url, image, source }</code>; prices are copied as the source gives them. <code>url</code> is the page path plus <code>?sm-unit=</code> / <code>?d2-unit=</code> only — campaign parameters (<code>gclid</code>, <code>fbclid</code>, UTM) never reach the database or the webhook.</p>
 
     <h3>What the browser keeps</h3>
     <table>
@@ -2625,7 +2629,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>counters</code></td><td>Views per unit, per room count, per floor; visits; last visit; lead flag</td></tr>
       <tr><td><code>state</code></td><td><code>visitorId</code> (random UUID), visit clock, scenario progress, frequency records, deferred actions, last seen <code>crmCallSeq</code></td></tr>
     </table>
-    <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all; withdrawing consent deletes the database.</p>
+    <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all and an existing database is deleted (also when the envelope switches to <code>consentRequired: true</code>); withdrawing consent deletes it too. A profile not seen for longer than the retention starts over with a new <code>visitorId</code>.</p>
 
     <h3>Module API</h3>
     <pre><code>digi2.ma.<span class="fn">profile</span>()          <span class="comment">// { visitorId, visits, lead, views, pref: { rooms, floor }, lastUnit, segment, … }</span>
@@ -2677,7 +2681,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:action'</span>, <span 
     <h3>Rules</h3>
     <table>
       <tr><th>Case</th><th>Behaviour</th></tr>
-      <tr><td>trigger → trigger</td><td>A sequence in time: the second one only counts when it happens <strong>after</strong> the first (viewed X, then came back)</td></tr>
+      <tr><td>trigger → trigger</td><td>A sequence in time: the second one only counts when it happens <strong>after</strong> the first (viewed X, then came back) — the same millisecond is not after</td></tr>
       <tr><td>action → trigger</td><td>The path waits after the action for that event</td></tr>
       <tr><td>Several edges out of one node</td><td>Run in the order of <code>edges</code></td></tr>
       <tr><td><code>frequency</code></td><td><code>once_per_visit</code> (default) | <code>once_per_unit</code> | <code>once_per_days:N</code>, counted per scenario. A skipped action <strong>doesn't end the branch</strong> — what follows it runs at once</td></tr>
@@ -2724,9 +2728,9 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:action'</span>, <span 
       <tr><td><code>area</code></td><td><code>44,6 m²</code></td></tr>
       <tr><td><code>price</code> / <code>pricePerSqm</code></td><td><code>612 000 zł</code> / <code>13 722 zł/m²</code></td></tr>
       <tr><td><code>summary</code></td><td>Rooms · area · floor, whichever are known</td></tr>
-      <tr><td><code>image</code> (on an Image)</td><td>Sets <code>src</code>; hidden when the unit has none</td></tr>
+      <tr><td><code>image</code> (on an Image)</td><td>Sets <code>src</code> when it is <code>https:</code>; hidden otherwise or when the unit has none</td></tr>
     </table>
-    <p class="muted">A field with no value is hidden. <code>d2-ma-cta</code> with <code>cta: "open_unit"</code> gets the unit's link; for a 2destate unit whose map is on the page it highlights the unit on the map instead (mark the map wrapper <code>d2-ma-map</code> to scroll to it). With <code>cta: "contact"</code> it keeps its own href. No <code>create()</code> embed is needed — the module registers the popup as <code>d2-ma-&lt;template&gt;</code> on the popups module, so the one-popup-at-a-time rule applies. The page needs <code>d2-popups</code> or the module loads it on demand.</p>
+    <p class="muted">A field with no value is hidden. <code>d2-ma-cta</code> with <code>cta: "open_unit"</code> gets the unit's link (only <code>https:</code> or the page's own origin); for a 2destate unit whose map is on the page it highlights the unit on the map instead (mark the map wrapper <code>d2-ma-map</code> to scroll to it). With <code>cta: "contact"</code> it keeps its own href. No <code>create()</code> embed is needed — the module registers the popup as <code>d2-ma-&lt;template&gt;</code> on the popups module, so the one-popup-at-a-time rule applies. The page needs <code>d2-popups</code> or the module loads it on demand.</p>
 
     <h3>"What the site knows about you"</h3>
     <table>

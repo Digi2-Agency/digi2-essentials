@@ -38,9 +38,11 @@ function magazyn(dysk) {
   };
 }
 
-function element(attrs) {
+let uuidN = 0;
+
+function element(attrs, tagName) {
   return {
-    tagName: 'DIV',
+    tagName: tagName || 'DIV',
     attributes: Object.assign({}, attrs || {}),
     style: {},
     getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null; },
@@ -87,7 +89,7 @@ function strona(opts) {
     destroy(n) { delete this._rejestr[n]; },
     create(n, opcje) {
       const inst = {
-        name: n, opcje, popupElement: element(),
+        name: n, opcje, popupElement: document.querySelector(opcje.popupSelector) || element(),
         show(x) { popupy.push({ name: n, auto: x && x.auto }); },
         hide() {},
       };
@@ -103,6 +105,8 @@ function strona(opts) {
     createElement: () => element(),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
+      const s = o.szablon;
+      if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       return null;
     },
     querySelectorAll() { return []; },
@@ -115,7 +119,7 @@ function strona(opts) {
     localStorage: {
       getItem(k) { return k === 'consentModeV2' && o.zgoda ? JSON.stringify(o.zgoda) : null; },
     },
-    crypto: { randomUUID: () => '11111111-2222-4333-8444-555555555555' },
+    crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuidN).padStart(12, '0') },
     digi2: {
       log() {},
       emit(n, d) {
@@ -161,7 +165,7 @@ function strona(opts) {
     setInterval() { return 0; },
     clearInterval() {},
     Date: FakeDate,
-    JSON, Math, Intl, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array,
+    JSON, Math, Intl, URL, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array,
     fetch,
   });
   vm.runInContext(kod, context, { filename: modulePath });
@@ -298,7 +302,7 @@ test('ten sam lokal w ciągu 5 s liczy się raz, po 5 s znowu', async () => {
   env.dataLayer.push(unitOpen('A_1'));
   await env.minie(2000);
   env.dataLayer.push(unitOpen('A_1'));
-  await env.minie(3000);
+  await env.minie(3001);
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   assert.equal(env.ma.history().length, 2);
@@ -354,7 +358,7 @@ test('visitorId zostaje między odsłonami, nowa wizyta po 30 min ciszy', async 
   assert.equal(p2.ma.profile().visits, 1);
   const p3 = await powrot(p2, 31 * MIN);
   assert.equal(p3.ma.profile().visits, 2);
-  assert.equal(p3.ma.profile().visitorId, '11111111-2222-4333-8444-555555555555');
+  assert.equal(p3.ma.profile().visitorId, p1.ma.profile().visitorId);
 });
 
 test('pref.rooms = najczęściej oglądane, remis rozstrzyga ostatnio obejrzany', async () => {
@@ -392,7 +396,8 @@ test('consentRequired: bez zgody nic nie trafia do bazy, po zgodzie moduł rusza
   const env = await start({ koperta: koperta([POKOJE], { storage: { consentRequired: true }, demoState: { timeScale: 60 } }) });
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
-  assert.equal(env._dysk.state, undefined);
+  assert.ok(!env._dysk.state, 'nic w magazynie');
+  assert.ok(!(env._dysk.views || []).length);
   assert.equal(env.ma.profile(), null);
   env.zgoda({ analytics_storage: 'granted' });
   await env.gotowe();
@@ -592,6 +597,7 @@ test('reload() łapie nowy wynik telefonu na otwartej stronie', async () => {
   const env = await start({ koperta: koperta([LEAD], { demoState: { crmCallResult: null, crmCallSeq: 0 } }) });
   env.dataLayer.push({ event: 'generate_lead' });
   await env.gotowe();
+  await env.minie(1000);
   await env.ma.load(koperta([LEAD], { demoState: { crmCallResult: 'no_answer', crmCallSeq: 1 } }));
   assert.equal(env.webhooki.length, 0);
   env.ma.simulateReturn();
@@ -706,4 +712,165 @@ test('nowa rewizja scenariusza zaczyna ścieżkę od zera', async () => {
   p2.dataLayer.push(unitOpen('A_4'));
   await p2.gotowe();
   assert.equal(p2.popupy.length, 1, 'częstotliwość z rewizji 1 nie blokuje rewizji 2');
+});
+
+// ---------------------------------------------------------------------------
+// Poprawki z recenzji (U1–U6)
+// ---------------------------------------------------------------------------
+
+function szablonPopupu() {
+  const img = element({ 'd2-ma-field': 'image' }, 'IMG');
+  const nazwa = element({ 'd2-ma-field': 'name' });
+  const cta = element({ 'd2-ma-cta': '' }, 'A');
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? [img, nazwa] : sel.indexOf('d2-ma-cta') >= 0 ? [cta] : []);
+  return { s, img, nazwa, cta };
+}
+
+async function popupZLokalem(unit) {
+  const t = szablonPopupu();
+  const p1 = await start({ koperta: koperta([POWROT]), szablon: t.s });
+  p1.ma.track(unit);
+  await p1.gotowe();
+  const p2 = await powrot(p1, 2 * H);
+  assert.equal(p2.popupy.length, 1);
+  return t;
+}
+
+test('U1: adres lokalu bez gclid, UTM i innych parametrów strony', async () => {
+  const env = await start({ koperta: koperta([]), search: '?sm-unit=A_9&gclid=abc&utm_source=fb&email=x%40y.pl' });
+  const e = unitOpen('A_1');
+  e.appData.us = '?sm-unit=A_1&sm-media=Tour&fbclid=zzz';
+  env.dataLayer.push(e);
+  env.ma.track({ unitId: 'B_1', url: 'https://demo.example/lokal?utm_campaign=x&d2-unit=B_1#top' });
+  env.ma.track({ unitId: 'B_2', url: 'javascript:alert(1)' });
+  await env.gotowe();
+  assert.deepEqual(env.ma.history().map((v) => v.unit.url), [
+    'https://demo.example/oferta?sm-unit=A_9',
+    'https://demo.example/oferta?sm-unit=A_1',
+    'https://demo.example/lokal?d2-unit=B_1',
+    'https://demo.example/oferta',
+  ]);
+});
+
+test('U4: obrazek popupu tylko z https:', async () => {
+  const zly = await popupZLokalem({ unitId: 'A_1', name: 'A.1', image: 'javascript:alert(1)' });
+  assert.equal(zly.img.getAttribute('src'), null);
+  assert.equal(zly.img.style.display, 'none');
+  const http = await popupZLokalem({ unitId: 'A_1', name: 'A.1', image: 'http://cdn.example/a.jpg' });
+  assert.equal(http.img.getAttribute('src'), null);
+  const ok = await popupZLokalem({ unitId: 'A_1', name: 'A.1', image: 'https://cdn.example/a.jpg' });
+  assert.equal(ok.img.getAttribute('src'), 'https://cdn.example/a.jpg');
+  assert.equal(ok.nazwa.textContent, 'A.1');
+});
+
+test('U5: link CTA tylko https: albo ten sam origin', async () => {
+  const obcy = await popupZLokalem({ unitId: 'A_1', url: 'http://obcy.example/x' });
+  assert.equal(obcy.cta.getAttribute('href'), null);
+  const swoj = await popupZLokalem({ unitId: 'A_1', url: 'https://demo.example/oferta?sm-unit=A_1' });
+  assert.equal(swoj.cta.getAttribute('href'), 'https://demo.example/oferta?sm-unit=A_1');
+});
+
+test('U6: reguła 1 — zdarzenie w tej samej milisekundzie co poprzedni krok nie jest „po"', async () => {
+  const sc = {
+    scenarioId: 'lead-potem-lokal', revision: 1, active: true,
+    nodes: [
+      { id: 't1', type: 'trigger', when: { event: 'lead' } },
+      { id: 't2', type: 'trigger', when: { event: 'unit_view', unitIds: [] } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'po-leadzie' } },
+    ],
+    edges: [['t1', 't2'], ['t2', 'a1']],
+  };
+  const env = await start({ koperta: koperta([sc]) });
+  await env.minie(1000);
+  env.dataLayer.push({ event: 'generate_lead' });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0);
+  await env.minie(1);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 1);
+});
+
+test('reguła 1: obejrzenie zaraz po otwarciu wizyty liczy się jako „po powrocie"', async () => {
+  const sc = {
+    scenarioId: 'wrocil-i-oglada', revision: 1, active: true,
+    nodes: [
+      { id: 't1', type: 'trigger', when: { event: 'return_visit' } },
+      { id: 't2', type: 'trigger', when: { event: 'unit_view', unitIds: [] } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'wrocil' } },
+    ],
+    edges: [['t1', 't2'], ['t2', 'a1']],
+  };
+  const p1 = await start({ koperta: koperta([sc]) });
+  const p2 = await powrot(p1, 2 * H, { search: '?sm-unit=A_1' });
+  assert.equal(p2.segmenty().length, 1);
+});
+
+test('wycofanie zgody kasuje bazę', async () => {
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' } });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env._dysk.views.length, 1);
+  env.zgoda({ analytics_storage: 'denied' });
+  await env.gotowe();
+  assert.equal(env._dysk.cleared, 1);
+  assert.ok(!env._dysk.views.length);
+  assert.equal(env.ma.profile(), null);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.ok(!env._dysk.views.length, 'po wycofaniu nic nie wraca do bazy');
+});
+
+test('U3: koperta przełączona na consentRequired kasuje bazę — w trakcie i przy następnym wejściu', async () => {
+  const p1 = await start({ koperta: koperta([]) });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  await p1.ma.load(koperta([], { storage: { consentRequired: true } }));
+  await p1.gotowe();
+  assert.equal(p1._dysk.cleared, 1);
+  assert.equal(p1.ma.profile(), null);
+  // Baza z czasów bez zgody, następne wejście już z wymaganą zgodą.
+  const dysk = {};
+  const p2 = await start({ dysk, koperta: koperta([]) });
+  p2.dataLayer.push(unitOpen('A_1'));
+  await p2.gotowe();
+  const p3 = await powrot(p2, MIN, { koperta: koperta([], { storage: { consentRequired: true } }) });
+  assert.equal(p3._dysk.cleared, 1);
+  assert.ok(!p3._dysk.views.length);
+});
+
+test('retencja rekordu state: profil starszy niż retencja zaczyna się od nowa', async () => {
+  const k = koperta([POKOJE], { storage: { retentionDays: 90, consentRequired: false } });
+  const p1 = await start({ koperta: k });
+  for (const id of ['A_1', 'A_2', 'A_3']) { p1.dataLayer.push(unitOpen(id)); await p1.minie(6000); }
+  const id1 = p1.ma.profile().visitorId;
+  assert.ok(p1._dysk.state.scenarios['preferencja-2'].freq.a2);
+  const p2 = await powrot(p1, 91 * 24 * H);
+  assert.notEqual(p2.ma.profile().visitorId, id1);
+  assert.equal(p2.ma.profile().visits, 1);
+  assert.deepEqual(p2._dysk.state.scenarios['preferencja-2'].freq, {});
+});
+
+test('U6: lead w tej samej milisekundzie co obejrzenie nie jest „po" nim', async () => {
+  const sc = {
+    scenarioId: 'lokal-potem-lead', revision: 1, active: true,
+    nodes: [
+      { id: 't1', type: 'trigger', when: { event: 'unit_view', unitIds: [] } },
+      { id: 't2', type: 'trigger', when: { event: 'lead' } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment_exit', params: { segment: 'lead' } },
+    ],
+    edges: [['t1', 't2'], ['t2', 'a1']],
+  };
+  const env = await start({ koperta: koperta([sc]) });
+  await env.minie(1000);
+  env.dataLayer.push(unitOpen('A_1'));
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0);
+  await env.minie(1);
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 1);
 });
