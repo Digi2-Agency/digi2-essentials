@@ -256,6 +256,8 @@
 
   // Open popups, oldest first: only the top one handles Esc / Tab.
   var _openStack = [];
+  // How long after opening focus moved away by the page is brought back.
+  var FOCUS_GUARD_MS = 2000;
 
   // Focus sitting in another modal layer (a lightbox, another aria-modal
   // dialog) belongs to that layer - the trap must not pull it back.
@@ -953,6 +955,7 @@
     // either one alone binds the key handler, each part runs only when its option is on.
     _focusIn() {
       if (this._boundKeys) { document.removeEventListener('keydown', this._boundKeys); this._boundKeys = null; }
+      if (this._boundFocusGuard) { document.removeEventListener('focusin', this._boundFocusGuard, true); this._boundFocusGuard = null; }
       if (!this.options.manageFocus && !this.options.closeOnEsc) return;
       _openStack = _openStack.filter(function (p) { return p !== this; }, this);
       _openStack.push(this);
@@ -976,6 +979,21 @@
         target = dialog;
       }
       _focus(target);
+      // A click that opened the popup can still be followed by the page's own
+      // handler moving focus (Webflow's anchor scroll focuses the #section after
+      // its animation). For a short while after opening, focus that lands outside
+      // the popup — and not in another modal layer — is brought back (#14).
+      var opened = Date.now();
+      this._focusTarget = target;
+      this._boundFocusGuard = function (e) {
+        if (!self.isVisible || Date.now() - opened > FOCUS_GUARD_MS) return;
+        var t = e && e.target;
+        var el = self.popupElement;
+        if (!t || !el || (el.contains && el.contains(t)) || _inOtherModal(t, el)) return;
+        if (_openStack[_openStack.length - 1] !== self) return;
+        _focus(self._focusTarget);
+      };
+      document.addEventListener('focusin', this._boundFocusGuard, true);
     }
 
     _onKey(e) {
@@ -1007,6 +1025,10 @@
       if (this._boundKeys) {
         document.removeEventListener('keydown', this._boundKeys);
         this._boundKeys = null;
+      }
+      if (this._boundFocusGuard) {
+        document.removeEventListener('focusin', this._boundFocusGuard, true);
+        this._boundFocusGuard = null;
       }
       _openStack = _openStack.filter(function (p) { return p !== this; }, this);
       var back = this._returnFocus;

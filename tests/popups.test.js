@@ -1964,3 +1964,36 @@ test('a11y: closeOnEsc works without manageFocus (focus untouched, Esc closes)',
   env.dispatchDoc('keydown', null, { key: 'Escape' });
   assert.equal(inst.isVisible, false);
 });
+
+test('a11y #14: focus moved away by the page right after opening (Webflow anchor scroll) comes back; later, and into another modal, it does not', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst, close } = a11yPopup(env);
+  const section = focusable(env, 'div', { id: 'profil', tabindex: '-1' });
+  env.body.appendChild(section);
+  inst.show();
+  assert.equal(env.document.activeElement, close);
+  section.focus();
+  env.dispatchDoc('focusin', section);
+  assert.equal(env.document.activeElement, close, 'pulled back into the popup');
+
+  const lb = createElement('div', { 'd2-lightbox-modal': 'flex' });
+  const img = focusable(env, 'button', {});
+  lb.appendChild(img);
+  env.body.appendChild(lb);
+  img.focus();
+  env.dispatchDoc('focusin', img);
+  assert.equal(env.document.activeElement, img, 'another modal layer keeps its focus');
+
+  const realNow = Date.now;
+  Date.now = () => realNow() + 2500;
+  try {
+    section.focus();
+    env.dispatchDoc('focusin', section);
+    assert.equal(env.document.activeElement, section, 'after the guard window the page is left alone');
+  } finally { Date.now = realNow; }
+  inst.hide();
+  section.focus();
+  env.dispatchDoc('focusin', section);
+  assert.equal(env.document.activeElement, section, 'no guard after close');
+});

@@ -98,7 +98,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 |---|---|---|---|
 | `d2-gtm="ID"` | google | 2.4 KB | Consent Mode V2 + GTM + consent manager |
 | `d2-ab-tests="configName"` | ab-tests | 6.3 KB | A/B redirects and link rewriting from a sitemap config |
-| `d2-popups` | popups | 42.8 KB | 22 animations, triggers, exit intent |
+| `d2-popups` | popups | 43.4 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
 | `d2-country-picker` | country-picker | 24.2 KB | Phone country picker — flag + dialing code written into the number |
@@ -121,7 +121,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
 | `d2-ma="<url>"` | ma | 66.1 KB | Marketing automation (demo, contract v0 + §13.8 + §13.9 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **349.7 KB min** / **111.4 KB** gzipped.
+Total (all modules): **350.3 KB min** / **111.5 KB** gzipped.
 
 ---
 
@@ -457,6 +457,12 @@ the **top** popup answers Esc and Tab; a key another layer already handled
 sitting in a `[d2-lightbox-modal]` or another `aria-modal` dialog is never
 pulled back. A popup the page hid without `hide()` (no client rects) traps
 nothing, and `destroy()` on an open popup drops its key handler.
+
+For **2 seconds after opening**, focus that the page moves outside the popup
+(Webflow's anchor scroll focuses the `#section` a link points to, after its
+animation) is brought back to the close button / dialog — unless it went into
+another modal layer. After that window the page's own focus moves are left
+alone; Tab stays trapped as before.
 | `video` | `null` | `true` · selector · `{…}` — wire a `<video>` inside the popup. See [Video popups](#video-popups) |
 | `onOpen` / `onClose` | `null` | Callbacks |
 

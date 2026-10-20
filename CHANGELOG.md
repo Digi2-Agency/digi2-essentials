@@ -5,6 +5,15 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-popups`
+
+- Popup otwarty kliknięciem w link do kotwicy (np. `#profil`) nie traci
+  fokusu na rzecz skryptu przewijania Webflow: przez 2 sekundy po otwarciu
+  fokus, który strona wyniesie poza okno, wraca do popupu. Fokus w lightboxie
+  albo w innym oknie modalnym zostaje tam, gdzie jest.
+
 ## v1.9.0-ma.10 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-popups`
