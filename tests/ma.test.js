@@ -82,6 +82,7 @@ function element(attrs, tagName) {
  *   dotyk     matchMedia('(hover: none)') = true
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
+ *   dymek     { open } - pełnoekranowy dymek mapy 2destate na telefonie
  */
 function strona(opts) {
   const o = opts || {};
@@ -132,6 +133,7 @@ function strona(opts) {
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
+      if (sel === '.imp-tooltips-container.is-fullscreen') return o.dymek && o.dymek.open ? element() : null;
       const s = o.szablon;
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       return null;
@@ -2197,4 +2199,42 @@ test('Safari: klik w checkbox bez fokusu liczy się i otwiera licznik porzucenia
   await env.minie(61000);
   assert.deepEqual(env.polaFormularza().map((x) => [x.field_name, x.clicks]), [['zgoda', 2]]);
   assert.equal(env.segmenty().length, 1);
+});
+
+test('#5: popup ze scenariusza czeka, aż gość zamknie pełnoekranowy dymek mapy; po 5 min rezygnuje i oddaje częstotliwość', async () => {
+  const dymek = { open: true };
+  const k = koperta([POKOJE]);
+  const env = await start({ koperta: k, dymek });
+  for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+  assert.equal(env.popupy.length, 0, 'dymek otwarty - popup czeka');
+  await env.minie(10000);
+  assert.equal(env.popupy.length, 0);
+  dymek.open = false;
+  await env.minie(300);
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'po zamknięciu dymku');
+
+  const d2 = { open: true };
+  const e2 = await start({ koperta: k, dymek: d2 });
+  for (const id of ['B_1', 'B_2', 'B_3']) { e2.dataLayer.push(unitOpen(id)); await e2.minie(6000); }
+  // Zegar testu skacze od razu do końca, więc timer ustawiany co 250 ms trzeba prowadzić krokami.
+  for (let i = 0; i < 61; i++) await e2.minie(5000);
+  assert.equal(e2.popupy.length, 0, 'po 5 min z otwartym dymkiem - bez popupu');
+  assert.ok(!(e2._dysk.state.scenarios['preferencja-2'].freq.a2), 'częstotliwość oddana');
+  d2.open = false;
+  await e2.minie(1000);
+  assert.equal(e2.popupy.length, 0, 'nie wyskakuje po fakcie');
+
+  const e3 = await start({ koperta: k });
+  for (const id of ['C_1', 'C_2', 'C_3']) { e3.dataLayer.push(unitOpen(id)); await e3.minie(6000); }
+  assert.equal(e3.popupy.length, 1, 'bez dymku od razu, jak dotąd');
+});
+
+test('#5: zgoda wycofana w czasie czekania na dymek — popup się nie pokazuje', async () => {
+  const dymek = { open: true };
+  const env = await start({ koperta: koperta([POKOJE], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, dymek });
+  for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+  env.zgoda({ analytics_storage: 'denied' });
+  dymek.open = false;
+  await env.minie(1000);
+  assert.equal(env.popupy.length, 0);
 });

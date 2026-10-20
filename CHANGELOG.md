@@ -5,6 +5,16 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.6 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — popup nie zasłania dymku mapy
+
+- Na telefonie stuknięcie lokalu na mapie 2destate otwiera dymek na cały ekran.
+  Popup ze scenariusza (np. „Preferencja pokoi”) czeka teraz, aż gość zamknie
+  dymek, zamiast nakładać się na niego. Gdy dymek jest otwarty dłużej niż 5
+  minut, popup przepada i może pojawić się następnym razem. Obejście z
+  `z-index` na stronie demo można zostawić, nie przeszkadza.
+
 ## v1.9.0-ma.5 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — warunki na stronie (kontrakt §13.11, wariant B)

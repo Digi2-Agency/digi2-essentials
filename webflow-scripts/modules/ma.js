@@ -148,7 +148,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 5;    // ma.5 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 6;    // ma.6 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -1839,6 +1839,35 @@
     }
   }
 
+  // Na telefonie pierwsze stuknięcie lokalu otwiera dymek mapy 2destate na cały
+  // ekran (#5). Popup ze scenariusza czeka, aż gość go zamknie - najpierw widzi
+  // lokal, który kliknął. Po 5 minutach z otwartym dymkiem rezygnujemy (wpis
+  // częstotliwości wraca, popup może przyjść następnym razem).
+  var TOOLTIP_SEL = '.imp-tooltips-container.is-fullscreen';
+  var TOOLTIP_POLL_MS = 250;
+  var TOOLTIP_MAX_MS = 5 * 60 * 1000;
+
+  function mapTooltipOpen() {
+    return !!(document.querySelector && document.querySelector(TOOLTIP_SEL));
+  }
+
+  function whenMapTooltipClosed(go, giveUp) {
+    if (!mapTooltipOpen()) { go(); return; }
+    _log('popup waits for the map tooltip to close');
+    // Czas z zegara, nie z liczby tyknięć - karta w tle spowalnia timery.
+    var since = Date.now();
+    (function tick() {
+      setTimeout(function () {
+        var waited = Date.now() - since;
+        // Zgoda wycofana w trakcie czekania - nic nie pokazujemy.
+        if (!tracking) return;
+        if (!mapTooltipOpen()) go();
+        else if (waited >= TOOLTIP_MAX_MS) { _log('map tooltip still open after 5 min — popup skipped'); giveUp(); }
+        else tick();
+      }, TOOLTIP_POLL_MS);
+    })();
+  }
+
   function showPopup(node, ctx, onShown, onSkipped) {
     var unit = ctx.unit;
     if (!unit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
@@ -1864,8 +1893,10 @@
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, node.cta);
-        inst.show({ auto: true });
-        onShown(fresh);
+        whenMapTooltipClosed(function () {
+          inst.show({ auto: true });
+          onShown(fresh);
+        }, onSkipped);
         return null;
       });
     })['catch'](function (e) { _warn('popup failed', e); onSkipped(); });
