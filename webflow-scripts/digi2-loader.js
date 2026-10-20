@@ -34,6 +34,8 @@
  *   d2-ma-consent="analytics_storage"  Consent Mode category that unlocks the d2ma database
  *   d2-ma-highlight                    Highlight the visitor's preferred units on the 2destate map
  *   d2-ma-refresh="30"                 Re-read the envelope every N seconds (demo)
+ *   d2-ma-video-consent="ad_storage …" Extra Consent Mode categories before a YouTube / Vimeo
+ *                                      embed (ad_storage is always required, ma.5)
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *

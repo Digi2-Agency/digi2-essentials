@@ -2125,3 +2125,20 @@ test('MA-D14 wideo MP4: element video z hosta strony lub CDN panelu; złe id i o
   assert.equal(slot.children[0].getAttribute('src'), 'https://demo.example/spacer.mp4');
   assert.equal(env.ostrzezenia.filter((w) => w.includes('content video is not youtube')).length, 4);
 });
+
+test('d2-ma-video-consent tylko dokłada kategorie: bez ad_storage ostrzeżenie i ad_storage dalej wymagane; lista = wszystkie', async () => {
+  const yt = koperta([scenariusz('w', { event: 'unit_view' }, [{ do: 'content', slot: 'film', video: { provider: 'youtube', id: 'dQw4w9WgXcQ' } }])]);
+  const run = async (attr, zgody) => {
+    const slot = element({ 'd2-ma-slot': 'film' }, 'DIV');
+    const env = await start({ koperta: yt, elementy: [slot], cfg: { 'd2-ma-video-consent': attr }, dataLayer: [gtagArgs('consent', 'default', zgody)] });
+    env.dataLayer.push(unitOpen('A_1'));
+    await env.gotowe();
+    return { tag: slot.children[0].tagName, env };
+  };
+  const slabsza = await run('analytics_storage', { analytics_storage: 'granted', ad_storage: 'denied' });
+  assert.equal(slabsza.tag, 'DIV', 'analytics_storage nie zastępuje ad_storage');
+  assert.ok(slabsza.env.ostrzezenia.some((w) => w.includes('without ad_storage')));
+  assert.equal((await run('ad_storage analytics_storage', { ad_storage: 'granted', analytics_storage: 'denied' })).tag, 'DIV', 'obie wymagane');
+  assert.equal((await run('ad_storage analytics_storage', { ad_storage: 'granted', analytics_storage: 'granted' })).tag, 'IFRAME');
+  assert.equal((await run('analytics_storage', { ad_storage: 'granted', analytics_storage: 'granted' })).tag, 'IFRAME');
+});

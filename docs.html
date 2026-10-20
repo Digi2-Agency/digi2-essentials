@@ -2830,7 +2830,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     <table>
       <tr><th>Field</th><th>Allowed</th><th>Result</th></tr>
       <tr><td><code>image: { src, alt }</code></td><td><code>https:</code> on the site's host or <code>media.digi2.app</code>; <code>alt</code> ≤ 120</td><td>An <code>&lt;img&gt;</code> slot gets <code>src</code>/<code>alt</code>; another slot gets an <code>&lt;img&gt;</code> inside</td></tr>
-      <tr><td><code>video: { provider: "youtube", id }</code></td><td>11-character id</td><td><code>youtube-nocookie.com</code> frame, sandboxed — <strong>only after marketing consent</strong> (<code>ad_storage</code>); before it the <code>poster</code> and "Wideo po zgodzie na ciasteczka"</td></tr>
+      <tr><td><code>video: { provider: "youtube", id }</code></td><td>11-character id</td><td><code>youtube-nocookie.com</code> frame, sandboxed — <strong>only after marketing consent</strong> (<code>ad_storage</code>; <code>d2-ma-video-consent</code> can add categories, never replace it); before it the <code>poster</code> and "Wideo po zgodzie na ciasteczka"</td></tr>
       <tr><td><code>video: { provider: "vimeo", id }</code></td><td>numeric id</td><td><code>player.vimeo.com</code> frame with <code>dnt=1</code>, same consent rule</td></tr>
       <tr><td><code>video: { provider: "mp4", src }</code></td><td><code>https:</code> on the site's host or the CDN</td><td><code>&lt;video controls&gt;</code></td></tr>
     </table>

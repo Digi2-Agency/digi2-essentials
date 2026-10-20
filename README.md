@@ -1494,8 +1494,11 @@ action carries `fields_touched` next to `form_id`.
   (`youtube-nocookie.com/embed/<id>`, `player.vimeo.com/video/<id>?dnt=1`,
   `sandbox="allow-scripts allow-same-origin allow-presentation"`,
   `referrerpolicy="strict-origin-when-cross-origin"`), and **only after
-  marketing consent** (`ad_storage`, or the category in `d2-ma-video-consent`)
-  because the embed sets cookies. Until then the slot shows the `poster` from
+  marketing consent** (`ad_storage`) because the embed sets third-party
+  cookies. `d2-ma-video-consent="ad_storage analytics_storage"` on the loader
+  tag can only **add** categories (all must be granted); a list without
+  `ad_storage` warns and still requires it — the same idea as
+  `d2-ma-consent-required`, which can only force consent. Until then the slot shows the `poster` from
   the panel CDN (never a YouTube thumbnail) and "Wideo po zgodzie na
   ciasteczka"; a `gtag('consent', 'update', …)` granting it swaps in the player.
   `mp4` (`src` on the page host or the CDN) becomes a `<video controls>`.

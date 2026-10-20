@@ -86,8 +86,8 @@
  *   ?d2-ma-preview=<name>         Preview a segment / variant, nothing stored
  *   frequency "every_time"        content / map_mark / map_order re-applied each page
  *   action map_order              d2estate.setProductOrder with the profile ranking
- *   content image / video         <img>, YouTube / Vimeo frame (after ad_storage consent,
- *                                 d2-ma-video-consent) or <video> for mp4, built by the script
+ *   content image / video         <img>, YouTube / Vimeo frame (after ad_storage consent; d2-ma-
+ *                                 video-consent can only add categories) or <video> for mp4
  *   ma_form_field                 Per-field time and clicks (name only, never values)
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
@@ -1427,8 +1427,23 @@
     } catch (err2) { return false; }
   }
 
-  function videoCategory() {
-    return _cfg('d2-ma-video-consent') || 'ad_storage';
+  // Embed YouTube / Vimeo stawia ciasteczka podmiotu trzeciego: ad_storage jest
+  // zawsze wymagane, atrybut może tylko dołożyć kategorie (jak consent-required
+  // może tylko wymusić zgodę). Lista bez ad_storage - ostrzeżenie i ad_storage.
+  var videoWarned = false;
+  function videoCategories() {
+    var raw = String(_cfg('d2-ma-video-consent') || '').split(/[\s,]+/).filter(function (c) {
+      return /^[a-z_]{1,40}$/.test(c);
+    });
+    if (raw.length && raw.indexOf('ad_storage') < 0) {
+      if (!videoWarned) { videoWarned = true; _warn('d2-ma-video-consent without ad_storage — ad_storage is still required'); }
+    }
+    if (raw.indexOf('ad_storage') < 0) raw.unshift('ad_storage');
+    return raw;
+  }
+
+  function videoAllowed() {
+    return videoCategories().every(categoryGranted);
   }
 
   function videoNode(v) {
@@ -1442,7 +1457,7 @@
       if (v.poster) el.setAttribute('poster', mediaUrl(v.poster));
       return el;
     }
-    if (!categoryGranted(videoCategory())) {
+    if (!videoAllowed()) {
       // Bez zgody marketingowej - miniatura z CDN panelu i podpis, bez ramki YouTube / Vimeo.
       el = document.createElement('div');
       el.setAttribute('d2-ma-video-placeholder', '');
@@ -2743,7 +2758,7 @@
   function onConsentCommand(args) {
     var kind = args[1], st = args[2];
     if ((kind !== 'default' && kind !== 'update') || !st || typeof st !== 'object') return;
-    if (kind === 'update' && st[videoCategory()] != null && mountedVideos.length) refreshVideos();
+    if (kind === 'update' && mountedVideos.length && videoCategories().some(function (c) { return st[c] != null; })) refreshVideos();
     var cat = consentCategory();
     var v = st[cat];
     if (v !== 'granted' && v !== 'denied') return;
