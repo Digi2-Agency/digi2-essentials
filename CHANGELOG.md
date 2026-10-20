@@ -5,6 +5,17 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.9 — szkic (nie wydany)
+
+### `d2-ma` — gorący lead wraca (MA-D38, etap 1)
+
+- Atrybut `d2-ma-hot-lead`: po wysłaniu formularza token leada od 2destate
+  (zdarzenie `d2:lead-token`) zapisuje się tylko po zgodzie. Przy kolejnej
+  wizycie moduł wysyła do 2destate sygnał powrotu, czyli jakie lokale gość
+  ogląda. „Wyczyść” i wycofanie zgody unieważniają token w 2destate.
+- Działa dopiero, gdy 2destate uruchomi swoje adresy (po zgodzie Piotra na klucz
+  podpisu), i tylko dla leadów testowych agencji.
+
 ## v1.9.0-ma.8 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-popups` — dostępność (wszystkie popupy)

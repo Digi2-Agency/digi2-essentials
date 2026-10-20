@@ -150,7 +150,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 8;    // ma.8 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 9;    // ma.9 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -654,6 +654,7 @@
       var v = recordView(_clone(evt.unit), t);
       if (!v) return;
       _emit('ma:view', { unit: v.unit });
+      sendVisitSignal();
       dispatch({ type: 'unit_view', t: t, unit: v.unit });
       runDue();
     } else if (evt.type === 'lead') {
@@ -2737,6 +2738,160 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Gorący lead wraca (MA-D38, etap 1; kontrakt 2destate docs/ma-hot-lead.md).
+  // Opt-in atrybutem d2-ma-hot-lead na tagu loadera. Token leada przychodzi
+  // zdarzeniem window „d2:lead-token" (nigdy przez dataLayer) i jest zapisywany
+  // WYŁĄCZNIE po zgodzie - bez niej odrzucany od razu. Przy powrocie d2-ma
+  // wysyła sygnał wizyty do 2destate; przy „Wyczyść" i wycofaniu zgody najpierw
+  // /revoke, potem usunięcie lokalne. Token jest nieprzezroczysty: czytamy
+  // z niego tylko exp (sprzątanie) i site (porównanie z hostem strony).
+  // ---------------------------------------------------------------------------
+
+  var VISIT_RESEND_MS = 5 * 60 * 1000;
+  var MAX_SIGNAL_UNITS = 20;
+  var hotLeadTimer = null;
+
+  function hotLeadOn() {
+    return _cfg('d2-ma-hot-lead') !== null;
+  }
+
+  function hotLeadApi() {
+    return (_cfg('d2-ma-products-api') || DEFAULT_PRODUCTS_API).replace(/\/+$/, '');
+  }
+
+  function b64urlJson(part) {
+    try {
+      var b = String(part).replace(/-/g, '+').replace(/_/g, '/');
+      while (b.length % 4) b += '=';
+      var bin = window.atob ? window.atob(b) : atob(b);
+      var txt = decodeURIComponent(bin.split('').map(function (c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
+      return JSON.parse(txt);
+    } catch (e) { return null; }
+  }
+
+  // { exp, site } z tokenu albo null, gdy kształt się nie zgadza.
+  function tokenInfo(token) {
+    if (typeof token !== 'string' || token.length > 400) return null;
+    var parts = token.split('.');
+    if (parts.length !== 2 || !/^[A-Za-z0-9_-]+$/.test(parts[0]) || !/^[A-Za-z0-9_-]+$/.test(parts[1])) return null;
+    var p = b64urlJson(parts[0]);
+    if (!p || p.v !== 1 || typeof p.exp !== 'number' || typeof p.site !== 'string') return null;
+    return { exp: p.exp * 1000, site: p.site };
+  }
+
+  function leadTokenValid() {
+    if (!state || !state.leadToken) return false;
+    if (state.leadTokenExp && Date.now() >= state.leadTokenExp) {
+      _log('lead token expired — removed');
+      dropLeadToken();
+      return false;
+    }
+    return true;
+  }
+
+  function dropLeadToken() {
+    if (!state) return;
+    delete state.leadToken;
+    delete state.leadTokenExp;
+    delete state.leadSent;
+    delete state.leadRetryAt;
+    if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
+  }
+
+  function onLeadToken(e) {
+    if (!hotLeadOn()) return;
+    var token = e && e.detail && e.detail.token;
+    // Bez zgody token od razu przepada - nie trafia do bufora ani do bazy.
+    if (!tracking || !state) { _log('lead token ignored — no consent'); return; }
+    var info = tokenInfo(token);
+    if (!info) { _warn('lead token has an unexpected shape — ignored'); return; }
+    if (Date.now() >= info.exp) { _log('lead token already expired — ignored'); return; }
+    var host = window.location && window.location.host;
+    if (info.site !== host) { _warn('lead token is for "' + info.site + '", not this site — ignored'); return; }
+    state.leadToken = token;
+    state.leadTokenExp = info.exp;
+    // Lead dopiero co wysłał formularz - ta wizyta nie jest „powrotem", sygnały
+    // (także przyrost lokali) idą od następnej.
+    state.leadSent = { visit: state.visits, units: viewedThisVisit(), at: Date.now(), formVisit: true };
+    save();
+  }
+
+  function viewedThisVisit() {
+    var from = state.visitStart == null ? -Infinity : state.visitStart;
+    var out = [];
+    for (var i = views.length - 1; i >= 0 && out.length < MAX_SIGNAL_UNITS; i--) {
+      var v = views[i];
+      if (v.ts < from) break;
+      var id = v.unit && v.unit.unitId;
+      if (id && UUID_RE.test(id) && out.indexOf(id) < 0) out.push(id);
+    }
+    return out;
+  }
+
+  // Sygnał raz na wizytę, potem przyrost lokali najwyżej co 5 minut.
+  function sendVisitSignal() {
+    if (!hotLeadOn() || !tracking || !leadTokenValid() || typeof fetch !== 'function') return;
+    var nowReal = Date.now();
+    if (state.leadRetryAt && nowReal < state.leadRetryAt) return;
+    var units = viewedThisVisit();
+    var sent = state.leadSent;
+    if (sent && sent.visit === state.visits && sent.formVisit) return;
+    if (sent && sent.visit === state.visits) {
+      var fresh = units.some(function (u) { return sent.units.indexOf(u) < 0; });
+      if (!fresh) return;
+      var wait = VISIT_RESEND_MS - (nowReal - sent.at);
+      if (wait > 0) {
+        if (!hotLeadTimer) hotLeadTimer = setTimeout(function () { hotLeadTimer = null; sendVisitSignal(); }, wait + 50);
+        return;
+      }
+    }
+    var token = state.leadToken;
+    state.leadSent = { visit: state.visits, units: units, at: nowReal };
+    save();
+    var body = { token: token, units: units, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
+      source: state.utm ? 'ad' : 'direct' };
+    try {
+      fetch(hotLeadApi() + '/public/ma/visit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        credentials: 'omit', mode: 'cors', keepalive: true
+      }).then(function (r) {
+        if (!r) return;
+        if (r.status === 401 || r.status === 403) {
+          _log('lead token refused (' + r.status + ') — removed');
+          if (state && state.leadToken === token) { dropLeadToken(); save(); }
+        } else if (r.status === 429) {
+          var after = r.headers && typeof r.headers.get === 'function' ? parseInt(r.headers.get('Retry-After'), 10) : NaN;
+          if (state) { state.leadRetryAt = Date.now() + (isFinite(after) && after > 0 ? after : 3600) * 1000; save(); }
+        } else if (!r.ok) {
+          _warn('visit signal answered ' + r.status);
+        }
+      }, function (e) { _log('visit signal failed', e); });
+    } catch (e) {
+      _log('visit signal failed', e);
+    }
+  }
+
+  // „Wyczyść" i wycofanie zgody: najpierw unieważnienie w 2destate, potem lokalnie.
+  function revokeLeadToken(token) {
+    if (!token || typeof fetch !== 'function') return;
+    try {
+      fetch(hotLeadApi() + '/public/ma/revoke', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token }),
+        credentials: 'omit', mode: 'cors', keepalive: true
+      }).then(null, function (e) { _log('revoke failed', e); });
+    } catch (e) { _log('revoke failed', e); }
+  }
+
+  var leadHooked = false;
+  function hookHotLead() {
+    if (leadHooked || !hotLeadOn() || !window.addEventListener) return;
+    leadHooked = true;
+    window.addEventListener('d2:lead-token', onLeadToken);
+  }
+
+  // ---------------------------------------------------------------------------
   // Elementy strony: „co o Tobie wie strona", wyczyść, symuluj powrót
   // ---------------------------------------------------------------------------
 
@@ -3135,6 +3290,8 @@
   // gdy zgoda nie była wymagana).
   function wipe(reason) {
     _log('no consent — d2ma deleted (' + reason + ')');
+    if (state && state.leadToken) revokeLeadToken(state.leadToken);
+    if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
     blocked = true;
     views = [];
@@ -3218,6 +3375,8 @@
       prune();
       applyEnvelope(envelope);
       var visit = touch();
+      // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
+      state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
       if (crm) dispatch(crm);
       if (visit) dispatch(visit);
@@ -3232,6 +3391,7 @@
       hookSignals();
       replayFormExits();
       replayStateActions();
+      sendVisitSignal();
       runDue();
       afterChange();
       highlightProfile();
@@ -3276,6 +3436,7 @@
     hookMap();
     bindUi();
     deepLinkView();
+    hookHotLead();
     pageUtm = readUtm();
     envelopeUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     fetchEnvelope(envelopeUrl).then(function (raw) {
@@ -3364,6 +3525,8 @@
     },
     clear: function () {
       var wasTracking = tracking;
+      if (state && state.leadToken) revokeLeadToken(state.leadToken);
+      if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
       views = [];
       highlighted = {};
       markWaiting = [];
