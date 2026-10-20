@@ -98,7 +98,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 |---|---|---|---|
 | `d2-gtm="ID"` | google | 2.4 KB | Consent Mode V2 + GTM + consent manager |
 | `d2-ab-tests="configName"` | ab-tests | 6.3 KB | A/B redirects and link rewriting from a sitemap config |
-| `d2-popups` | popups | 23.3 KB | 22 animations, triggers, exit intent |
+| `d2-popups` | popups | 39.7 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
 | `d2-country-picker` | country-picker | 24.2 KB | Phone country picker — flag + dialing code written into the number |
@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 46.8 KB | Marketing automation (demo, contract v0 + §13.8): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 51.9 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **327.0 KB min** / **104.3 KB** gzipped.
+Total (all modules): **332.3 KB min** / **106.0 KB** gzipped.
 
 ---
 
@@ -594,7 +594,10 @@ any query parameter.
 > values are meaningless here anyway — traffic source doesn't depend on viewport width.
 
 **Where the gate sits:** URL filters first (they block everything, including
-`digi2.popups.show()`), then traffic, then schedule, then promo and `canShow`.
+`digi2.popups.show()`), then traffic, then schedule, then promo, then a d2-ma
+condition on the overlay (`d2-ma-show-*` / `d2-ma-hide-*`, d2-ma ma.5 — parked
+like promo, d2-ma resumes it once the condition holds; no veto without d2-ma
+on the page), then `canShow`.
 A traffic mismatch is *not* parked for `showIfPending()` — unlike a promo that
 ends or another popup closing, it can never resolve during the visit. It does
 stop `show()` and `d2-show-popup` clicks: a popup written for one campaign
@@ -1375,10 +1378,97 @@ nodes gets no extra listener. Before consent nothing is collected.
   the branch on the next page view, like a deferred action, void after 24 h —
   no webhook, no `dataLayer`, no `sendBeacon` while the page closes. Only the
   form id, its `data-name` and the number of fields touched leave the
-  listener — never values or field names.
+  listener — never values or field names. The `pagehide` write is best effort:
+  a tab closed outright may not get the IndexedDB write committed, and then
+  that abandonment is simply not counted.
 
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
+
+### Page conditions (ma.5, §13.11.2a)
+
+Personalisation decided in the browser from the `d2ma` profile, with attributes
+on any element — no code, nothing sent anywhere. Every attribute also works as
+`data-d2-ma-*`.
+
+```html
+<!-- show when it matches; several attributes on one element = AND -->
+<div d2-ma-show-visits="3+/30d" d2-ma-show-segment="2-pokoje|3-pokoje">…</div>
+<!-- hide when it matches; a hide beats a show -->
+<div d2-ma-hide-lead="true">…</div>
+<!-- alternatives: the first matching variant wins, else "default" -->
+<div d2-ma-variants>
+  <h1 d2-ma-variant="2-pokoje" d2-ma-show-pref-rooms="2">Dwa pokoje dla Ciebie</h1>
+  <h1 d2-ma-variant="3-pokoje" d2-ma-show-pref-rooms="3">Trzy pokoje dla Ciebie</h1>
+  <h1 d2-ma-variant="default">Mieszkania w Pabianicach</h1>
+</div>
+```
+
+| Key | Value | Meaning |
+|---|---|---|
+| `visits` | counter | visits (§13.2, 30 min of silence) |
+| `views` | counter | units viewed |
+| `views-rooms` / `views-floor` | `<value>:<counter>` | `3:2+` = 3-room units viewed ≥ 2 times; `-1:1+` = floor −1 |
+| `views-unit` | `<unitId>:<counter>` | that unit (`[A-Za-z0-9._-]{1,64}`) |
+| `segment` | `name\|name` | the profile has that segment |
+| `lead` | `true` \| `false` | lead flag |
+| `pref-rooms` / `pref-floor` | `2\|3`, `-1\|0` | the preference is exactly that |
+
+Counter: `3+` at least 3, `3` exactly 3, `0` none, `0..2` at most 2; `/30d`
+or `/12h` counts only that window (visits by the time they started, views by
+their time); no window = the whole history. `|` is OR within a key; OR across
+keys = two elements or variants. A minus is only ever a floor/rooms value,
+never part of a counter.
+
+- **Segments:** a `datalayer` action with `ma_segment` stores its segment in
+  `state.segments` (name → time); `ma_segment_exit` (leaving the sales groups)
+  removes them all.
+- **The page hides, the module decides.** The module only sets attributes:
+  `d2-ma-shown` when every show condition holds and no hide does,
+  `d2-ma-hidden` when a hide holds or a condition is malformed, and on
+  variants `d2-ma-shown` on the chosen block plus `d2-ma-matched` on the
+  container. It never injects `<style>` (CSP), so the page carries this CSS
+  once (Webflow → Site Settings → Custom Code → Head):
+
+  ```css
+  [d2-ma-show-visits]:not([d2-ma-shown]), [d2-ma-show-views]:not([d2-ma-shown]),
+  [d2-ma-show-views-rooms]:not([d2-ma-shown]), [d2-ma-show-views-floor]:not([d2-ma-shown]),
+  [d2-ma-show-views-unit]:not([d2-ma-shown]), [d2-ma-show-segment]:not([d2-ma-shown]),
+  [d2-ma-show-lead]:not([d2-ma-shown]), [d2-ma-show-pref-rooms]:not([d2-ma-shown]),
+  [d2-ma-show-pref-floor]:not([d2-ma-shown]), [d2-ma-hidden],
+  [d2-ma-variant]:not([d2-ma-variant="default"]):not([d2-ma-shown]),
+  [d2-ma-variants][d2-ma-matched] > [d2-ma-variant="default"] { display: none; }
+  ```
+- **Fail-closed:** an unknown key or a malformed value (in show *or* hide) hides
+  the element, with one `console.warn` per element.
+- **No consent, no profile, or an older script:** no show condition matches, so
+  the default content stays and the conditional blocks stay hidden by the CSS.
+- **Popup:** conditions on a popup overlay veto its opening (see popups,
+  "Where the gate sits"); the module calls `showIfPending()` on such a parked
+  popup when its condition starts to hold. Triggers stay in the popup options.
+- **When it runs:** on every profile change. Elements are collected once;
+  after changing the DOM (a CMS list, a tab loaded later) call
+  `digi2.ma.apply()`. `digi2.ma.allows(el)` answers for one element.
+- **Preview:** `?d2-ma-preview=<name>` treats that segment / variant as matching
+  — for checking the page in Webflow. It needs no consent, writes nothing to
+  `d2ma` and pushes nothing to `dataLayer`.
+- Limits (§13.11.4): one profile per device and browser; Safari (ITP) clears
+  script storage after 7 days without interaction, so a `/30d` window on
+  Safari sees about a week.
+
+### State actions: `every_time`, `map_order` (ma.5)
+
+- **`frequency: "every_time"`** — only for `content`, `map_mark` and
+  `map_order` (elsewhere → `console.warn`, `once_per_visit`). A changed text or
+  a map mark lives until the page reloads; with `every_time` the module re-applies
+  it on every page load once the path has reached that action (no frequency
+  recorded, no further steps — it restores state, it is not a new event).
+  Needs `minScript: "ma.5"`: ma.4 turns `every_time` into `once_per_visit`.
+- **`map_order`** — `by`, `limit` (1–50, default 20): the same ranking as
+  `map_mark` → `d2estate.setProductOrder(mapName, ids)` (the units first, the
+  rest in their order; `null` = the map orders itself after load). Without
+  `setProductOrder` (2destate before that release) → `console.info`, no
+  fallback.
 
 ### API
 
@@ -1392,6 +1482,8 @@ digi2.ma.reload()
 digi2.ma.simulateReturn()
 digi2.ma.clear()            // Promise
 digi2.ma.highlight()
+digi2.ma.apply()            // ma.5: re-collect d2-ma-show-* / -hide- elements after a DOM change
+digi2.ma.allows(el)         // ma.5: may this element show (used by popups)
 // events: ma:ready { tracking, store }, ma:view { unit }, ma:action { scenarioId, nodeId, do, … }, ma:change
 ```
 

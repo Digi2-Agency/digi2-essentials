@@ -5,6 +5,39 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.5 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — warunki na stronie (kontrakt §13.11, wariant B)
+
+- **Pokaż albo ukryj element według historii gościa**, samymi atrybutami w
+  Webflow: `d2-ma-show-visits="3+/30d"` (3 wizyty w 30 dniach),
+  `d2-ma-show-segment="2-pokoje"`, `d2-ma-show-views-rooms="3:2+"`,
+  `d2-ma-show-lead="false"`, `d2-ma-show-pref-rooms="2"` i `d2-ma-hide-*`.
+  Kilka atrybutów na jednym elemencie musi pasować wszystkie, `hide` wygrywa.
+  Decyzja zapada w przeglądarce, nic nie jest wysyłane.
+- **Bloki alternatywne**: kontener `d2-ma-variants` z blokami
+  `d2-ma-variant="<nazwa>"`. Pokazuje się pierwszy pasujący, a gdy żaden nie
+  pasuje, blok `default`.
+- **Ukrywa CSS strony**, nie skrypt: na stronie trzeba raz wkleić gotowy blok CSS
+  (README, docs.html). Bez zgody i bez historii zostaje treść domyślna. Błędny
+  warunek ukrywa element.
+- **Podgląd** `?d2-ma-preview=2-pokoje`: pokazuje segment albo wariant bez zgody,
+  bez zapisu i bez wysyłki do GA4.
+- **Popup** z takim warunkiem na nakładce otworzy się dopiero, gdy warunek
+  pasuje (veto w module popupów, tylko gdy na stronie jest d2-ma).
+- **Segmenty w profilu**: `ma_segment` dodaje segment, `ma_segment_exit` zdejmuje
+  wszystkie.
+- **`frequency: "every_time"`** dla podmiany tekstu i mapy: zmiana wraca na każdej
+  odsłonie, nie tylko na pierwszej.
+- **`map_order`**: lokale pasujące do preferencji na początku listy 2destate
+  (gdy 2destate wyda `setProductOrder`).
+- Nowe w API: `digi2.ma.apply()`, `digi2.ma.allows(el)`.
+
+### `d2-popups`
+
+- Nakładka z atrybutem `d2-ma-show-*` / `d2-ma-hide-*` czeka z otwarciem na
+  warunek d2-ma. Strony bez d2-ma bez zmian.
+
 ## v1.9.0-ma.4 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — nowe wyzwalacze i akcje (kontrakt §13.8)

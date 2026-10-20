@@ -884,6 +884,16 @@
       return promo.allows(el);
     }
 
+    // d2-ma-show-* / d2-ma-hide-* on the overlay (d2-ma ma.5) veto an open the
+    // same way canShow does. d2-ma resumes the parked show once the condition
+    // holds. Without d2-ma on the page there is no veto.
+    _isMaAllowed() {
+      var el = this.popupElement;
+      var ma = window.digi2 && window.digi2.ma;
+      if (!el || !ma || typeof ma.allows !== 'function') return true;
+      return ma.allows(el);
+    }
+
     _isWithinSchedule() {
       if (!this._schedule) return true;
       var now = Date.now();
@@ -977,6 +987,11 @@
       if (!this._isPromoAllowed()) {
         _log('show suppressed — promotion state → ' + this.name);
         // Parkujemy żądanie: gdy promocja się skończy, showIfPending() je wznowi.
+        this.pendingShow = true;
+        return;
+      }
+      if (!this._isMaAllowed()) {
+        _log('show deferred — d2-ma condition not met → ' + this.name);
         this.pendingShow = true;
         return;
       }

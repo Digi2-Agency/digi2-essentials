@@ -72,6 +72,19 @@
  *                                 and calls go from our side, never from the browser)
  *   cooldownMinutes               Minimum gap between runs of an action
  *
+ * ─── Page conditions (ma.5, §13.11.2a) ─────────────────────────────────────
+ *
+ *   [d2-ma-show-<key>="value"]    Show when it matches; several = AND, | = OR.
+ *                                 visits / views "3+/30d" "3" "0..2", views-rooms /
+ *                                 views-floor "3:2+" "-1:1+", views-unit "<id>:1+",
+ *                                 segment "a|b", lead "true|false", pref-rooms /
+ *                                 pref-floor "2|3". Sets d2-ma-shown.
+ *   [d2-ma-hide-<key>="value"]    Hide when it matches (beats show). Sets d2-ma-hidden.
+ *   [d2-ma-variants] > [d2-ma-variant="name|default"]   First match wins.
+ *   ?d2-ma-preview=<name>         Preview a segment / variant, nothing stored
+ *   frequency "every_time"        content / map_mark / map_order re-applied each page
+ *   action map_order              d2estate.setProductOrder with the profile ranking
+ *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
  *   digi2.ma.load(urlOrEnvelope)  Read an envelope (a local file for tests)
@@ -83,6 +96,8 @@
  *   digi2.ma.simulateReturn()     Same as the [d2-ma-simulate-return] button
  *   digi2.ma.clear()              Delete the whole d2ma database (Promise)
  *   digi2.ma.highlight()          Re-apply the map highlight
+ *   digi2.ma.apply()              Re-collect d2-ma-show-/-hide- elements after a DOM change
+ *   digi2.ma.allows(el)           May this element show (popups ask it)
  *
  *   digi2.on('ma:ready' | 'ma:view' | 'ma:action' | 'ma:change', fn)
  *     ma:change { cleared: true, tracking: false, reason } — consent withdrawn
@@ -120,12 +135,14 @@
 
   var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1,
     exit_intent: 1, engagement: 1, form_abandon: 1 };
-  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1 };
+  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1, map_order: 1 };
+  // Akcje stanu strony: żyją do przeładowania, every_time wolno tylko im (§13.8.3a).
+  var STATE_ACTIONS = { content: 1, map_mark: 1, map_order: 1 };
   var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1, ma_exit_intent: 1, ma_engaged: 1, ma_form_abandon: 1, ma_content: 1 };
   // Parametry zdarzeń dataLayer z wyzwalacza albo akcji na ścieżce (§13.8.3).
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id'], ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 4;    // ma.4 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 5;    // ma.5 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -549,6 +566,8 @@
       state.visitStart = t;
       // UTM z pierwszego wejścia w wizycie (§13.8.2); do profilu tylko po zgodzie.
       state.utm = pageUtm;
+      // Początki wizyt dla okna czasu w d2-ma-show-visits="3+/30d" (§13.11.2a).
+      state.visitLog = (state.visitLog || []).concat([t]).slice(-200);
     }
     state.lastSeen = t;
     return ev;
@@ -775,8 +794,8 @@
           return false;
         }
       }
-      if (node['do'] === 'map_mark' && !MAP_BY[node.by]) {
-        _warn(where + ' — map_mark by "' + node.by + '" is not rooms, floor or both, skipped');
+      if ((node['do'] === 'map_mark' || node['do'] === 'map_order') && !MAP_BY[node.by]) {
+        _warn(where + ' — ' + node['do'] + ' by "' + node.by + '" is not rooms, floor or both, skipped');
         return false;
       }
       if (node['do'] === 'webhook' && !CHANNELS[node.channel]) {
@@ -1024,6 +1043,11 @@
   function frequencyOf(node) {
     var f = node.frequency;
     if (f == null || f === 'once_per_visit') return { kind: 'visit' };
+    if (f === 'every_time') {
+      if (STATE_ACTIONS[node['do']]) return { kind: 'every' };
+      _warn('node "' + node.id + '" — every_time is only for content, map_mark and map_order, using once_per_visit');
+      return { kind: 'visit' };
+    }
     if (f === 'once_per_unit') return { kind: 'unit' };
     var m = /^once_per_days:(\d+(?:\.\d+)?)$/.exec(String(f));
     if (m) return { kind: 'days', days: parseFloat(m[1]) };
@@ -1042,6 +1066,7 @@
     // cooldownMinutes: odstęp między wykonaniami, także między wizytami (§13.8.1).
     var cool = num(node.cooldownMinutes);
     if (cool > 0 && r.at != null && now() - r.at < scaled(Math.min(cool, 10080) * 60 * 1000)) return true;
+    if (f.kind === 'every') return false;
     if (f.kind === 'visit') return r.visit === state.visits;
     if (f.kind === 'unit') return (r.units || []).indexOf(unitKey(unit)) >= 0;
     return r.at != null && now() - r.at < scaled(f.days * DAY_MS);
@@ -1120,6 +1145,11 @@
       if (segEvent) {
         ctx = { unit: ctx.unit, segment: segment, t: ctx.t, signal: ctx.signal };
         state.lastSegment = segment;
+        // Segmenty profilu dla d2-ma-show-segment (§13.11.3): ma_segment dodaje,
+        // ma_segment_exit to wyjście z grup sprzedażowych - zdejmuje wszystkie.
+        state.segments = state.segments || {};
+        if (node.event === 'ma_segment' && segment) state.segments[segment] = now();
+        else if (node.event === 'ma_segment_exit') state.segments = {};
       }
       recordFrequency(st, node, ctx.unit);
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'datalayer', event: node.event, segment: segment });
@@ -1137,7 +1167,7 @@
       ctx = { unit: ctx.unit, segment: ctx.segment, t: ctx.t,
         signal: { slot: node.slot, template_id: node.templateId == null ? null : node.templateId } };
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'content', slot: node.slot });
-    } else if (kind === 'map_mark') {
+    } else if (kind === 'map_mark' || kind === 'map_order') {
       recordFrequency(st, node, ctx.unit);
       mapMark(sc, node);
     } else if (kind === 'webhook') {
@@ -1349,9 +1379,15 @@
   }
 
   function mapMark(sc, node) {
+    var kind = node['do'];
     var api = mapApi();
     if (!api || typeof api.getProducts !== 'function') {
-      if (window.console && console.info) console.info('[digi2.ma] map_mark skipped — no 2destate map on this page');
+      if (window.console && console.info) console.info('[digi2.ma] ' + kind + ' skipped — no 2destate map on this page');
+      return;
+    }
+    // map_order nie ma zastępstwa: bez setProductOrder (paczka 2destate) nic nie robi.
+    if (kind === 'map_order' && typeof api.setProductOrder !== 'function') {
+      if (window.console && console.info) console.info('[digi2.ma] map_order skipped — 2destate has no setProductOrder yet');
       return;
     }
     var products = [];
@@ -1362,9 +1398,22 @@
       _log('map_mark waits for the map → ' + sc.id + '/' + node.id);
       return;
     }
-    var limit = Math.min(Math.max(num(node.limit) || 5, 1), 20);
+    var limit = kind === 'map_order' ? Math.min(Math.max(num(node.limit) || 20, 1), 50)
+      : Math.min(Math.max(num(node.limit) || 5, 1), 20);
     var ids = rankUnits(products, node.by).slice(0, limit);
-    if (!ids.length) { _log('map_mark — nothing on the map matches the profile'); return; }
+    if (!ids.length) { _log(kind + ' — nothing on the map matches the profile'); return; }
+    if (kind === 'map_order') {
+      // Wskazane lokale najpierw, reszta w dotychczasowej kolejności; null = mapa
+      // ułoży listę sama po załadowaniu.
+      try {
+        mapNames().forEach(function (m) { api.setProductOrder(m, ids); });
+      } catch (e) {
+        _warn('map_order failed', e);
+        return;
+      }
+      _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'map_order', units: ids });
+      return;
+    }
     var className = CLASS_RE.test(String(node.className || '')) ? node.className : 'd2-preferred';
     try {
       if (typeof api.markProducts === 'function') {
@@ -2078,6 +2127,27 @@
     });
   }
 
+  // Akcje stanu z every_time (§13.8.3a): treść i mapa żyją do przeładowania, więc
+  // na każdej odsłonie wracają, jeśli ścieżka już do nich doszła. Bez częstotliwości
+  // i bez dalszych kroków - to odtworzenie stanu, nie nowe zdarzenie.
+  function replayStateActions() {
+    if (!envelope) return;
+    envelope.scenarios.forEach(function (sc) {
+      var st = scState(sc);
+      sc.order.forEach(function (id) {
+        var node = sc.nodes[id];
+        if (node.invalid || node.type !== 'action' || !STATE_ACTIONS[node['do']] || !st.nodes[id]) return;
+        if (frequencyOf(node).kind !== 'every') return;
+        if (node['do'] === 'content') {
+          var text = contentText(node, st.nodes[id].unit || lastUnit());
+          if (text != null) setSlot(node.slot, text);
+        } else {
+          mapMark(sc, node);
+        }
+      });
+    });
+  }
+
   function resetSignals() {
     forms.forEach(function (ent) { ent.timers.forEach(clearTimeout); });
     forms = [];
@@ -2115,8 +2185,220 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Atrybuty d2-ma-show-* / d2-ma-hide-* i bloki d2-ma-variant (ma.5, §13.11.2a).
+  // Decyzja w przeglądarce, z profilu d2ma; atrybut niczego nie wysyła. Bez zgody
+  // żaden warunek show nie pasuje - zostaje treść domyślna. Błędny warunek = ukryty.
+  // ---------------------------------------------------------------------------
+
+  var COND_KEYS = { visits: 1, views: 1, 'views-rooms': 1, 'views-floor': 1, 'views-unit': 1, segment: 1, lead: 1,
+    'pref-rooms': 1, 'pref-floor': 1 };
+  var COND_RE = /^(?:data-)?d2-ma-(show|hide)-(.+)$/;
+  var COUNTER_RE = /^(\d{1,3})(\+|\.\.(\d{1,3}))?(?:\/(\d{1,3})([dh]))?$/;
+  var FEATURE_RE = /^-?\d{1,3}$/;
+  var UNIT_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
+  var NAME_RE = /^[a-z0-9-]{1,40}$/;
+  var condEls = null;        // elementy z warunkami, zebrane raz (apply() zbiera od nowa)
+
+  function condAttrs(el) {
+    var out = [];
+    var names = [];
+    if (el && typeof el.getAttributeNames === 'function') names = el.getAttributeNames();
+    else if (el && el.attributes) for (var j = 0; j < el.attributes.length; j++) names.push(el.attributes[j].name);
+    for (var i = 0; i < names.length; i++) {
+      var m = COND_RE.exec(String(names[i]).toLowerCase());
+      if (m) out.push({ mode: m[1], key: m[2], value: el.getAttribute(names[i]) });
+    }
+    return out;
+  }
+
+  function scanConditions() {
+    condEls = [];
+    if (!document.querySelectorAll) return;
+    var all = document.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var c = condAttrs(all[i]);
+      if (c.length) condEls.push({ el: all[i], conds: c });
+    }
+  }
+
+  // "3+" co najmniej, "3" dokładnie, "0..2" najwyżej 2; "/30d" albo "/12h" = okno.
+  function parseCounter(v) {
+    var m = COUNTER_RE.exec(v);
+    if (!m) return null;
+    var min = parseInt(m[1], 10);
+    var max = m[2] === '+' ? Infinity : (m[3] != null ? parseInt(m[3], 10) : min);
+    if (max < min) return null;
+    return { min: min, max: max, win: m[4] ? parseInt(m[4], 10) * (m[5] === 'd' ? DAY_MS : HOUR_MS) : null };
+  }
+
+  function inCounter(c, n) {
+    return n >= c.min && n <= c.max;
+  }
+
+  function viewsSince(c, test) {
+    var from = c.win == null ? -Infinity : now() - c.win;
+    return views.filter(function (v) { return v.ts >= from && test(v.unit || {}); }).length;
+  }
+
+  // Dzielone na ostatnim „:" - cecha może być ujemna (piętro −1).
+  function splitLast(v) {
+    var i = v.lastIndexOf(':');
+    return i < 1 ? null : [v.slice(0, i), v.slice(i + 1)];
+  }
+
+  // true / false; null = błędna wartość (element zostaje ukryty).
+  function altMatches(key, v, profile) {
+    var c, parts, f;
+    switch (key) {
+      case 'visits':
+        if (!(c = parseCounter(v))) return null;
+        if (!profile) return false;
+        if (c.win == null) return inCounter(c, state.visits);
+        var from = now() - c.win;
+        return inCounter(c, (state.visitLog || []).filter(function (t) { return t >= from; }).length);
+      case 'views':
+        if (!(c = parseCounter(v))) return null;
+        return profile ? inCounter(c, viewsSince(c, function () { return true; })) : false;
+      case 'views-rooms':
+      case 'views-floor':
+        if (!(parts = splitLast(v)) || !FEATURE_RE.test(parts[0]) || !(c = parseCounter(parts[1]))) return null;
+        f = parseInt(parts[0], 10);
+        var field = key === 'views-rooms' ? 'rooms' : 'floor';
+        return profile ? inCounter(c, viewsSince(c, function (u) { return u[field] === f; })) : false;
+      case 'views-unit':
+        if (!(parts = splitLast(v)) || !UNIT_ID_RE.test(parts[0]) || !(c = parseCounter(parts[1]))) return null;
+        return profile ? inCounter(c, viewsSince(c, function (u) { return u.unitId === parts[0]; })) : false;
+      case 'segment':
+        if (!NAME_RE.test(v)) return null;
+        return profile ? !!(state.segments && state.segments[v] != null) : false;
+      case 'lead':
+        if (v !== 'true' && v !== 'false') return null;
+        return profile ? !!state.lead === (v === 'true') : false;
+      case 'pref-rooms':
+      case 'pref-floor':
+        if (!FEATURE_RE.test(v)) return null;
+        return profile ? prefOf(key.slice(5)) === parseInt(v, 10) : false;
+    }
+    return null;
+  }
+
+  function condMatches(cond, profile) {
+    if (!COND_KEYS[cond.key]) return null;
+    var any = false;
+    var alts = String(cond.value == null ? '' : cond.value).split('|');
+    for (var i = 0; i < alts.length; i++) {
+      var r = altMatches(cond.key, alts[i].trim(), profile);
+      if (r === null) return null;
+      if (r) any = true;
+    }
+    return any;
+  }
+
+  // ?d2-ma-preview=<segment|wariant> - podgląd w Webflow: element z tym segmentem
+  // albo wariant o tej nazwie pasuje, bez zapisu w d2ma i bez dataLayer.
+  function previewName() {
+    var p = param('d2-ma-preview');
+    return p && NAME_RE.test(p) ? p : null;
+  }
+
+  // { show, hidden, invalid } dla elementu z warunkami.
+  function evaluate(el, conds) {
+    var profile = tracking && !!state;
+    var preview = previewName();
+    var hasShow = false;
+    var showOk = true;
+    var hidden = false;
+    var invalid = false;
+    conds.forEach(function (c) {
+      var r = condMatches(c, profile);
+      if (r === null) { invalid = true; return; }
+      if (preview) {
+        if (c.mode === 'show') {
+          hasShow = true;
+          if (!(c.key === 'segment' && String(c.value).split('|').indexOf(preview) >= 0)) showOk = false;
+        }
+        return;
+      }
+      if (c.mode === 'show') { hasShow = true; if (!r) showOk = false; } else if (r) { hidden = true; }
+    });
+    if (invalid && !el._d2maWarned) {
+      el._d2maWarned = true;
+      _warn('element with an unknown or malformed d2-ma-show-/hide- condition stays hidden', conds.map(function (c) {
+        return 'd2-ma-' + c.mode + '-' + c.key + '="' + c.value + '"';
+      }).join(' '));
+    }
+    return { show: hasShow && showOk && !hidden && !invalid, hidden: hidden || invalid, hasShow: hasShow };
+  }
+
+  function flag(el, name, on) {
+    if (on) { if (el.getAttribute(name) === null) el.setAttribute(name, ''); } else if (el.getAttribute(name) !== null) {
+      el.removeAttribute(name);
+    }
+  }
+
+  function inVariants(el) {
+    return _attr(el, 'd2-ma-variant') !== null && el.parentNode && _attr(el.parentNode, 'd2-ma-variants') !== null;
+  }
+
+  function applyConditions() {
+    if (!document.querySelectorAll) return;
+    if (!condEls) scanConditions();
+    condEls.forEach(function (x) {
+      if (inVariants(x.el)) return;
+      var r = evaluate(x.el, x.conds);
+      flag(x.el, 'd2-ma-shown', r.hasShow && r.show);
+      flag(x.el, 'd2-ma-hidden', r.hidden);
+    });
+    // Bloki alternatywne: pierwszy pasujący wygrywa, domyślny znika, gdy któryś pasuje.
+    var boxes = document.querySelectorAll('[d2-ma-variants], [data-d2-ma-variants]');
+    var preview = previewName();
+    for (var i = 0; i < boxes.length; i++) {
+      var kids = boxes[i].children || [];
+      var chosen = null;
+      for (var j = 0; j < kids.length; j++) {
+        var name = _attr(kids[j], 'd2-ma-variant');
+        if (name === null || name === 'default') continue;
+        var ok = false;
+        if (preview && name === preview) ok = true;
+        else {
+          var r = evaluate(kids[j], condAttrs(kids[j]));
+          ok = r.hasShow && r.show;
+        }
+        if (ok && !chosen) chosen = kids[j];
+      }
+      for (var k = 0; k < kids.length; k++) {
+        if (_attr(kids[k], 'd2-ma-variant') !== null) flag(kids[k], 'd2-ma-shown', kids[k] === chosen);
+      }
+      flag(boxes[i], 'd2-ma-matched', !!chosen);
+    }
+    resumePopups();
+  }
+
+  // Popup z warunkiem d2-ma, który czekał (veto w module popupów), dostaje drugą szansę.
+  function resumePopups() {
+    var p = window.digi2.popups;
+    if (!p || typeof p.list !== 'function' || typeof p.get !== 'function') return;
+    p.list().forEach(function (name) {
+      var inst = p.get(name);
+      if (inst && inst.pendingShow && inst.popupElement && condAttrs(inst.popupElement).length && allows(inst.popupElement)) {
+        inst.showIfPending({ auto: true });
+      }
+    });
+  }
+
+  // Czy element wolno pokazać - pyta moduł popupów (veto jak canShow, §13.11.3).
+  function allows(el) {
+    if (!el) return true;
+    var conds = condAttrs(el);
+    if (!conds.length) return true;
+    var r = evaluate(el, conds);
+    return !r.hidden && (!r.hasShow || r.show);
+  }
+
   var historyTemplates = [];
   function render() {
+    applyConditions();
     if (!document.querySelectorAll) return;
     var els = document.querySelectorAll('[d2-ma-profile], [data-d2-ma-profile]');
     for (var i = 0; i < els.length; i++) {
@@ -2363,6 +2645,7 @@
       // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
       hookSignals();
       replayFormExits();
+      replayStateActions();
       runDue();
       afterChange();
       highlightProfile();
@@ -2515,6 +2798,9 @@
       });
     },
     highlight: function () { highlighted = {}; hlFloor = {}; hlQueue = []; highlightProfile(); },
+    // Po zmianie DOM (np. lista CMS) - zbierz elementy z warunkami od nowa.
+    apply: function () { condEls = null; applyConditions(); },
+    allows: allows,
     _real: true
   };
 

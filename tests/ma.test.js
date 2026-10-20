@@ -47,6 +47,10 @@ function element(attrs, tagName) {
     style: {},
     getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null; },
     setAttribute(n, v) { this.attributes[n] = String(v); },
+    removeAttribute(n) { delete this.attributes[n]; },
+    getAttributeNames() { return Object.keys(this.attributes); },
+    children: [],
+    parentNode: null,
     querySelector() { return null; },
     querySelectorAll() { return []; },
     appendChild(c) { return c; },
@@ -130,6 +134,7 @@ function strona(opts) {
       return null;
     },
     querySelectorAll(sel) {
+      if (sel === '*') return elementy.slice();
       return elementy.filter((el) => Object.keys(el.attributes).some((a) => {
         const v = el.attributes[a];
         return sel.indexOf('[' + a + ']') >= 0 || sel.indexOf('[' + a + '="' + v + '"]') >= 0;
@@ -1742,4 +1747,212 @@ test('kanał z via (§13.10) strona pomija — MA-D30; sales_notify nieznany; co
   env.dataLayer.push({ event: 'generate_lead' });
   await env.gotowe();
   assert.equal(env.webhooki.length, 2, 'po dobie znowu');
+});
+
+// ---------------------------------------------------------------------------
+// ma.5: d2-ma-show-* / d2-ma-hide-*, bloki d2-ma-variant, segmenty, every_time, map_order
+// ---------------------------------------------------------------------------
+
+const SEG = (segment) => DL('ma_segment', { segment });
+const pokazany = (el) => el.getAttribute('d2-ma-shown') !== null;
+const ukryty = (el) => el.getAttribute('d2-ma-hidden') !== null;
+
+/** Kontener d2-ma-variants z dziećmi (rodzic ustawiony jak w DOM). */
+function warianty(dzieci) {
+  const box = element({ 'd2-ma-variants': '' });
+  box.children = dzieci;
+  dzieci.forEach((d) => { d.parent = box; d.parentNode = box; });
+  return [box].concat(dzieci);
+}
+
+test('d2-ma-show-visits: licznik i okno /30d z początków wizyt; bez zgody nic; data- alias', async () => {
+  const el = element({ 'd2-ma-show-visits': '3+/30d' });
+  const dokladnie = element({ 'data-d2-ma-show-visits': '1' });
+  const najwyzej = element({ 'd2-ma-show-visits': '0..2' });
+  const elementy = [el, dokladnie, najwyzej];
+  const p1 = await start({ koperta: koperta([]), elementy });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.deepEqual([pokazany(el), pokazany(dokladnie), pokazany(najwyzej)], [false, true, true]);
+  const p2 = await powrot(p1, 40 * 24 * H);
+  const p3 = await powrot(p2, 2 * H);
+  const p4 = await powrot(p3, 2 * H);
+  assert.equal(p4.ma.profile().visits, 4);
+  assert.equal(pokazany(el), true, '3 wizyty w ostatnich 30 dniach (pierwsza 40 dni temu się nie liczy)');
+  assert.equal(pokazany(najwyzej), false);
+  const p5 = await powrot(p4, 50 * 24 * H);
+  assert.equal(pokazany(el), false, 'po 50 dniach w oknie została jedna wizyta');
+
+  const bez = element({ 'd2-ma-show-visits': '0+' });
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), elementy: [bez] });
+  assert.equal(pokazany(bez), false, 'bez zgody żaden warunek show nie pasuje');
+  void p5; void env;
+});
+
+test('d2-ma-show: views, views-rooms, views-floor z piętrem −1, views-unit, pref, lead; kilka atrybutów = I', async () => {
+  const e = {
+    views: element({ 'd2-ma-show-views': '2+' }),
+    rooms: element({ 'd2-ma-show-views-rooms': '3:2+' }),
+    floor: element({ 'd2-ma-show-views-floor': '-1:1+' }),
+    unit: element({ 'd2-ma-show-views-unit': 'A_2:1+' }),
+    pref: element({ 'd2-ma-show-pref-rooms': '1|3' }),
+    lead: element({ 'd2-ma-show-lead': 'false' }),
+    oba: element({ 'd2-ma-show-views-rooms': '3:2+', 'd2-ma-show-lead': 'true' }),
+    wyklucz: element({ 'd2-ma-show-views': '1+', 'd2-ma-hide-lead': 'true' }),
+  };
+  const env = await start({ koperta: koperta([]), elementy: Object.values(e) });
+  env.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: -1 }));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2', { rooms: 3, floor: 2 }));
+  await env.gotowe();
+  const stan = () => Object.fromEntries(Object.entries(e).map(([k, v]) => [k, pokazany(v)]));
+  assert.deepEqual(stan(), { views: true, rooms: true, floor: true, unit: true, pref: true, lead: true, oba: false, wyklucz: true });
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.deepEqual([pokazany(e.lead), pokazany(e.oba), pokazany(e.wyklucz), ukryty(e.wyklucz)], [false, true, false, true],
+    'hide wygrywa z pasującym show');
+});
+
+test('segmenty profilu: ma_segment dodaje, ma_segment_exit zdejmuje wszystkie; hide wygrywa', async () => {
+  const pokaz = element({ 'd2-ma-show-segment': '2-pokoje|3-pokoje' });
+  const oba = element({ 'd2-ma-show-segment': '2-pokoje', 'd2-ma-hide-lead': 'true' });
+  const k = koperta([
+    scenariusz('pokoje', { event: 'unit_view' }, [SEG('2-pokoje')]),
+    scenariusz('lead', { event: 'lead' }, [DL('ma_segment_exit', { segment: 'sprzedaz' })]),
+  ]);
+  const env = await start({ koperta: k, elementy: [pokaz, oba] });
+  assert.equal(pokazany(pokaz), false);
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.deepEqual([pokazany(pokaz), pokazany(oba)], [true, true]);
+  assert.ok(env._dysk.state.segments['2-pokoje'] > 0);
+  env.ma.lead();
+  await env.gotowe();
+  assert.deepEqual([pokazany(pokaz), pokazany(oba), ukryty(oba)], [false, false, true], 'wyjście zdjęło segmenty, hide-lead pasuje');
+});
+
+test('błędny albo nieznany warunek: element ukryty (fail-closed) z console.warn — także w hide', async () => {
+  const zle = ['d2-ma-show-visits="3>"', 'd2-ma-show-visit="3+"', 'd2-ma-show-views-floor="x:1+"', 'd2-ma-hide-segment="Duże"',
+    'd2-ma-show-visits="5..2"', 'd2-ma-show-views-unit="a b:1+"'];
+  const els = zle.map((a) => { const [k, v] = a.split('='); return element({ [k]: JSON.parse(v) }); });
+  const env = await start({ koperta: koperta([]), elementy: els });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  els.forEach((el, i) => {
+    assert.equal(pokazany(el), false, zle[i]);
+    assert.equal(ukryty(el), true, zle[i]);
+  });
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('malformed d2-ma-show-/hide-')).length, els.length, 'raz na element');
+});
+
+test('d2-ma-variants: pierwszy pasujący wariant wygrywa, default gdy żaden; kontener d2-ma-matched', async () => {
+  const dwa = element({ 'd2-ma-variant': '2-pokoje', 'd2-ma-show-pref-rooms': '2' });
+  const trzy = element({ 'd2-ma-variant': '3-pokoje', 'd2-ma-show-pref-rooms': '3' });
+  const kazdy = element({ 'd2-ma-variant': 'ktos', 'd2-ma-show-views': '1+' });
+  const def = element({ 'd2-ma-variant': 'default' });
+  const elementy = warianty([dwa, trzy, kazdy, def]);
+  const box = elementy[0];
+  const env = await start({ koperta: koperta([]), elementy });
+  assert.deepEqual([dwa, trzy, kazdy].map(pokazany), [false, false, false]);
+  assert.equal(box.getAttribute('d2-ma-matched'), null, 'bez historii: domyślny');
+  env.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await env.gotowe();
+  assert.deepEqual([dwa, trzy, kazdy].map(pokazany), [false, true, false], 'pierwszy pasujący, nie oba');
+  assert.equal(box.getAttribute('d2-ma-matched'), '');
+});
+
+test('?d2-ma-preview=<segment|wariant>: podgląd bez zgody, bez zapisu w d2ma i bez dataLayer', async () => {
+  const seg = element({ 'd2-ma-show-segment': '2-pokoje' });
+  const inny = element({ 'd2-ma-show-segment': '3-pokoje' });
+  const war = element({ 'd2-ma-variant': '2-pokoje', 'd2-ma-show-pref-rooms': '2' });
+  const elementy = [seg, inny].concat(warianty([war]));
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), elementy, search: '?d2-ma-preview=2-pokoje' });
+  assert.deepEqual([pokazany(seg), pokazany(inny), pokazany(war)], [true, false, true]);
+  assert.equal(env.ma.profile(), null);
+  assert.ok(!env._dysk.views || !env._dysk.views.length);
+  assert.equal(env.segmenty().length, 0);
+});
+
+test('apply() zbiera elementy od nowa po zmianie DOM; allows() dla popupów', async () => {
+  const elementy = [];
+  const env = await start({ koperta: koperta([]), elementy });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const nowy = element({ 'd2-ma-show-views': '1+' });
+  elementy.push(nowy);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  assert.equal(pokazany(nowy), false, 'bez apply() nowy element nie jest znany');
+  env.ma.apply();
+  assert.equal(pokazany(nowy), true);
+  assert.equal(env.ma.allows(element({ 'd2-ma-show-views': '5+' })), false);
+  assert.equal(env.ma.allows(element({ 'd2-ma-show-views': '1+' })), true);
+  assert.equal(env.ma.allows(element({ 'd2-ma-hide-views': '1+' })), false);
+  assert.equal(env.ma.allows(element({ class: 'x' })), true, 'bez warunków - bez veta');
+});
+
+test('popup z warunkiem d2-ma czekający w module popupów dostaje showIfPending, gdy warunek zaczyna pasować', async () => {
+  const nakladka = element({ 'd2-ma-show-segment': '2-pokoje' });
+  const env = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [SEG('2-pokoje')])]) });
+  const wznowione = [];
+  env.window.digi2.popups.list = () => ['promo', 'inny'];
+  const get = env.window.digi2.popups.get.bind(env.window.digi2.popups);
+  env.window.digi2.popups.get = (n) => (n === 'promo'
+    ? { pendingShow: true, popupElement: nakladka, showIfPending(o) { wznowione.push(o); } }
+    : n === 'inny' ? { pendingShow: true, popupElement: element(), showIfPending() { wznowione.push('inny'); } } : get(n));
+  env.ma.apply();
+  assert.equal(wznowione.length, 0);
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.deepEqual(wznowione.map((o) => ({ ...o })), [{ auto: true }], 'tylko popup z warunkiem d2-ma');
+});
+
+test('every_time: treść wraca na każdej odsłonie, gdy ścieżka już do niej doszła; dla popupu niedozwolone', async () => {
+  const slot = element({ 'd2-ma-slot': 'hero' }, 'H1');
+  slot.textContent = 'Domyślny';
+  const k = koperta([scenariusz('n', { event: 'type_view', rooms: 2, minCount: 1 },
+    [{ do: 'content', slot: 'hero', text: '{{pref.roomsLabel}} dla Ciebie', frequency: 'every_time' }])]);
+  const p1 = await start({ koperta: k, elementy: [slot] });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.equal(slot.textContent, '2 pokoje dla Ciebie');
+  slot.textContent = 'Domyślny'; // przeładowanie strony
+  await powrot(p1, 5 * MIN, { elementy: [slot] });
+  assert.equal(slot.textContent, '2 pokoje dla Ciebie', 'ta sama wizyta, nowa odsłona');
+
+  const slot2 = element({ 'd2-ma-slot': 'hero' }, 'H1');
+  slot2.textContent = 'Domyślny';
+  const k2 = koperta([scenariusz('n', { event: 'type_view', rooms: 2, minCount: 1 },
+    [{ do: 'content', slot: 'hero', text: 'x' }])]);
+  const q1 = await start({ koperta: k2, elementy: [slot2] });
+  q1.dataLayer.push(unitOpen('A_1'));
+  await q1.gotowe();
+  slot2.textContent = 'Domyślny';
+  await powrot(q1, 5 * MIN, { elementy: [slot2] });
+  assert.equal(slot2.textContent, 'Domyślny', 'once_per_visit: druga odsłona pokazuje oryginał');
+
+  const zly = await start({ koperta: koperta([scenariusz('p', { event: 'unit_view' }, [{ do: 'popup', template: 'last-unit', frequency: 'every_time' }])]) });
+  zly.dataLayer.push(unitOpen('A_1'));
+  await zly.gotowe();
+  assert.ok(zly.ostrzezenia.some((w) => w.includes('every_time is only for content, map_mark and map_order')));
+});
+
+test('map_order: setProductOrder z rankingu (limit domyślnie 20); bez metody — pominięty, bez fallbacku', async () => {
+  const p = (id, rooms, status) => ({ id, name: id, rooms, floor: 1, status });
+  const produkty = [p('u1', 3, 'available'), p('u2', 2, 'available'), p('u3', 2, 'sold'), p('u4', 2, 'reserved')];
+  const k = koperta([scenariusz('kolejnosc', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'map_order', by: 'rooms' }])], { minScript: 'ma.5' });
+  const kolejnosc = [];
+  const env = await start({ koperta: k, produkty, imp: { instances: { mapa: {} } } });
+  env.window.d2estate.setProductOrder = (m, ids) => { kolejnosc.push([m, [...ids]]); return ids.length; };
+  env.dataLayer.push(unitOpen('X', { rooms: 2 }));
+  await env.gotowe();
+  assert.deepEqual(kolejnosc, [['mapa', ['u2', 'u4']]]);
+  assert.ok(!env.ostrzezenia.some((w) => w.includes('needs d2-ma')), 'minScript ma.5 to ta wersja');
+
+  const wywolania = [];
+  const bez = await start({ koperta: k, produkty, imp: { instances: { mapa: {} }, highlightObject() { wywolania.push(1); } } });
+  bez.dataLayer.push(unitOpen('X', { rooms: 2 }));
+  await bez.gotowe();
+  assert.equal(wywolania.length, 0, 'bez setProductOrder nie ma zastępstwa');
+  assert.ok(!bez.ostrzezenia.some((w) => w.includes('map_order failed')), 'pominięty po cichu, nie błąd');
 });

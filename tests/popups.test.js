@@ -1726,3 +1726,24 @@ test('a page carrying two popups counts one page view, not two', () => {
   env.window.digi2.popups.create('b', { popupSelector: '.p-b', animation: 'none', cookieName: null });
   assert.equal(env.window.digi2.popups.get('a')._getPageViews(), 1);
 });
+
+test('d2-ma condition on the overlay vetoes the open and parks it; no d2-ma on the page = no veto', () => {
+  const env = createEnvironment();
+  let allowed = false;
+  env.window.digi2 = env.window.digi2 || {};
+  loadPopupsModule(env);
+  env.window.digi2.ma = { allows: () => allowed };
+  env.body.appendChild(createElement('div', { class: 'popup__overlay', 'd2-ma-show-segment': '2-pokoje' }));
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
+  assert.equal(inst.isVisible, false);
+  assert.equal(inst.pendingShow, true, 'parked for d2-ma to resume');
+  allowed = true;
+  inst.showIfPending({ auto: true });
+  assert.equal(inst.isVisible, true);
+
+  const env2 = createEnvironment();
+  loadPopupsModule(env2);
+  env2.body.appendChild(createElement('div', { class: 'popup__overlay', 'd2-ma-show-segment': '2-pokoje' }));
+  const inst2 = env2.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
+  assert.equal(inst2.isVisible, true, 'without d2-ma the attribute means nothing');
+});
