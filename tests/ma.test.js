@@ -2238,3 +2238,66 @@ test('#5: zgoda wycofana w czasie czekania na dymek — popup się nie pokazuje'
   await env.minie(1000);
   assert.equal(env.popupy.length, 0);
 });
+
+const RAZ_NA_LOKAL = scenariusz('ogladany', { event: 'unit_view' }, [{ do: 'popup', template: 'last-unit', cta: 'open_unit', frequency: 'once_per_unit' }]);
+
+test('#5: „Wyczyść” albo wycofanie i ponowna zgoda w czasie czekania na dymek — popup z usuniętego profilu się nie pokazuje', async () => {
+  const dymek = { open: true };
+  const env = await start({ koperta: koperta([RAZ_NA_LOKAL]), dymek });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  await env.ma.clear();
+  dymek.open = false;
+  for (let i = 0; i < 4; i++) await env.minie(300);
+  assert.equal(env.popupy.length, 0, 'po Wyczyść');
+
+  const d2 = { open: true };
+  const e2 = await start({ koperta: koperta([RAZ_NA_LOKAL], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, dymek: d2 });
+  e2.dataLayer.push(unitOpen('B_1'));
+  await e2.gotowe();
+  e2.zgoda({ analytics_storage: 'denied' });
+  e2.zgoda({ analytics_storage: 'granted' });
+  await e2.gotowe();
+  d2.open = false;
+  for (let i = 0; i < 4; i++) await e2.minie(300);
+  assert.equal(e2.popupy.length, 0, 'po wycofaniu i ponownej zgodzie');
+});
+
+test('#5: „Wyczyść” w czasie odczytu świeżego statusu — popup się nie pokazuje', async () => {
+  let oddaj;
+  const api = () => new Promise((r) => { oddaj = r; });
+  const env = await start({ koperta: koperta([RAZ_NA_LOKAL]), mapa: false, api });
+  env.ma.track({ unitId: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001', name: 'A1', rooms: 2, source: '2destate' });
+  await env.gotowe();
+  await env.ma.clear();
+  oddaj([{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000001', name: 'A1', status: 'available' }]);
+  await env.gotowe();
+  assert.equal(env.popupy.length, 0);
+
+  const e2 = await start({ koperta: koperta([RAZ_NA_LOKAL], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, mapa: false, api });
+  e2.ma.track({ unitId: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000002', name: 'A2', rooms: 2, source: '2destate' });
+  await e2.gotowe();
+  e2.zgoda({ analytics_storage: 'denied' });
+  e2.zgoda({ analytics_storage: 'granted' });
+  await e2.gotowe();
+  oddaj([{ id: 'aaaaaaaa-bbbb-4ccc-8ddd-000000000002', name: 'A2', status: 'available' }]);
+  await e2.gotowe();
+  assert.equal(e2.popupy.length, 0, 'wycofanie i ponowna zgoda w czasie odczytu');
+});
+
+test('#5: drugi lokal w czasie czekania — jeden czekający popup na szablon; once_per_unit oddaje tylko pierwszy lokal', async () => {
+  const dymek = { open: true };
+  const env = await start({ koperta: koperta([RAZ_NA_LOKAL]), dymek });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  dymek.open = false;
+  for (let i = 0; i < 4; i++) await env.minie(300);
+  assert.equal(env.popupy.length, 1, 'jeden popup, nie dwa');
+  assert.deepEqual([...env._dysk.state.scenarios.ogladany.freq.a1.units], ['A_2'], 'A_1 oddany, A_2 został');
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env.popupy.length, 2, 'A_1 może przyjść później');
+});

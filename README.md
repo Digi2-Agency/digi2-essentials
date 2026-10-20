@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 59.0 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 59.4 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **339.5 KB min** / **108.4 KB** gzipped.
+Total (all modules): **339.9 KB min** / **108.6 KB** gzipped.
 
 ---
 
@@ -1239,7 +1239,11 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   closes it, so they see the unit they tapped first. After 5 minutes with the
   tooltip still open (clock time, not ticks — background tabs slow timers)
   the popup is dropped and its frequency entry is undone, so it can come next
-  time. Consent withdrawn while waiting → nothing shows.
+  time. "Clear" or a consent wipe while it waits (or while the fresh status is
+  being read) bumps a profile epoch and cancels the wait: no popup from a
+  deleted profile, also after consent is given again. One popup waits per
+  template — a newer one replaces it; with `once_per_unit` only the replaced
+  popup's own unit is given back.
 - **Fresh status:** from `d2estate.getProducts()` when the map is on the page,
   else `POST {api}/projects/{project2destate}/products` with `product_ids` (only
   for 2destate UUIDs, 3 s timeout). Sold or no longer returned → no popup. A

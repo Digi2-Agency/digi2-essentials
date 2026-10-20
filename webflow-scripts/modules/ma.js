@@ -1150,8 +1150,16 @@
       recordFrequency(st, node, ctx.unit);
       showPopup(node, ctx, function (shownUnit) {
         _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'popup', template: node.template, unit: shownUnit });
-      }, function () {
-        if (before) st.freq[node.id] = before; else delete st.freq[node.id];
+      }, function (replaced) {
+        // once_per_unit: oddajemy tylko własny lokal - inny mógł w międzyczasie
+        // dopisać swój. Popup zastąpiony nowszym tego samego szablonu nie oddaje
+        // reszty: wpis należy już do tamtego.
+        var r = st.freq[node.id];
+        if (frequencyOf(node).kind === 'unit') {
+          if (r && r.units) r.units = r.units.filter(function (u) { return u !== unitKey(ctx.unit); });
+        } else if (!replaced) {
+          if (before) st.freq[node.id] = before; else delete st.freq[node.id];
+        }
         save();
       });
     } else if (kind === 'datalayer') {
@@ -1851,27 +1859,48 @@
     return !!(document.querySelector && document.querySelector(TOOLTIP_SEL));
   }
 
-  function whenMapTooltipClosed(go, giveUp) {
+  // Profil z chwili decyzji: „Wyczyść" i wycofanie zgody podbijają epokę, więc
+  // popup czekający na dymek albo na świeży status nie pokaże lokalu z usuniętego profilu.
+  var profileEpoch = 0;
+  var tooltipWaits = {};     // szablon → { timer, giveUp } - jeden czekający popup na szablon
+
+  function cancelTooltipWaits() {
+    Object.keys(tooltipWaits).forEach(function (k) { clearTimeout(tooltipWaits[k].timer); });
+    tooltipWaits = {};
+  }
+
+  function whenMapTooltipClosed(key, epoch, go, giveUp) {
+    // Nowszy popup tego samego szablonu zastępuje czekający.
+    var prev = tooltipWaits[key];
+    if (prev) { clearTimeout(prev.timer); delete tooltipWaits[key]; prev.giveUp(true); }
     if (!mapTooltipOpen()) { go(); return; }
     _log('popup waits for the map tooltip to close');
     // Czas z zegara, nie z liczby tyknięć - karta w tle spowalnia timery.
     var since = Date.now();
+    var wait = { timer: null, giveUp: giveUp };
+    tooltipWaits[key] = wait;
     (function tick() {
-      setTimeout(function () {
-        var waited = Date.now() - since;
-        // Zgoda wycofana w trakcie czekania - nic nie pokazujemy.
-        if (!tracking) return;
-        if (!mapTooltipOpen()) go();
-        else if (waited >= TOOLTIP_MAX_MS) { _log('map tooltip still open after 5 min — popup skipped'); giveUp(); }
-        else tick();
+      wait.timer = setTimeout(function () {
+        if (tooltipWaits[key] !== wait) return;
+        // Zgoda wycofana albo profil wyczyszczony w trakcie czekania - nic nie pokazujemy.
+        if (!tracking || epoch !== profileEpoch) { delete tooltipWaits[key]; return; }
+        if (!mapTooltipOpen()) { delete tooltipWaits[key]; go(); }
+        else if (Date.now() - since >= TOOLTIP_MAX_MS) {
+          delete tooltipWaits[key];
+          _log('map tooltip still open after 5 min — popup skipped');
+          giveUp(false);
+        } else tick();
       }, TOOLTIP_POLL_MS);
     })();
   }
 
   function showPopup(node, ctx, onShown, onSkipped) {
     var unit = ctx.unit;
+    var epoch = profileEpoch;
     if (!unit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
     freshUnit(unit).then(function (fresh) {
+      // Profil wyczyszczony albo zgoda wycofana, gdy szedł odczyt statusu.
+      if (epoch !== profileEpoch || !tracking) return null;
       if (!fresh || fresh.status === 'sold') {
         _log('popup skipped — unit no longer on offer → ' + unit.unitId);
         onSkipped();
@@ -1893,7 +1922,7 @@
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, node.cta);
-        whenMapTooltipClosed(function () {
+        whenMapTooltipClosed(node.template, epoch, function () {
           inst.show({ auto: true });
           onShown(fresh);
         }, onSkipped);
@@ -2890,6 +2919,8 @@
     buffer = [];
     if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
     markWaiting = [];
+    profileEpoch++;
+    cancelTooltipWaits();
     restoreSlots();
     resetSignals();
     resetOrder();
@@ -3113,6 +3144,8 @@
       views = [];
       highlighted = {};
       markWaiting = [];
+      profileEpoch++;
+      cancelTooltipWaits();
       restoreSlots();
       resetSignals();
       resetOrder();
