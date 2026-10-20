@@ -2463,3 +2463,19 @@ test('popup z szablonu: przycisk contact nie skacze na „#” (preventDefault)'
   a._klik({ preventDefault() { zatrzymany = true; } });
   assert.equal(zatrzymany, true);
 });
+
+test('#10: nowa koperta ze zmienionym szablonem przebudowuje popup (d2-ma-refresh)', async () => {
+  const k1 = koperta([RAZ_NA_LOKAL], { templates: { popup: [Object.assign({}, SZABLON, { layout: { position: 'top', size: 'sm' } })] } });
+  const env = await start({ koperta: k1 });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.match(oknoPopupu(env).okno.style.cssText, /max-width:320px/);
+  await env.ma.load(koperta([RAZ_NA_LOKAL], { templates: { popup: [Object.assign({}, SZABLON, { layout: { position: 'center', size: 'lg' } })] } }));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  const zbudowane = potomkowie(env.window.document.body).filter((x) => x.getAttribute && x.getAttribute('d2-ma-template') !== null);
+  assert.equal(zbudowane.length, 1, 'stary szkielet usunięty');
+  assert.match(oknoPopupu(env).okno.style.cssText, /max-width:520px/);
+  assert.equal(env.popupy.length, 2);
+});

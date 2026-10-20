@@ -150,7 +150,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 7;    // ma.7 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 8;    // ma.8 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -2122,9 +2122,19 @@
         var own = document.querySelector('[d2-ma-popup="' + node.template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
           + '[data-d2-ma-popup="' + node.template + '"]');
         var tpl = own ? null : popupTemplate(node.template);
+        // Nowa rewizja koperty (d2-ma-refresh) zmieniła szablon - szkielet z
+        // pierwszego renderu ma stare położenie i styl, więc budujemy od nowa.
+        var sig = tpl ? JSON.stringify(tpl) : null;
+        if (inst && inst.popupElement && inst.popupElement._d2maTplSig !== undefined && inst.popupElement._d2maTplSig !== sig) {
+          var old = inst.popupElement;
+          popups.destroy(name);
+          if (old.parentNode) old.parentNode.removeChild(old);
+          inst = null;
+        }
         if (!inst || !inst.popupElement) {
           if (inst) popups.destroy(name);
           var el = own || (tpl ? buildFromTemplate(tpl) : buildFallback(node.template));
+          if (!own) el._d2maTplSig = sig;
           if (!el.id) el.id = name;
           inst = popups.create(name, {
             popupSelector: '#' + el.id, cookieName: null, dataTagTrigger: false, openOnLoad: false,

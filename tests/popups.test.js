@@ -162,8 +162,8 @@ function createEnvironment({ store = {}, pathname = '/', search = '', cookie = '
     dispatchWindow(type) {
       (winListeners[type] || []).slice().forEach((fn) => fn({ type }));
     },
-    dispatchDoc(type, target) {
-      const event = { target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+    dispatchDoc(type, target, extra) {
+      const event = Object.assign({ target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } }, extra || {});
       (docListeners[type] || []).forEach((fn) => fn(event));
       return event;
     },
@@ -1746,4 +1746,123 @@ test('d2-ma condition on the overlay vetoes the open and parks it; no d2-ma on t
   env2.body.appendChild(createElement('div', { class: 'popup__overlay', 'd2-ma-show-segment': '2-pokoje' }));
   const inst2 = env2.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true });
   assert.equal(inst2.isVisible, true, 'without d2-ma the attribute means nothing');
+});
+
+
+// ---- Accessibility: focus, trap, Esc, labelling ----------------------------
+
+function focusable(env, tag, attrs) {
+  const el = createElement(tag, attrs);
+  el.focus = function () { env.document.activeElement = this; };
+  return el;
+}
+
+function a11yPopup(env, options, withHeading) {
+  const overlay = createElement('div', { class: 'popup__overlay' });
+  const dialog = createElement('div', { class: 'popup__box' });
+  overlay.appendChild(dialog);
+  if (withHeading) dialog.appendChild(createElement('h2', {}, 'Oferta'));
+  const close = focusable(env, 'button', { class: 'popup__close' });
+  const email = focusable(env, 'input', { type: 'email' });
+  const send = focusable(env, 'button', {});
+  [close, email, send].forEach((x) => dialog.appendChild(x));
+  env.body.appendChild(overlay);
+  const inst = env.window.digi2.popups.create('promo', Object.assign({ animation: 'none', openOnLoad: false, cookieName: 'promo_x',
+    closeTriggerSelector: '.popup__close' }, options || {}));
+  return { inst, overlay, close, email, send };
+}
+
+test('a11y: open moves focus to the first focusable, close returns it; overlay gets role=dialog + aria-labelledby from its heading', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const button = focusable(env, 'button', {});
+  env.body.appendChild(button);
+  button.focus();
+  const { inst, overlay, close } = a11yPopup(env, {}, true);
+  inst.show();
+  assert.equal(env.document.activeElement, close);
+  assert.equal(overlay.getAttribute('role'), 'dialog');
+  assert.equal(overlay.getAttribute('aria-modal'), 'true');
+  const h = overlay.querySelector('h2');
+  assert.ok(h.id && overlay.getAttribute('aria-labelledby') === h.id);
+  inst.hide();
+  assert.equal(env.document.activeElement, button, 'focus back on what had it');
+});
+
+test('a11y: Esc closes like the X (cookie included); Tab and Shift+Tab stay inside', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst, close, send } = a11yPopup(env);
+  inst.show();
+  env.document.activeElement = send;
+  const tab = env.dispatchDoc('keydown', send, { key: 'Tab' });
+  assert.equal(env.document.activeElement, close, 'Tab on the last wraps to the first');
+  assert.equal(tab.defaultPrevented, true);
+  env.dispatchDoc('keydown', close, { key: 'Tab', shiftKey: true });
+  assert.equal(env.document.activeElement, send, 'Shift+Tab on the first wraps to the last');
+  env.dispatchDoc('keydown', send, { key: 'Escape' });
+  assert.equal(inst.isVisible, false);
+  assert.match(env.document.cookie, /promo_x=true/);
+  env.dispatchDoc('keydown', send, { key: 'Escape' });
+  assert.equal(inst.isVisible, false, 'listener gone after close');
+});
+
+test('a11y: page attributes are kept; manageFocus:false and closeOnEsc:false opt out', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst, overlay } = a11yPopup(env, { manageFocus: false, closeOnEsc: false }, true);
+  overlay.setAttribute('role', 'alertdialog');
+  overlay.setAttribute('aria-label', 'Promocja');
+  const before = env.document.activeElement;
+  inst.show();
+  assert.equal(env.document.activeElement, before, 'focus left alone');
+  env.dispatchDoc('keydown', null, { key: 'Escape' });
+  assert.equal(inst.isVisible, true, 'Esc ignored');
+
+  const env2 = createEnvironment();
+  loadPopupsModule(env2);
+  const p2 = a11yPopup(env2, { closeOnEsc: false }, true);
+  p2.overlay.setAttribute('role', 'alertdialog');
+  p2.overlay.setAttribute('aria-label', 'Promocja');
+  p2.inst.show();
+  assert.equal(p2.overlay.getAttribute('role'), 'alertdialog');
+  assert.equal(p2.overlay.getAttribute('aria-labelledby'), null, 'aria-label already there');
+  env2.dispatchDoc('keydown', null, { key: 'Escape' });
+  assert.equal(p2.inst.isVisible, true);
+});
+
+test('a11y: no close button among focusables → focus goes to the dialog, never into a form field (phone keyboard)', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const overlay = createElement('div', { class: 'popup__overlay' });
+  overlay.focus = function () { env.document.activeElement = this; };
+  const email = focusable(env, 'input', { type: 'email' });
+  overlay.appendChild(email);
+  env.body.appendChild(overlay);
+  const inst = env.window.digi2.popups.create('form', { animation: 'none', openOnLoad: false });
+  inst.show();
+  assert.equal(env.document.activeElement, overlay);
+  assert.equal(overlay.getAttribute('tabindex'), '-1');
+});
+
+test('a11y: focus goes to the close button even when a field comes first; close does not yank focus the visitor moved elsewhere', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const overlay = createElement('div', { class: 'popup__overlay' });
+  const email = focusable(env, 'input', { type: 'email' });
+  const close = focusable(env, 'button', { class: 'popup__close' });
+  overlay.appendChild(email);
+  overlay.appendChild(close);
+  env.body.appendChild(overlay);
+  const start = focusable(env, 'button', {});
+  const other = focusable(env, 'a', { href: '#x' });
+  env.body.appendChild(start);
+  env.body.appendChild(other);
+  start.focus();
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: false, closeTriggerSelector: '.popup__close' });
+  inst.show();
+  assert.equal(env.document.activeElement, close);
+  other.focus(); // the visitor moved on (e.g. a link outside, page scripts)
+  inst.hide();
+  assert.equal(env.document.activeElement, other);
 });

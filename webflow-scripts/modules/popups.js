@@ -251,6 +251,15 @@
   // popup, and carries on.
   //   Returns `fallback` when the callback throws (or isn't a function), so a
   //   broken canShow() can default to "allowed" rather than muting the popup.
+  // Broad selector, filtered in _focusables() (disabled, hidden inputs, tabindex -1).
+  var FOCUSABLE = 'a[href], button, input, select, textarea, iframe, [tabindex], [contenteditable="true"]';
+
+  // focus() without scrolling the page to the element; old browsers ignore the option.
+  function _focus(el) {
+    if (!el || typeof el.focus !== 'function') return;
+    try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) { /* no-op */ } }
+  }
+
   function _safeCall(fn, popupName, label, arg, fallback) {
     if (typeof fn !== 'function') return fallback;
     try {
@@ -469,6 +478,12 @@
         // Implies setCookieOnClose:false — see _setupSequence. For a chain of
         // DIFFERENT popups use digi2.popups.sequence([...]) instead.
         sequence: null,
+        // ---- Accessibility -------------------------------------------------
+        // Focus moves into the popup on open (close button / first field), Tab
+        // stays inside, Esc closes like the X, focus returns on close. The
+        // dialog gets role/aria-modal/aria-labelledby unless the page set them.
+        manageFocus: true,
+        closeOnEsc: true,
         // ---- Callbacks -----------------------------------------------------
         canShow: null,                // () => boolean — vetoes show() from any
                                       // trigger. Returning false parks the request;
@@ -884,6 +899,98 @@
       return promo.allows(el);
     }
 
+    // ---- Accessibility -----------------------------------------------------
+
+    _focusables() {
+      var el = this.popupElement;
+      if (!el || !el.querySelectorAll) return [];
+      var list = el.querySelectorAll(FOCUSABLE);
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var f = list[i];
+        var ga = function (n) { return f.getAttribute ? f.getAttribute(n) : null; };
+        if (f.disabled || ga('disabled') !== null || ga('aria-hidden') === 'true' || ga('tabindex') === '-1') continue;
+        if (f.tagName === 'INPUT' && String(ga('type') || '').toLowerCase() === 'hidden') continue;
+        if (f.style && f.style.display === 'none') continue;
+        out.push(f);
+      }
+      return out;
+    }
+
+    // The dialog box itself: the page's [role=dialog] inside the overlay, else
+    // the overlay. Labelled by its first heading when the page didn't say.
+    _labelDialog() {
+      var el = this.popupElement;
+      if (!el || !el.querySelector) return el;
+      var dialog = el.querySelector('[role="dialog"]') || el;
+      if (!dialog.getAttribute('role')) dialog.setAttribute('role', 'dialog');
+      if (!dialog.getAttribute('aria-modal')) dialog.setAttribute('aria-modal', 'true');
+      if (!dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby')) {
+        var h = el.querySelector('h1, h2, h3, h4, h5, h6');
+        if (h) {
+          if (!h.id) h.id = 'd2-popup-title-' + this.name.replace(/[^A-Za-z0-9_-]/g, '-');
+          dialog.setAttribute('aria-labelledby', h.id);
+        }
+      }
+      return dialog;
+    }
+
+    _focusIn() {
+      if (!this.options.manageFocus) return;
+      var dialog = this._labelDialog();
+      this._returnFocus = document.activeElement || null;
+      // The close button, else the dialog itself — never a form field: on a phone
+      // focusing an input pops the keyboard over the popup the visitor didn't ask for.
+      var list = this._focusables();
+      var sel = this.options.closeTriggerSelector;
+      var target = null;
+      for (var i = 0; i < list.length && sel; i++) {
+        if (list[i].matches && list[i].matches(sel)) { target = list[i]; break; }
+        if (!list[i].matches && list[i].closest && list[i].closest(sel) === list[i]) { target = list[i]; break; }
+      }
+      if (!target && dialog) {
+        if (dialog.getAttribute('tabindex') === null) dialog.setAttribute('tabindex', '-1');
+        target = dialog;
+      }
+      _focus(target);
+      var self = this;
+      this._boundKeys = function (e) {
+        if (!self.isVisible) return;
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          if (!self.options.closeOnEsc) return;
+          e.preventDefault && e.preventDefault();
+          self._closeByUser();
+          return;
+        }
+        if (e.key !== 'Tab') return;
+        var items = self._focusables();
+        if (!items.length) { e.preventDefault && e.preventDefault(); return; }
+        var first = items[0];
+        var last = items[items.length - 1];
+        var active = document.activeElement;
+        var inside = active && self.popupElement.contains && self.popupElement.contains(active);
+        if (e.shiftKey && (active === first || !inside)) { e.preventDefault && e.preventDefault(); _focus(last); }
+        else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault && e.preventDefault(); _focus(first); }
+      };
+      document.addEventListener('keydown', this._boundKeys, true);
+    }
+
+    _focusOut() {
+      if (this._boundKeys) {
+        document.removeEventListener('keydown', this._boundKeys, true);
+        this._boundKeys = null;
+      }
+      var back = this._returnFocus;
+      this._returnFocus = null;
+      if (!this.options.manageFocus || !back) return;
+      // Only when focus is still ours (inside the popup or dropped to body) —
+      // never yank it from where the visitor has already moved on.
+      var active = document.activeElement;
+      var ours = !active || active === document.body
+        || (this.popupElement && this.popupElement.contains && this.popupElement.contains(active));
+      if (ours && (!document.body.contains || document.body.contains(back))) _focus(back);
+    }
+
     // d2-ma-show-* / d2-ma-hide-* on the overlay (d2-ma ma.5) veto an open the
     // same way canShow does. d2-ma resumes the parked show once the condition
     // holds. Without d2-ma on the page there is no veto.
@@ -1066,6 +1173,7 @@
 
       if (anim === ANIMATIONS.none) {
         this.popupElement.style.display = 'flex';
+        this._focusIn();
         this._videoPlay();
         afterShow();
         return;
@@ -1074,6 +1182,7 @@
       this._animating = true;
       applyStyles(this.popupElement, anim.setup(dur));
       this.popupElement.style.display = 'flex';
+      this._focusIn();
       this._videoPlay();
       void this.popupElement.offsetHeight; // force reflow
       applyStyles(this.popupElement, anim.in());
@@ -1181,6 +1290,7 @@
 
       _log('hide → ' + this.name);
       this.isVisible = false;
+      this._focusOut();
       // Kill the sound now, not after the fade-out finishes.
       this._videoStop();
       const anim = this._getAnimation();

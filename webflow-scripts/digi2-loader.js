@@ -106,6 +106,9 @@
  *   utmExclude:           null                'utm_medium:cpc' — never this traffic
  *   utmCookie:            true                Remember the campaign so it survives navigation
  *   utmCookieDays:        365                 How long that memory lasts
+ *   manageFocus:          true                Focus to the close button / dialog, Tab trap, focus back
+ *                                             on close, role/aria-modal/aria-labelledby where missing
+ *   closeOnEsc:           true                Esc closes like the close button
  *   onOpen:               null                Callback(instance) on show
  *   onClose:              null                Callback(instance) on hide
  *

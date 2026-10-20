@@ -5,6 +5,26 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.8 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-popups` — dostępność (wszystkie popupy)
+
+- Po otwarciu fokus przechodzi do przycisku zamknięcia, a gdy go nie ma, do
+  okna. Nigdy nie trafia w pole formularza, więc na telefonie nie wyskakuje
+  klawiatura. Tab nie wychodzi poza popup, a po zamknięciu fokus wraca tam,
+  gdzie był.
+- **Esc zamyka popup** jak przycisk zamknięcia (z cookie).
+- Okno dostaje `role="dialog"`, `aria-modal` i `aria-labelledby` z pierwszego
+  nagłówka, tylko tam, gdzie strona tego nie ustawiła.
+- Wyłączenie: `manageFocus: false`, `closeOnEsc: false`.
+- **Uwaga przy wydaniu stabilnym:** to zmienia zachowanie wszystkich popupów
+  na stronach klientów (Esc, fokus). Dziś jest tylko w wersji przedpremierowej.
+
+### `d2-ma`
+
+- Zmieniony szablon popupu w nowej rewizji koperty przebudowuje popup przy
+  następnym pokazie.
+
 ## v1.9.0-ma.7 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — popup z szablonu panelu (§13.9)
