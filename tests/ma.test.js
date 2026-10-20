@@ -75,7 +75,7 @@ function element(attrs, tagName) {
     appendChild(c) { this.children = this.children.concat([c]); c.parentNode = this; return c; },
     removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
     get firstChild() { return this.children[0] || null; },
-    addEventListener() {},
+    addEventListener(n, f) { if (n === 'click') this._klik = f.bind(this); },
     closest(sel) {
       // Tylko to, czego używa moduł: 'form' i atrybut d2-ma-ignore.
       for (let el = this; el; el = el.parent) {
@@ -2437,4 +2437,28 @@ test('#5: popup zastąpiony przez inny węzeł tego samego szablonu oddaje swoj�
   const sc = env._dysk.state.scenarios;
   assert.ok(!sc.pierwszy.freq.a1, 'zastąpiony nie zajmuje swojego once_per_visit');
   assert.ok(sc.drugi.freq.a1, 'pokazany ma wpis');
+});
+
+test('popup z szablonu: link przycisku tylko https na hoście strony albo 2destate — obcy host i http odpadają', async () => {
+  const cta = (href) => ({ templateId: 'last-unit', blocks: [{ type: 'title', text: 'T' }, { type: 'cta', label: 'Idź', action: 'link', href }] });
+  for (const [href, ok] of [['https://demo.example/cennik', true], ['https://app.2destate.com/x', true], ['https://2destate.com/', true],
+    ['https://evil.example/login', false], ['http://demo.example/cennik', false], ['https://demo.example.evil.com/', false],
+    ['https://not2destate.com/', false]]) {
+    const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [cta(href)] } }));
+    const { okno } = oknoPopupu(env);
+    const a = okno.children.find((c) => c.tagName === 'A');
+    assert.equal(!!a, ok, href);
+    if (ok) assert.equal(a.getAttribute('href'), new URL(href).href);
+    else assert.ok(env.ostrzezenia.some((w) => w.includes('cta link needs an https href on this site or 2destate')), href);
+  }
+});
+
+test('popup z szablonu: przycisk contact nie skacze na „#” (preventDefault)', async () => {
+  const t = { templateId: 'last-unit', blocks: [{ type: 'title', text: 'T' }, { type: 'cta', label: 'Napisz', action: 'contact' }] };
+  const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [t] } }));
+  const { okno } = oknoPopupu(env);
+  const a = okno.children.find((c) => c.tagName === 'A');
+  let zatrzymany = false;
+  a._klik({ preventDefault() { zatrzymany = true; } });
+  assert.equal(zatrzymany, true);
 });

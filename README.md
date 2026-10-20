@@ -1253,7 +1253,12 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   - `blocks` (≤ 8, the rest ignored): `title` (`text` ≤ 80, `fallback` ≤ 160),
     `text` (≤ 300, `fallback`), `image` (`src`: `{{unit.image}}` or `https:` on
     the page host / `media.digi2.app`; `alt` ≤ 120), `cta` (`label` ≤ 40,
-    `action`: `open_unit` | `contact` | `link` with an `https:` `href`). Texts
+    `action`: `open_unit` | `contact` | `link`). A `link` `href` must be
+    `https:` on the page's host or a `2destate.com` host — the envelope is
+    public JSON, and a button to a foreign domain in the client's own look
+    would be a phishing tool; anything else drops the block with
+    `console.warn`. `contact` has no address of its own: the click doesn't
+    jump to `#`. Texts
     may use the §13.9.2 fields; a field without a value shows `fallback` or
     drops the block — never "null". The popup's CTA behaviour comes from the
     template's `cta` block.
@@ -1262,7 +1267,11 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   - `style`: only page tokens, `token:<name>` → `var(--<name>)`: `background`
     (dialog background), `text` (colour), `accent` (CTA background), `font`
     (font family), and `radius` `none` | `sm` | `md` | `lg`
-    (`var(--radius-*)`). No HEX or other values (MA-D22).
+    (`var(--radius-sm|md|lg)`, falling back to 6 / 14 / 22 px). Webflow
+    variables are usually named differently (e.g. `--_radius---md`), so the
+    page either defines `--radius-sm|md|lg` once (Site Settings → Custom Code:
+    `:root { --radius-md: var(--_radius---md); }`) or lives with the fallback.
+    No HEX or other values (MA-D22).
   - Everything is `createElement` + `textContent`, styles through
     `style.setProperty` on that whitelist only. Unknown fields → `console.warn`
     and ignored; an invalid block is dropped; a template without a valid block

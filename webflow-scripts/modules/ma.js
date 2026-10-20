@@ -487,6 +487,20 @@
     return null;
   }
 
+  // Link przycisku z szablonu panelu (§13.9.3): publiczny JSON koperty nie może
+  // prowadzić na obcą domenę w wyglądzie strony klienta - tylko https: na hoście
+  // strony albo na hoście 2destate. safeLink (link lokalu) zostaje bez zmian.
+  var PAGE_LINK_HOSTS = /(^|\.)2destate\.com$/;
+  function safePageLink(v) {
+    var l = window.location || {};
+    try {
+      var u = new URL(v, l.href);
+      if (u.protocol !== 'https:') return null;
+      if (u.hostname === l.hostname || PAGE_LINK_HOSTS.test(u.hostname)) return u.href;
+    } catch (e) {}
+    return null;
+  }
+
   function status3de(c) {
     if (c.isNotAvailable === true) return 'sold';
     var s = num(c.status);
@@ -1802,10 +1816,13 @@
     } else {
       if (typeof b.label !== 'string' || !b.label.length || b.label.length > 40 || !fieldsKnown(b.label)) { _warn(where + ' — cta label missing or > 40, skipped'); return null; }
       if (b.action !== 'open_unit' && b.action !== 'contact' && b.action !== 'link') { _warn(where + ' — cta action must be open_unit, contact or link, skipped'); return null; }
-      if (b.action === 'link' && !(typeof b.href === 'string' && safeLink(b.href))) { _warn(where + ' — cta link needs an https href, skipped'); return null; }
+      if (b.action === 'link' && !(typeof b.href === 'string' && safePageLink(b.href))) {
+        _warn(where + ' — cta link needs an https href on this site or 2destate, skipped');
+        return null;
+      }
       out.label = b.label;
       out.action = b.action;
-      if (b.action === 'link') out.href = safeLink(b.href);
+      if (b.action === 'link') out.href = safePageLink(b.href);
     }
     return out;
   }
@@ -1909,6 +1926,7 @@
         if (label == null) return;
         node = document.createElement('a');
         node.setAttribute('d2-ma-cta', '');
+        node.setAttribute('d2-ma-template-cta', b.action);
         node.setAttribute('href', b.action === 'link' ? b.href : '#');
         node.textContent = label;
         node.style.cssText = 'display:block;text-align:center;padding:12px 16px;border-radius:10px;background:#1a1d1c;'
@@ -2025,6 +2043,8 @@
       a._d2maBound = true;
       a.addEventListener('click', function (e) {
         var u = this._d2maUnit;
+        // Przycisk „kontakt" z szablonu nie ma własnego adresu - bez skoku na „#".
+        if (this.getAttribute && this.getAttribute('d2-ma-template-cta') === 'contact' && e && e.preventDefault) e.preventDefault();
         var inst = window.digi2.popups && window.digi2.popups.get && window.digi2.popups.get(name);
         if (this._d2maCta === 'open_unit' && u && u.source === '2destate' && mapObjectFor(u.unitId)) {
           e.preventDefault();
