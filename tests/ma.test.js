@@ -40,19 +40,38 @@ function magazyn(dysk) {
 
 let uuidN = 0;
 
+// Prosty dopasowywacz selektorów, których używa moduł: [a], [a="v"], #id, tag; reszta (:not) pomijana.
+function pasuje(el, sel) {
+  return sel.split(',').some((czesc) => {
+    const c = czesc.trim().replace(/:not\([^)]*\)/g, '');
+    if (c[0] === '#') return el.id === c.slice(1);
+    const m = /^([a-z]*)\[([^\]=]+)(?:="([^"]*)")?\]$/.exec(c);
+    if (!m) return false;
+    if (m[1] && el.tagName !== m[1].toUpperCase()) return false;
+    const v = el.getAttribute(m[2]);
+    return v !== null && (m[3] === undefined || v === m[3]);
+  });
+}
+
+function potomkowie(el) {
+  const out = [];
+  (el.children || []).forEach((c) => { out.push(c); out.push(...potomkowie(c)); });
+  return out;
+}
+
 function element(attrs, tagName) {
   return {
     tagName: tagName || 'DIV',
     attributes: Object.assign({}, attrs || {}),
-    style: {},
+    style: { setProperty(n, v) { this[n] = v; } },
     getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null; },
     setAttribute(n, v) { this.attributes[n] = String(v); },
     removeAttribute(n) { delete this.attributes[n]; },
     getAttributeNames() { return Object.keys(this.attributes); },
     children: [],
     parentNode: null,
-    querySelector() { return null; },
-    querySelectorAll() { return []; },
+    querySelector(sel) { return potomkowie(this).find((x) => pasuje(x, sel)) || null; },
+    querySelectorAll(sel) { return potomkowie(this).filter((x) => pasuje(x, sel)); },
     appendChild(c) { this.children = this.children.concat([c]); c.parentNode = this; return c; },
     removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
     get firstChild() { return this.children[0] || null; },
@@ -136,6 +155,8 @@ function strona(opts) {
       if (sel === '.imp-tooltips-container.is-fullscreen') return o.dymek && o.dymek.open ? element() : null;
       const s = o.szablon;
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
+      // Element zbudowany przez moduł i dołożony do body (popup z szablonu).
+      if (sel[0] === '#') return potomkowie(document.body).find((x) => x.id === sel.slice(1)) || null;
       return null;
     },
     querySelectorAll(sel) {
@@ -2300,4 +2321,120 @@ test('#5: drugi lokal w czasie czekania — jeden czekający popup na szablon; o
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   assert.equal(env.popupy.length, 2, 'A_1 może przyjść później');
+});
+
+// ---------------------------------------------------------------------------
+// ma.7: popup z szablonu panelu (templates.popup[], §13.9.3)
+// ---------------------------------------------------------------------------
+
+const SZABLON = {
+  templateId: 'last-unit', version: 2,
+  blocks: [
+    { type: 'image', src: '{{unit.image}}', alt: '{{unit.name}}' },
+    { type: 'title', text: '{{unit.name}} — {{unit.roomsLabel}}' },
+    { type: 'text', text: '{{unit.building}}', fallback: 'Zobacz szczegóły lokalu' },
+    { type: 'cta', label: 'Zobacz lokal', action: 'open_unit' },
+  ],
+  layout: { position: 'bottom-right', size: 'lg' },
+  style: { background: 'token:surface', text: 'token:on-surface', accent: 'token:brand', font: 'token:body', radius: 'md' },
+};
+
+async function powrotZPopupem(k, opts) {
+  const p1 = await start(Object.assign({ koperta: k }, opts || {}));
+  p1.dataLayer.push(unitOpen('A_7', { building: null }, { data: { unit: { id: 'A_7', name: '7', custom: { rooms: 2, floor: 1, area: 49.85, price: 829212, building: null, status: 1 } } } }));
+  await p1.gotowe();
+  const p2 = await powrot(p1, 2 * H);
+  return p2;
+}
+
+function oknoPopupu(env) {
+  const nak = potomkowie(env.window.document.body).find((x) => x.getAttribute && x.getAttribute('d2-ma-template') !== null);
+  return { nak, okno: nak && nak.querySelector('[d2-ma-template-body]') };
+}
+
+test('popup z szablonu: bloki przez createElement i textContent, fallback przy pustym polu, układ i tokeny stylu', async () => {
+  const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [SZABLON] } }));
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-last-unit']);
+  const { nak, okno } = oknoPopupu(env);
+  assert.ok(nak, 'nakładka z szablonu, nie wbudowana');
+  assert.match(nak.style.cssText, /align-items:flex-end;justify-content:flex-end/);
+  assert.match(okno.style.cssText, /max-width:520px/);
+  assert.equal(okno.style['background-color'], 'var(--surface)');
+  assert.equal(okno.style.color, 'var(--on-surface)');
+  assert.equal(okno.style['font-family'], 'var(--body)');
+  const dzieci = okno.children.map((c) => [c.tagName, c.textContent]);
+  assert.deepEqual(dzieci.slice(1), [['H3', '7 — 2 pokoje'], ['P', 'Zobacz szczegóły lokalu'], ['A', 'Zobacz lokal']],
+    'obraz pominięty (lokal bez zdjęcia), budynek pusty → fallback');
+  assert.equal(okno.children[0].getAttribute('d2-ma-close'), '');
+  assert.equal(okno.children[3].style['background-color'], 'var(--brand)');
+});
+
+test('popup z szablonu: własny [d2-ma-popup] strony wygrywa; bez templates.popup — wbudowany jak dotąd', async () => {
+  const wlasny = element({ 'd2-ma-popup': 'last-unit' });
+  wlasny.id = 'moj';
+  const link = element({ 'd2-ma-cta': '', href: '#kontakt' }, 'A');
+  wlasny.appendChild(link);
+  const zKontaktem = Object.assign({}, SZABLON, { blocks: [{ type: 'cta', label: 'Napisz', action: 'contact' }] });
+  const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [zKontaktem] } }), { szablon: wlasny });
+  assert.equal(env.popupy.length, 1);
+  assert.ok(!oknoPopupu(env).nak, 'nic nie zbudowane z szablonu');
+  assert.equal(link.getAttribute('href'), 'https://demo.example/oferta?sm-unit=A_7', 'CTA z węzła (open_unit), nie z szablonu');
+  const bez = await powrotZPopupem(koperta([POWROT]));
+  assert.ok(!oknoPopupu(bez).nak);
+  assert.ok(potomkowie(bez.window.document.body).some((x) => x.getAttribute && x.getAttribute('d2-ma-builtin') !== null));
+});
+
+test('popup z szablonu: nieznane pola — ostrzeżenie i pominięcie; złe bloki odpadają; styl tylko token:, bez HEX; > 8 bloków', async () => {
+  const zly = {
+    templateId: 'last-unit', html: '<b>x</b>',
+    blocks: [
+      { type: 'title', text: '{{unit.name}}', onclick: 'alert(1)' },
+      { type: 'html', text: '<script>' },
+      { type: 'image', src: 'https://evil.example/x.jpg' },
+      { type: 'text', text: '{{unit.image}}' },
+      { type: 'cta', label: 'Idź', action: 'link', href: 'javascript:alert(1)' },
+    ].concat(Array.from({ length: 6 }, (_, i) => ({ type: 'text', text: 'T' + i }))),
+    style: { background: '#ff0000', text: 'token:ok', position: 'absolute' },
+  };
+  const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [zly] } }));
+  const w = env.ostrzezenia.join('\n');
+  for (const frag of ['unknown field "html"', 'unknown field "onclick"', 'unknown block type', 'image src must be',
+    'field outside §13.9.2', 'cta link needs an https href', 'style background must be token:', 'unknown field "position"', 'more than 8 blocks']) {
+    assert.ok(w.includes(frag), frag);
+  }
+  const { okno } = oknoPopupu(env);
+  assert.deepEqual(okno.children.slice(1).map((c) => c.textContent), ['7', 'T0', 'T1', 'T2'], 'tylko poprawne bloki z pierwszych 8');
+  assert.equal(okno.style['background-color'], undefined, 'HEX odrzucony');
+  assert.equal(okno.style.color, 'var(--ok)');
+});
+
+test('popup z szablonu: cta link — href przez safeLink; obraz z media.digi2.app; szablon bez poprawnych bloków odpada', async () => {
+  const t = { templateId: 'last-unit', blocks: [
+    { type: 'image', src: 'https://media.digi2.app/a.jpg', alt: 'Osiedle' },
+    { type: 'cta', label: 'Cennik', action: 'link', href: 'https://demo.example/cennik' },
+  ] };
+  const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [t, { templateId: 'pusty', blocks: [{ type: 'x' }] }] } }));
+  const { okno } = oknoPopupu(env);
+  assert.equal(okno.children[1].getAttribute('src'), 'https://media.digi2.app/a.jpg');
+  assert.equal(okno.children[2].getAttribute('href'), 'https://demo.example/cennik');
+  assert.ok(env.ostrzezenia.some((x) => x.includes('popup template "pusty" — no valid block')));
+});
+
+test('#5: popup zastąpiony przez inny węzeł tego samego szablonu oddaje swoją częstotliwość (once_per_visit)', async () => {
+  const dymek = { open: true };
+  const k = koperta([
+    scenariusz('pierwszy', { event: 'unit_view', unitIds: ['A_1'] }, [{ do: 'popup', template: 'last-unit' }]),
+    scenariusz('drugi', { event: 'unit_view', unitIds: ['A_2'] }, [{ do: 'popup', template: 'last-unit' }]),
+  ]);
+  const env = await start({ koperta: k, dymek });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.gotowe();
+  dymek.open = false;
+  for (let i = 0; i < 4; i++) await env.minie(300);
+  assert.equal(env.popupy.length, 1);
+  const sc = env._dysk.state.scenarios;
+  assert.ok(!sc.pierwszy.freq.a1, 'zastąpiony nie zajmuje swojego once_per_visit');
+  assert.ok(sc.drugi.freq.a1, 'pokazany ma wpis');
 });

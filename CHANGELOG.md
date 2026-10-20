@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.7 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-ma` — popup z szablonu panelu (§13.9)
+
+- Gdy strona nie ma własnego popupu `[d2-ma-popup="<szablon>"]`, a koperta
+  ma `templates.popup[]` z tym szablonem, popup buduje się z niego: tytuł,
+  tekst, obrazek i przycisk, położenie (środek, prawy dół, dół, góra), rozmiar
+  i kolory oraz font z tokenów strony. Wygląd zmienia się publikacją w panelu,
+  bez zmian w Webflow. Własny popup strony zawsze ma pierwszeństwo.
+- Tylko tekst, nigdy HTML. Błędne pola są pomijane z ostrzeżeniem w konsoli.
+- Popup czekający na zamknięcie dymku mapy, zastąpiony popupem z innego
+  scenariusza, nie zużywa swojej częstotliwości. Pokaże się następnym razem.
+
 ## v1.9.0-ma.6 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma` — popup nie zasłania dymku mapy

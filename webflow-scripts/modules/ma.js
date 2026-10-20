@@ -89,6 +89,8 @@
  *   content image / video         <img>, YouTube / Vimeo frame (after ad_storage consent; d2-ma-
  *                                 video-consent can only add categories) or <video> for mp4
  *   ma_form_field                 Per-field time and clicks (name only, never values)
+ *   templates.popup[]             (ma.7) popup built from a panel template when the page has
+ *                                 no [d2-ma-popup] of its own: blocks, layout, token styles
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
@@ -148,7 +150,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 6;    // ma.6 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 7;    // ma.7 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -675,6 +677,7 @@
       return env;
     }
     env.contentTemplates = contentLibrary(raw.templates);
+    env.popupTemplates = popupLibrary(raw.templates);
     compiling = env;
     if (env.storage.consentRequired !== true && raw.demoState && typeof raw.demoState === 'object') {
       env.demoState = raw.demoState;
@@ -690,11 +693,14 @@
   var compiling = null;      // koperta w trakcie kompilacji (szablony treści dla validNode)
 
   // Tekst content z polami wyłącznie z listy §13.9.2; inaczej null.
-  function contentTextValid(text) {
-    if (typeof text !== 'string' || !text.length || text.length > 160) return false;
+  function fieldsKnown(text) {
     var ok = true;
     text.replace(FIELD_RE, function (m, key) { if (CONTENT_FIELDS.indexOf(key) < 0) ok = false; return m; });
     return ok;
+  }
+
+  function contentTextValid(text) {
+    return typeof text === 'string' && text.length > 0 && text.length <= 160 && fieldsKnown(text);
   }
 
   // Biblioteka szablonów treści z panelu: templates.content[] = { templateId, text }.
@@ -1152,16 +1158,17 @@
         _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'popup', template: node.template, unit: shownUnit });
       }, function (replaced) {
         // once_per_unit: oddajemy tylko własny lokal - inny mógł w międzyczasie
-        // dopisać swój. Popup zastąpiony nowszym tego samego szablonu nie oddaje
-        // reszty: wpis należy już do tamtego.
+        // dopisać swój. Popup zastąpiony nowszym z TEGO SAMEGO węzła nie oddaje
+        // reszty (wpis należy już do tamtego); zastąpiony przez inny węzeł albo
+        // scenariusz wraca do stanu sprzed decyzji, bo sam się nie pokazał.
         var r = st.freq[node.id];
         if (frequencyOf(node).kind === 'unit') {
           if (r && r.units) r.units = r.units.filter(function (u) { return u !== unitKey(ctx.unit); });
-        } else if (!replaced) {
+        } else if (replaced !== 'same') {
           if (before) st.freq[node.id] = before; else delete st.freq[node.id];
         }
         save();
-      });
+      }, sc.id + '/' + node.id);
     } else if (kind === 'datalayer') {
       var segment = node.params && node.params.segment != null ? String(node.params.segment) : null;
       var segEvent = node.event === 'ma_segment' || node.event === 'ma_segment_exit';
@@ -1741,6 +1748,189 @@
     'promo-rooms': { heading: 'Wybrane dla Ciebie', cta: 'Zobacz ofertę' }
   };
 
+  // ---------------------------------------------------------------------------
+  // Popup z szablonu panelu (templates.popup[], §13.9.3). Własny [d2-ma-popup]
+  // strony wygrywa. Bloki to dane: elementy z createElement, tekst przez
+  // textContent, style tylko z białej listy i tylko jako tokeny strony.
+  // ---------------------------------------------------------------------------
+
+  var TPL_BLOCKS = {
+    title: { text: 80, fallback: 160 },
+    text: { text: 300, fallback: 160 },
+    image: { src: 0, alt: 120 },
+    cta: { label: 40, action: 0, href: 0 }
+  };
+  var TPL_POSITIONS = { center: 'center|center', 'bottom-right': 'flex-end|flex-end', bottom: 'flex-end|center', top: 'flex-start|center' };
+  var TPL_SIZES = { sm: 320, md: 380, lg: 520 };
+  var TPL_RADIUS = { none: '0', sm: 'var(--radius-sm, 6px)', md: 'var(--radius-md, 14px)', lg: 'var(--radius-lg, 22px)' };
+  var TPL_STYLE = { background: 1, text: 1, accent: 1, font: 1, radius: 1 };
+  var TOKEN_RE = /^token:([a-z0-9-]{1,40})$/;
+  var MAX_TEMPLATES_BYTES = 100 * 1024;
+
+  function onlyKeys(obj, allowed, where) {
+    Object.keys(obj).forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(allowed, k)) _warn(where + ' — unknown field "' + k + '" ignored');
+    });
+  }
+
+  // Pola w tekście bloku: lista §13.9.2 bez unit.image (to wolno tylko w src obrazu).
+  function tplText(v, max) {
+    return typeof v === 'string' && v.length >= 1 && v.length <= max && fieldsKnown(v);
+  }
+
+  function tplBlock(b, where) {
+    if (!b || typeof b !== 'object' || !TPL_BLOCKS[b.type]) { _warn(where + ' — unknown block type, skipped'); return null; }
+    var spec = TPL_BLOCKS[b.type];
+    var allowed = { type: 1 };
+    Object.keys(spec).forEach(function (k) { allowed[k] = 1; });
+    onlyKeys(b, allowed, where);
+    var out = { type: b.type };
+    if (b.type === 'title' || b.type === 'text') {
+      if (!tplText(b.text, spec.text)) { _warn(where + ' — ' + b.type + ' text missing, too long or with a field outside §13.9.2, skipped'); return null; }
+      out.text = b.text;
+      if (b.fallback != null) {
+        if (typeof b.fallback === 'string' && b.fallback.length <= 160 && b.fallback.indexOf('{{') < 0) out.fallback = b.fallback;
+        else _warn(where + ' — fallback must be plain text ≤ 160, ignored');
+      }
+    } else if (b.type === 'image') {
+      if (b.src !== '{{unit.image}}' && !mediaUrl(b.src)) { _warn(where + ' — image src must be {{unit.image}} or https on this site / ' + MEDIA_HOSTS.join(', ') + ', skipped'); return null; }
+      out.src = b.src;
+      if (b.alt != null) {
+        if (typeof b.alt === 'string' && b.alt.length <= 120 && fieldsKnown(b.alt)) out.alt = b.alt;
+        else _warn(where + ' — alt ignored');
+      }
+    } else {
+      if (typeof b.label !== 'string' || !b.label.length || b.label.length > 40 || !fieldsKnown(b.label)) { _warn(where + ' — cta label missing or > 40, skipped'); return null; }
+      if (b.action !== 'open_unit' && b.action !== 'contact' && b.action !== 'link') { _warn(where + ' — cta action must be open_unit, contact or link, skipped'); return null; }
+      if (b.action === 'link' && !(typeof b.href === 'string' && safeLink(b.href))) { _warn(where + ' — cta link needs an https href, skipped'); return null; }
+      out.label = b.label;
+      out.action = b.action;
+      if (b.action === 'link') out.href = safeLink(b.href);
+    }
+    return out;
+  }
+
+  function popupLibrary(t) {
+    var lib = {};
+    var list = t && typeof t === 'object' && Array.isArray(t.popup) ? t.popup : [];
+    if (!list.length) return lib;
+    var size = 0;
+    try { size = JSON.stringify(t).length; } catch (e) { size = Infinity; }
+    if (size > MAX_TEMPLATES_BYTES) { _warn('envelope templates over 100 KB — popup templates ignored'); return lib; }
+    list.forEach(function (p) {
+      var id = p && p.templateId;
+      var where = 'popup template "' + id + '"';
+      if (!p || typeof p !== 'object' || !SLOT_RE.test(String(id || ''))) { _warn(where + ' — needs a templateId [a-z0-9-], skipped'); return; }
+      onlyKeys(p, { templateId: 1, version: 1, blocks: 1, layout: 1, style: 1 }, where);
+      var blocks = (Array.isArray(p.blocks) ? p.blocks.slice(0, 8) : []).map(function (b, i) {
+        return tplBlock(b, where + ' block ' + (i + 1));
+      }).filter(Boolean);
+      if (Array.isArray(p.blocks) && p.blocks.length > 8) _warn(where + ' — more than 8 blocks, the rest ignored');
+      if (!blocks.length) { _warn(where + ' — no valid block, skipped'); return; }
+      var layout = p.layout && typeof p.layout === 'object' ? p.layout : {};
+      onlyKeys(layout, { position: 1, size: 1 }, where + ' layout');
+      var style = {};
+      if (p.style && typeof p.style === 'object') {
+        onlyKeys(p.style, TPL_STYLE, where + ' style');
+        Object.keys(TPL_STYLE).forEach(function (k) {
+          var v = p.style[k];
+          if (v == null) return;
+          if (k === 'radius') { if (TPL_RADIUS[v] != null) style.radius = v; else _warn(where + ' — radius must be none, sm, md or lg, ignored'); return; }
+          var m = TOKEN_RE.exec(String(v));
+          if (m) style[k] = m[1]; else _warn(where + ' — style ' + k + ' must be token:<name>, ignored');
+        });
+      }
+      lib[id] = {
+        id: id, blocks: blocks, style: style,
+        position: TPL_POSITIONS[layout.position] ? layout.position : 'center',
+        size: TPL_SIZES[layout.size] ? layout.size : 'md'
+      };
+    });
+    return lib;
+  }
+
+  function popupTemplate(id) {
+    var lib = (envelope && envelope.popupTemplates) || {};
+    return Object.prototype.hasOwnProperty.call(lib, id) ? lib[id] : null;
+  }
+
+  function tokenVar(name) {
+    return 'var(--' + name + ')';
+  }
+
+  // Szkielet popupu z szablonu: nakładka i okno. Bloki dochodzą w renderTemplate().
+  function buildFromTemplate(tpl) {
+    var el = document.createElement('div');
+    el.setAttribute('d2-ma-popup', tpl.id);
+    el.setAttribute('d2-ma-template', '');
+    var pos = TPL_POSITIONS[tpl.position].split('|');
+    el.style.cssText = 'position:fixed;inset:0;display:none;align-items:' + pos[0] + ';justify-content:' + pos[1] + ';'
+      + 'padding:16px;background:rgba(15,18,24,.55);z-index:9999';
+    var dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('d2-ma-template-body', '');
+    dialog.style.cssText = 'position:relative;width:100%;max-width:' + TPL_SIZES[tpl.size] + 'px;background:#fff;color:#1a1d1c;'
+      + 'border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);padding:20px 22px 22px';
+    if (tpl.style.background) dialog.style.setProperty('background-color', tokenVar(tpl.style.background));
+    if (tpl.style.text) dialog.style.setProperty('color', tokenVar(tpl.style.text));
+    if (tpl.style.font) dialog.style.setProperty('font-family', tokenVar(tpl.style.font));
+    if (tpl.style.radius) dialog.style.setProperty('border-radius', TPL_RADIUS[tpl.style.radius]);
+    el.appendChild(dialog);
+    document.body.appendChild(el);
+    return el;
+  }
+
+  // Wypełnia okno blokami dla lokalu. Pole bez wartości: fallback albo blok ukryty.
+  function renderTemplate(el, tpl, unit) {
+    var dialog = el.querySelector('[d2-ma-template-body]');
+    if (!dialog) return;
+    while (dialog.firstChild) dialog.removeChild(dialog.firstChild);
+    var close = document.createElement('button');
+    close.setAttribute('type', 'button');
+    close.setAttribute('d2-ma-close', '');
+    close.setAttribute('aria-label', 'Zamknij');
+    close.style.cssText = 'position:absolute;top:8px;right:8px;width:36px;height:36px;border:0;border-radius:18px;'
+      + 'background:rgba(255,255,255,.9);font-size:22px;line-height:1;cursor:pointer;color:#1a1d1c';
+    close.textContent = '×';
+    dialog.appendChild(close);
+    tpl.blocks.forEach(function (b) {
+      var node;
+      if (b.type === 'image') {
+        var src = b.src === '{{unit.image}}' ? (unit && unit.image ? safeImage(unit.image) : null) : mediaUrl(b.src);
+        if (!src) return;
+        node = document.createElement('img');
+        node.setAttribute('src', src);
+        var alt = b.alt ? contentText({ text: b.alt }, unit) : '';
+        node.setAttribute('alt', alt || '');
+        node.style.cssText = 'display:block;width:calc(100% + 44px);height:auto;margin:-20px -22px 16px';
+      } else if (b.type === 'cta') {
+        var label = contentText({ text: b.label }, unit);
+        if (label == null) return;
+        node = document.createElement('a');
+        node.setAttribute('d2-ma-cta', '');
+        node.setAttribute('href', b.action === 'link' ? b.href : '#');
+        node.textContent = label;
+        node.style.cssText = 'display:block;text-align:center;padding:12px 16px;border-radius:10px;background:#1a1d1c;'
+          + 'color:#fff;text-decoration:none;font-weight:600;margin-top:12px';
+        if (tpl.style.accent) node.style.setProperty('background-color', tokenVar(tpl.style.accent));
+      } else {
+        var text = contentText({ text: b.text }, unit);
+        if (text == null) text = b.fallback || null;
+        if (text == null) return;
+        node = document.createElement(b.type === 'title' ? 'h3' : 'p');
+        node.textContent = text;
+        node.style.cssText = b.type === 'title' ? 'margin:0 0 6px;font-size:22px;line-height:1.2' : 'margin:0 0 6px';
+      }
+      dialog.appendChild(node);
+    });
+  }
+
+  function templateCta(tpl) {
+    for (var i = 0; i < tpl.blocks.length; i++) if (tpl.blocks[i].type === 'cta') return tpl.blocks[i].action;
+    return null;
+  }
+
   // Wbudowany popup, gdy strona nie ma własnego [d2-ma-popup="<szablon>"].
   // Szkielet bez danych; dane wchodzą przez textContent w fill().
   function buildFallback(template) {
@@ -1869,15 +2059,15 @@
     tooltipWaits = {};
   }
 
-  function whenMapTooltipClosed(key, epoch, go, giveUp) {
+  function whenMapTooltipClosed(key, owner, epoch, go, giveUp) {
     // Nowszy popup tego samego szablonu zastępuje czekający.
     var prev = tooltipWaits[key];
-    if (prev) { clearTimeout(prev.timer); delete tooltipWaits[key]; prev.giveUp(true); }
+    if (prev) { clearTimeout(prev.timer); delete tooltipWaits[key]; prev.giveUp(prev.owner === owner ? 'same' : 'other'); }
     if (!mapTooltipOpen()) { go(); return; }
     _log('popup waits for the map tooltip to close');
     // Czas z zegara, nie z liczby tyknięć - karta w tle spowalnia timery.
     var since = Date.now();
-    var wait = { timer: null, giveUp: giveUp };
+    var wait = { timer: null, giveUp: giveUp, owner: owner };
     tooltipWaits[key] = wait;
     (function tick() {
       wait.timer = setTimeout(function () {
@@ -1894,7 +2084,7 @@
     })();
   }
 
-  function showPopup(node, ctx, onShown, onSkipped) {
+  function showPopup(node, ctx, onShown, onSkipped, owner) {
     var unit = ctx.unit;
     var epoch = profileEpoch;
     if (!unit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
@@ -1909,10 +2099,12 @@
       return popupsApi().then(function (popups) {
         var name = 'd2-ma-' + node.template;
         var inst = popups.get(name);
+        var own = document.querySelector('[d2-ma-popup="' + node.template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
+          + '[data-d2-ma-popup="' + node.template + '"]');
+        var tpl = own ? null : popupTemplate(node.template);
         if (!inst || !inst.popupElement) {
           if (inst) popups.destroy(name);
-          var el = document.querySelector('[d2-ma-popup="' + node.template + '"], [data-d2-ma-popup="' + node.template + '"]')
-            || buildFallback(node.template);
+          var el = own || (tpl ? buildFromTemplate(tpl) : buildFallback(node.template));
           if (!el.id) el.id = name;
           inst = popups.create(name, {
             popupSelector: '#' + el.id, cookieName: null, dataTagTrigger: false, openOnLoad: false,
@@ -1920,9 +2112,10 @@
           });
         }
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
+        if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
         fill(inst.popupElement, fresh);
-        wireCta(inst.popupElement, name, fresh, node.cta);
-        whenMapTooltipClosed(node.template, epoch, function () {
+        wireCta(inst.popupElement, name, fresh, tpl ? (templateCta(tpl) || node.cta) : node.cta);
+        whenMapTooltipClosed(node.template, owner, epoch, function () {
           inst.show({ auto: true });
           onShown(fresh);
         }, onSkipped);

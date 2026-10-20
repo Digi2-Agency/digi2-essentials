@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 59.4 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 65.5 KB | Marketing automation (demo, contract v0 + §13.8 + §13.9 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **339.9 KB min** / **108.6 KB** gzipped.
+Total (all modules): **346.0 KB min** / **110.4 KB** gzipped.
 
 ---
 
@@ -1243,7 +1243,30 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   being read) bumps a profile epoch and cancels the wait: no popup from a
   deleted profile, also after consent is given again. One popup waits per
   template — a newer one replaces it; with `once_per_unit` only the replaced
-  popup's own unit is given back.
+  popup's own unit is given back, and a popup replaced by another node or
+  scenario gets its frequency entry undone (it never showed).
+- **Popup from a panel template (ma.7, §13.9.3):** when the page has no
+  `[d2-ma-popup="<template>"]` of its own and the envelope carries
+  `templates.popup[]` with that `templateId`, the module builds the popup from
+  it instead of the built-in card. The page's own element always wins (it is
+  only filled through `[d2-ma-field]`).
+  - `blocks` (≤ 8, the rest ignored): `title` (`text` ≤ 80, `fallback` ≤ 160),
+    `text` (≤ 300, `fallback`), `image` (`src`: `{{unit.image}}` or `https:` on
+    the page host / `media.digi2.app`; `alt` ≤ 120), `cta` (`label` ≤ 40,
+    `action`: `open_unit` | `contact` | `link` with an `https:` `href`). Texts
+    may use the §13.9.2 fields; a field without a value shows `fallback` or
+    drops the block — never "null". The popup's CTA behaviour comes from the
+    template's `cta` block.
+  - `layout`: `position` `center` | `bottom-right` | `bottom` | `top`, `size`
+    `sm` (320 px) | `md` (380) | `lg` (520).
+  - `style`: only page tokens, `token:<name>` → `var(--<name>)`: `background`
+    (dialog background), `text` (colour), `accent` (CTA background), `font`
+    (font family), and `radius` `none` | `sm` | `md` | `lg`
+    (`var(--radius-*)`). No HEX or other values (MA-D22).
+  - Everything is `createElement` + `textContent`, styles through
+    `style.setProperty` on that whitelist only. Unknown fields → `console.warn`
+    and ignored; an invalid block is dropped; a template without a valid block
+    is dropped; `templates` over 100 KB → popup templates ignored.
 - **Fresh status:** from `d2estate.getProducts()` when the map is on the page,
   else `POST {api}/projects/{project2destate}/products` with `product_ids` (only
   for 2destate UUIDs, 3 s timeout). Sold or no longer returned → no popup. A
