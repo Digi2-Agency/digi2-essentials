@@ -39,6 +39,14 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   (gdy 2destate wyda `setProductOrder`).
 - Nowe w API: `digi2.ma.apply()`, `digi2.ma.allows(el)`.
 
+**Zmiany dla kopert pisanych pod ma.4:**
+- `ma_form_abandon` z akcji `datalayer` niesie dodatkowo `fields_touched`.
+- `ma_segment` i `ma_segment_exit` bez `params.segment` dają ostrzeżenie w
+  konsoli i nie zmieniają segmentów profilu. Zdarzenie do `dataLayer` idzie jak
+  dotąd.
+- Porzucony formularz i analityka pól liczą tylko formularze z `formIds`
+  wyzwalacza (bez listy: każdy).
+
 ### `d2-popups`
 
 - Nakładka z atrybutem `d2-ma-show-*` / `d2-ma-hide-*` czeka z otwarciem na

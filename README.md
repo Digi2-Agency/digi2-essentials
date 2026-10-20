@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 57.7 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 58.4 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **338.2 KB min** / **107.9 KB** gzipped.
+Total (all modules): **338.8 KB min** / **108.1 KB** gzipped.
 
 ---
 
@@ -1436,7 +1436,9 @@ never part of a counter.
   and on variants `d2-ma-shown` on the chosen block plus `d2-ma-matched` on the
   container (variant blocks need no marker). An element with conditions but
   without `d2-ma-cond` — a typo in Webflow — gets `hidden` from the script and a
-  `console.warn`, so conditional content never shows to everyone. The script
+  `console.warn`, so conditional content never shows to everyone — though until
+  the script runs it is visible for a moment, since the page CSS only knows
+  `[d2-ma-cond]`. The script
   never injects `<style>` (CSP), so the page carries this CSS once (Webflow →
   Site Settings → Custom Code → Head):
 
@@ -1457,7 +1459,9 @@ never part of a counter.
   `digi2.ma.apply()`. `digi2.ma.allows(el)` answers for one element.
 - **Preview:** `?d2-ma-preview=<name>` treats that segment / variant as matching
   — for checking the page in Webflow. It needs no consent, writes nothing to
-  `d2ma` and pushes nothing to `dataLayer`.
+  `d2ma` and pushes nothing to `dataLayer`. Anyone can add the parameter: these
+  conditions are personalisation, **not access control** — never hide anything
+  behind them that a visitor must not see.
 - Limits (§13.11.4): one profile per device and browser; Safari (ITP) clears
   script storage after 7 days without interaction, so a `/30d` window on
   Safari sees about a week.
@@ -1465,13 +1469,17 @@ never part of a counter.
 ### Form field analytics (ma.5, MA-D13)
 
 With a `form_abandon` trigger in the envelope, and only after consent, the
-module also measures each field of a form the visitor started:
+module also measures each field of a form the visitor started — only forms the
+trigger watches (its `formIds`; none listed = any form):
 
 - **name** only from `name` / `data-name` or a static `<label for>` — never a
-  placeholder or typed text; letters, digits, space, `_`, `-`, ≤ 40 chars; a
-  name that looks like an e-mail or a phone number becomes `pole-N`;
+  placeholder or typed text; letters, digits, space, `_`, `-`, ≤ 40 chars
+  (`\p{L}` built at runtime; a browser without Unicode regex falls back to
+  Latin + Polish letters); a name that looks like an e-mail or a phone number
+  becomes `pole-N`;
 - **time on the field** (focus → blur, ms) and **focuses and clicks on that
-  field** — nothing outside form fields;
+  field** — a click that focuses the field counts once (`focusin` + `click`
+  within 500 ms); nothing outside form fields;
 - never values; `type="password"` / `hidden`, and any field or form inside
   `d2-ma-ignore`, are skipped; at most 20 fields per form.
 

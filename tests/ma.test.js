@@ -81,6 +81,7 @@ function element(attrs, tagName) {
  *   elementy  elementy strony dla querySelectorAll (sloty, formularz testowy)
  *   dotyk     matchMedia('(hover: none)') = true
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
+ *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
  */
 function strona(opts) {
   const o = opts || {};
@@ -207,6 +208,13 @@ function strona(opts) {
     JSON, Math, Intl, URL, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array,
     fetch,
   });
+  if (o.bezUnicodeRegExp) {
+    const Natywny = vm.runInContext('RegExp', context);
+    context.RegExp = function (src, flags) {
+      if (String(flags || '').indexOf('u') >= 0) throw new SyntaxError('Invalid flags');
+      return new Natywny(src, flags);
+    };
+  }
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
@@ -2141,4 +2149,28 @@ test('d2-ma-video-consent tylko dokłada kategorie: bez ad_storage ostrzeżenie 
   assert.equal((await run('ad_storage analytics_storage', { ad_storage: 'granted', analytics_storage: 'denied' })).tag, 'DIV', 'obie wymagane');
   assert.equal((await run('ad_storage analytics_storage', { ad_storage: 'granted', analytics_storage: 'granted' })).tag, 'IFRAME');
   assert.equal((await run('analytics_storage', { ad_storage: 'granted', analytics_storage: 'granted' })).tag, 'IFRAME');
+});
+
+test('MA-D13: tylko formularze z formIds wyzwalaczy; klik w pole to jedno wejście; nazwa bez \\p{L} na starszej przeglądarce', async () => {
+  const k = koperta([scenariusz('p', { event: 'form_abandon', formIds: ['kontakt'] }, [DL('ma_form_abandon')])]);
+  for (const bezUnicodeRegExp of [false, true]) {
+    const env = await start({ koperta: k, bezUnicodeRegExp });
+    const obcy = formularz({ id: 'newsletter' });
+    env.dom('focusin', { type: 'focusin', target: obcy.pole });
+    env.dom('submit', { target: obcy.form });
+    const form = element({ id: 'kontakt' }, 'FORM');
+    const pole = element({ name: 'Ulica i nr — łąka!' }, 'INPUT');
+    pole.parent = form;
+    env.dom('focusin', { type: 'focusin', target: pole });
+    env.dom('click', { type: 'click', target: pole });
+    await env.minie(2000);
+    env.dom('click', { type: 'click', target: pole });
+    env.dom('submit', { target: form });
+    await env.gotowe();
+    assert.deepEqual(env.polaFormularza().map((x) => [x.form_id, x.field_name, x.clicks]), [['kontakt', 'Ulica i nr łąka', 2]],
+      'newsletter poza formIds pominięty; focusin + click = 1, drugi klik później = 2');
+    env.okno('pagehide');
+    await env.gotowe();
+    assert.ok(!(env._dysk.state.formExits || []).some((x) => x.formId === 'newsletter'), 'poza formIds także bez zapisu wyjścia');
+  }
 });

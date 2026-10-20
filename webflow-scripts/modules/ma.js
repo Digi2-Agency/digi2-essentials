@@ -2237,11 +2237,24 @@
     return !ids.length || (formId != null && ids.indexOf(formId) >= 0);
   }
 
+  function formWatched(id) {
+    return !!envelope && envelope.scenarios.some(function (sc) {
+      return sc.triggers.some(function (n) { return n.when.event === 'form_abandon' && formListed(n.when, id); });
+    });
+  }
+
   function formKeyOf(form) {
     return form.getAttribute('id') || form.getAttribute('data-name') || form.getAttribute('name') || null;
   }
 
   var MAX_FORM_FIELDS = 20;
+  // \p{L} to ES2018 - literał w kodzie wywróciłby parsowanie całego modułu na
+  // starszej przeglądarce, więc wzorzec ze stałego tekstu, a zapas z polskimi literami.
+  var FIELD_NAME_STRIP = (function () {
+    try { return new RegExp('[^\\p{L}0-9 _-]', 'gu'); } catch (e) {
+      return /[^A-Za-z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ _-]/g;
+    }
+  })();
 
   function formEntry(target) {
     var t = target;
@@ -2253,7 +2266,10 @@
     var form = t.closest ? t.closest('form') : null;
     if (!form) return null;
     for (var i = 0; i < forms.length; i++) if (forms[i].form === form) return forms[i];
-    var ent = { form: form, id: formKeyOf(form), fields: [], stats: [], timers: [], submitted: false };
+    // Opt-in dotyczy konkretnych formularzy: tylko te z formIds któregoś wyzwalacza.
+    var id = formKeyOf(form);
+    if (!formWatched(id)) return null;
+    var ent = { form: form, id: id, fields: [], stats: [], timers: [], submitted: false };
     forms.push(ent);
     return ent;
   }
@@ -2270,7 +2286,7 @@
     }
     raw = String(raw);
     if (/@/.test(raw) || /^\+?[\d\s()-]{7,}$/.test(raw.trim())) return 'pole-' + n;
-    var clean = raw.replace(/[^\p{L}0-9 _-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    var clean = raw.replace(FIELD_NAME_STRIP, '').replace(/\s+/g, ' ').trim().slice(0, 40);
     return clean || 'pole-' + n;
   }
 
@@ -2333,8 +2349,9 @@
     if (ent.fields.indexOf(e.target) < 0) ent.fields.push(e.target);
     var st = fieldStat(ent, e.target);
     if (st) {
-      if (e.type === 'focusin') { st.clicks += 1; if (st.since == null) st.since = Date.now(); }
-      else if (e.type === 'click' && st.since != null) st.clicks += 1;
+      // Klik w pole daje focusin i zaraz click - to jedno wejście, nie dwa.
+      if (e.type === 'focusin') { st.clicks += 1; st.focusAt = Date.now(); if (st.since == null) st.since = Date.now(); }
+      else if (e.type === 'click' && st.since != null && Date.now() - st.focusAt > 500) st.clicks += 1;
       else if (e.type === 'focusout' && st.since != null) { st.ms += Date.now() - st.since; st.since = null; }
     }
     if (e.type !== 'focusout' && e.type !== 'click') armForm(ent);
