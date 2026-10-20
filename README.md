@@ -449,7 +449,7 @@ digi2.popups.create('newsletter', {
 | `containsUrls` | `['/']` | URL fragments required (whitelist) — see [URL filters](#url-filters) |
 | `canShow` | `null` | `() => boolean` — veto an open. See [Sequencing](#sequencing-two-popups) |
 | `manageFocus` | `true` | On open, focus goes to the close button (`closeTriggerSelector`) or the dialog itself — never into a form field, which would pop the phone keyboard; Tab and Shift+Tab stay inside; on close focus returns to what had it, unless the visitor already moved it. The dialog (`[role=dialog]` inside the overlay, else the overlay) gets `role="dialog"`, `aria-modal="true"` and `aria-labelledby` from its first heading — only where the page didn't set them |
-| `closeOnEsc` | `true` | Esc closes the popup like the close button, dismissal cookie included |
+| `closeOnEsc` | `true` | Esc closes the popup like the close button, dismissal cookie included. Independent of `manageFocus`: either works without the other |
 
 With several windows open (a popup over a popup, a lightbox over a popup) only
 the **top** popup answers Esc and Tab; a key another layer already handled

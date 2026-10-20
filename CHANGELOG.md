@@ -5,6 +5,16 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.10 — 2026-10-20 (przedpremierowa, nie `@latest`)
+
+### `d2-popups`
+
+- `closeOnEsc` działa niezależnie od `manageFocus`, więc Esc zamyka popup także
+  przy wyłączonej obsłudze fokusu.
+- Po zamknięciu górnego popupu fokus i klawisze wracają do popupu pod spodem.
+- Esc nie zatrzymuje już propagacji zdarzenia (`preventDefault` wystarcza),
+  więc inne skrypty strony dalej je widzą.
+
 ## v1.9.0-ma.8 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-popups` — dostępność (wszystkie popupy)

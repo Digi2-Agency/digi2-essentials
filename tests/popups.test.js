@@ -1931,3 +1931,36 @@ test('a11y: a popup hidden by the page without hide() (getClientRects empty) doe
   env.dispatchDoc('keydown', send, { key: 'Escape' });
   assert.equal(inst.isVisible, true);
 });
+
+test('a11y: closing the top popup returns focus to the one underneath', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const a = a11yPopup(env);
+  a.inst.show();
+  assert.equal(env.document.activeElement, a.close);
+  const overlayB = createElement('div', { class: 'popup__b' });
+  const closeB = focusable(env, 'button', { class: 'b__close' });
+  overlayB.appendChild(closeB);
+  env.body.appendChild(overlayB);
+  const b = env.window.digi2.popups.create('b', { popupSelector: '.popup__b', animation: 'none', openOnLoad: false, closeTriggerSelector: '.b__close' });
+  b.isVisible = true;
+  b._focusIn();
+  assert.equal(env.document.activeElement, closeB);
+  b.hide();
+  assert.equal(env.document.activeElement, a.close, 'back in the popup underneath');
+  env.dispatchDoc('keydown', a.close, { key: 'Escape' });
+  assert.equal(a.inst.isVisible, false, 'the lower one answers keys again');
+});
+
+test('a11y: closeOnEsc works without manageFocus (focus untouched, Esc closes)', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst } = a11yPopup(env, { manageFocus: false, closeOnEsc: true });
+  const before = env.document.activeElement;
+  inst.show();
+  assert.equal(env.document.activeElement, before);
+  const tab = env.dispatchDoc('keydown', null, { key: 'Tab' });
+  assert.equal(tab.defaultPrevented, false, 'no trap without manageFocus');
+  env.dispatchDoc('keydown', null, { key: 'Escape' });
+  assert.equal(inst.isVisible, false);
+});

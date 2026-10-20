@@ -949,11 +949,17 @@
       return dialog;
     }
 
+    // Esc (closeOnEsc) and the focus handling (manageFocus) are independent:
+    // either one alone binds the key handler, each part runs only when its option is on.
     _focusIn() {
-      if (!this.options.manageFocus) return;
       if (this._boundKeys) { document.removeEventListener('keydown', this._boundKeys); this._boundKeys = null; }
+      if (!this.options.manageFocus && !this.options.closeOnEsc) return;
       _openStack = _openStack.filter(function (p) { return p !== this; }, this);
       _openStack.push(this);
+      var self = this;
+      this._boundKeys = function (e) { self._onKey(e); };
+      document.addEventListener('keydown', this._boundKeys);
+      if (!this.options.manageFocus) return;
       var dialog = this._labelDialog();
       this._returnFocus = document.activeElement || null;
       // The close button, else the dialog itself — never a form field: on a phone
@@ -970,33 +976,31 @@
         target = dialog;
       }
       _focus(target);
-      var self = this;
-      this._boundKeys = function (e) {
-        // Only the top window answers keys; one another layer (lightbox, a
-        // second modal) already handled is left alone.
-        if (!self.isVisible || e.defaultPrevented || _openStack[_openStack.length - 1] !== self) return;
-        // Hidden by the page (CSS / Webflow) without hide(): not ours to trap.
-        var el = self.popupElement;
-        if (el && typeof el.getClientRects === 'function' && !el.getClientRects().length) return;
-        var active = document.activeElement;
-        if (active && _inOtherModal(active, el)) return;
-        if (e.key === 'Escape' || e.key === 'Esc') {
-          if (!self.options.closeOnEsc) return;
-          e.preventDefault && e.preventDefault();
-          e.stopPropagation && e.stopPropagation();
-          self._closeByUser();
-          return;
-        }
-        if (e.key !== 'Tab') return;
-        var items = self._focusables();
-        if (!items.length) { e.preventDefault && e.preventDefault(); return; }
-        var first = items[0];
-        var last = items[items.length - 1];
-        var inside = active && self.popupElement.contains && self.popupElement.contains(active);
-        if (e.shiftKey && (active === first || !inside)) { e.preventDefault && e.preventDefault(); _focus(last); }
-        else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault && e.preventDefault(); _focus(first); }
-      };
-      document.addEventListener('keydown', this._boundKeys);
+    }
+
+    _onKey(e) {
+      // Only the top window answers keys; one another layer (lightbox, a
+      // second modal) already handled is left alone.
+      if (!this.isVisible || e.defaultPrevented || _openStack[_openStack.length - 1] !== this) return;
+      // Hidden by the page (CSS / Webflow) without hide(): not ours to trap.
+      var el = this.popupElement;
+      if (el && typeof el.getClientRects === 'function' && !el.getClientRects().length) return;
+      var active = document.activeElement;
+      if (active && _inOtherModal(active, el)) return;
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        if (!this.options.closeOnEsc) return;
+        e.preventDefault && e.preventDefault();
+        this._closeByUser();
+        return;
+      }
+      if (e.key !== 'Tab' || !this.options.manageFocus) return;
+      var items = this._focusables();
+      if (!items.length) { e.preventDefault && e.preventDefault(); return; }
+      var first = items[0];
+      var last = items[items.length - 1];
+      var inside = active && this.popupElement.contains && this.popupElement.contains(active);
+      if (e.shiftKey && (active === first || !inside)) { e.preventDefault && e.preventDefault(); _focus(last); }
+      else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault && e.preventDefault(); _focus(first); }
     }
 
     _focusOut() {
