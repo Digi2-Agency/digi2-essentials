@@ -17,6 +17,16 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Okno dostaje `role="dialog"`, `aria-modal` i `aria-labelledby` z pierwszego
   nagłówka, tylko tam, gdzie strona tego nie ustawiła.
 - Wyłączenie: `manageFocus: false`, `closeOnEsc: false`.
+- Kilka okien naraz: Esc i Tab obsługuje tylko popup na wierzchu. Esc w
+  lightboxie nad popupem zamyka sam lightbox, a fokus w lightboxie albo w
+  innym oknie modalnym nie jest zabierany. Popup ukryty przez stronę bez
+  `hide()` niczego nie blokuje, a `destroy()` otwartego popupu zdejmuje blokadę
+  Tab.
+
+### `d2-lightbox`
+
+- Esc zamykający lightbox jest oznaczany jako obsłużony (`preventDefault`),
+  żeby popup pod spodem nie zamknął się razem z nim.
 - **Uwaga przy wydaniu stabilnym:** to zmienia zachowanie wszystkich popupów
   na stronach klientów (Esc, fokus). Dziś jest tylko w wersji przedpremierowej.
 

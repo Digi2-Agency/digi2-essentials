@@ -98,7 +98,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 |---|---|---|---|
 | `d2-gtm="ID"` | google | 2.4 KB | Consent Mode V2 + GTM + consent manager |
 | `d2-ab-tests="configName"` | ab-tests | 6.3 KB | A/B redirects and link rewriting from a sitemap config |
-| `d2-popups` | popups | 42.2 KB | 22 animations, triggers, exit intent |
+| `d2-popups` | popups | 42.8 KB | 22 animations, triggers, exit intent |
 | `d2-cookies` | cookies | 1.2 KB | get/set/remove/getAll |
 | `d2-forms` | forms | 18.9 KB | UTM tracking + validation + password toggle + consent master |
 | `d2-country-picker` | country-picker | 24.2 KB | Phone country picker — flag + dialing code written into the number |
@@ -113,7 +113,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-format` | format | 2.7 KB | Number and price formatting |
 | `d2-cms` | cms | 40.3 KB | CMS list: sort, filter (immediate or deferred), scroll/load-more (DOM-based) |
 | `d2-copy` | copy | 2.0 KB | Clipboard copy with toast feedback |
-| `d2-lightbox` | lightbox | 17.5 KB | Image lightbox — custom Designer modal or built-in fallback |
+| `d2-lightbox` | lightbox | 23.1 KB | Image lightbox — custom Designer modal or built-in fallback |
 | `d2-dropdowns` | dropdowns | 4.0 KB | Custom dropdowns — own open/close, close-on-select |
 | `d2-interactions` | interactions | 14.3 KB | Interaction helpers |
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
@@ -121,7 +121,7 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
 | `d2-ma="<url>"` | ma | 66.1 KB | Marketing automation (demo, contract v0 + §13.8 + §13.9 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **349.0 KB min** / **111.3 KB** gzipped.
+Total (all modules): **349.7 KB min** / **111.4 KB** gzipped.
 
 ---
 
@@ -450,6 +450,13 @@ digi2.popups.create('newsletter', {
 | `canShow` | `null` | `() => boolean` — veto an open. See [Sequencing](#sequencing-two-popups) |
 | `manageFocus` | `true` | On open, focus goes to the close button (`closeTriggerSelector`) or the dialog itself — never into a form field, which would pop the phone keyboard; Tab and Shift+Tab stay inside; on close focus returns to what had it, unless the visitor already moved it. The dialog (`[role=dialog]` inside the overlay, else the overlay) gets `role="dialog"`, `aria-modal="true"` and `aria-labelledby` from its first heading — only where the page didn't set them |
 | `closeOnEsc` | `true` | Esc closes the popup like the close button, dismissal cookie included |
+
+With several windows open (a popup over a popup, a lightbox over a popup) only
+the **top** popup answers Esc and Tab; a key another layer already handled
+(`defaultPrevented` — the lightbox marks its Esc so) is left alone, and focus
+sitting in a `[d2-lightbox-modal]` or another `aria-modal` dialog is never
+pulled back. A popup the page hid without `hide()` (no client rects) traps
+nothing, and `destroy()` on an open popup drops its key handler.
 | `video` | `null` | `true` · selector · `{…}` — wire a `<video>` inside the popup. See [Video popups](#video-popups) |
 | `onOpen` / `onClose` | `null` | Callbacks |
 

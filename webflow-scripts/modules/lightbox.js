@@ -1336,6 +1336,8 @@
   document.addEventListener('keydown', function (e) {
     if (!state.open) return;
     if (e.key === 'Escape') {
+      // Marked as handled, so a popup underneath (d2-popups) doesn't close too.
+      if (e.preventDefault) e.preventDefault();
       close();
     } else if (e.key === 'ArrowRight') {
       if (e.preventDefault) e.preventDefault();

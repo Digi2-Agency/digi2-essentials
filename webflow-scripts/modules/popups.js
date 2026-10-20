@@ -254,6 +254,18 @@
   // Broad selector, filtered in _focusables() (disabled, hidden inputs, tabindex -1).
   var FOCUSABLE = 'a[href], button, input, select, textarea, iframe, [tabindex], [contenteditable="true"]';
 
+  // Open popups, oldest first: only the top one handles Esc / Tab.
+  var _openStack = [];
+
+  // Focus sitting in another modal layer (a lightbox, another aria-modal
+  // dialog) belongs to that layer - the trap must not pull it back.
+  function _inOtherModal(active, own) {
+    if (!active.closest) return false;
+    if (active.closest('[d2-lightbox-modal]')) return true;
+    var modal = active.closest('[aria-modal="true"]');
+    return !!modal && !(own && own.contains && own.contains(modal)) && modal !== own;
+  }
+
   // focus() without scrolling the page to the element; old browsers ignore the option.
   function _focus(el) {
     if (!el || typeof el.focus !== 'function') return;
@@ -911,6 +923,8 @@
         var ga = function (n) { return f.getAttribute ? f.getAttribute(n) : null; };
         if (f.disabled || ga('disabled') !== null || ga('aria-hidden') === 'true' || ga('tabindex') === '-1') continue;
         if (f.tagName === 'INPUT' && String(ga('type') || '').toLowerCase() === 'hidden') continue;
+        // Hidden by CSS (display:none on it or an ancestor) - not reachable by Tab.
+        if (typeof f.getClientRects === 'function' && !f.getClientRects().length) continue;
         if (f.style && f.style.display === 'none') continue;
         out.push(f);
       }
@@ -937,6 +951,9 @@
 
     _focusIn() {
       if (!this.options.manageFocus) return;
+      if (this._boundKeys) { document.removeEventListener('keydown', this._boundKeys); this._boundKeys = null; }
+      _openStack = _openStack.filter(function (p) { return p !== this; }, this);
+      _openStack.push(this);
       var dialog = this._labelDialog();
       this._returnFocus = document.activeElement || null;
       // The close button, else the dialog itself — never a form field: on a phone
@@ -955,10 +972,18 @@
       _focus(target);
       var self = this;
       this._boundKeys = function (e) {
-        if (!self.isVisible) return;
+        // Only the top window answers keys; one another layer (lightbox, a
+        // second modal) already handled is left alone.
+        if (!self.isVisible || e.defaultPrevented || _openStack[_openStack.length - 1] !== self) return;
+        // Hidden by the page (CSS / Webflow) without hide(): not ours to trap.
+        var el = self.popupElement;
+        if (el && typeof el.getClientRects === 'function' && !el.getClientRects().length) return;
+        var active = document.activeElement;
+        if (active && _inOtherModal(active, el)) return;
         if (e.key === 'Escape' || e.key === 'Esc') {
           if (!self.options.closeOnEsc) return;
           e.preventDefault && e.preventDefault();
+          e.stopPropagation && e.stopPropagation();
           self._closeByUser();
           return;
         }
@@ -967,19 +992,19 @@
         if (!items.length) { e.preventDefault && e.preventDefault(); return; }
         var first = items[0];
         var last = items[items.length - 1];
-        var active = document.activeElement;
         var inside = active && self.popupElement.contains && self.popupElement.contains(active);
         if (e.shiftKey && (active === first || !inside)) { e.preventDefault && e.preventDefault(); _focus(last); }
         else if (!e.shiftKey && (active === last || !inside)) { e.preventDefault && e.preventDefault(); _focus(first); }
       };
-      document.addEventListener('keydown', this._boundKeys, true);
+      document.addEventListener('keydown', this._boundKeys);
     }
 
     _focusOut() {
       if (this._boundKeys) {
-        document.removeEventListener('keydown', this._boundKeys, true);
+        document.removeEventListener('keydown', this._boundKeys);
         this._boundKeys = null;
       }
+      _openStack = _openStack.filter(function (p) { return p !== this; }, this);
       var back = this._returnFocus;
       this._returnFocus = null;
       if (!this.options.manageFocus || !back) return;
@@ -1011,6 +1036,12 @@
 
     destroy() {
       _log('destroy → ' + this.name);
+      // Destroyed while open: drop the key handler and the focus trap with it,
+      // or Tab would stay locked on the whole page.
+      if (this.isVisible) {
+        this.isVisible = false;
+        this._focusOut();
+      }
       if (this._boundHandleMouseOut) {
         document.documentElement.removeEventListener('mouseout', this._boundHandleMouseOut);
       }

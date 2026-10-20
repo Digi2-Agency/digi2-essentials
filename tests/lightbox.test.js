@@ -313,8 +313,9 @@ test('close slot click and Escape both close and restore body scroll', () => {
 
   env.dispatchDoc('click', thumb);
   assert.equal(lb(env).isOpen(), true);
-  env.dispatchDoc('keydown', env.body, { key: 'Escape' });
+  const esc = env.dispatchDoc('keydown', env.body, { key: 'Escape' });
   assert.equal(lb(env).isOpen(), false);
+  assert.equal(esc.defaultPrevented, true, 'marked handled — a popup underneath must not close too');
 });
 
 test('clicking the modal root (backdrop) closes, clicking the image does not', () => {

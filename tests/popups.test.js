@@ -1866,3 +1866,68 @@ test('a11y: focus goes to the close button even when a field comes first; close 
   inst.hide();
   assert.equal(env.document.activeElement, other);
 });
+
+test('a11y: destroy() while open drops the key handler — Tab is not locked on the page', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst, send } = a11yPopup(env);
+  inst.show();
+  env.window.digi2.popups.destroy('promo');
+  assert.equal(inst.isVisible, false);
+  env.document.activeElement = send;
+  const tab = env.dispatchDoc('keydown', send, { key: 'Tab' });
+  assert.equal(tab.defaultPrevented, false, 'no trap left behind');
+});
+
+test('a11y: only the top window answers keys; an event another layer handled is left alone; focus in a lightbox or another aria-modal is not pulled back', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const a = a11yPopup(env);
+  a.inst.show();
+  // A second window over it (e.g. a d2-ma popup over a site modal).
+  const overlayB = createElement('div', { class: 'popup__b' });
+  const closeB = focusable(env, 'button', { class: 'b__close' });
+  overlayB.appendChild(closeB);
+  env.body.appendChild(overlayB);
+  const b = env.window.digi2.popups.create('b', { popupSelector: '.popup__b', animation: 'none', openOnLoad: false, closeTriggerSelector: '.b__close' });
+  b.isVisible = true;
+  b._focusIn();
+  env.document.activeElement = env.body; // focus dropped to the page (e.g. a click on the backdrop)
+  env.dispatchDoc('keydown', env.body, { key: 'Escape' });
+  assert.equal(b.isVisible, false, 'top window closed');
+  assert.equal(a.inst.isVisible, true, 'the one underneath stays');
+
+  const handled = env.dispatchDoc('keydown', a.send, { key: 'Escape', defaultPrevented: true });
+  assert.equal(a.inst.isVisible, true, 'Esc already handled by another layer');
+  void handled;
+
+  const lb = createElement('div', { 'd2-lightbox-modal': 'flex' });
+  const img = focusable(env, 'button', {});
+  lb.appendChild(img);
+  env.body.appendChild(lb);
+  img.focus();
+  const tab = env.dispatchDoc('keydown', img, { key: 'Tab' });
+  assert.equal(tab.defaultPrevented, false);
+  assert.equal(env.document.activeElement, img, 'trap leaves the lightbox focus alone');
+  env.dispatchDoc('keydown', img, { key: 'Escape' });
+  assert.equal(a.inst.isVisible, true, 'Esc in the lightbox does not close the popup underneath');
+
+  const modal = createElement('div', { 'aria-modal': 'true' });
+  const field = focusable(env, 'input', {});
+  modal.appendChild(field);
+  env.body.appendChild(modal);
+  field.focus();
+  assert.equal(env.dispatchDoc('keydown', field, { key: 'Tab' }).defaultPrevented, false);
+});
+
+test('a11y: a popup hidden by the page without hide() (getClientRects empty) does not trap keys', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const { inst, overlay, send } = a11yPopup(env);
+  inst.show();
+  overlay.getClientRects = () => [];
+  env.document.activeElement = send;
+  assert.equal(env.dispatchDoc('keydown', send, { key: 'Tab' }).defaultPrevented, false);
+  env.dispatchDoc('keydown', send, { key: 'Escape' });
+  assert.equal(inst.isVisible, true);
+});
