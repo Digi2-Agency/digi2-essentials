@@ -174,7 +174,7 @@ function strona(opts) {
     addEventListener(n, f) { (naOknie[n] = naOknie[n] || []).push(f); },
     document,
     dataLayer,
-    location: { origin: 'https://demo.example', hostname: 'demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
+    location: { origin: 'https://demo.example', host: 'demo.example', hostname: 'demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
     localStorage: {
       getItem(k) { return k === 'consentModeV2' && o.zgoda ? JSON.stringify(o.zgoda) : null; },
     },
@@ -2439,17 +2439,18 @@ test('#5: popup zastąpiony przez inny węzeł tego samego szablonu oddaje swoj�
   assert.ok(sc.drugi.freq.a1, 'pokazany ma wpis');
 });
 
-test('popup z szablonu: link przycisku tylko https na hoście strony albo 2destate — obcy host i http odpadają', async () => {
+test('popup z szablonu: link przycisku tylko https na hoście strony (z portem) — 2destate, obcy host, http i dane logowania odpadają', async () => {
   const cta = (href) => ({ templateId: 'last-unit', blocks: [{ type: 'title', text: 'T' }, { type: 'cta', label: 'Idź', action: 'link', href }] });
-  for (const [href, ok] of [['https://demo.example/cennik', true], ['https://app.2destate.com/x', true], ['https://2destate.com/', true],
+  for (const [href, ok] of [['https://demo.example/cennik', true], ['/kontakt', true],
+    ['https://evil.booking.2destate.com/', false], ['https://acme.booking.2destate.com/', false], ['https://2destate.com/', false],
     ['https://evil.example/login', false], ['http://demo.example/cennik', false], ['https://demo.example.evil.com/', false],
-    ['https://not2destate.com/', false]]) {
+    ['https://demo.example:8443/', false], ['https://user:pass@demo.example/', false], ['https://user@demo.example/', false], ['https://:sekret@demo.example/', false]]) {
     const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [cta(href)] } }));
     const { okno } = oknoPopupu(env);
     const a = okno.children.find((c) => c.tagName === 'A');
     assert.equal(!!a, ok, href);
-    if (ok) assert.equal(a.getAttribute('href'), new URL(href).href);
-    else assert.ok(env.ostrzezenia.some((w) => w.includes('cta link needs an https href on this site or 2destate')), href);
+    if (ok) assert.equal(a.getAttribute('href'), new URL(href, 'https://demo.example/oferta').href);
+    else assert.ok(env.ostrzezenia.some((w) => w.includes('cta link needs an https href on this site')), href);
   }
 });
 

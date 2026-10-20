@@ -488,15 +488,15 @@
   }
 
   // Link przycisku z szablonu panelu (§13.9.3): publiczny JSON koperty nie może
-  // prowadzić na obcą domenę w wyglądzie strony klienta - tylko https: na hoście
-  // strony albo na hoście 2destate. safeLink (link lokalu) zostaje bez zmian.
-  var PAGE_LINK_HOSTS = /(^|\.)2destate\.com$/;
+  // prowadzić poza stronę w wyglądzie strony klienta - tylko https: na tym samym
+  // hoście z portem, bez danych logowania w adresie. Nawet *.2destate.com nie:
+  // pod {slug}.booking.2destate.com stoją portale innych klientów. Do 2destate
+  // prowadzi open_unit (safeLink, bez zmian).
   function safePageLink(v) {
     var l = window.location || {};
     try {
       var u = new URL(v, l.href);
-      if (u.protocol !== 'https:') return null;
-      if (u.hostname === l.hostname || PAGE_LINK_HOSTS.test(u.hostname)) return u.href;
+      if (u.protocol === 'https:' && !u.username && !u.password && l.host && u.host === l.host) return u.href;
     } catch (e) {}
     return null;
   }
@@ -1817,7 +1817,7 @@
       if (typeof b.label !== 'string' || !b.label.length || b.label.length > 40 || !fieldsKnown(b.label)) { _warn(where + ' — cta label missing or > 40, skipped'); return null; }
       if (b.action !== 'open_unit' && b.action !== 'contact' && b.action !== 'link') { _warn(where + ' — cta action must be open_unit, contact or link, skipped'); return null; }
       if (b.action === 'link' && !(typeof b.href === 'string' && safePageLink(b.href))) {
-        _warn(where + ' — cta link needs an https href on this site or 2destate, skipped');
+        _warn(where + ' — cta link needs an https href on this site, skipped');
         return null;
       }
       out.label = b.label;

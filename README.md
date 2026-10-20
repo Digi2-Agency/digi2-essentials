@@ -1254,10 +1254,12 @@ segment }` in `state.scenarios[scenarioId].nodes`.
     `text` (≤ 300, `fallback`), `image` (`src`: `{{unit.image}}` or `https:` on
     the page host / `media.digi2.app`; `alt` ≤ 120), `cta` (`label` ≤ 40,
     `action`: `open_unit` | `contact` | `link`). A `link` `href` must be
-    `https:` on the page's host or a `2destate.com` host — the envelope is
-    public JSON, and a button to a foreign domain in the client's own look
-    would be a phishing tool; anything else drops the block with
-    `console.warn`. `contact` has no address of its own: the click doesn't
+    `https:` on **the page's own host** (`host`, port included) and carry no
+    user name or password — the envelope is public JSON, and a button to
+    another site in the client's own look would be a phishing tool. Not even
+    `*.2destate.com`: `{slug}.booking.2destate.com` hosts other clients'
+    portals. Anything else drops the block with `console.warn`; 2destate is
+    reached through `open_unit`. `contact` has no address of its own: the click doesn't
     jump to `#`. Texts
     may use the §13.9.2 fields; a field without a value shows `fallback` or
     drops the block — never "null". The popup's CTA behaviour comes from the

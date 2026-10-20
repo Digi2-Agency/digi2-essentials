@@ -15,6 +15,8 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   i kolory oraz font z tokenów strony. Wygląd zmienia się publikacją w panelu,
   bez zmian w Webflow. Własny popup strony zawsze ma pierwszeństwo.
 - Tylko tekst, nigdy HTML. Błędne pola są pomijane z ostrzeżeniem w konsoli.
+- Przycisk-link z szablonu prowadzi wyłącznie na stronę, na której stoi popup
+  (ta sama domena i port, tylko https). Do 2destate prowadzi „Zobacz lokal”.
 - Popup czekający na zamknięcie dymku mapy, zastąpiony popupem z innego
   scenariusza, nie zużywa swojej częstotliwości. Pokaże się następnym razem.
 
