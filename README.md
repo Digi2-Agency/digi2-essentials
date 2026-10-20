@@ -1447,6 +1447,30 @@ nodes gets no extra listener. Before consent nothing is collected.
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
 
+### Hot lead comes back (ma.9 draft, MA-D38 stage 1)
+
+Opt-in with `d2-ma-hot-lead` on the loader tag. Contract: 2destate
+`docs/ma-hot-lead.md` (draft); 2destate's routes go live only after Piotr
+approves the signing key.
+
+- **Token:** a `window` event `d2:lead-token` with `detail.token` (never the
+  dataLayer — the pseudonym would reach GTM/GA). Stored in `d2ma` **only with
+  consent**; without it the event is dropped at once. The token is opaque:
+  the module reads only `v`, `exp` (cleanup) and `site` (must equal
+  `location.host`, else ignored).
+- **Visit signal:** `POST {d2-ma-products-api}/public/ma/visit` with
+  `{ token, units, pageviews, source }` — up to 20 unique 2destate unit ids
+  viewed this visit, page views of the visit (1–50), `source` `direct` or `ad`
+  (a visit with UTM). Once per visit, then only when new units were viewed and
+  at most every 5 minutes. Never in the visit where the form was sent. No
+  form data, no UTM values, no URLs; no credentials.
+- **Answers:** 401 / 403 → token removed, no retry; 429 → wait `Retry-After`;
+  202 → done.
+- **"Clear" and consent withdrawn:** first `POST /public/ma/revoke {token}`,
+  then the token goes locally whatever the answer.
+- Who dispatches `d2:lead-token` is open: d2-forms doesn't submit forms
+  itself.
+
 ### Page conditions (ma.5, §13.11.2a)
 
 Personalisation decided in the browser from the `d2ma` profile, with attributes

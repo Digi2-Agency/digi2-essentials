@@ -111,6 +111,7 @@ function strona(opts) {
   const dataLayer = o.dataLayer || [];
   const popupy = [];
   const webhooki = [];
+  const sygnaly = [];
   const ostrzezenia = [];
   const zdarzenia = {};
   const sluchacze = {};
@@ -210,6 +211,11 @@ function strona(opts) {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
     }
+    if (url.indexOf('/public/ma/') >= 0) {
+      sygnaly.push({ url, body: JSON.parse(init.body), init });
+      const st = (o.statusSygnalu && o.statusSygnalu(url)) || 202;
+      return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
+    }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
       webhooki.push({ url, body: JSON.parse(init.body) });
       return Promise.resolve({ ok: true, status: 200 });
@@ -228,7 +234,7 @@ function strona(opts) {
     setInterval() { return 0; },
     clearInterval() {},
     Date: FakeDate,
-    JSON, Math, Intl, URL, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array,
+    JSON, Math, Intl, URL, URLSearchParams, Promise, Object, Array, String, Number, isFinite, parseFloat, parseInt, Uint8Array, atob,
     fetch,
   });
   if (o.bezUnicodeRegExp) {
@@ -241,7 +247,7 @@ function strona(opts) {
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
-    window, zegar, dataLayer, popupy, webhooki, ostrzezenia, zdarzenia, ma: window.digi2.ma,
+    window, zegar, dataLayer, popupy, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
     polaFormularza: () => dataLayer.filter((e) => e && e.event === 'ma_form_field').map((e) => ({ ...e })),
     async gotowe() { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); },
@@ -1647,8 +1653,8 @@ test('map_mark: strona bez 2destate — pominięty; mapa w trakcie ładowania �
 });
 
 test('minScript wyższy niż ma.4 ostrzega, scenariusze bez nowych węzłów działają', async () => {
-  const env = await start({ koperta: koperta([POWROT], { minScript: 'ma.9' }) });
-  assert.ok(env.ostrzezenia.some((w) => w.includes('needs d2-ma ma.9')));
+  const env = await start({ koperta: koperta([POWROT], { minScript: 'ma.99' }) });
+  assert.ok(env.ostrzezenia.some((w) => w.includes('needs d2-ma ma.99')));
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   assert.equal(env.ma.history().length, 1);
@@ -2478,4 +2484,97 @@ test('#10: nowa koperta ze zmienionym szablonem przebudowuje popup (d2-ma-refres
   assert.equal(zbudowane.length, 1, 'stary szkielet usunięty');
   assert.match(oknoPopupu(env).okno.style.cssText, /max-width:520px/);
   assert.equal(env.popupy.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// ma.9 (szkic): gorący lead wraca — MA-D38 etap 1, kontrakt 2destate (DRAFT)
+// ---------------------------------------------------------------------------
+
+function token(payload) {
+  const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return b(Object.assign({ v: 1, kid: 'k1', p: 'pseudo-1', exp: Math.floor(START / 1000) + 90 * 86400, site: 'demo.example' }, payload || {})) + '.c2lnbmF0dXJh';
+}
+
+const UID = (n) => 'aaaaaaaa-bbbb-4ccc-8ddd-' + String(n).padStart(12, '0');
+const HOT = { 'd2-ma-hot-lead': '' };
+
+test('MA-D38: token z d2:lead-token zapisany tylko po zgodzie; bez zgody odrzucony; zły kształt, wygasły albo obcy site — odrzucony', async () => {
+  const bez = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT });
+  bez.okno('d2:lead-token', { detail: { token: token() } });
+  await bez.gotowe();
+  assert.equal(bez.ma.profile(), null);
+  assert.ok(!JSON.stringify(bez._dysk).includes('pseudo'), 'bez zgody nic nie zapisane');
+
+  for (const [t, ok] of [[token(), true], ['abc', false], [token({ v: 2 }), false], [token({ site: 'evil.example' }), false],
+    [token({ exp: Math.floor(START / 1000) - 10 }), false]]) {
+    const env = await start({ koperta: koperta([]), cfg: HOT });
+    env.okno('d2:lead-token', { detail: { token: t } });
+    await env.gotowe();
+    assert.equal(!!(env._dysk.state && env._dysk.state.leadToken), ok, t);
+  }
+  const wylaczony = await start({ koperta: koperta([]) });
+  assert.equal((wylaczony.naOknie['d2:lead-token'] || []).length, 0, 'bez d2-ma-hot-lead nie słucha');
+});
+
+test('MA-D38: przy powrocie POST /public/ma/visit {token, units, pageviews, source}; przyrost lokali najwyżej co 5 min; bez danych formularza', async () => {
+  const p1 = await start({ koperta: koperta([]), cfg: HOT });
+  p1.okno('d2:lead-token', { detail: { token: token() } });
+  await p1.gotowe();
+  assert.equal(p1.sygnaly.length, 0, 'ta wizyta to formularz, nie powrót');
+  p1.ma.track({ unitId: UID(9), name: 'A9', source: '2destate' });
+  await p1.minie(6 * MIN);
+  assert.equal(p1.sygnaly.length, 0, 'także obejrzenie po formularzu w tej wizycie');
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly.length, 1);
+  assert.equal(p2.sygnaly[0].url, 'https://api.2destate.com/api/v1/public/ma/visit');
+  assert.deepEqual({ ...p2.sygnaly[0].body }, { token: token(), units: [], pageviews: 1, source: 'direct' });
+  assert.equal(p2.sygnaly[0].init.credentials, 'omit');
+  p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
+  await p2.gotowe();
+  assert.equal(p2.sygnaly.length, 1, 'nowy lokal, ale nie minęło 5 min');
+  await p2.minie(5 * MIN + 100);
+  assert.equal(p2.sygnaly.length, 2);
+  assert.deepEqual([...p2.sygnaly[1].body.units], [UID(1)]);
+  p2.ma.track({ unitId: 'A_ze_spoza_2destate', name: 'X' });
+  await p2.minie(6 * MIN);
+  assert.equal(p2.sygnaly.length, 2, 'lokal bez UUID 2destate nie jest przyrostem');
+  const p3 = await powrot(p2, 3 * MIN, { search: '' });
+  assert.equal(p3.sygnaly.length, 0, 'kolejna odsłona tej samej wizyty bez nowych lokali');
+});
+
+test('MA-D38: 401/403 usuwa token bez ponawiania; 429 czeka Retry-After', async () => {
+  for (const st of [401, 403]) {
+    const p1 = await start({ koperta: koperta([]), cfg: HOT, statusSygnalu: () => st });
+    p1.okno('d2:lead-token', { detail: { token: token() } });
+    await p1.gotowe();
+    const p2 = await powrot(p1, 26 * H);
+    assert.equal(p2.sygnaly.length, 1);
+    assert.ok(!p2._dysk.state.leadToken, st + ' usuwa token');
+    const p3 = await powrot(p2, 26 * H);
+    assert.equal(p3.sygnaly.length, 0);
+  }
+  const q1 = await start({ koperta: koperta([]), cfg: HOT, statusSygnalu: () => 429, retryAfter: '7200' });
+  q1.okno('d2:lead-token', { detail: { token: token() } });
+  await q1.gotowe();
+  const q2 = await powrot(q1, 26 * H);
+  const q3 = await powrot(q2, H);
+  assert.equal(q3.sygnaly.length, 0, 'w oknie Retry-After cisza');
+  assert.ok(q3._dysk.state.leadToken, 'token zostaje');
+});
+
+test('MA-D38: „Wyczyść” i wycofanie zgody — najpierw /public/ma/revoke z tokenem, potem usunięcie lokalne', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  env.okno('d2:lead-token', { detail: { token: token() } });
+  await env.gotowe();
+  await env.ma.clear();
+  assert.deepEqual(env.sygnaly.map((x) => [x.url.split('/').pop(), x.body.token]), [['revoke', token()]]);
+  assert.ok(!(env._dysk.state || {}).leadToken);
+
+  const e2 = await start({ koperta: koperta([], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, cfg: HOT });
+  e2.okno('d2:lead-token', { detail: { token: token() } });
+  await e2.gotowe();
+  e2.zgoda({ analytics_storage: 'denied' });
+  await e2.gotowe();
+  assert.deepEqual(e2.sygnaly.map((x) => x.url.split('/').pop()), ['revoke']);
+  assert.equal(e2._dysk.state, null);
 });
