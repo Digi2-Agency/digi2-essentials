@@ -1371,7 +1371,11 @@ nodes gets no extra listener. Before consent nothing is collected.
 - **`form_abandon`** — `focusin` / `input` / `change` on a field of a `form`
   (not hidden, submit or button; not inside `[d2-ma-ignore]`), then no
   `submit` and `idleSeconds` (10–600, default 60) without activity, or
-  `pagehide`. `formIds` limits it to forms by `id`, `data-name` or `name`.
+  `pagehide`. `formIds` limits it to forms by `id`, `data-name` or `name`;
+  only a missing field means "any form" — present, it must be a list of 1–20
+  names (1–80 chars), else the node is skipped with `console.warn` (an empty
+  list or a bare string never widens it to every form). A click counts even
+  without focus (Safari doesn't focus checkboxes, radios and selects).
   Once per form per visit — the visit it was abandoned in (`state.abandoned`).
   On `pagehide` nothing is sent: the module only stores the fact in
   `state.formExits` (`formId`, `data-name`, number of fields, time) and runs
@@ -1470,7 +1474,7 @@ never part of a counter.
 
 With a `form_abandon` trigger in the envelope, and only after consent, the
 module also measures each field of a form the visitor started — only forms the
-trigger watches (its `formIds`; none listed = any form):
+trigger watches (its `formIds`; no `formIds` field = any form):
 
 - **name** only from `name` / `data-name` or a static `<label for>` — never a
   placeholder or typed text; letters, digits, space, `_`, `-`, ≤ 40 chars

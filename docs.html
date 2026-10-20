@@ -2732,7 +2732,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><th>Trigger</th><th>Parameters</th><th>Fires when</th></tr>
       <tr><td><code>exit_intent</code></td><td>—</td><td>The mouse leaves the window through the top edge. Once a visit. <strong>Never on touch screens</strong> — there is no reliable signal; use <code>engagement</code> there</td></tr>
       <tr><td><code>engagement</code></td><td><code>minSeconds</code> (0–1800), <code>minScrollPct</code> (0–100), <code>utm: { source?, medium?, campaign? }</code> — at least one</td><td>On this page view: active time (tab visible) ≥ <code>minSeconds</code> <strong>and</strong> deepest scroll ≥ <code>minScrollPct</code> <strong>and</strong> the visit's UTM matches. Once a page view</td></tr>
-      <tr><td><code>form_abandon</code></td><td><code>formIds</code> (form <code>id</code> / <code>data-name</code>; empty = any), <code>idleSeconds</code> (10–600, default 60)</td><td>A field got focus, the form wasn't sent, and nothing happened for <code>idleSeconds</code> — or the visitor left the page. Once per form per visit</td></tr>
+      <tr><td><code>form_abandon</code></td><td><code>formIds</code> (form <code>id</code> / <code>data-name</code>, 1–20; leave the field out for any form — an empty list is an error), <code>idleSeconds</code> (10–600, default 60)</td><td>A field got focus, the form wasn't sent, and nothing happened for <code>idleSeconds</code> — or the visitor left the page. Once per form per visit</td></tr>
     </table>
     <table>
       <tr><th>Case</th><th>Behaviour</th></tr>

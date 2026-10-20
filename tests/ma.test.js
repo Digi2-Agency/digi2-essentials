@@ -2174,3 +2174,27 @@ test('MA-D13: tylko formularze z formIds wyzwalaczy; klik w pole to jedno wejśc
     assert.ok(!(env._dysk.state.formExits || []).some((x) => x.formId === 'newsletter'), 'poza formIds także bez zapisu wyjścia');
   }
 });
+
+test('form_abandon formIds: tylko brak pola = dowolny formularz; [], napis, null, > 20 albo pusty napis = węzeł pominięty', async () => {
+  for (const formIds of [[], 'kontakt', null, Array.from({ length: 21 }, (_, i) => 'f' + i), [''], [5]]) {
+    const env = await start({ koperta: koperta([scenariusz('p', { event: 'form_abandon', formIds }, [DL('ma_form_abandon')])]) });
+    assert.ok(env.ostrzezenia.some((w) => w.includes('formIds must be a list of 1–20 names')), JSON.stringify(formIds));
+    const a = formularz();
+    env.dom('focusin', { type: 'focusin', target: a.pole });
+    await env.minie(61000);
+    assert.equal(env.segmenty().length, 0, 'nie łapie każdego formularza: ' + JSON.stringify(formIds));
+  }
+});
+
+test('Safari: klik w checkbox bez fokusu liczy się i otwiera licznik porzucenia', async () => {
+  const k = koperta([scenariusz('p', { event: 'form_abandon' }, [DL('ma_form_abandon')])]);
+  const env = await start({ koperta: k });
+  const form = element({ id: 'kontakt' }, 'FORM');
+  const zgoda = element({ type: 'checkbox', name: 'zgoda' }, 'INPUT');
+  zgoda.parent = form;
+  env.dom('click', { type: 'click', target: zgoda });
+  env.dom('click', { type: 'click', target: zgoda });
+  await env.minie(61000);
+  assert.deepEqual(env.polaFormularza().map((x) => [x.field_name, x.clicks]), [['zgoda', 2]]);
+  assert.equal(env.segmenty().length, 1);
+});

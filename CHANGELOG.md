@@ -45,7 +45,8 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   konsoli i nie zmieniają segmentów profilu. Zdarzenie do `dataLayer` idzie jak
   dotąd.
 - Porzucony formularz i analityka pól liczą tylko formularze z `formIds`
-  wyzwalacza (bez listy: każdy).
+  wyzwalacza. Dowolny formularz tylko wtedy, gdy pola `formIds` w ogóle nie ma.
+  Pusta lista albo napis zamiast listy wyłączają ten węzeł z ostrzeżeniem.
 
 ### `d2-popups`
 

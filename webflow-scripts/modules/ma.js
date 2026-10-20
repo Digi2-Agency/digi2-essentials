@@ -764,6 +764,15 @@
       var ev = node.when && node.when.event;
       if (!TRIGGERS[ev]) { _warn(where + ' — unknown trigger event "' + ev + '", skipped'); return false; }
       var w = node.when;
+      // formIds: brak pola = dowolny formularz; pole obecne musi być listą 1–20 napisów
+      // (pusta lista albo napis nie znaczą „dowolny" - inaczej łapałyby wszystko).
+      if (ev === 'form_abandon' && Object.prototype.hasOwnProperty.call(w, 'formIds') && !(Array.isArray(w.formIds)
+        && w.formIds.length >= 1 && w.formIds.length <= 20 && w.formIds.every(function (f) {
+          return typeof f === 'string' && f.length >= 1 && f.length <= 80;
+        }))) {
+        _warn(where + ' — form_abandon formIds must be a list of 1–20 names, skipped');
+        return false;
+      }
       if (ev === 'engagement' && !(num(w.minSeconds) > 0 || num(w.minScrollPct) > 0 || (w.utm && typeof w.utm === 'object'))) {
         _warn(where + ' — engagement needs minSeconds, minScrollPct or utm, skipped');
         return false;
@@ -2233,8 +2242,8 @@
   }
 
   function formListed(w, formId) {
-    var ids = Array.isArray(w.formIds) ? w.formIds.map(String) : [];
-    return !ids.length || (formId != null && ids.indexOf(formId) >= 0);
+    if (w.formIds === undefined) return true;
+    return Array.isArray(w.formIds) && formId != null && w.formIds.indexOf(formId) >= 0;
   }
 
   function formWatched(id) {
@@ -2351,10 +2360,12 @@
     if (st) {
       // Klik w pole daje focusin i zaraz click - to jedno wejście, nie dwa.
       if (e.type === 'focusin') { st.clicks += 1; st.focusAt = Date.now(); if (st.since == null) st.since = Date.now(); }
-      else if (e.type === 'click' && st.since != null && Date.now() - st.focusAt > 500) st.clicks += 1;
+      // Safari nie daje fokusu checkboksom, radiom ani selectom po kliknięciu -
+      // click liczy się także bez fokusu, byle nie tuż po focusin.
+      else if (e.type === 'click' && !(st.focusAt != null && Date.now() - st.focusAt <= 500)) st.clicks += 1;
       else if (e.type === 'focusout' && st.since != null) { st.ms += Date.now() - st.since; st.since = null; }
     }
-    if (e.type !== 'focusout' && e.type !== 'click') armForm(ent);
+    if (e.type !== 'focusout') armForm(ent);
   }
 
   function hookForms() {
