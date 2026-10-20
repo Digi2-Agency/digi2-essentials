@@ -18,15 +18,21 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - **Bloki alternatywne**: kontener `d2-ma-variants` z blokami
   `d2-ma-variant="<nazwa>"`. Pokazuje się pierwszy pasujący, a gdy żaden nie
   pasuje, blok `default`.
-- **Ukrywa CSS strony**, nie skrypt: na stronie trzeba raz wkleić gotowy blok CSS
-  (README, docs.html). Bez zgody i bez historii zostaje treść domyślna. Błędny
-  warunek ukrywa element.
+- **Ukrywa CSS strony**, nie skrypt: każdy element z warunkami dostaje znacznik
+  `d2-ma-cond`, a na stronie trzeba raz wkleić gotowy blok CSS (README,
+  docs.html). Element z warunkiem bez znacznika skrypt ukrywa. Bez zgody i bez
+  historii zostaje treść domyślna. Błędny warunek ukrywa element.
 - **Podgląd** `?d2-ma-preview=2-pokoje`: pokazuje segment albo wariant bez zgody,
   bez zapisu i bez wysyłki do GA4.
 - **Popup** z takim warunkiem na nakładce otworzy się dopiero, gdy warunek
   pasuje (veto w module popupów, tylko gdy na stronie jest d2-ma).
 - **Segmenty w profilu**: `ma_segment` dodaje segment, `ma_segment_exit` zdejmuje
-  wszystkie.
+  ten sam. Trzymane tak długo jak historia.
+- **Obraz i wideo w podmianie treści**: `content` z `image` albo `video`
+  (YouTube i Vimeo bez ciasteczek, tylko po zgodzie marketingowej, wcześniej
+  plakat z podpisem; MP4 z domeny strony).
+- **Analityka pól formularza**: czas i kliknięcia na każdym polu (nazwa pola,
+  nigdy treść) jako `ma_form_field` przy porzuceniu albo wysłaniu.
 - **`frequency: "every_time"`** dla podmiany tekstu i mapy: zmiana wraca na każdej
   odsłonie, nie tylko na pierwszej.
 - **`map_order`**: lokale pasujące do preferencji na początku listy 2destate

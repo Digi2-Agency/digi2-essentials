@@ -119,9 +119,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-webflow` | webflow | 3.4 KB | Fire a Webflow (IX2) interaction by name from custom code |
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
-| `d2-ma="<url>"` | ma | 51.9 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-ma="<url>"` | ma | 57.7 KB | Marketing automation (demo, contract v0 + §13.8 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
 
-Total (all modules): **332.3 KB min** / **106.0 KB** gzipped.
+Total (all modules): **338.2 KB min** / **107.9 KB** gzipped.
 
 ---
 
@@ -1392,10 +1392,11 @@ on any element — no code, nothing sent anywhere. Every attribute also works as
 `data-d2-ma-*`.
 
 ```html
+<!-- d2-ma-cond marks every element with conditions (the page CSS hides it) -->
 <!-- show when it matches; several attributes on one element = AND -->
-<div d2-ma-show-visits="3+/30d" d2-ma-show-segment="2-pokoje|3-pokoje">…</div>
+<div d2-ma-cond d2-ma-show-visits="3+/30d" d2-ma-show-segment="2-pokoje|3-pokoje">…</div>
 <!-- hide when it matches; a hide beats a show -->
-<div d2-ma-hide-lead="true">…</div>
+<div d2-ma-cond d2-ma-hide-lead="true">…</div>
 <!-- alternatives: the first matching variant wins, else "default" -->
 <div d2-ma-variants>
   <h1 d2-ma-variant="2-pokoje" d2-ma-show-pref-rooms="2">Dwa pokoje dla Ciebie</h1>
@@ -1421,21 +1422,26 @@ keys = two elements or variants. A minus is only ever a floor/rooms value,
 never part of a counter.
 
 - **Segments:** a `datalayer` action with `ma_segment` stores its segment in
-  `state.segments` (name → time); `ma_segment_exit` (leaving the sales groups)
-  removes them all.
-- **The page hides, the module decides.** The module only sets attributes:
-  `d2-ma-shown` when every show condition holds and no hide does,
-  `d2-ma-hidden` when a hide holds or a condition is malformed, and on
-  variants `d2-ma-shown` on the chosen block plus `d2-ma-matched` on the
-  container. It never injects `<style>` (CSP), so the page carries this CSS
-  once (Webflow → Site Settings → Custom Code → Head):
+  `state.segments` (name → time); `ma_segment_exit` removes **its own**
+  `params.segment`. Without `params.segment` either action warns and changes
+  nothing. Segments and visit starts (`state.visitLog`) follow
+  `storage.retentionDays` like the history; "Clear" and a consent wipe drop
+  them with the rest of the profile. They live in the `state` record of `d2ma`,
+  not in a store of their own, so no IndexedDB upgrade for existing visitors.
+- **The page hides, the module decides.** Every element with conditions carries
+  the bare marker `d2-ma-cond` (CSS cannot select `[d2-ma-show-*]`). The module
+  only sets attributes: `d2-ma-shown` when every show condition holds and no
+  hide does (an element with only `d2-ma-hide-*` gets it while its exclusion
+  doesn't match), `d2-ma-hidden` when a hide holds or a condition is malformed,
+  and on variants `d2-ma-shown` on the chosen block plus `d2-ma-matched` on the
+  container (variant blocks need no marker). An element with conditions but
+  without `d2-ma-cond` — a typo in Webflow — gets `hidden` from the script and a
+  `console.warn`, so conditional content never shows to everyone. The script
+  never injects `<style>` (CSP), so the page carries this CSS once (Webflow →
+  Site Settings → Custom Code → Head):
 
   ```css
-  [d2-ma-show-visits]:not([d2-ma-shown]), [d2-ma-show-views]:not([d2-ma-shown]),
-  [d2-ma-show-views-rooms]:not([d2-ma-shown]), [d2-ma-show-views-floor]:not([d2-ma-shown]),
-  [d2-ma-show-views-unit]:not([d2-ma-shown]), [d2-ma-show-segment]:not([d2-ma-shown]),
-  [d2-ma-show-lead]:not([d2-ma-shown]), [d2-ma-show-pref-rooms]:not([d2-ma-shown]),
-  [d2-ma-show-pref-floor]:not([d2-ma-shown]), [d2-ma-hidden],
+  [d2-ma-cond]:not([d2-ma-shown]),
   [d2-ma-variant]:not([d2-ma-variant="default"]):not([d2-ma-shown]),
   [d2-ma-variants][d2-ma-matched] > [d2-ma-variant="default"] { display: none; }
   ```
@@ -1456,6 +1462,49 @@ never part of a counter.
   script storage after 7 days without interaction, so a `/30d` window on
   Safari sees about a week.
 
+### Form field analytics (ma.5, MA-D13)
+
+With a `form_abandon` trigger in the envelope, and only after consent, the
+module also measures each field of a form the visitor started:
+
+- **name** only from `name` / `data-name` or a static `<label for>` — never a
+  placeholder or typed text; letters, digits, space, `_`, `-`, ≤ 40 chars; a
+  name that looks like an e-mail or a phone number becomes `pole-N`;
+- **time on the field** (focus → blur, ms) and **focuses and clicks on that
+  field** — nothing outside form fields;
+- never values; `type="password"` / `hidden`, and any field or form inside
+  `d2-ma-ignore`, are skipped; at most 20 fields per form.
+
+On abandonment (idle) or on submit it pushes one `ma_form_field` per field —
+`{ form_id, field_name, time_ms, clicks }` — once per form. When the visitor
+leaves the page, the numbers go into the stored form exit and are pushed on the
+next page view, like the scenario itself. `ma_form_abandon` from a `datalayer`
+action carries `fields_touched` next to `form_id`.
+
+### Image and video in `content` (ma.5, MA-D14)
+
+`content` takes exactly one of `text`, `templateId`, `image` or `video`:
+
+- **`image: { src, alt }`** — `src` `https:` on the page's host or the panel's
+  image CDN (`media.digi2.app`, MA-D19), `alt` ≤ 120. A slot that is an `<img>`
+  gets `src` / `alt`; any other slot gets an `<img>` built by the script in
+  place of its children.
+- **`video: { provider, id | src, poster? }`** — `youtube` (11-char id) and
+  `vimeo` (numeric id) are embedded by the script as an `<iframe>`
+  (`youtube-nocookie.com/embed/<id>`, `player.vimeo.com/video/<id>?dnt=1`,
+  `sandbox="allow-scripts allow-same-origin allow-presentation"`,
+  `referrerpolicy="strict-origin-when-cross-origin"`), and **only after
+  marketing consent** (`ad_storage`, or the category in `d2-ma-video-consent`)
+  because the embed sets cookies. Until then the slot shows the `poster` from
+  the panel CDN (never a YouTube thumbnail) and "Wideo po zgodzie na
+  ciasteczka"; a `gtag('consent', 'update', …)` granting it swaps in the player.
+  `mp4` (`src` on the page host or the CDN) becomes a `<video controls>`.
+  The page's CSP has to allow `frame-src` for `www.youtube-nocookie.com` /
+  `player.vimeo.com`.
+- Everything is built with `createElement`, never HTML from the envelope. A
+  value outside these rules makes the node invalid with `console.warn`. "Clear"
+  and a consent wipe put the slot's original children / `src` back.
+
 ### State actions: `every_time`, `map_order` (ma.5)
 
 - **`frequency: "every_time"`** — only for `content`, `map_mark` and
@@ -1468,7 +1517,7 @@ never part of a counter.
   `map_mark` → `d2estate.setProductOrder(mapName, ids)` (the units first, the
   rest in their order; `null` = the map orders itself after load). Without
   `setProductOrder` (2destate before that release) → `console.info`, no
-  fallback.
+  fallback. "Clear" and a consent wipe call `setProductOrder(mapName, [])`.
 
 ### API
 

@@ -2778,7 +2778,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     <h2>Page Conditions</h2>
     <p>From <code>v1.9.0-ma.5</code>: show, hide or swap content by what the visitor's own browser knows — attributes only, decided from the <code>d2ma</code> profile, nothing sent anywhere. Several attributes on one element must all match; a hide beats a show.</p>
     <pre><code><span class="comment">&lt;!-- 3 visits in the last 30 days and in segment 2-pokoje --&gt;</span>
-&lt;div <span class="prop">d2-ma-show-visits</span>=<span class="string">"3+/30d"</span> <span class="prop">d2-ma-show-segment</span>=<span class="string">"2-pokoje"</span>&gt;…&lt;/div&gt;
+&lt;div <span class="prop">d2-ma-cond</span> <span class="prop">d2-ma-show-visits</span>=<span class="string">"3+/30d"</span> <span class="prop">d2-ma-show-segment</span>=<span class="string">"2-pokoje"</span>&gt;…&lt;/div&gt;
 
 <span class="comment">&lt;!-- first matching variant wins, otherwise the default --&gt;</span>
 &lt;div <span class="prop">d2-ma-variants</span>&gt;
@@ -2793,7 +2793,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>d2-ma-show-views</code></td><td>counter</td><td>Units viewed</td></tr>
       <tr><td><code>d2-ma-show-views-rooms</code> / <code>-views-floor</code></td><td><code>3:2+</code>, <code>-1:1+</code></td><td>Units with that room count / floor viewed N times</td></tr>
       <tr><td><code>d2-ma-show-views-unit</code></td><td><code>&lt;unitId&gt;:1+</code></td><td>That unit viewed</td></tr>
-      <tr><td><code>d2-ma-show-segment</code></td><td><code>2-pokoje|3-pokoje</code></td><td>The profile has the segment (set by an <code>ma_segment</code> action; <code>ma_segment_exit</code> clears them)</td></tr>
+      <tr><td><code>d2-ma-show-segment</code></td><td><code>2-pokoje|3-pokoje</code></td><td>The profile has the segment (added by an <code>ma_segment</code> action, removed by <code>ma_segment_exit</code> with the same <code>params.segment</code>; kept as long as the history)</td></tr>
       <tr><td><code>d2-ma-show-lead</code></td><td><code>true</code> | <code>false</code></td><td>Lead flag</td></tr>
       <tr><td><code>d2-ma-show-pref-rooms</code> / <code>-pref-floor</code></td><td><code>2|3</code>, <code>-1|0</code></td><td>The preference is exactly that</td></tr>
       <tr><td><code>d2-ma-hide-&lt;key&gt;</code></td><td>the same</td><td>Hidden when it matches</td></tr>
@@ -2813,21 +2813,31 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     </table>
 
     <h3>CSS on the page</h3>
-    <p>The script never injects styles, so add this once in <strong>Site Settings → Custom Code → Head</strong>:</p>
-    <pre><code>[d2-ma-show-visits]:not([d2-ma-shown]), [d2-ma-show-views]:not([d2-ma-shown]),
-[d2-ma-show-views-rooms]:not([d2-ma-shown]), [d2-ma-show-views-floor]:not([d2-ma-shown]),
-[d2-ma-show-views-unit]:not([d2-ma-shown]), [d2-ma-show-segment]:not([d2-ma-shown]),
-[d2-ma-show-lead]:not([d2-ma-shown]), [d2-ma-show-pref-rooms]:not([d2-ma-shown]),
-[d2-ma-show-pref-floor]:not([d2-ma-shown]), [d2-ma-hidden],
+    <p>Every element with conditions carries the bare marker <code>d2-ma-cond</code> (variant blocks don't need it). The script never injects styles, so add this once in <strong>Site Settings → Custom Code → Head</strong>:</p>
+    <pre><code>[d2-ma-cond]:not([d2-ma-shown]),
 [d2-ma-variant]:not([d2-ma-variant="default"]):not([d2-ma-shown]),
 [d2-ma-variants][d2-ma-matched] &gt; [d2-ma-variant="default"] { <span class="prop">display</span>: none; }</code></pre>
+    <p class="muted">An element with <code>d2-ma-show-*</code> / <code>d2-ma-hide-*</code> but no <code>d2-ma-cond</code> gets <code>hidden</code> from the script and a <code>console.warn</code> — a typo never shows conditional content to everyone.</p>
 
     <h3>State actions</h3>
     <table>
       <tr><th>Node</th><th>Behaviour</th></tr>
       <tr><td><code>frequency: "every_time"</code></td><td>Only for <code>content</code>, <code>map_mark</code>, <code>map_order</code>: re-applied on every page load once the path reached it. Needs <code>minScript: "ma.5"</code></td></tr>
-      <tr><td><code>map_order</code></td><td><code>by</code>, <code>limit</code> (1–50, 20): best-matching units first in the 2destate list (<code>setProductOrder</code>). Without that method in 2destate — skipped, no fallback</td></tr>
+      <tr><td><code>map_order</code></td><td><code>by</code>, <code>limit</code> (1–50, 20): best-matching units first in the 2destate list (<code>setProductOrder</code>). Without that method in 2destate — skipped, no fallback. "Clear" restores the order</td></tr>
     </table>
+
+    <h3>Image and video in <code>content</code></h3>
+    <table>
+      <tr><th>Field</th><th>Allowed</th><th>Result</th></tr>
+      <tr><td><code>image: { src, alt }</code></td><td><code>https:</code> on the site's host or <code>media.digi2.app</code>; <code>alt</code> ≤ 120</td><td>An <code>&lt;img&gt;</code> slot gets <code>src</code>/<code>alt</code>; another slot gets an <code>&lt;img&gt;</code> inside</td></tr>
+      <tr><td><code>video: { provider: "youtube", id }</code></td><td>11-character id</td><td><code>youtube-nocookie.com</code> frame, sandboxed — <strong>only after marketing consent</strong> (<code>ad_storage</code>); before it the <code>poster</code> and "Wideo po zgodzie na ciasteczka"</td></tr>
+      <tr><td><code>video: { provider: "vimeo", id }</code></td><td>numeric id</td><td><code>player.vimeo.com</code> frame with <code>dnt=1</code>, same consent rule</td></tr>
+      <tr><td><code>video: { provider: "mp4", src }</code></td><td><code>https:</code> on the site's host or the CDN</td><td><code>&lt;video controls&gt;</code></td></tr>
+    </table>
+    <p class="muted">Built with <code>createElement</code> — never HTML from the panel. The site's CSP must allow <code>frame-src</code> for the two video hosts. "Clear" puts the original back.</p>
+
+    <h3>Form field analytics</h3>
+    <p>With a <code>form_abandon</code> trigger and consent, each touched field (≤ 20 per form) is measured: name from <code>name</code> / <code>data-name</code> / <code>&lt;label for&gt;</code> (an e-mail- or phone-like name becomes <code>pole-N</code>), time on the field and its focuses/clicks — never values; passwords, hidden fields and <code>d2-ma-ignore</code> are skipped. On abandonment or submit: one <code>ma_form_field</code> per field — <code>{ form_id, field_name, time_ms, clicks }</code>; after leaving the page, on the next page view.</p>
   </section>
 
   <section id="ma-webflow">

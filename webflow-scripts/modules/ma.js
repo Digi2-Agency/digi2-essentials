@@ -74,6 +74,8 @@
  *
  * ─── Page conditions (ma.5, §13.11.2a) ─────────────────────────────────────
  *
+ *   [d2-ma-cond]                  Required marker on every element with conditions
+ *                                 (page CSS: [d2-ma-cond]:not([d2-ma-shown]){display:none})
  *   [d2-ma-show-<key>="value"]    Show when it matches; several = AND, | = OR.
  *                                 visits / views "3+/30d" "3" "0..2", views-rooms /
  *                                 views-floor "3:2+" "-1:1+", views-unit "<id>:1+",
@@ -84,6 +86,9 @@
  *   ?d2-ma-preview=<name>         Preview a segment / variant, nothing stored
  *   frequency "every_time"        content / map_mark / map_order re-applied each page
  *   action map_order              d2estate.setProductOrder with the profile ranking
+ *   content image / video         <img>, YouTube / Vimeo frame (after ad_storage consent,
+ *                                 d2-ma-video-consent) or <video> for mp4, built by the script
+ *   ma_form_field                 Per-field time and clicks (name only, never values)
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
@@ -140,7 +145,8 @@
   var STATE_ACTIONS = { content: 1, map_mark: 1, map_order: 1 };
   var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1, ma_exit_intent: 1, ma_engaged: 1, ma_form_abandon: 1, ma_content: 1 };
   // Parametry zdarzeń dataLayer z wyzwalacza albo akcji na ścieżce (§13.8.3).
-  var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id'], ma_content: ['slot', 'template_id'] };
+  var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
+    ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
   var SCRIPT_VERSION = 5;    // ma.5 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
@@ -781,8 +787,17 @@
       if (node['do'] === 'content') {
         var hasText = node.text != null;
         var hasTpl = node.templateId != null;
-        if (!SLOT_RE.test(String(node.slot || '')) || hasText === hasTpl) {
-          _warn(where + ' — content needs a slot and exactly one of text / a known templateId, skipped');
+        var kinds = [hasText, hasTpl, node.image != null, node.video != null].filter(Boolean).length;
+        if (!SLOT_RE.test(String(node.slot || '')) || kinds !== 1) {
+          _warn(where + ' — content needs a slot and exactly one of text / templateId / image / video, skipped');
+          return false;
+        }
+        if (node.image != null && !imageValid(node.image)) {
+          _warn(where + ' — content image needs an https src on this site or ' + MEDIA_HOSTS.join(', ') + ' and alt ≤ 120, skipped');
+          return false;
+        }
+        if (node.video != null && !videoValid(node.video)) {
+          _warn(where + ' — content video is not youtube (11-char id), vimeo (numeric id) or an mp4 on an allowed host, skipped');
           return false;
         }
         if (hasText && !contentTextValid(node.text)) {
@@ -940,7 +955,7 @@
       if (done.indexOf(fk) >= 0) return null;
       done.push(fk);
       if (done.length > 50) done.shift();
-      ctx.signal = { form_id: f.formId || null };
+      ctx.signal = { form_id: f.formId || null, fields_touched: f.fields == null ? null : f.fields };
       return ctx;
     }
     if (evt.type === 'crm_call_result') {
@@ -1146,16 +1161,17 @@
         ctx = { unit: ctx.unit, segment: segment, t: ctx.t, signal: ctx.signal };
         state.lastSegment = segment;
         // Segmenty profilu dla d2-ma-show-segment (§13.11.3): ma_segment dodaje,
-        // ma_segment_exit to wyjście z grup sprzedażowych - zdejmuje wszystkie.
+        // ma_segment_exit zdejmuje swój. Bez params.segment koperta jest błędna.
         state.segments = state.segments || {};
-        if (node.event === 'ma_segment' && segment) state.segments[segment] = now();
-        else if (node.event === 'ma_segment_exit') state.segments = {};
+        if (!segment) _warn('scenario "' + sc.id + '": ' + node.event + ' "' + node.id + '" has no params.segment — profile segments unchanged');
+        else if (node.event === 'ma_segment') state.segments[segment] = now();
+        else delete state.segments[segment];
       }
       recordFrequency(st, node, ctx.unit);
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'datalayer', event: node.event, segment: segment });
     } else if (kind === 'content') {
-      var text = contentText(node, ctx.unit);
-      var n = text == null ? 0 : setSlot(node.slot, text);
+      var text = node.image || node.video ? '' : contentText(node, ctx.unit);
+      var n = text == null ? 0 : applyContent(node, text);
       // Pole bez wartości albo brak slotu na stronie: treść się nie zmienia, a dalsze
       // kroki (np. ma_content) by o tym kłamały - gałąź się kończy.
       if (!n) {
@@ -1341,8 +1357,161 @@
   }
 
   function restoreSlots() {
-    slotOriginals.forEach(function (o) { o.el.textContent = o.text; });
+    slotOriginals.forEach(function (o) {
+      if (o.kids) {
+        while (o.el.firstChild) o.el.removeChild(o.el.firstChild);
+        o.kids.forEach(function (k) { o.el.appendChild(k); });
+      } else if (o.img) {
+        ['src', 'alt'].forEach(function (a) {
+          if (o.img[a] == null) o.el.removeAttribute(a); else o.el.setAttribute(a, o.img[a]);
+        });
+      } else {
+        o.el.textContent = o.text;
+      }
+    });
     slotOriginals = [];
+    mountedVideos = [];
+  }
+
+  // Obraz i wideo w content (MA-D14): tylko https z domeny strony albo z CDN
+  // obrazów panelu, elementy budowane createElement - nigdy HTML z koperty.
+  var MEDIA_HOSTS = ['media.digi2.app'];
+  var YT_RE = /^[A-Za-z0-9_-]{11}$/;
+  var VIMEO_RE = /^[0-9]{6,12}$/;
+  var VIDEO_CAPTION = 'Wideo po zgodzie na ciasteczka';
+  var mountedVideos = [];    // { el, video } - wideo z embedem czeka na zgodę marketingową
+
+  function mediaUrl(v) {
+    var src = typeof v === 'string' ? safeImage(v) : null;
+    if (!src) return null;
+    var host = new URL(src).hostname;
+    var own = window.location && window.location.hostname;
+    return host === own || MEDIA_HOSTS.indexOf(host) >= 0 ? src : null;
+  }
+
+  function imageValid(img) {
+    return !!img && typeof img === 'object' && !!mediaUrl(img.src) && (img.alt == null || (typeof img.alt === 'string' && img.alt.length <= 120));
+  }
+
+  function videoValid(v) {
+    if (!v || typeof v !== 'object') return false;
+    if (v.poster != null && !mediaUrl(v.poster)) return false;
+    if (v.provider === 'youtube') return YT_RE.test(String(v.id || ''));
+    if (v.provider === 'vimeo') return VIMEO_RE.test(String(v.id || ''));
+    return v.provider === 'mp4' && !!mediaUrl(v.src);
+  }
+
+  // Zgoda na kategorię Consent Mode inną niż analityczna (wideo = marketingowa).
+  function categoryGranted(cat) {
+    var dl = window.dataLayer || [];
+    var def = null;
+    for (var i = dl.length - 1; i >= 0; i--) {
+      var e = dl[i];
+      if (!isGtagCommand(e) || !e[2] || typeof e[2] !== 'object') continue;
+      var v = e[2][cat];
+      if (v !== 'granted' && v !== 'denied') continue;
+      if (e[1] === 'update') return v === 'granted';
+      if (e[1] === 'default' && e[2].region == null && def === null) def = v === 'granted';
+    }
+    try {
+      var x = window.google_tag_data.ics.entries[cat];
+      if (x) {
+        var t = x.update !== undefined ? x.update : x['default'];
+        if (t === true || t === false) return t;
+      }
+    } catch (err) {}
+    if (def !== null) return def;
+    try {
+      var c = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) || 'null');
+      return !!(c && c[cat] === 'granted');
+    } catch (err2) { return false; }
+  }
+
+  function videoCategory() {
+    return _cfg('d2-ma-video-consent') || 'ad_storage';
+  }
+
+  function videoNode(v) {
+    var el;
+    if (v.provider === 'mp4') {
+      el = document.createElement('video');
+      el.setAttribute('src', mediaUrl(v.src));
+      el.setAttribute('controls', '');
+      el.setAttribute('playsinline', '');
+      el.setAttribute('preload', 'metadata');
+      if (v.poster) el.setAttribute('poster', mediaUrl(v.poster));
+      return el;
+    }
+    if (!categoryGranted(videoCategory())) {
+      // Bez zgody marketingowej - miniatura z CDN panelu i podpis, bez ramki YouTube / Vimeo.
+      el = document.createElement('div');
+      el.setAttribute('d2-ma-video-placeholder', '');
+      if (v.poster) {
+        var img = document.createElement('img');
+        img.setAttribute('src', mediaUrl(v.poster));
+        img.setAttribute('alt', '');
+        el.appendChild(img);
+      }
+      var cap = document.createElement('p');
+      cap.textContent = VIDEO_CAPTION;
+      el.appendChild(cap);
+      return el;
+    }
+    el = document.createElement('iframe');
+    el.setAttribute('src', v.provider === 'youtube'
+      ? 'https://www.youtube-nocookie.com/embed/' + v.id
+      : 'https://player.vimeo.com/video/' + v.id + '?dnt=1');
+    el.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-presentation');
+    el.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+    el.setAttribute('allow', 'fullscreen; picture-in-picture');
+    el.setAttribute('loading', 'lazy');
+    el.setAttribute('title', 'Wideo');
+    return el;
+  }
+
+  function remember(el, entry) {
+    for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === el) return;
+    entry.el = el;
+    slotOriginals.push(entry);
+  }
+
+  function mount(el, node) {
+    var kids = [];
+    while (el.firstChild) { kids.push(el.firstChild); el.removeChild(el.firstChild); }
+    remember(el, { kids: kids });
+    el.appendChild(node);
+  }
+
+  // Treść content w slotach: tekst, obraz albo wideo. Zwraca liczbę slotów.
+  function applyContent(node, text) {
+    if (!node.image && !node.video) return setSlot(node.slot, text);
+    if (!document.querySelectorAll) return 0;
+    var els = document.querySelectorAll('[d2-ma-slot="' + node.slot + '"], [data-d2-ma-slot="' + node.slot + '"]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (node.image && el.tagName === 'IMG') {
+        remember(el, { img: { src: el.getAttribute('src'), alt: el.getAttribute('alt') } });
+        el.setAttribute('src', mediaUrl(node.image.src));
+        el.setAttribute('alt', node.image.alt || '');
+      } else if (node.image) {
+        var img = document.createElement('img');
+        img.setAttribute('src', mediaUrl(node.image.src));
+        img.setAttribute('alt', node.image.alt || '');
+        mount(el, img);
+      } else {
+        mount(el, videoNode(node.video));
+        if (node.video.provider !== 'mp4') mountedVideos.push({ el: el, video: node.video });
+      }
+    }
+    return els.length;
+  }
+
+  // Zgoda marketingowa przyszła po wstawieniu miniatury - podmień na odtwarzacz.
+  function refreshVideos() {
+    mountedVideos.forEach(function (m) {
+      while (m.el.firstChild) m.el.removeChild(m.el.firstChild);
+      m.el.appendChild(videoNode(m.video));
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1378,6 +1547,16 @@
     return list.map(function (x) { return x.id; });
   }
 
+  var ordered = false;       // map_order przestawił listę na tej odsłonie
+
+  // „Wyczyść" (§13.2): lista 2destate wraca do swojej kolejności.
+  function resetOrder() {
+    var api = mapApi();
+    if (!ordered || !api || typeof api.setProductOrder !== 'function') return;
+    ordered = false;
+    try { mapNames().forEach(function (m) { api.setProductOrder(m, []); }); } catch (e) {}
+  }
+
   function mapMark(sc, node) {
     var kind = node['do'];
     var api = mapApi();
@@ -1407,6 +1586,7 @@
       // ułoży listę sama po załadowaniu.
       try {
         mapNames().forEach(function (m) { api.setProductOrder(m, ids); });
+        ordered = true;
       } catch (e) {
         _warn('map_order failed', e);
         return;
@@ -2046,21 +2226,72 @@
     return form.getAttribute('id') || form.getAttribute('data-name') || form.getAttribute('name') || null;
   }
 
+  var MAX_FORM_FIELDS = 20;
+
   function formEntry(target) {
     var t = target;
     if (!t || !t.tagName || !/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return null;
     var type = String(t.getAttribute('type') || '').toLowerCase();
-    if (type === 'hidden' || type === 'submit' || type === 'button') return null;
+    if (type === 'hidden' || type === 'submit' || type === 'button' || type === 'password') return null;
+    // Pole albo formularz z d2-ma-ignore - closest() łapie oba.
+    if (t.closest && t.closest('[d2-ma-ignore], [data-d2-ma-ignore]')) return null;
     var form = t.closest ? t.closest('form') : null;
-    if (!form || form.closest('[d2-ma-ignore], [data-d2-ma-ignore]')) return null;
+    if (!form) return null;
     for (var i = 0; i < forms.length; i++) if (forms[i].form === form) return forms[i];
-    var ent = { form: form, id: formKeyOf(form), fields: [], timers: [], submitted: false };
+    var ent = { form: form, id: formKeyOf(form), fields: [], stats: [], timers: [], submitted: false };
     forms.push(ent);
     return ent;
   }
 
+  // Nazwa pola do analityki (MA-D13): tylko name / data-name albo statyczny
+  // <label for>, nigdy placeholder ani wpisany tekst. Wygląda na e-mail albo
+  // telefon → pole-N. Do 40 znaków: litery, cyfry, spacja, _ i -.
+  function fieldName(el, n) {
+    var raw = el.getAttribute('name') || el.getAttribute('data-name') || '';
+    var id = el.getAttribute('id');
+    if (!raw && id && /^[A-Za-z][\w-]*$/.test(id) && document.querySelector) {
+      var label = document.querySelector('label[for="' + id + '"]');
+      if (label) raw = label.textContent || '';
+    }
+    raw = String(raw);
+    if (/@/.test(raw) || /^\+?[\d\s()-]{7,}$/.test(raw.trim())) return 'pole-' + n;
+    var clean = raw.replace(/[^\p{L}0-9 _-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    return clean || 'pole-' + n;
+  }
+
+  function fieldStat(ent, el) {
+    for (var i = 0; i < ent.stats.length; i++) if (ent.stats[i].el === el) return ent.stats[i];
+    if (ent.stats.length >= MAX_FORM_FIELDS) return null;
+    var st = { el: el, name: fieldName(el, ent.stats.length + 1), ms: 0, clicks: 0, since: null };
+    ent.stats.push(st);
+    return st;
+  }
+
+  function fieldStats(ent) {
+    return ent.stats.map(function (x) {
+      var ms = x.ms + (x.since != null ? Date.now() - x.since : 0);
+      return { name: x.name, ms: ms, clicks: x.clicks };
+    });
+  }
+
+  // ma_form_field: jedno zdarzenie na pole, bez treści (§13.8.2a).
+  function pushFieldEvents(formId, stats) {
+    if (!tracking || !stats || !stats.length) return;
+    window.dataLayer = window.dataLayer || [];
+    stats.forEach(function (x) {
+      window.dataLayer.push({ event: 'ma_form_field', form_id: formId, field_name: x.name, time_ms: x.ms, clicks: x.clicks });
+    });
+  }
+
+  function sendFieldsOnce(ent) {
+    if (ent.fieldsSent) return;
+    ent.fieldsSent = true;
+    pushFieldEvents(ent.id, fieldStats(ent));
+  }
+
   function abandon(ent, idle, exit) {
     if (ent.submitted || !ent.fields.length) return;
+    sendFieldsOnce(ent);
     intake({ type: 'form_abandon', data: { formId: ent.id, fields: ent.fields.length, idle: idle, exit: exit } });
   }
 
@@ -2085,16 +2316,28 @@
     var ent = formEntry(e && e.target);
     if (!ent || ent.submitted) return;
     if (ent.fields.indexOf(e.target) < 0) ent.fields.push(e.target);
-    armForm(ent);
+    var st = fieldStat(ent, e.target);
+    if (st) {
+      if (e.type === 'focusin') { st.clicks += 1; if (st.since == null) st.since = Date.now(); }
+      else if (e.type === 'click' && st.since != null) st.clicks += 1;
+      else if (e.type === 'focusout' && st.since != null) { st.ms += Date.now() - st.since; st.since = null; }
+    }
+    if (e.type !== 'focusout' && e.type !== 'click') armForm(ent);
   }
 
   function hookForms() {
     if (formsHooked || !usesTrigger('form_abandon') || !document.addEventListener) return;
     formsHooked = true;
-    ['focusin', 'input', 'change'].forEach(function (n) { document.addEventListener(n, onFormActivity, true); });
+    ['focusin', 'focusout', 'click', 'input', 'change'].forEach(function (n) {
+      document.addEventListener(n, onFormActivity, true);
+    });
     document.addEventListener('submit', function (e) {
       for (var i = 0; i < forms.length; i++) {
-        if (e && forms[i].form === e.target) { forms[i].submitted = true; forms[i].timers.forEach(clearTimeout); }
+        if (e && forms[i].form === e.target && !forms[i].submitted) {
+          forms[i].submitted = true;
+          forms[i].timers.forEach(clearTimeout);
+          sendFieldsOnce(forms[i]);
+        }
       }
     }, true);
     if (window.addEventListener) window.addEventListener('pagehide', formsOnExit);
@@ -2110,7 +2353,9 @@
       ent.exitSaved = true;
       state.formExits = state.formExits || [];
       state.formExits.push({ formId: ent.id, name: ent.form.getAttribute('data-name') || null,
-        fields: ent.fields.length, t: now(), created: Date.now(), visit: state.visits });
+        fields: ent.fields.length, t: now(), created: Date.now(), visit: state.visits,
+        stats: ent.fieldsSent ? null : fieldStats(ent) });
+      ent.fieldsSent = true;
       added = true;
     });
     if (added) save();
@@ -2123,6 +2368,7 @@
     state.formExits = [];
     list.forEach(function (x) {
       if (Date.now() - x.created > PENDING_TTL_MS) { _log('form exit older than 24 h dropped → ' + x.formId); return; }
+      pushFieldEvents(x.formId, x.stats);
       dispatch({ type: 'form_abandon', t: now(), data: { formId: x.formId, fields: x.fields, exit: true, visit: x.visit } });
     });
   }
@@ -2139,8 +2385,8 @@
         if (node.invalid || node.type !== 'action' || !STATE_ACTIONS[node['do']] || !st.nodes[id]) return;
         if (frequencyOf(node).kind !== 'every') return;
         if (node['do'] === 'content') {
-          var text = contentText(node, st.nodes[id].unit || lastUnit());
-          if (text != null) setSlot(node.slot, text);
+          var text = node.image || node.video ? '' : contentText(node, st.nodes[id].unit || lastUnit());
+          if (text != null) applyContent(node, text);
         } else {
           mapMark(sc, node);
         }
@@ -2341,14 +2587,24 @@
     return _attr(el, 'd2-ma-variant') !== null && el.parentNode && _attr(el.parentNode, 'd2-ma-variants') !== null;
   }
 
+  // CSS strony ukrywa [d2-ma-cond]:not([d2-ma-shown]) - stąd d2-ma-shown także
+  // na elemencie z samym hide, gdy wykluczenie nie pasuje. Element z warunkami
+  // bez znacznika d2-ma-cond (literówka w Webflow) ukrywa skrypt atrybutem hidden.
   function applyConditions() {
     if (!document.querySelectorAll) return;
     if (!condEls) scanConditions();
     condEls.forEach(function (x) {
       if (inVariants(x.el)) return;
       var r = evaluate(x.el, x.conds);
-      flag(x.el, 'd2-ma-shown', r.hasShow && r.show);
-      flag(x.el, 'd2-ma-hidden', r.hidden);
+      var marked = _attr(x.el, 'd2-ma-cond') !== null;
+      if (!marked && !x.el._d2maNoMark) {
+        x.el._d2maNoMark = true;
+        _warn('element with d2-ma-show-/hide- has no d2-ma-cond — hidden by the script');
+      }
+      var shown = !r.hidden && (!r.hasShow || r.show);
+      flag(x.el, 'd2-ma-shown', marked && shown);
+      flag(x.el, 'd2-ma-hidden', r.hidden || !marked);
+      if (!marked) flag(x.el, 'hidden', true);
     });
     // Bloki alternatywne: pierwszy pasujący wygrywa, domyślny znika, gdy któryś pasuje.
     var boxes = document.querySelectorAll('[d2-ma-variants], [data-d2-ma-variants]');
@@ -2393,7 +2649,7 @@
     var conds = condAttrs(el);
     if (!conds.length) return true;
     var r = evaluate(el, conds);
-    return !r.hidden && (!r.hasShow || r.show);
+    return !r.hidden && (!r.hasShow || r.show) && (_attr(el, 'd2-ma-cond') !== null || inVariants(el));
   }
 
   var historyTemplates = [];
@@ -2487,6 +2743,7 @@
   function onConsentCommand(args) {
     var kind = args[1], st = args[2];
     if ((kind !== 'default' && kind !== 'update') || !st || typeof st !== 'object') return;
+    if (kind === 'update' && st[videoCategory()] != null && mountedVideos.length) refreshVideos();
     var cat = consentCategory();
     var v = st[cat];
     if (v !== 'granted' && v !== 'denied') return;
@@ -2561,6 +2818,7 @@
     markWaiting = [];
     restoreSlots();
     resetSignals();
+    resetOrder();
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
     _queue(function () { return s.clear(); });
     render();
@@ -2674,6 +2932,9 @@
       Object.keys(st.nodes || {}).forEach(function (n) { if (st.nodes[n].at < limit) delete st.nodes[n]; });
       Object.keys(st.freq || {}).forEach(function (n) { if (st.freq[n].at != null && st.freq[n].at < limit) delete st.freq[n]; });
     });
+    // Segmenty i początki wizyt mają tę samą retencję co historia.
+    Object.keys(state.segments || {}).forEach(function (k) { if (state.segments[k] < limit) delete state.segments[k]; });
+    if (state.visitLog) state.visitLog = state.visitLog.filter(function (t) { return t >= limit; });
     var old = views.filter(function (v) { return v.ts < limit; }).map(function (v) { return v.id; });
     if (!old.length) return;
     views = views.filter(function (v) { return v.ts >= limit; });
@@ -2780,6 +3041,7 @@
       markWaiting = [];
       restoreSlots();
       resetSignals();
+      resetOrder();
       if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
       var s = store;
       state = wasTracking ? freshState() : null;

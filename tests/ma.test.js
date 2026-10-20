@@ -53,7 +53,9 @@ function element(attrs, tagName) {
     parentNode: null,
     querySelector() { return null; },
     querySelectorAll() { return []; },
-    appendChild(c) { return c; },
+    appendChild(c) { this.children = this.children.concat([c]); c.parentNode = this; return c; },
+    removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
+    get firstChild() { return this.children[0] || null; },
     addEventListener() {},
     closest(sel) {
       // Tylko to, czego używa moduł: 'form' i atrybut d2-ma-ignore.
@@ -126,7 +128,7 @@ function strona(opts) {
     body: element(),
     documentElement: { scrollHeight: 3000, clientHeight: 1000, scrollTop: 0 },
     addEventListener(n, f) { (naDokumencie[n] = naDokumencie[n] || []).push(f); },
-    createElement: () => element(),
+    createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
       const s = o.szablon;
@@ -148,7 +150,7 @@ function strona(opts) {
     addEventListener(n, f) { (naOknie[n] = naOknie[n] || []).push(f); },
     document,
     dataLayer,
-    location: { origin: 'https://demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
+    location: { origin: 'https://demo.example', hostname: 'demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
     localStorage: {
       getItem(k) { return k === 'consentModeV2' && o.zgoda ? JSON.stringify(o.zgoda) : null; },
     },
@@ -209,7 +211,8 @@ function strona(opts) {
 
   const env = {
     window, zegar, dataLayer, popupy, webhooki, ostrzezenia, zdarzenia, ma: window.digi2.ma,
-    segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0),
+    segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
+    polaFormularza: () => dataLayer.filter((e) => e && e.event === 'ma_form_field').map((e) => ({ ...e })),
     async gotowe() { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); },
     /** Upływ czasu na otwartej stronie: odpalają się timery, które dojrzały. */
     async minie(ms) {
@@ -1447,10 +1450,9 @@ test('form_abandon: fokus bez wysłania → po idleSeconds; tylko id formularza,
   assert.equal(env.segmenty().length, 0);
   await env.minie(20000);
   const e = env.segmenty();
-  assert.deepEqual(e.map((x) => ({ ...x })), [{ event: 'ma_form_abandon', ma_scenario: 'porzucony', form_id: 'kontakt' }]);
+  assert.deepEqual(e.map((x) => ({ ...x })), [{ event: 'ma_form_abandon', ma_scenario: 'porzucony', form_id: 'kontakt', fields_touched: 1 }]);
   assert.ok(!JSON.stringify(env._dysk).includes('jan@example.com') && !JSON.stringify(env.dataLayer).includes('jan@'),
     'wartość pola nie trafia ani do bazy, ani do dataLayer');
-  assert.ok(!JSON.stringify(env._dysk).includes('"email"'), 'nazwa pola też nie');
   env.okno('pagehide');
   await env.gotowe();
   assert.equal(env.segmenty().length, 1, 'raz na formularz na wizytę');
@@ -1499,7 +1501,7 @@ test('form_abandon przy pagehide: tylko fakt w d2ma, akcje przy następnej odsł
   const fakt = env._dysk.state.formExits;
   assert.equal(fakt.length, 1);
   assert.deepEqual([fakt[0].formId, fakt[0].name, fakt[0].fields], ['kontakt', 'Kontakt', 1]);
-  assert.ok(!JSON.stringify(fakt).includes('jan@') && !JSON.stringify(fakt).includes('"email"'));
+  assert.ok(!JSON.stringify(fakt).includes('jan@'));
 
   const p2 = await powrot(env, 10 * MIN);
   assert.deepEqual(p2.segmenty().map((e) => e.form_id), ['kontakt'], 'na następnej odsłonie');
@@ -1766,9 +1768,9 @@ function warianty(dzieci) {
 }
 
 test('d2-ma-show-visits: licznik i okno /30d z początków wizyt; bez zgody nic; data- alias', async () => {
-  const el = element({ 'd2-ma-show-visits': '3+/30d' });
-  const dokladnie = element({ 'data-d2-ma-show-visits': '1' });
-  const najwyzej = element({ 'd2-ma-show-visits': '0..2' });
+  const el = element({ 'd2-ma-cond': '', 'd2-ma-show-visits': '3+/30d' });
+  const dokladnie = element({ 'd2-ma-cond': '', 'data-d2-ma-show-visits': '1' });
+  const najwyzej = element({ 'd2-ma-cond': '', 'd2-ma-show-visits': '0..2' });
   const elementy = [el, dokladnie, najwyzej];
   const p1 = await start({ koperta: koperta([]), elementy });
   p1.dataLayer.push(unitOpen('A_1'));
@@ -1783,7 +1785,7 @@ test('d2-ma-show-visits: licznik i okno /30d z początków wizyt; bez zgody nic;
   const p5 = await powrot(p4, 50 * 24 * H);
   assert.equal(pokazany(el), false, 'po 50 dniach w oknie została jedna wizyta');
 
-  const bez = element({ 'd2-ma-show-visits': '0+' });
+  const bez = element({ 'd2-ma-cond': '', 'd2-ma-show-visits': '0+' });
   const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), elementy: [bez] });
   assert.equal(pokazany(bez), false, 'bez zgody żaden warunek show nie pasuje');
   void p5; void env;
@@ -1791,14 +1793,14 @@ test('d2-ma-show-visits: licznik i okno /30d z początków wizyt; bez zgody nic;
 
 test('d2-ma-show: views, views-rooms, views-floor z piętrem −1, views-unit, pref, lead; kilka atrybutów = I', async () => {
   const e = {
-    views: element({ 'd2-ma-show-views': '2+' }),
-    rooms: element({ 'd2-ma-show-views-rooms': '3:2+' }),
-    floor: element({ 'd2-ma-show-views-floor': '-1:1+' }),
-    unit: element({ 'd2-ma-show-views-unit': 'A_2:1+' }),
-    pref: element({ 'd2-ma-show-pref-rooms': '1|3' }),
-    lead: element({ 'd2-ma-show-lead': 'false' }),
-    oba: element({ 'd2-ma-show-views-rooms': '3:2+', 'd2-ma-show-lead': 'true' }),
-    wyklucz: element({ 'd2-ma-show-views': '1+', 'd2-ma-hide-lead': 'true' }),
+    views: element({ 'd2-ma-cond': '', 'd2-ma-show-views': '2+' }),
+    rooms: element({ 'd2-ma-cond': '', 'd2-ma-show-views-rooms': '3:2+' }),
+    floor: element({ 'd2-ma-cond': '', 'd2-ma-show-views-floor': '-1:1+' }),
+    unit: element({ 'd2-ma-cond': '', 'd2-ma-show-views-unit': 'A_2:1+' }),
+    pref: element({ 'd2-ma-cond': '', 'd2-ma-show-pref-rooms': '1|3' }),
+    lead: element({ 'd2-ma-cond': '', 'd2-ma-show-lead': 'false' }),
+    oba: element({ 'd2-ma-cond': '', 'd2-ma-show-views-rooms': '3:2+', 'd2-ma-show-lead': 'true' }),
+    wyklucz: element({ 'd2-ma-cond': '', 'd2-ma-show-views': '1+', 'd2-ma-hide-lead': 'true' }),
   };
   const env = await start({ koperta: koperta([]), elementy: Object.values(e) });
   env.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: -1 }));
@@ -1813,12 +1815,14 @@ test('d2-ma-show: views, views-rooms, views-floor z piętrem −1, views-unit, p
     'hide wygrywa z pasującym show');
 });
 
-test('segmenty profilu: ma_segment dodaje, ma_segment_exit zdejmuje wszystkie; hide wygrywa', async () => {
-  const pokaz = element({ 'd2-ma-show-segment': '2-pokoje|3-pokoje' });
-  const oba = element({ 'd2-ma-show-segment': '2-pokoje', 'd2-ma-hide-lead': 'true' });
+test('segmenty profilu: ma_segment dodaje, ma_segment_exit zdejmuje tylko swój; bez segmentu ostrzeżenie; hide wygrywa', async () => {
+  const pokaz = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '2-pokoje|3-pokoje' });
+  const oba = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '2-pokoje', 'd2-ma-hide-lead': 'true' });
   const k = koperta([
     scenariusz('pokoje', { event: 'unit_view' }, [SEG('2-pokoje')]),
     scenariusz('lead', { event: 'lead' }, [DL('ma_segment_exit', { segment: 'sprzedaz' })]),
+    scenariusz('wyjscie', { event: 'exit_intent' }, [DL('ma_segment_exit', { segment: '2-pokoje' })]),
+    scenariusz('zly', { event: 'exit_intent' }, [DL('ma_segment_exit')]),
   ]);
   const env = await start({ koperta: k, elementy: [pokaz, oba] });
   assert.equal(pokazany(pokaz), false);
@@ -1828,13 +1832,53 @@ test('segmenty profilu: ma_segment dodaje, ma_segment_exit zdejmuje wszystkie; h
   assert.ok(env._dysk.state.segments['2-pokoje'] > 0);
   env.ma.lead();
   await env.gotowe();
-  assert.deepEqual([pokazany(pokaz), pokazany(oba), ukryty(oba)], [false, false, true], 'wyjście zdjęło segmenty, hide-lead pasuje');
+  assert.deepEqual([pokazany(pokaz), pokazany(oba), ukryty(oba)], [true, false, true],
+    'wyjście z "sprzedaz" nie zdejmuje 2-pokoje; hide-lead wygrywa');
+  env.dom('mouseout', { clientY: -1, relatedTarget: null });
+  await env.gotowe();
+  assert.equal(pokazany(pokaz), false, 'wyjście z 2-pokoje zdejmuje ten segment');
+  assert.ok(env.ostrzezenia.some((w) => w.includes('"a1" has no params.segment')));
+});
+
+test('retencja segmentów i początków wizyt jak historii; Wyczyść je zeruje', async () => {
+  const k = koperta([scenariusz('pokoje', { event: 'unit_view' }, [SEG('2-pokoje')])], { storage: { retentionDays: 10, consentRequired: false } });
+  const p1 = await start({ koperta: k });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.ok(p1._dysk.state.segments['2-pokoje']);
+  const p2 = await powrot(p1, 3 * 24 * H);
+  p2.dataLayer.push(unitOpen('A_2'));
+  await p2.gotowe();
+  await p2.ma.clear();
+  assert.equal(p2.ma.profile().segment, null);
+  assert.deepEqual({ ...(p2._dysk.state || {}).segments }, {});
+  const q1 = await start({ koperta: k });
+  q1.dataLayer.push(unitOpen('B_1'));
+  await q1.gotowe();
+  const q2 = await powrot(q1, 5 * 24 * H);
+  const q3 = await powrot(q2, 6 * 24 * H); // pierwsza wizyta i segment sprzed 11 dni
+  assert.equal(Object.keys(q3._dysk.state.segments || {}).length, 0, 'segment starszy niż retencja');
+  assert.equal(q3._dysk.state.visitLog.length, 2, 'początek wizyty starszy niż retencja');
+});
+
+test('element z d2-ma-show-* bez znacznika d2-ma-cond: ukryty przez skrypt (hidden) z ostrzeżeniem', async () => {
+  const bez = element({ 'd2-ma-show-views': '0+' });
+  const env = await start({ koperta: koperta([]), elementy: [bez] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(bez.getAttribute('hidden'), '');
+  assert.equal(pokazany(bez), false);
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('has no d2-ma-cond')).length, 1);
+  assert.equal(env.ma.allows(bez), false);
+  const sam = element({ 'd2-ma-cond': '', 'd2-ma-hide-lead': 'true' });
+  const e2 = await start({ koperta: koperta([]), elementy: [sam] });
+  assert.equal(pokazany(sam), true, 'sam hide bez trafienia: d2-ma-shown, bo CSS ukrywa [d2-ma-cond] bez niego');
 });
 
 test('błędny albo nieznany warunek: element ukryty (fail-closed) z console.warn — także w hide', async () => {
   const zle = ['d2-ma-show-visits="3>"', 'd2-ma-show-visit="3+"', 'd2-ma-show-views-floor="x:1+"', 'd2-ma-hide-segment="Duże"',
     'd2-ma-show-visits="5..2"', 'd2-ma-show-views-unit="a b:1+"'];
-  const els = zle.map((a) => { const [k, v] = a.split('='); return element({ [k]: JSON.parse(v) }); });
+  const els = zle.map((a) => { const [k, v] = a.split('='); return element({ 'd2-ma-cond': '', [k]: JSON.parse(v) }); });
   const env = await start({ koperta: koperta([]), elementy: els });
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
@@ -1862,8 +1906,8 @@ test('d2-ma-variants: pierwszy pasujący wariant wygrywa, default gdy żaden; ko
 });
 
 test('?d2-ma-preview=<segment|wariant>: podgląd bez zgody, bez zapisu w d2ma i bez dataLayer', async () => {
-  const seg = element({ 'd2-ma-show-segment': '2-pokoje' });
-  const inny = element({ 'd2-ma-show-segment': '3-pokoje' });
+  const seg = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '2-pokoje' });
+  const inny = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '3-pokoje' });
   const war = element({ 'd2-ma-variant': '2-pokoje', 'd2-ma-show-pref-rooms': '2' });
   const elementy = [seg, inny].concat(warianty([war]));
   const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), elementy, search: '?d2-ma-preview=2-pokoje' });
@@ -1878,21 +1922,21 @@ test('apply() zbiera elementy od nowa po zmianie DOM; allows() dla popupów', as
   const env = await start({ koperta: koperta([]), elementy });
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
-  const nowy = element({ 'd2-ma-show-views': '1+' });
+  const nowy = element({ 'd2-ma-cond': '', 'd2-ma-show-views': '1+' });
   elementy.push(nowy);
   env.dataLayer.push(unitOpen('A_2'));
   await env.gotowe();
   assert.equal(pokazany(nowy), false, 'bez apply() nowy element nie jest znany');
   env.ma.apply();
   assert.equal(pokazany(nowy), true);
-  assert.equal(env.ma.allows(element({ 'd2-ma-show-views': '5+' })), false);
-  assert.equal(env.ma.allows(element({ 'd2-ma-show-views': '1+' })), true);
-  assert.equal(env.ma.allows(element({ 'd2-ma-hide-views': '1+' })), false);
+  assert.equal(env.ma.allows(element({ 'd2-ma-cond': '', 'd2-ma-show-views': '5+' })), false);
+  assert.equal(env.ma.allows(element({ 'd2-ma-cond': '', 'd2-ma-show-views': '1+' })), true);
+  assert.equal(env.ma.allows(element({ 'd2-ma-cond': '', 'd2-ma-hide-views': '1+' })), false);
   assert.equal(env.ma.allows(element({ class: 'x' })), true, 'bez warunków - bez veta');
 });
 
 test('popup z warunkiem d2-ma czekający w module popupów dostaje showIfPending, gdy warunek zaczyna pasować', async () => {
-  const nakladka = element({ 'd2-ma-show-segment': '2-pokoje' });
+  const nakladka = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '2-pokoje' });
   const env = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [SEG('2-pokoje')])]) });
   const wznowione = [];
   env.window.digi2.popups.list = () => ['promo', 'inny'];
@@ -1947,6 +1991,8 @@ test('map_order: setProductOrder z rankingu (limit domyślnie 20); bez metody �
   env.dataLayer.push(unitOpen('X', { rooms: 2 }));
   await env.gotowe();
   assert.deepEqual(kolejnosc, [['mapa', ['u2', 'u4']]]);
+  await env.ma.clear();
+  assert.deepEqual(kolejnosc[1], ['mapa', []], 'Wyczyść przywraca kolejność listy');
   assert.ok(!env.ostrzezenia.some((w) => w.includes('needs d2-ma')), 'minScript ma.5 to ta wersja');
 
   const wywolania = [];
@@ -1955,4 +2001,127 @@ test('map_order: setProductOrder z rankingu (limit domyślnie 20); bez metody �
   await bez.gotowe();
   assert.equal(wywolania.length, 0, 'bez setProductOrder nie ma zastępstwa');
   assert.ok(!bez.ostrzezenia.some((w) => w.includes('map_order failed')), 'pominięty po cichu, nie błąd');
+});
+
+test('MA-D13 pola formularza: nazwa z name / data-name / label, czas i kliknięcia, bez wartości; e-mail jako nazwa → pole-N', async () => {
+  const k = koperta([scenariusz('porzucony', { event: 'form_abandon', idleSeconds: 60 }, [DL('ma_form_abandon')])]);
+  const env = await start({ koperta: k });
+  const form = element({ id: 'kontakt' }, 'FORM');
+  const pole = (attrs) => { const el = element(attrs, 'INPUT'); el.parent = form; el.value = 'jan@example.com'; return el; };
+  const imie = pole({ name: 'Imię i nazwisko!' });
+  const tel = pole({ 'data-name': '+48 600 100 200' });
+  const haslo = pole({ type: 'password', name: 'haslo' });
+  const ign = pole({ name: 'zgoda', 'd2-ma-ignore': '' });
+  env.dom('focusin', { type: 'focusin', target: imie });
+  await env.minie(4000);
+  env.dom('click', { type: 'click', target: imie });
+  env.dom('focusout', { type: 'focusout', target: imie });
+  env.dom('focusin', { type: 'focusin', target: tel });
+  env.dom('focusin', { type: 'focusin', target: haslo });
+  env.dom('focusin', { type: 'focusin', target: ign });
+  await env.minie(1000);
+  env.dom('focusout', { type: 'focusout', target: tel });
+  await env.minie(61000);
+  const pola = env.polaFormularza();
+  assert.deepEqual(pola.map((x) => [x.field_name, x.clicks]), [['Imię i nazwisko', 2], ['pole-2', 1]], 'bez hasła i d2-ma-ignore');
+  assert.ok(pola[0].time_ms >= 4000 && pola[1].time_ms >= 1000);
+  assert.ok(pola.every((x) => x.form_id === 'kontakt'));
+  assert.deepEqual({ ...env.segmenty()[0] }, { event: 'ma_form_abandon', ma_scenario: 'porzucony', form_id: 'kontakt', fields_touched: 2 });
+  assert.ok(!JSON.stringify(env.dataLayer).includes('jan@') && !JSON.stringify(env._dysk).includes('jan@'));
+  env.dom('submit', { target: form });
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.polaFormularza().length, 2, 'raz na formularz — także gdy potem go wysłał');
+});
+
+test('MA-D13: zdarzenia pól przy wysłaniu formularza; przy pagehide dopiero na następnej odsłonie; najwyżej 20 pól', async () => {
+  const k = koperta([scenariusz('porzucony', { event: 'form_abandon' }, [DL('ma_form_abandon')])]);
+  const env = await start({ koperta: k });
+  const a = formularz();
+  env.dom('focusin', { type: 'focusin', target: a.pole });
+  env.dom('submit', { target: a.form });
+  await env.gotowe();
+  assert.deepEqual(env.polaFormularza().map((x) => x.field_name), ['email']);
+  assert.equal(env.segmenty().length, 0, 'wysłany to nie porzucony');
+
+  const e2 = await start({ koperta: k });
+  const form = element({ id: 'dlugi' }, 'FORM');
+  for (let i = 0; i < 25; i++) {
+    const el = element({ name: 'p' + i }, 'INPUT');
+    el.parent = form;
+    e2.dom('focusin', { type: 'focusin', target: el });
+  }
+  e2.okno('pagehide');
+  await e2.gotowe();
+  assert.equal(e2.polaFormularza().length, 0, 'nic w chwili wyjścia');
+  const n = await powrot(e2, 5 * MIN);
+  assert.equal(n.polaFormularza().length, 20);
+  assert.equal(n.segmenty()[0].fields_touched, 25);
+});
+
+/** gtag() kładzie do dataLayer obiekt arguments, nie tablicę. */
+function gtagArgs() { return arguments; }
+
+test('MA-D14 obraz: slot IMG dostaje src i alt, inny slot — <img> w środku; Wyczyść przywraca; host spoza listy = węzeł pominięty', async () => {
+  const img = element({ 'd2-ma-slot': 'hero-img', src: 'https://demo.example/stary.jpg', alt: 'stary' }, 'IMG');
+  const box = element({ 'd2-ma-slot': 'hero-box' }, 'DIV');
+  const stare = element({}, 'P');
+  box.appendChild(stare);
+  const obraz = (slot, src) => ({ do: 'content', slot, image: { src, alt: 'Lokal 2-pokojowy' } });
+  const k = koperta([scenariusz('o', { event: 'unit_view' }, [
+    obraz('hero-img', 'https://media.digi2.app/a.jpg'), obraz('hero-box', 'https://demo.example/b.webp'),
+  ]), scenariusz('zly', { event: 'unit_view' }, [obraz('hero-img', 'https://evil.example/x.jpg')]),
+  scenariusz('http', { event: 'unit_view' }, [obraz('hero-img', 'http://demo.example/x.jpg')])]);
+  const env = await start({ koperta: k, elementy: [img, box] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.deepEqual([img.getAttribute('src'), img.getAttribute('alt')], ['https://media.digi2.app/a.jpg', 'Lokal 2-pokojowy']);
+  assert.equal(box.children.length, 1);
+  assert.equal(box.children[0].tagName, 'IMG');
+  assert.equal(box.children[0].getAttribute('src'), 'https://demo.example/b.webp');
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('content image needs an https src')).length, 2);
+  await env.ma.clear();
+  assert.deepEqual([img.getAttribute('src'), img.getAttribute('alt')], ['https://demo.example/stary.jpg', 'stary']);
+  assert.deepEqual(box.children, [stare]);
+});
+
+test('MA-D14 wideo YouTube / Vimeo: bez zgody marketingowej miniatura z podpisem; po gtag update ad_storage — ramka nocookie z sandbox', async () => {
+  const slot = element({ 'd2-ma-slot': 'film' }, 'DIV');
+  const k = koperta([scenariusz('w', { event: 'unit_view' }, [{ do: 'content', slot: 'film',
+    video: { provider: 'youtube', id: 'dQw4w9WgXcQ', poster: 'https://media.digi2.app/film.jpg' } }])]);
+  const env = await start({ koperta: k, elementy: [slot] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const ph = slot.children[0];
+  assert.equal(ph.getAttribute('d2-ma-video-placeholder'), '');
+  assert.equal(ph.children[0].getAttribute('src'), 'https://media.digi2.app/film.jpg', 'miniatura z CDN panelu, nie z YouTube');
+  assert.equal(ph.children[1].textContent, 'Wideo po zgodzie na ciasteczka');
+  env.dataLayer.push(gtagArgs('consent', 'update', { ad_storage: 'granted' }));
+  await env.gotowe();
+  const fr = slot.children[0];
+  assert.equal(fr.tagName, 'IFRAME');
+  assert.equal(fr.getAttribute('src'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  assert.equal(fr.getAttribute('sandbox'), 'allow-scripts allow-same-origin allow-presentation');
+  assert.equal(fr.getAttribute('referrerpolicy'), 'strict-origin-when-cross-origin');
+
+  const s2 = element({ 'd2-ma-slot': 'film' }, 'DIV');
+  const k2 = koperta([scenariusz('w', { event: 'unit_view' }, [{ do: 'content', slot: 'film', video: { provider: 'vimeo', id: '123456789' } }])]);
+  const e2 = await start({ koperta: k2, elementy: [s2], dataLayer: [gtagArgs('consent', 'default', { ad_storage: 'granted' })] });
+  e2.dataLayer.push(unitOpen('A_1'));
+  await e2.gotowe();
+  assert.equal(s2.children[0].getAttribute('src'), 'https://player.vimeo.com/video/123456789?dnt=1');
+});
+
+test('MA-D14 wideo MP4: element video z hosta strony lub CDN panelu; złe id i obcy host = węzeł pominięty', async () => {
+  const slot = element({ 'd2-ma-slot': 'film' }, 'DIV');
+  const v = (video) => scenariusz('w-' + JSON.stringify(video).length, { event: 'unit_view' }, [{ do: 'content', slot: 'film', video }]);
+  const k = koperta([v({ provider: 'mp4', src: 'https://demo.example/spacer.mp4' }),
+    v({ provider: 'youtube', id: 'krótki' }), v({ provider: 'vimeo', id: 'abc' }),
+    v({ provider: 'mp4', src: 'https://cdn.obcy.example/a.mp4' }), v({ provider: 'iframe', src: 'https://demo.example/x' })]);
+  const env = await start({ koperta: k, elementy: [slot] });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(slot.children[0].tagName, 'VIDEO');
+  assert.equal(slot.children[0].getAttribute('src'), 'https://demo.example/spacer.mp4');
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('content video is not youtube')).length, 4);
 });
