@@ -2980,3 +2980,48 @@ test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG'
   const top = Number(/^## v\d+\.\d+\.\d+-ma\.(\d+)/m.exec(log)[1]);
   assert.equal(v, top, 'podbij SCRIPT_VERSION razem z wpisem w CHANGELOG');
 });
+
+
+test('ma.20: pagehide z odłożonym filtrem zapisuje tylko fakt — 0 webhooków, 0 nowych wpisów dataLayer, bez popupu; następna odsłona nie odtwarza', async () => {
+  const k = koperta([scenariusz('f', { event: 'search_filter', rooms: 2 }, [
+    Object.assign(SEG('filtr-2'), { frequency: 'once_per_days:0' }),
+    { do: 'webhook', channel: 'email', template: 't', testOnly: true },
+    { do: 'popup', template: 'promo-filter', cta: 'contact' },
+  ])], { minScript: 'ma.20' });
+  const env = await start({ koperta: k });
+  await env.minie(MIN);
+  const t0 = env.zegar.t;
+  env.filtr({ rooms: [2] });
+  await env.minie(100);
+  const dlPrzed = env.dataLayer.length;
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 0, 'bez webhooka przy wyjściu');
+  assert.equal(env.dataLayer.length, dlPrzed, 'bez nowych wpisów dataLayer');
+  assert.equal(env.popupy.length, 0);
+  assert.deepEqual(czyste(env.ma.profile().filters.rooms), [2]);
+  assert.equal(env.ma.profile().filters.ts, t0, 'czas ostatniej zmiany');
+  await env.minie(600);
+  assert.equal(env.segmenty().length, 0, 'timer zdjęty — nic nie dochodzi po wyjściu');
+
+  const p2 = await powrot(env, 5 * MIN);
+  assert.equal(p2.segmenty().length, 0, 'następna odsłona nie odtwarza wyzwalacza');
+  assert.equal(p2.webhooki.length, 0);
+  assert.deepEqual(czyste(p2.ma.profile().filters.rooms), [2], 'fakt w d2ma przetrwał');
+});
+
+test('ma.20: flush bez zgody — przy wysyłce i przy wyjściu nic nie trafia do d2ma ani do scenariuszy', async () => {
+  const k = koperta([scenariusz('f', { event: 'search_filter' }, [SEG('filtr')])], { storage: { retentionDays: 90, consentRequired: true } });
+  const env = await start({ koperta: k });
+  env.filtr({ rooms: [3] });
+  await env.minie(100);
+  const form = element({}, 'FORM');
+  env.dom('submit', { target: form });
+  assert.equal(form.querySelector('[name="d2ma_context"]').value, 'brak kontekstu (brak zgody)');
+  env.filtr({ rooms: [4] });
+  env.okno('pagehide');
+  await env.minie(600);
+  assert.equal(env.ma.profile(), null);
+  assert.equal(env.segmenty().length, 0);
+  assert.equal(JSON.stringify(env._dysk).includes('rooms'), false, 'nic w magazynie');
+});
