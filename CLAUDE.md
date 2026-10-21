@@ -88,9 +88,15 @@ Dwie pułapki jsDelivr, sprawdzone 2026-10-21:
 - **Plik, którego nie ma w najnowszym stabilnym tagu, `@latest` bierze z
   najnowszego tagu, który go ma — także przedpremierowego.** Dopóki moduł
   istnieje tylko w linii `v1.9.0-ma.N`, `@latest/dist/modules/ma.min.js` serwuje
-  kod gałęzi prerelease (nawet niescalonej). Chroni nas tylko to, że loader
-  1.8.0 nie zna modułu. Strona na `@latest` nie dostaje atrybutu nowego modułu,
-  dopóki nie wyjdzie stabilny tag z tym plikiem.
+  kod gałęzi prerelease (nawet niescalonej), z cache 12 h na CDN i 7 dni w
+  przeglądarce. Loader 1.8.0 zamienia każdy nieznany atrybut `d2-x` na moduł
+  `x`, więc strona z `@latest` i `d2-ma` **uruchomiłaby** ten kod. Strona na
+  `@latest` nie dostaje atrybutu nowego modułu, dopóki nie wyjdzie stabilny tag
+  z tym plikiem. Purge tego nie naprawia: po nim `@latest` przelicza się na
+  najnowszy prerelease z tym plikiem.
+- **Strona przypięta do `@main` (gałęzi) dostaje każdy merge do main od razu**,
+  z pominięciem tagów i `@latest`. Przed scaleniem zmian, które mają czekać na
+  wydanie, sprawdź, czy żadna strona nie ładuje `@main`.
 - **Tagi `ma.N` bywają kładzione na gałęziach spoza main** (drugi zespół).
   Wolny numer sprawdzaj `git ls-remote --tags origin 'v1.9.0-ma.*'`, nie po
   stanie main; cudzego tagu nie przesuwaj, bierz następny numer. Pierwsze
