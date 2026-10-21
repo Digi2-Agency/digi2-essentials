@@ -1455,6 +1455,56 @@ nodes gets no extra listener. Before consent nothing is collected.
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
 
+### Hot lead comes back (ma.12, MA-D38 stage 1, variant D′)
+
+Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
+`docs/architecture/ma-hot-lead-2destate.md` §6.2. Opt-in with
+`d2-ma-hot-lead` on the loader tag; its value is the 2destate API base
+(`https`), empty = `https://api.2destate.com/api/v1`.
+
+- **Link:** instead of a signed lead token, 2destate gets the `d2ma`
+  `visitorId` with the form, field `d2ma_visitor_id`. The page takes it from
+  `digi2.ma.visitorId()` or from a hidden `input[d2-ma-visitor-id]`, which the
+  module fills on `submit` in the capture phase (before the page's handler).
+  Without consent, or without the attribute, it is `null` / empty. The module
+  never submits or blocks the form.
+- **MA-D30:** the browser is linked only when, **in the same visit**, the id
+  was handed out *and* a lead was recorded (`generate_lead`, the 3D Estate
+  inquiry, `digi2.ma.lead()`), in either order. A failed submit with no lead
+  links nothing, so a visitor 2destate doesn't know never sends signals.
+- **Visit signal:** `POST {api}/public/ma/visit` with
+  `{ visitorId, units?, pageviews, source: "return_visit" }` — up to 20
+  unique 2destate unit ids (UUID) viewed this visit (left out when none),
+  page views of the visit (1–50). Once per visit, then only when new units
+  were viewed and at most every 5 minutes. Never in the form's visit. No form
+  data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+- **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
+  dropped; 403 (Origin off the project's list or lead not eligible — one code
+  for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
+  404 (route not live) → paused 24 h, so an undeployed route isn't hit every
+  5 minutes; 413 / 422 → no more signals this visit; 429 / 503 → wait
+  `Retry-After` (1 h default); anything else → console warning.
+- **"Clear" and consent withdrawn:** `POST {api}/public/ma/revoke
+  {visitorId}` first, then the profile goes locally whatever the answer.
+  Sent whenever the id was ever handed out (`idShared`), not only for a
+  locally linked profile: 2destate links on `d2ma_visitor_id` alone, even
+  when the page never saw the lead, and `/revoke` answers 204 for an unknown
+  id, so it reveals nothing. Consent withdrawn between visits is found in
+  `decide()` before the store is open: `wipe()` then reads only the `state`
+  record of `d2ma` (`peekState()`), only to take the `visitorId` for
+  `/revoke`, and clears it right after. A browser with no `d2ma` yet gets
+  none: `peekState()` aborts `onupgradeneeded` instead of creating it (ma.15).
+- **Attribute value:** anything that isn't `https://…` (a typo,
+  `http://localhost`) logs a warning and falls back to production — on
+  purpose, so a broken value never sends to an unchecked host.
+- **Pinning:** load MA from a tag, `@v1.9.0-ma.N/dist/digi2-loader.min.js`,
+  never `@latest`. jsDelivr resolves `@latest` per file: `dist/modules/ma.min.js`
+  is missing from the latest stable tag, so `@latest` serves the newest tag that
+  has it. Loader 1.8.0 doesn't know d2-ma and never asks for it.
+- **Envelope from 2destate:** `d2-ma` already takes any URL, so switching the
+  source is `d2-ma="https://api.2destate.com/api/v1/public/ma/scenario/<site>.json"`
+  — same v0 shape, no code change.
+
 ### Page conditions (ma.5, §13.11.2a)
 
 Personalisation decided in the browser from the `d2ma` profile, with attributes
@@ -1713,6 +1763,7 @@ digi2.ma.context()          // ma.16: { text, json } for the lead context fields
 digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
+digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
 digi2.ma.load(urlOrObject)  // read an envelope
 digi2.ma.reload()
 digi2.ma.simulateReturn()
