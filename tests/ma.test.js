@@ -111,6 +111,7 @@ function strona(opts) {
   const dataLayer = o.dataLayer || [];
   const popupy = [];
   const webhooki = [];
+  const sygnaly = [];
   const ostrzezenia = [];
   const zdarzenia = {};
   const sluchacze = {};
@@ -210,6 +211,11 @@ function strona(opts) {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
     }
+    if (url.indexOf('/public/ma/') >= 0) {
+      sygnaly.push({ url, body: JSON.parse(init.body), init });
+      const st = (o.statusSygnalu && o.statusSygnalu(url)) || (url.indexOf('/revoke') >= 0 ? 204 : 202);
+      return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
+    }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
       webhooki.push({ url, body: JSON.parse(init.body) });
       return Promise.resolve({ ok: true, status: 200 });
@@ -241,7 +247,7 @@ function strona(opts) {
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
-    window, zegar, dataLayer, popupy, webhooki, ostrzezenia, zdarzenia, ma: window.digi2.ma,
+    window, zegar, dataLayer, popupy, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
     polaFormularza: () => dataLayer.filter((e) => e && e.event === 'ma_form_field').map((e) => ({ ...e })),
     async gotowe() { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); },
@@ -2478,4 +2484,143 @@ test('#10: nowa koperta ze zmienionym szablonem przebudowuje popup (d2-ma-refres
   assert.equal(zbudowane.length, 1, 'stary szkielet usunięty');
   assert.match(oknoPopupu(env).okno.style.cssText, /max-width:520px/);
   assert.equal(env.popupy.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// ma.12: gorący lead wraca — MA-D38 etap 1, wariant D′ (visitorId, 2destate)
+// ---------------------------------------------------------------------------
+
+const UID = (n) => 'aaaaaaaa-bbbb-4ccc-8ddd-' + String(n).padStart(12, '0');
+const HOT = { 'd2-ma-hot-lead': '' };
+const VISIT = 'https://api.2destate.com/api/v1/public/ma/visit';
+const REVOKE = 'https://api.2destate.com/api/v1/public/ma/revoke';
+
+/** Formularz dema z ukrytym polem [d2-ma-visitor-id]. */
+function formularzDema() {
+  const form = element({ id: 'demo' }, 'FORM');
+  const ukryte = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  ukryte.value = 'stare';
+  form.appendChild(ukryte);
+  return { form, ukryte };
+}
+
+/** Pierwsza wizyta: formularz z visitorId i lead (generate_lead). */
+async function leadDema(opts) {
+  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts || {}));
+  const { form, ukryte } = formularzDema();
+  env.dom('submit', { target: form });
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  env._ukryte = ukryte;
+  return env;
+}
+
+test('MA-D38 D′: ukryte pole i digi2.ma.visitorId() dostają visitorId tylko z d2-ma-hot-lead i po zgodzie', async () => {
+  const env = await leadDema();
+  assert.equal(env._ukryte.value, env.ma.profile().visitorId);
+  assert.equal(env.ma.visitorId(), env.ma.profile().visitorId);
+
+  const bezZgody = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT });
+  const a = formularzDema();
+  bezZgody.dom('submit', { target: a.form });
+  await bezZgody.gotowe();
+  assert.equal(a.ukryte.value, '', 'bez zgody pole puste');
+  assert.equal(bezZgody.ma.visitorId(), null);
+
+  const wylaczony = await start({ koperta: koperta([]) });
+  const b = formularzDema();
+  wylaczony.dom('submit', { target: b.form });
+  await wylaczony.gotowe();
+  assert.equal(b.ukryte.value, 'stare', 'bez d2-ma-hot-lead pole nietknięte');
+  assert.equal(wylaczony.ma.visitorId(), null);
+});
+
+test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic nie wychodzi (MA-D30)', async () => {
+  const samLead = await start({ koperta: koperta([]), cfg: HOT });
+  samLead.dataLayer.push({ event: 'generate_lead' });
+  await samLead.gotowe();
+  assert.equal((await powrot(samLead, 26 * H)).sygnaly.length, 0, 'lead bez visitorId');
+
+  const samoId = await start({ koperta: koperta([]), cfg: HOT });
+  samoId.ma.visitorId();
+  await samoId.gotowe();
+  const p2 = await powrot(samoId, 26 * H);
+  assert.equal(p2.sygnaly.length, 0, 'visitorId bez leada');
+  p2.dataLayer.push({ event: 'generate_lead' });
+  await p2.gotowe();
+  assert.equal((await powrot(p2, 26 * H)).sygnaly.length, 0, 'lead w innej wizycie niż oddanie id');
+
+  const wylaczony = await start({ koperta: koperta([]) });
+  wylaczony.ma.visitorId();
+  wylaczony.dataLayer.push({ event: 'generate_lead' });
+  await wylaczony.gotowe();
+  assert.equal((await powrot(wylaczony, 26 * H)).sygnaly.length, 0, 'bez d2-ma-hot-lead');
+});
+
+test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, pageviews, source}; przyrost co 5 min', async () => {
+  const p1 = await leadDema();
+  const id = p1.ma.profile().visitorId;
+  p1.ma.track({ unitId: UID(9), name: 'A9', source: '2destate' });
+  await p1.minie(6 * MIN);
+  assert.equal(p1.sygnaly.length, 0, 'wizyta formularza to nie powrót');
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly.length, 1);
+  assert.equal(p2.sygnaly[0].url, VISIT);
+  assert.deepEqual({ ...p2.sygnaly[0].body }, { visitorId: id, pageviews: 1, source: 'return_visit' });
+  assert.equal(p2.sygnaly[0].init.credentials, 'omit');
+  p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
+  await p2.gotowe();
+  assert.equal(p2.sygnaly.length, 1, 'nowy lokal, ale nie minęło 5 min');
+  await p2.minie(5 * MIN + 100);
+  assert.equal(p2.sygnaly.length, 2);
+  assert.deepEqual([...p2.sygnaly[1].body.units], [UID(1)]);
+  p2.ma.track({ unitId: 'A_ze_spoza_2destate', name: 'X' });
+  await p2.minie(6 * MIN);
+  assert.equal(p2.sygnaly.length, 2, 'lokal bez UUID 2destate nie jest przyrostem');
+  const p3 = await powrot(p2, 3 * MIN);
+  assert.equal(p3.sygnaly.length, 0, 'kolejna odsłona tej samej wizyty bez nowych lokali');
+  const p4 = await powrot(p3, 26 * H, { cfg: { 'd2-ma-hot-lead': 'https://staging.2destate.example/api/v1/' } });
+  assert.equal(p4.sygnaly[0].url, 'https://staging.2destate.example/api/v1/public/ma/visit', 'baza z atrybutu');
+});
+
+test('MA-D38 D′: 401 zrywa powiązanie; 403 wstrzymuje na dobę; 429/503 czeka Retry-After', async () => {
+  const a1 = await leadDema({ statusSygnalu: () => 401 });
+  const a2 = await powrot(a1, 26 * H);
+  assert.equal(a2.sygnaly.length, 1);
+  assert.ok(!a2._dysk.state.hotLead, '401 zrywa');
+  assert.equal((await powrot(a2, 26 * H)).sygnaly.length, 0);
+
+  const b1 = await leadDema({ statusSygnalu: () => 403 });
+  const b2 = await powrot(b1, 26 * H);
+  assert.ok(b2._dysk.state.hotLead, '403 nie zrywa');
+  const b3 = await powrot(b2, 2 * H);
+  assert.equal(b3.sygnaly.length, 0, 'w ciągu doby cisza');
+  assert.equal((await powrot(b3, 23 * H)).sygnaly.length, 1, 'po dobie znowu');
+
+  for (const st of [429, 503]) {
+    const q1 = await leadDema({ statusSygnalu: () => st, retryAfter: '7200' });
+    const q2 = await powrot(q1, 26 * H);
+    assert.equal(q2.sygnaly.length, 1);
+    assert.equal((await powrot(q2, H)).sygnaly.length, 0, st + ': w oknie Retry-After cisza');
+    assert.ok(q2._dysk.state.hotLead);
+  }
+});
+
+test('MA-D38 D′: „Wyczyść" i wycofanie zgody wysyłają /revoke {visitorId}, potem nowy profil', async () => {
+  const env = await leadDema();
+  const id = env.ma.profile().visitorId;
+  await env.ma.clear();
+  await env.gotowe();
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+  assert.notEqual(env.ma.profile().visitorId, id);
+  await env.ma.clear();
+  await env.gotowe();
+  assert.equal(env.sygnaly.length, 1, 'profil bez powiązania nie wysyła revoke');
+
+  const z = await leadDema({ koperta: koperta([], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' } });
+  const idZ = z.ma.profile().visitorId;
+  z.zgoda({ analytics_storage: 'denied' });
+  await z.gotowe();
+  assert.deepEqual(z.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: idZ }]]);
+  assert.equal(z.ma.profile(), null);
 });

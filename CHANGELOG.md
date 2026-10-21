@@ -5,6 +5,24 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.12 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+
+### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′)
+
+- Nowy atrybut `d2-ma-hot-lead` na tagu loadera, tylko dla strony dema i leadów
+  testowych agencji. Wartość to adres API 2destate; puste pole oznacza
+  `https://api.2destate.com/api/v1`.
+- Formularz dema przekazuje 2destate identyfikator przeglądarki (`visitorId`)
+  w polu `d2ma_visitor_id`. Można go wziąć z `digi2.ma.visitorId()` albo
+  z ukrytego pola z atrybutem `d2-ma-visitor-id`, które moduł wypełnia przy
+  wysyłce. Bez zgody identyfikatora nie ma.
+- Gdy w tej samej wizycie był też lead (`generate_lead`), przy kolejnej wizycie
+  moduł wysyła do 2destate, jakie lokale gość ogląda (bez danych formularza).
+  Bez leada nic nie wychodzi z przeglądarki.
+- „Wyczyść” i wycofanie zgody usuwają powiązanie w 2destate.
+- Bez `d2-ma-hot-lead` strona działa jak dotąd.
+- Scenariusze można czytać z 2destate: wystarczy zmienić adres w `d2-ma`.
+
 ## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-popups`

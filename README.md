@@ -1453,6 +1453,41 @@ nodes gets no extra listener. Before consent nothing is collected.
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
 
+### Hot lead comes back (ma.12, MA-D38 stage 1, variant D′)
+
+Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
+`docs/architecture/ma-hot-lead-2destate.md` §6.2. Opt-in with
+`d2-ma-hot-lead` on the loader tag; its value is the 2destate API base
+(`https`), empty = `https://api.2destate.com/api/v1`.
+
+- **Link:** instead of a signed lead token, 2destate gets the `d2ma`
+  `visitorId` with the form, field `d2ma_visitor_id`. The page takes it from
+  `digi2.ma.visitorId()` or from a hidden `input[d2-ma-visitor-id]`, which the
+  module fills on `submit` in the capture phase (before the page's handler).
+  Without consent, or without the attribute, it is `null` / empty. The module
+  never submits or blocks the form.
+- **MA-D30:** the browser is linked only when, **in the same visit**, the id
+  was handed out *and* a lead was recorded (`generate_lead`, the 3D Estate
+  inquiry, `digi2.ma.lead()`), in either order. A failed submit with no lead
+  links nothing, so a visitor 2destate doesn't know never sends signals.
+- **Visit signal:** `POST {api}/public/ma/visit` with
+  `{ visitorId, units?, pageviews, source: "return_visit" }` — up to 20
+  unique 2destate unit ids (UUID) viewed this visit (left out when none),
+  page views of the visit (1–50). Once per visit, then only when new units
+  were viewed and at most every 5 minutes. Never in the form's visit. No form
+  data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+- **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
+  dropped; 403 (Origin off the project's list or lead not eligible — one code
+  for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
+  429 / 503 → wait `Retry-After` (1 h default); anything else → console
+  warning.
+- **"Clear" and consent withdrawn:** `POST {api}/public/ma/revoke
+  {visitorId}` first (only for a linked profile), then the profile goes
+  locally whatever the answer.
+- **Envelope from 2destate:** `d2-ma` already takes any URL, so switching the
+  source is `d2-ma="https://api.2destate.com/api/v1/public/ma/scenario/<site>.json"`
+  — same v0 shape, no code change.
+
 ### Page conditions (ma.5, §13.11.2a)
 
 Personalisation decided in the browser from the `d2ma` profile, with attributes
@@ -1605,6 +1640,7 @@ digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit,
 digi2.ma.history()          // views, oldest first
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
+digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
 digi2.ma.load(urlOrObject)  // read an envelope
 digi2.ma.reload()
 digi2.ma.simulateReturn()
