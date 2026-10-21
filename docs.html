@@ -2605,7 +2605,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
 
     <table>
       <tr><th>Loader attribute</th><th>Default</th><th>Effect</th></tr>
-      <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests)</td></tr>
+      <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests as an object). ma.23: only <code>https://digi2.app/…</code> or <code>https://api.2destate.com/…</code> — any other address, also in <code>digi2.ma.load(url)</code>, is not fetched (console warning, the page runs without MA)</td></tr>
       <tr><td><code>d2-ma-consent-required</code></td><td>required</td><td>The envelope's <code>storage.consentRequired</code> decides; this applies when the envelope can't be read. <code>"true"</code> forces consent whatever the envelope says</td></tr>
       <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category that unlocks storage. Read from any banner that speaks Consent Mode, see below</td></tr>
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
@@ -2991,7 +2991,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td>413 / 422</td><td>Body refused: no more signals this visit, next visit tries again (ma.13)</td></tr>
       <tr><td>429 / 503</td><td>Wait <code>Retry-After</code> (1 h without it)</td></tr>
       <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer. Sent whenever the <code>visitorId</code> was ever handed to a form — 2destate links on the field alone, even when the page saw no lead (ma.13). Consent withdrawn between visits is caught on the next page view: the id is read from <code>d2ma</code> just for the revoke, then the database goes; a browser without <code>d2ma</code> doesn't get one (ma.15)</td></tr>
-      <tr><td><code>d2-ma-hot-lead</code> not <code>https://…</code></td><td>Console warning, the production API is used (ma.13)</td></tr>
+      <tr><td><code>d2-ma-hot-lead</code> other than <code>https://api.2destate.com/…</code></td><td>ma.23: console warning and no <code>/visit</code> or <code>/revoke</code> request at all (any other host, <code>http</code>, a port or a login). ma.13 fell back to the production API</td></tr>
     </table>
     <p class="muted">The module never submits or blocks the form itself — it only fills the hidden field in the capture phase, before your handler. Pin MA with a tag (<code>@v1.9.0-ma.N/dist/digi2-loader.min.js</code>), never <code>@latest</code>.</p>
     <p class="muted">A working page with fake units, both search engines simulated and a webhook that never leaves the browser: <code>sandbox/ma.html</code>.</p>

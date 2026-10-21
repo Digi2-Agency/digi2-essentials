@@ -1098,7 +1098,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 | Loader attribute | Default | Description |
 |---|---|---|
-| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS |
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
 | `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
 | `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
@@ -1459,8 +1459,11 @@ fired `engagement` triggers), so a trigger can fire again on the same page.
 
 Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
 `docs/architecture/ma-hot-lead-2destate.md` §6.2. Opt-in with
-`d2-ma-hot-lead` on the loader tag; its value is the 2destate API base
-(`https`), empty = `https://api.2destate.com/api/v1`.
+`d2-ma-hot-lead` on the loader tag; its value is the 2destate API base, empty =
+`https://api.2destate.com/api/v1`. **ma.23:** only `https://api.2destate.com/…` —
+any other host (there is no 2destate staging with `/public/ma/*`), `http`, a port or a
+login means no `/visit` and no `/revoke` request at all, with one `console.warn`
+(ma.13 fell back to production instead).
 
 - **Link:** instead of a signed lead token, 2destate gets the `d2ma`
   `visitorId` with the form, field `d2ma_visitor_id`. The page takes it from
@@ -1764,7 +1767,7 @@ digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-con
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
 digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
-digi2.ma.load(urlOrObject)  // read an envelope
+digi2.ma.load(urlOrObject)  // read an envelope (URL only from digi2.app / api.2destate.com, ma.23)
 digi2.ma.reload()
 digi2.ma.simulateReturn()
 digi2.ma.clear()            // Promise

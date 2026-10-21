@@ -5,6 +5,20 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.23 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.22–ma.16)
+
+### `d2-ma` — dozwolone adresy
+
+- Koperta scenariuszy jest pobierana tylko z `https://digi2.app/…` albo
+  `https://api.2destate.com/…`, zarówno z atrybutu `d2-ma`, jak i z
+  `digi2.ma.load(url)`. Inny adres nie jest pobierany. W konsoli pojawia się
+  ostrzeżenie, a strona działa jak bez MA. Plik lokalny do testów podaje się
+  jako obiekt: `digi2.ma.load({…})`.
+- Gorący lead (`d2-ma-hot-lead`) wysyła `/visit` i `/revoke` tylko do
+  `https://api.2destate.com/…`. Inny host, `http`, port albo login oznaczają, że
+  nie idzie żadne żądanie (wcześniej skrypt przełączał się wtedy na produkcję).
+  Stagingu 2destate z tymi trasami nie ma.
+
 ## v1.9.0-ma.22 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.21–ma.16 i gorący lead z ma.15)
 
 ### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′) na aktualnej linii
