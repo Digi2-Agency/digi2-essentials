@@ -204,7 +204,7 @@ function strona(opts) {
       _loaded: { popups: !o.popupsProxy },
       popups: o.popupsProxy ? popupsProxy : popupsApi,
       _maStore: o.idb ? undefined : magazyn(o.dysk || {}),
-      _maEndpoint: 'koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null,
+      _maEndpoint: o.endpoint || ('koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null),
     },
   };
   if (o.idb) window.indexedDB = o.idb;
@@ -228,7 +228,9 @@ function strona(opts) {
     };
   }
 
+  const pobrania = [];
   function fetch(url, init) {
+    pobrania.push(String(url));
     if (url === 'https://digi2.app/api/ma/scenario/demo.json') {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
@@ -271,6 +273,7 @@ function strona(opts) {
   const env = {
     window, zegar, dataLayer, popupy, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     proxyWolania,
+    pobrania,
     /** Moduł popupów dociągnął się po d2-ma: loader podstawia prawdziwy obiekt i oznacza _loaded. */
     zaladujPopups() { window.digi2.popups = popupsApi; window.digi2._loaded.popups = true; },
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
@@ -3163,8 +3166,8 @@ test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, p
   assert.equal(p2.sygnaly.length, 2, 'lokal bez UUID 2destate nie jest przyrostem');
   const p3 = await powrot(p2, 3 * MIN);
   assert.equal(p3.sygnaly.length, 0, 'kolejna odsłona tej samej wizyty bez nowych lokali');
-  const p4 = await powrot(p3, 26 * H, { cfg: { 'd2-ma-hot-lead': 'https://staging.2destate.example/api/v1/' } });
-  assert.equal(p4.sygnaly[0].url, 'https://staging.2destate.example/api/v1/public/ma/visit', 'baza z atrybutu');
+  const p4 = await powrot(p3, 26 * H, { cfg: { 'd2-ma-hot-lead': 'https://api.2destate.com/api/v1/' } });
+  assert.equal(p4.sygnaly[0].url, 'https://api.2destate.com/api/v1/public/ma/visit', 'baza z atrybutu, końcowy / zdjęty');
 });
 
 test('MA-D38 D′: 401 zrywa powiązanie; 403 wstrzymuje na dobę; 429/503 czeka Retry-After', async () => {
@@ -3266,13 +3269,20 @@ test('MA-D38 D′ (ma.13): 404 wstrzymuje na dobę; 413 / 422 — koniec sygnał
   }
 });
 
-test('MA-D38 D′ (ma.13): d2-ma-hot-lead bez https — ostrzeżenie i API produkcyjne', async () => {
-  const p1 = await leadDema({ cfg: { 'd2-ma-hot-lead': 'http://localhost:8000/api/v1' } });
-  const p2 = await powrot(p1, 26 * H);
-  assert.equal(p2.sygnaly[0].url, VISIT);
-  assert.ok(p2.ostrzezenia.some((w) => w.includes('not an https address')));
-  const pusty = await powrot(p2, 26 * H, { cfg: HOT });
-  assert.ok(!pusty.ostrzezenia.some((w) => w.includes('not an https address')), 'puste — bez ostrzeżenia');
+test('ma.23: d2-ma-hot-lead spoza listy (http, inny host, staging, port, login) — ostrzeżenie i zero żądań /visit i /revoke', async () => {
+  for (const zly of ['http://localhost:8000/api/v1', 'https://staging.2destate.example/api/v1', 'https://api.dev.2destate.com/api/v1',
+    'https://api.2destate.com:8443/api/v1', 'https://x@api.2destate.com/api/v1', 'https://api.2destate.com.evil.example/api/v1']) {
+    const p1 = await leadDema({ cfg: { 'd2-ma-hot-lead': zly } });
+    const p2 = await powrot(p1, 26 * H);
+    assert.equal(p2.sygnaly.length, 0, zly);
+    assert.ok(p2.ostrzezenia.some((w) => w.includes('is not https://api.2destate.com')), zly);
+    await p2.ma.clear();
+    assert.equal(p2.sygnaly.length, 0, 'bez revoke: ' + zly);
+  }
+  const p1 = await leadDema();
+  const pusty = await powrot(p1, 26 * H, { cfg: HOT });
+  assert.equal(pusty.sygnaly[0].url, VISIT, 'puste = produkcja');
+  assert.ok(!pusty.ostrzezenia.some((w) => w.includes('is not https://api.2destate.com')), 'puste — bez ostrzeżenia');
 });
 
 // ma.15: wipe() przy starcie nie zakłada bazy d2ma, której nie ma (IndexedDB)
@@ -3354,4 +3364,33 @@ test('ma.22: gorący lead razem z kontekstem leadu — formularz dostaje visitor
   assert.equal(id2.value, '');
   assert.equal(f2.querySelector('[name="d2ma_consent"]'), null);
   assert.equal(f2.querySelector('[name="d2ma_context"]').value, 'brak kontekstu (brak zgody)');
+});
+
+
+test('ma.23: koperta tylko z digi2.app i api.2destate.com po https — inny adres bez fetch, z ostrzeżeniem; także digi2.ma.load()', async () => {
+  for (const [url, ok] of [
+    ['https://digi2.app/api/ma/scenario/demo.json', true],
+    ['https://api.2destate.com/api/v1/public/ma/scenario/demo.json', true],
+    ['http://digi2.app/api/ma/scenario/demo.json', false],
+    ['https://evil.example/koperta.json', false],
+    ['https://digi2.app.evil.example/x.json', false],
+    ['https://user@digi2.app/x.json', false],
+    ['https://digi2.app:444/x.json', false],
+    ['/ma-koperta.json', false],
+  ]) {
+    const env = await start({ koperta: koperta([]) });
+    env.pobrania.length = 0;
+    await env.ma.load(url);
+    await env.gotowe();
+    assert.equal(env.pobrania.includes(url), ok, url);
+    assert.equal(env.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')), !ok, 'warn: ' + url);
+  }
+  // Atrybut loadera (start strony): adres spoza listy — zero fetch koperty, strona działa bez MA.
+  const zla = strona({ koperta: koperta([]) });
+  await zla.gotowe();
+  assert.ok(zla.pobrania.includes('https://digi2.app/api/ma/scenario/demo.json'), 'kontrola: adres z listy pobrany przy starcie');
+  const obca = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
+  await obca.gotowe();
+  assert.equal(obca.pobrania.length, 0);
+  assert.ok(obca.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')));
 });

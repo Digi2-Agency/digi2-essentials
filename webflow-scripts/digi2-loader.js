@@ -29,7 +29,8 @@
  *
  *   d2-gtm="GTM-XXXXXXX"               GTM container ID — auto-loads google module
  *   d2-ab-tests="configName"           A/B test map on window[configName]
- *   d2-ma="URL"                        Scenario envelope JSON (digi2.app /api/ma/scenario/<site>.json)
+ *   d2-ma="URL"                        Scenario envelope JSON (digi2.app /api/ma/scenario/<site>.json;
+ *                                      ma.23: only https://digi2.app or https://api.2destate.com)
  *   d2-ma-consent-required="false"     Fallback when the envelope cannot be read (default: required)
  *   d2-ma-consent="analytics_storage"  Consent Mode category that unlocks the d2ma database
  *   d2-ma-highlight                    Highlight the visitor's preferred units on the 2destate map

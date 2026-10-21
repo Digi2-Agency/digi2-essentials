@@ -15,6 +15,8 @@
  *   ></script>
  *
  *   d2-ma="<url>"                 Scenario envelope (§13.3). Empty = digi2.ma.load()
+ *                                 (ma.23) only https://digi2.app/… or https://api.2destate.com/…;
+ *                                 anything else is not fetched (console.warn), also in load()
  *   d2-ma-consent-required        "true" | "false". The envelope's storage.consentRequired
  *                                 decides; this is what applies when it cannot be read.
  *                                 "true" forces consent whatever the envelope says.
@@ -31,8 +33,9 @@
  *   d2-ma-hot-lead="<api>"        ma.12, demo / test leads (MA-D38 stage 1, D′): visitorId
  *                                 for the 2destate form, return-visit signal POST
  *                                 {api}/public/ma/visit, /revoke on clear / consent withdrawn
- *                                 (whenever the id was handed out). Empty or not https =
- *                                 https://api.2destate.com/api/v1. Pin MA with @v1.9.0-ma.N.
+ *                                 (whenever the id was handed out). Empty =
+ *                                 https://api.2destate.com/api/v1; (ma.23) any other host or
+ *                                 not https = no request at all. Pin MA with @v1.9.0-ma.N.
  *
  * ─── Sources of unit_view (§13.1) ───────────────────────────────────────────
  *
@@ -197,6 +200,17 @@
   var CONSENT_STORAGE_KEY = 'consentModeV2';
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var TEMPLATE_RE = /^[A-Za-z0-9_-]+$/;
+  // ma.23 (§13.3, §13.8.1 pkt 5): jedyne hosty, spod których d2-ma pobiera kopertę.
+  var ENVELOPE_HOSTS = { 'digi2.app': 1, 'api.2destate.com': 1 };
+
+  // Adres https z hostem z listy — bez portu, loginu i hasła (nic do obejścia przez „@”).
+  function allowedUrl(url, hosts) {
+    var m = /^https:\/\/([^\/?#]*)([\/?#]|$)/i.exec(String(url || ''));
+    if (!m) return false;
+    var host = m[1].toLowerCase();
+    if (!host || /[@:\s\\]/.test(host)) return false;
+    return Object.prototype.hasOwnProperty.call(hosts, host);
+  }
 
   var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1,
     exit_intent: 1, engagement: 1, form_abandon: 1, search_filter: 1 };
@@ -208,7 +222,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 22;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 23;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3151,6 +3165,8 @@
   // ---------------------------------------------------------------------------
 
   var VISIT_RESEND_MS = 5 * 60 * 1000;
+  // ma.23: hot lead tylko do API produkcji 2destate (stagingu z /public/ma/* nie ma — 2destate 21.10).
+  var HOT_LEAD_HOSTS = { 'api.2destate.com': 1 };
   var MAX_SIGNAL_UNITS = 20;
   var DEFAULT_HOT_LEAD_API = 'https://api.2destate.com/api/v1';
   var hotLeadTimer = null;
@@ -3161,14 +3177,16 @@
 
   // Wartość atrybutu = baza API 2destate (https), pusta = produkcja.
   var hotLeadApiWarned = false;
+  // null = adres spoza listy (ma.23): żadnego fetch do /visit ani /revoke.
   function hotLeadApi() {
     var v = _cfg('d2-ma-hot-lead') || '';
-    if (/^https:\/\//i.test(v)) return v.replace(/\/+$/, '');
-    if (v && !hotLeadApiWarned) {
+    if (!v) return DEFAULT_HOT_LEAD_API;
+    if (allowedUrl(v, HOT_LEAD_HOSTS)) return v.replace(/\/+$/, '');
+    if (!hotLeadApiWarned) {
       hotLeadApiWarned = true;
-      _warn('d2-ma-hot-lead="' + v + '" is not an https address — using ' + DEFAULT_HOT_LEAD_API);
+      _warn('d2-ma-hot-lead="' + v.slice(0, 120) + '" is not https://api.2destate.com — no visit signal, no revoke');
     }
-    return DEFAULT_HOT_LEAD_API;
+    return null;
   }
 
   // visitorId oddany stronie (formularz) - zapamiętujemy wizytę, w której to było.
@@ -3216,7 +3234,7 @@
 
   // Sygnał raz na wizytę powrotu, potem przyrost lokali najwyżej co 5 minut.
   function sendVisitSignal() {
-    if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function') return;
+    if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
@@ -3239,7 +3257,9 @@
       source: 'return_visit' };
     if (units.length) body.units = units;
     try {
-      fetch(hotLeadApi() + '/public/ma/visit', {
+      var base = hotLeadApi();
+      if (!base) return;
+      fetch(base + '/public/ma/visit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
         credentials: 'omit', mode: 'cors', keepalive: true
       }).then(function (r) {
@@ -3280,9 +3300,11 @@
   function revokeHotLead(st) {
     st = st || state;
     if (!st || (st.idShared == null && !st.hotLead) || !st.visitorId) return;
-    if (!hotLeadOn() || typeof fetch !== 'function') return;
+    if (!hotLeadOn() || typeof fetch !== 'function' || !hotLeadApi()) return;
     try {
-      fetch(hotLeadApi() + '/public/ma/revoke', {
+      var rbase = hotLeadApi();
+      if (!rbase) return;
+      fetch(rbase + '/public/ma/revoke', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ visitorId: st.visitorId }),
         credentials: 'omit', mode: 'cors', keepalive: true
@@ -4032,6 +4054,11 @@
 
   function fetchEnvelope(url) {
     if (!url || typeof fetch !== 'function') return Promise.resolve(null);
+    // ma.23 (§13.3): koperta tylko z digi2.app albo api.2destate.com, po https.
+    if (!allowedUrl(url, ENVELOPE_HOSTS)) {
+      _warn('envelope address "' + String(url).slice(0, 120) + '" is not on digi2.app or api.2destate.com (https) — not fetched, the page runs without MA');
+      return Promise.resolve(null);
+    }
     return timeoutFetch(url, { credentials: 'omit' }, FETCH_TIMEOUT_MS).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
