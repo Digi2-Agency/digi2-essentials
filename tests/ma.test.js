@@ -2935,3 +2935,48 @@ test('ma.18 (#23 recenzja): seria zmian filtra w 500 ms = jedno trafienie search
   await env.ma.clear();
   assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', {}, { source: 'api' }], 'Wyczyść');
 });
+
+
+test('ma.19: filtr zmieniony < 500 ms przed wysyłką trafia do kontekstu (flush), z czasem ostatniej zmiany; pagehide też zapisuje', async () => {
+  const env = await start({ koperta: koperta([]) });
+  await env.minie(MIN);
+  const t0 = env.zegar.t;
+  env.filtr({ rooms: [2] });
+  await env.minie(200);
+  const form = element({ 'd2-ma-context': 'json' }, 'FORM');
+  env.dom('submit', { target: form });
+  assert.ok(bezNbsp(form.querySelector('[name="d2ma_context"]').value).includes('filtrował: 2 pokoje'), 'flush przed kontekstem');
+  assert.equal(JSON.parse(form.querySelector('[name="d2ma_context_json"]').value).filters.t, new Date(t0).toISOString(), 'at = chwila zmiany, nie wysyłki');
+  await env.minie(600);
+  assert.equal(env.ma.profile().filters.ts, t0, 'timer nie dubluje: jeden wpis');
+
+  const p2 = await start({ koperta: koperta([]) });
+  p2.filtr({ rooms: [4] });
+  await p2.minie(100);
+  p2.okno('pagehide');
+  await p2.gotowe();
+  assert.deepEqual(czyste(p2.ma.profile().filters.rooms), [4], 'pagehide');
+});
+
+test('ma.19: item_list_sort — price_asc jest; custom (nasz setProductOrder) nie daje zdarzenia, a następne zdarzenie listy idzie bez parametru', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.sortuj('price', 'asc');
+  await env.minie(600);
+  assert.equal(dlZdarzenia(env, 'view_item_list').pop().item_list_sort, 'price_asc');
+  const przed = dlZdarzenia(env, 'view_item_list').length;
+  env.sortuj('custom', 'asc');
+  await env.minie(600);
+  assert.equal(dlZdarzenia(env, 'view_item_list').length, przed, 'custom to nie wybór gościa — bez zdarzenia');
+  env.filtr({ rooms: [2] });
+  env.sortuj('custom', 'asc', { source: 'user' });
+  await env.minie(600);
+  assert.equal(dlZdarzenia(env, 'view_item_list').pop().item_list_sort, undefined, 'lista ułożona custom (nasz setProductOrder) — bez item_list_sort');
+});
+
+test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG', () => {
+  const kod = fs.readFileSync(modulePath, 'utf8');
+  const v = Number(/var SCRIPT_VERSION = (\d+);/.exec(kod)[1]);
+  const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const top = Number(/^## v\d+\.\d+\.\d+-ma\.(\d+)/m.exec(log)[1]);
+  assert.equal(v, top, 'podbij SCRIPT_VERSION razem z wpisem w CHANGELOG');
+});

@@ -83,6 +83,8 @@
  *   action  prefer_filters        by: rooms | floor | both — d2estate.setFilters with
  *                                 the profile's preference, once a visit, only if the
  *                                 visitor has not touched the filters in this visit
+ *   (ma.19) a pending filter change is flushed on form submit and on pagehide,
+ *   with the time of the last change
  *   (ma.18) filter changes debounced 500 ms before the profile; item_list_sort only
  *   price|area|floor; d2ma_consent="1" in forms with an active profile
  *   action  map_order             also skipped once the visitor picked a sort in
@@ -197,7 +199,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 17;   // ma.17 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 19;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -690,10 +692,11 @@
     if (blocked) return;
     if (!tracking) {
       // Zdarzenie sprzed zgody nie wraca, gdy zgoda przyjdzie w trakcie startu.
-      if (buffer.length < MAX_BUFFER) buffer.push({ evt: evt, real: Date.now(), consent: hasConsent() });
+      if (buffer.length < MAX_BUFFER) buffer.push({ evt: evt, real: evt.realAt != null ? evt.realAt : Date.now(), consent: hasConsent() });
       return;
     }
-    handle(evt);
+    // realAt: chwila zdarzenia, gdy dociera później (filtr po debounce, ma.19).
+    handle(evt, evt.realAt != null ? evt.realAt + ((state && state.shift) || 0) : null);
     afterChange();
   }
 
@@ -1692,6 +1695,7 @@
   function resetFilters() {
     var api = mapApi();
     if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
+    pendingFilter = null;
     if (!api || typeof api.setFilters !== 'function') return;
     try { mapNames().forEach(function (m) { api.setFilters(m, {}, { source: 'api' }); }); } catch (e) {}
   }
@@ -1825,6 +1829,17 @@
 
   var SORT_GA = { price: 1, area: 1, floor: 1 };
   var filterTimer = null;
+  var pendingFilter = null;     // ostatnia zmiana gościa czekająca na 500 ms ciszy
+  var flushHooked = false;
+
+  // Odłożona zmiana filtra trafia do profilu od razu: przed wysyłką formularza
+  // (kontekst leadu) i przy wyjściu ze strony. Czas = chwila ostatniej zmiany.
+  function flushFilter() {
+    if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
+    var p = pendingFilter;
+    pendingFilter = null;
+    if (p) intake({ type: 'search_filter', filter: p.filter, results: p.results, realAt: p.realAt });
+  }
 
   function onFilterChange(p) {
     if (!p || typeof p !== 'object') return;
@@ -1837,11 +1852,11 @@
       scheduleListEvent();
       // Suwak ceny daje serię zmian: do profilu i scenariuszy idzie jedna, ostatnia
       // po 500 ms ciszy — inaczej minCount nabija się jednym ruchem, a filterLog puchnie.
+      pendingFilter = { filter: search.filters, results: search.matching, realAt: Date.now() };
+      // pagehide dopiero od pierwszego filtra gościa: strona bez wyszukiwarki nie dostaje nasłuchu.
+      if (!flushHooked && window.addEventListener) { flushHooked = true; window.addEventListener('pagehide', flushFilter); }
       if (filterTimer) clearTimeout(filterTimer);
-      filterTimer = setTimeout(function () {
-        filterTimer = null;
-        intake({ type: 'search_filter', filter: search.filters, results: search.matching });
-      }, LIST_DEBOUNCE_MS);
+      filterTimer = setTimeout(flushFilter, LIST_DEBOUNCE_MS);
     }
   }
 
@@ -3724,6 +3739,8 @@
     if (!form || !form.tagName || String(form.tagName).toUpperCase() !== 'FORM') return false;
     if (ctxOff()) return false;
     if (form.closest && form.closest('[d2-ma-ignore], [data-d2-ma-ignore]')) return false;
+    // Filtr zmieniony tuż przed wysyłką (< 500 ms) też jest w kontekście (ma.19).
+    flushFilter();
     var wantJson = _attr(form, 'd2-ma-context') === 'json';
     var d = contextData();
     if (!d) {

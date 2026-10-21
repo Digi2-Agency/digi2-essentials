@@ -5,6 +5,18 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.19 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.18, ma.17, ma.16)
+
+### `d2-ma`
+
+- Filtr zmieniony w wyszukiwarce tuż przed wysłaniem formularza (w ciągu
+  500 ms) trafia już do kontekstu leadu. Zmiana zapisuje się też przy wyjściu
+  ze strony, z czasem ostatniej zmiany, a nie chwilą wysyłki.
+- Lista ułożona przez nas (`custom`) nie daje zdarzenia `view_item_list`, a
+  następne zdarzenie listy idzie bez `item_list_sort`.
+- Skrypt zgłasza wersję równą numerowi tagu (`ma.19`) przy porównaniu z
+  `minScript` koperty. Wcześniej tag ma.18 zgłaszał 17.
+
 ## v1.9.0-ma.18 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.17 i ma.16)
 
 ### `d2-ma`
