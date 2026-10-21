@@ -67,6 +67,9 @@
  *   Only with consent (the profile's own gate). Without it d2ma_context is
  *   "brak kontekstu (brak zgody)" and the JSON field is left out. Only this
  *   site's behaviour — never other forms' values, IP, UA or location.
+ *   d2ma_consent = "1"        (ma.18) only with consent — the 2destate server stores
+ *                         the context only then; without consent it is not added
+ *                         and a page's own field of that name is emptied.
  *   d2-ma-context="off" on the loader tag switches it off.
  *   digi2.ma.context() → { text, json } | null; digi2.ma.fillContext(form).
  *
@@ -80,6 +83,8 @@
  *   action  prefer_filters        by: rooms | floor | both — d2estate.setFilters with
  *                                 the profile's preference, once a visit, only if the
  *                                 visitor has not touched the filters in this visit
+ *   (ma.18) filter changes debounced 500 ms before the profile; item_list_sort only
+ *   price|area|floor; d2ma_consent="1" in forms with an active profile
  *   action  map_order             also skipped once the visitor picked a sort in
  *                                 this visit (their choice wins until the visit ends)
  *   state   filters               last user filter; pref.rooms / pref.floor fall back
@@ -1683,6 +1688,14 @@
   var ordered = false;       // map_order przestawił listę na tej odsłonie
 
   // „Wyczyść" (§13.2): lista 2destate wraca do swojej kolejności.
+  // „Wyczyść” (ma.18): wyszukiwarka wraca do pustego filtra, jak po wejściu.
+  function resetFilters() {
+    var api = mapApi();
+    if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
+    if (!api || typeof api.setFilters !== 'function') return;
+    try { mapNames().forEach(function (m) { api.setFilters(m, {}, { source: 'api' }); }); } catch (e) {}
+  }
+
   function resetOrder() {
     var api = mapApi();
     if (!ordered || !api || typeof api.setProductOrder !== 'function') return;
@@ -1810,16 +1823,25 @@
     return v === 'off' || v === 'false';
   }
 
+  var SORT_GA = { price: 1, area: 1, floor: 1 };
+  var filterTimer = null;
+
   function onFilterChange(p) {
     if (!p || typeof p !== 'object') return;
-    var user = p.source !== 'api';
+    var user = p.source === 'user';
     if (p.mapName) lastMapName = String(p.mapName);
     search.filters = normFilters(p.filters);
     search.matching = num(p.resultCount);
     search.mapName = p.mapName ? String(p.mapName) : search.mapName;
     if (user) {
       scheduleListEvent();
-      intake({ type: 'search_filter', filter: search.filters, results: search.matching });
+      // Suwak ceny daje serię zmian: do profilu i scenariuszy idzie jedna, ostatnia
+      // po 500 ms ciszy — inaczej minCount nabija się jednym ruchem, a filterLog puchnie.
+      if (filterTimer) clearTimeout(filterTimer);
+      filterTimer = setTimeout(function () {
+        filterTimer = null;
+        intake({ type: 'search_filter', filter: search.filters, results: search.matching });
+      }, LIST_DEBOUNCE_MS);
     }
   }
 
@@ -1830,7 +1852,7 @@
     search.sort = by ? { by: by, dir: dir } : null;
     if (p.mapName) lastMapName = String(p.mapName);
     // custom = kolejność nadana przez setProductOrder (nasza), nie wybór gościa.
-    if (p.source === 'api' || by === 'custom') return;
+    if (p.source !== 'user' || by === 'custom') return;
     sortTouchedPage = true;
     scheduleListEvent();
     intake({ type: 'search_sort', sort: search.sort });
@@ -1873,7 +1895,8 @@
       try { if (api && typeof api.getProducts === 'function') total = (api.getProducts() || []).length || null; } catch (e) {}
       dlPush({ event: 'view_item_list', item_list_name: LIST_NAME, filters: fs.text, filter_count: fs.count,
         matching: search.matching, total: total,
-        item_list_sort: search.sort ? search.sort.by + '_' + search.sort.dir : null });
+        // Tylko price | area | floor × asc | desc; rooms, name, custom — parametr pominięty.
+        item_list_sort: search.sort && SORT_GA[search.sort.by] ? search.sort.by + '_' + search.sort.dir : null });
     }, LIST_DEBOUNCE_MS);
   }
 
@@ -3486,6 +3509,8 @@
   // ---------------------------------------------------------------------------
   var CTX_FIELD = 'd2ma_context';
   var CTX_JSON_FIELD = 'd2ma_context_json';
+  // ma.18: znacznik zgody dla serwera 2destate (#203) — zapisuje kontekst tylko przy "1".
+  var CTX_CONSENT_FIELD = 'd2ma_consent';
   var CTX_TEXT_MAX = 2000;
   var CTX_JSON_MAX = 4096;
   var CTX_NO_CONSENT = 'brak kontekstu (brak zgody)';
@@ -3703,12 +3728,16 @@
     var d = contextData();
     if (!d) {
       setCtxField(form, CTX_FIELD, CTX_NO_CONSENT);
+      // Bez zgody znacznika nie dokładamy; własne pole strony o tej nazwie opróżniamy.
+      var c = ctxField(form, CTX_CONSENT_FIELD);
+      if (c) { c.value = ''; c.setAttribute('value', ''); }
       // Własne pole strony na JSON zostaje, ale puste; nowego nie dokładamy.
       var j = wantJson ? ctxField(form, CTX_JSON_FIELD) : null;
       if (j) { j.value = ''; j.setAttribute('value', ''); }
       return true;
     }
     setCtxField(form, CTX_FIELD, contextText(d));
+    setCtxField(form, CTX_CONSENT_FIELD, '1');
     if (wantJson) setCtxField(form, CTX_JSON_FIELD, contextJson(d));
     return true;
   }
@@ -3959,6 +3988,7 @@
       restoreSlots();
       resetSignals();
       resetOrder();
+      resetFilters();
       if (dueTimer) { clearTimeout(dueTimer); dueTimer = null; }
       var s = store;
       state = wasTracking ? freshState() : null;

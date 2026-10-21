@@ -1570,6 +1570,7 @@ JSON would be noise; the 2destate webhook wants it) also gets
 | Consent and a profile | Both values rebuilt at every submit from the profile (§13.2): visit starts (`visitLog`), views grouped per unit (newest data of the unit, count, last view), `pref`, segments, last unit, lead flag, this visit's UTM |
 | No consent, or no profile yet | `d2ma_context` = `brak kontekstu (brak zgody)`; `d2ma_context_json` is not added (on a `d2-ma-context="json"` form a page's own field of that name is emptied) |
 | Form without `d2-ma-context="json"` | A page's own `d2ma_context_json` field is neither filled nor emptied |
+| `d2ma_consent` (ma.18) | `1` on every submit while the profile is active (same gate as `d2ma_context`) — the 2destate server stores the context only with it. Without consent the field is not added and a page's own field of that name is emptied |
 | The form already has a field of that name | Its value is overwritten — never a second input |
 | Too long | Text drops the oldest visit dates first (`…, 20.10, 21.10`), then the oldest units from the list; counts stay true. JSON drops the oldest visits, then the oldest units (keeps the 30 most recent units, 60 visits at most) |
 | `path` | Known only for the current page (`location.pathname`) on the last visit entry — the module does not store page paths of earlier visits |
@@ -1686,7 +1687,7 @@ loader tag switches them off):
   flat_type, flat_building, flat_availability, flat_price, flat_isPromo, view_source: 'wyszukiwarka' | 'mapa' }
 ```
 
-Empty fields are left out. `total` is `getProducts().length`; `flat_price` is
+Empty fields are left out. `item_list_sort` only for `price`, `area`, `floor` × `asc` / `desc` (ma.18) — for `rooms`, `name`, `custom` it is left out. A filter change reaches the profile and the scenarios once, after 500 ms of quiet (ma.18: a price slider is one `search_filter`, not ten). Only `source: "user"` counts — a missing `source` does not. `digi2.ma.clear()` also resets the search: `setFilters(map, {}, { source: 'api' })`. `total` is `getProducts().length`; `flat_price` is
 the promo price while a promotion runs.
 
 ### State actions: `every_time`, `map_order` (ma.5)

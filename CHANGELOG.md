@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.18 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.17 i ma.16)
+
+### `d2-ma`
+
+- Przy wysyłce formularza z aktywnym profilem moduł dopisuje ukryte pole
+  `d2ma_consent` = `1`. Serwer 2destate zapisuje kontekst leadu tylko z nim.
+  Bez zgody pola nie ma, a własne pole strony o tej nazwie jest opróżniane.
+- Wyszukiwarka (poprawki z recenzji ma.17): seria zmian filtra w ciągu 500 ms
+  (suwak ceny) liczy się jako jedna zmiana w profilu i scenariuszach.
+  `item_list_sort` w GA4 tylko dla sortowania po cenie, metrażu i piętrze.
+  Zmiana bez `source: "user"` nie jest zachowaniem gościa. „Wyczyść”
+  (`digi2.ma.clear()`) zeruje też filtry wyszukiwarki.
+
 ## v1.9.0-ma.17 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.16)
 
 ### `d2-ma` — wyszukiwarka 2destate (§13.14, wymaga core 1.7.0)
