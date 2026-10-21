@@ -28,6 +28,11 @@
  *   d2-ma-highlight               Highlight units matching pref.rooms on the 2destate map
  *   d2-ma-refresh="30"            Re-read the envelope every N seconds (demo: a CRM call
  *                                 result sent from the panel reaches an open page)
+ *   d2-ma-hot-lead="<api>"        ma.12, demo / test leads (MA-D38 stage 1, D′): visitorId
+ *                                 for the 2destate form, return-visit signal POST
+ *                                 {api}/public/ma/visit, /revoke on clear / consent withdrawn
+ *                                 (whenever the id was handed out). Empty or not https =
+ *                                 https://api.2destate.com/api/v1. Pin MA with @v1.9.0-ma.N.
  *
  * ─── Sources of unit_view (§13.1) ───────────────────────────────────────────
  *
@@ -53,6 +58,7 @@
  *   [d2-ma-simulate-return]       Button — end the visit as if afterHours had passed
  *   [d2-ma-slot="hero-title"]     Text the content action may replace (textContent only)
  *   form[d2-ma-ignore]            Never counted by form_abandon
+ *   input[d2-ma-visitor-id]       With d2-ma-hot-lead: visitorId on submit (empty without consent)
  *
  * ─── Contract v1 nodes (ma.4, §13.8) — listening only when the envelope uses them
  *
@@ -98,6 +104,7 @@
  *   digi2.ma.reload()             Re-read the current envelope URL
  *   digi2.ma.track(unit)          Record a unit_view from any other source
  *   digi2.ma.lead()               Mark the visitor as a lead
+ *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
  *   digi2.ma.simulateReturn()     Same as the [d2-ma-simulate-return] button
@@ -335,6 +342,29 @@
           t.objectStore('counters').put(counters);
         });
       },
+      // Sam rekord state, bez zakładania bazy, której nie ma (wipe() przy
+      // starcie): nowa baza = onupgradeneeded, wtedy przerywamy i wraca null.
+      peekState: function () {
+        return new Promise(function (resolve) {
+          var req;
+          try { req = idb.open(DB_NAME, DB_VERSION); } catch (e) { resolve(null); return; }
+          var fresh = false;
+          req.onupgradeneeded = function () {
+            fresh = true;
+            try { req.transaction.abort(); } catch (e) {}
+          };
+          req.onsuccess = function () {
+            var db = req.result;
+            if (fresh || !db.objectStoreNames.contains('state')) { try { db.close(); } catch (e) {} resolve(null); return; }
+            try {
+              var r = db.transaction(['state'], 'readonly').objectStore('state').get('main');
+              r.onsuccess = function () { try { db.close(); } catch (e) {} resolve(r.result || null); };
+              r.onerror = function () { try { db.close(); } catch (e) {} resolve(null); };
+            } catch (e) { try { db.close(); } catch (x) {} resolve(null); }
+          };
+          req.onerror = req.onblocked = function () { resolve(null); };
+        });
+      },
       clear: function () {
         if (handle) { try { handle.close(); } catch (e) {} }
         handle = null;
@@ -355,6 +385,7 @@
     return {
       kind: 'memory',
       load: function () { return Promise.resolve({ views: _clone(b.views), state: _clone(b.state) }); },
+      peekState: function () { return Promise.resolve(_clone(b.state)); },
       putViews: function (list) {
         list.forEach(function (v) {
           var i = b.views.findIndex(function (x) { return x.id === v.id; });
@@ -654,11 +685,14 @@
       var v = recordView(_clone(evt.unit), t);
       if (!v) return;
       _emit('ma:view', { unit: v.unit });
+      sendVisitSignal();
       dispatch({ type: 'unit_view', t: t, unit: v.unit });
       runDue();
     } else if (evt.type === 'lead') {
       state.lead = true;
       state.leadAt = t;
+      state.leadVisit = state.visits;
+      bindHotLead();
       dispatch({ type: 'lead', t: t });
     } else if (evt.type === 'exit_intent') {
       // Raz na wizytę (§13.8.2).
@@ -2737,6 +2771,174 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Gorący lead wraca (MA-D38 etap 1, wariant D′; silnik
+  // docs/architecture/ma-hot-lead-2destate.md §6.2). Opt-in atrybutem
+  // d2-ma-hot-lead na tagu loadera - tylko strona dema i leady testowe
+  // (Piotr 21.10). Zamiast tokenu leada 2destate dostaje visitorId z d2ma:
+  // strona dokłada go do zgłoszenia ([d2-ma-visitor-id] albo
+  // digi2.ma.visitorId()), a po powrocie d2-ma wysyła sygnał wizyty.
+  // Ruch anonimowy nie wychodzi z przeglądarki (MA-D30): sygnał idzie tylko,
+  // gdy w tej samej wizycie visitorId oddano formularzowi I był lead.
+  // ---------------------------------------------------------------------------
+
+  var VISIT_RESEND_MS = 5 * 60 * 1000;
+  var MAX_SIGNAL_UNITS = 20;
+  var DEFAULT_HOT_LEAD_API = 'https://api.2destate.com/api/v1';
+  var hotLeadTimer = null;
+
+  function hotLeadOn() {
+    return _cfg('d2-ma-hot-lead') !== null;
+  }
+
+  // Wartość atrybutu = baza API 2destate (https), pusta = produkcja.
+  var hotLeadApiWarned = false;
+  function hotLeadApi() {
+    var v = _cfg('d2-ma-hot-lead') || '';
+    if (/^https:\/\//i.test(v)) return v.replace(/\/+$/, '');
+    if (v && !hotLeadApiWarned) {
+      hotLeadApiWarned = true;
+      _warn('d2-ma-hot-lead="' + v + '" is not an https address — using ' + DEFAULT_HOT_LEAD_API);
+    }
+    return DEFAULT_HOT_LEAD_API;
+  }
+
+  // visitorId oddany stronie (formularz) - zapamiętujemy wizytę, w której to było.
+  function shareVisitorId() {
+    if (!hotLeadOn() || !tracking || !state) return null;
+    if (state.idShared !== state.visits) {
+      state.idShared = state.visits;
+      bindHotLead();
+      save();
+    }
+    return state.visitorId;
+  }
+
+  // Powiązanie z leadem: identyfikator oddany i lead w tej samej wizycie.
+  function bindHotLead() {
+    if (!state || state.hotLead || state.idShared == null || state.idShared !== state.leadVisit) return;
+    state.hotLead = { visit: state.visits, at: Date.now() };
+    _log('hot lead bound — return visits signal 2destate');
+  }
+
+  function dropHotLead() {
+    if (!state) return;
+    delete state.hotLead;
+    delete state.hotLeadSent;
+    delete state.hotLeadRetryAt;
+    if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
+  }
+
+  function viewedThisVisit() {
+    var from = state.visitStart == null ? -Infinity : state.visitStart;
+    var out = [];
+    for (var i = views.length - 1; i >= 0 && out.length < MAX_SIGNAL_UNITS; i--) {
+      var v = views[i];
+      if (v.ts < from) break;
+      var id = v.unit && v.unit.unitId;
+      if (id && UUID_RE.test(id) && out.indexOf(id) < 0) out.push(id);
+    }
+    return out;
+  }
+
+  function retryAfter(r, fallbackS) {
+    var s = r.headers && typeof r.headers.get === 'function' ? parseInt(r.headers.get('Retry-After'), 10) : NaN;
+    return Date.now() + (isFinite(s) && s > 0 ? s : fallbackS) * 1000;
+  }
+
+  // Sygnał raz na wizytę powrotu, potem przyrost lokali najwyżej co 5 minut.
+  function sendVisitSignal() {
+    if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function') return;
+    if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
+    var nowReal = Date.now();
+    if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
+    if (state.hotLeadMuteVisit === state.visits) return;
+    var units = viewedThisVisit();
+    var sent = state.hotLeadSent;
+    if (sent && sent.visit === state.visits) {
+      var fresh = units.some(function (u) { return sent.units.indexOf(u) < 0; });
+      if (!fresh) return;
+      var wait = VISIT_RESEND_MS - (nowReal - sent.at);
+      if (wait > 0) {
+        if (!hotLeadTimer) hotLeadTimer = setTimeout(function () { hotLeadTimer = null; sendVisitSignal(); }, wait + 50);
+        return;
+      }
+    }
+    var id = state.visitorId;
+    state.hotLeadSent = { visit: state.visits, units: units, at: nowReal };
+    save();
+    var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
+      source: 'return_visit' };
+    if (units.length) body.units = units;
+    try {
+      fetch(hotLeadApi() + '/public/ma/visit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        credentials: 'omit', mode: 'cors', keepalive: true
+      }).then(function (r) {
+        if (!r || r.ok) return;
+        var same = state && state.visitorId === id;
+        if (r.status === 401) {
+          // Nieznany, odwołany albo wygasły visitorId - powiązania już nie ma.
+          _log('visit signal refused (401) — hot lead unbound');
+          if (same) { dropHotLead(); save(); }
+        } else if (r.status === 403) {
+          // Zły Origin albo lead niekwalifikowany - nie zrywamy, wstrzymujemy na dobę.
+          _warn('visit signal refused (403) — Origin not on the project list or lead not eligible; paused 24 h');
+          if (same) { state.hotLeadRetryAt = Date.now() + DAY_MS; save(); }
+        } else if (r.status === 404) {
+          // Trasa jeszcze niewdrożona - nie pukamy co 5 minut, wracamy za dobę.
+          _warn('visit signal answered 404 — route not live; paused 24 h');
+          if (same) { state.hotLeadRetryAt = Date.now() + DAY_MS; save(); }
+        } else if (r.status === 413 || r.status === 422) {
+          // Treść odrzucona - w tej wizycie ten sam sygnał nie przejdzie.
+          _warn('visit signal answered ' + r.status + ' — no more signals this visit');
+          if (same) { state.hotLeadMuteVisit = state.visits; save(); }
+        } else if (r.status === 429 || r.status === 503) {
+          if (same) { state.hotLeadRetryAt = retryAfter(r, 3600); save(); }
+        } else {
+          _warn('visit signal answered ' + r.status);
+        }
+      }, function (e) { _log('visit signal failed', e); });
+    } catch (e) {
+      _log('visit signal failed', e);
+    }
+    _log('visit signal → 2destate', body);
+  }
+
+  // „Wyczyść" i wycofanie zgody: najpierw /revoke w 2destate, potem lokalnie
+  // (bez czekania na odpowiedź). Wystarczy oddany visitorId - 2destate wiąże
+  // lead po samym d2ma_visitor_id, także gdy strona nie zobaczyła leada;
+  // /revoke odpowiada 204 i dla nieznanego id, więc nic nie zdradza.
+  function revokeHotLead(st) {
+    st = st || state;
+    if (!st || (st.idShared == null && !st.hotLead) || !st.visitorId) return;
+    if (!hotLeadOn() || typeof fetch !== 'function') return;
+    try {
+      fetch(hotLeadApi() + '/public/ma/revoke', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorId: st.visitorId }),
+        credentials: 'omit', mode: 'cors', keepalive: true
+      }).then(null, function (e) { _log('revoke failed', e); });
+    } catch (e) { _log('revoke failed', e); }
+  }
+
+  // Ukryte pole [d2-ma-visitor-id] dostaje visitorId w chwili wysłania
+  // formularza (faza capture, przed handlerami strony). Bez zgody - puste.
+  // d2-ma niczego nie wysyła sam i nie blokuje wysyłki.
+  var idFieldsHooked = false;
+  function hookVisitorIdFields() {
+    if (idFieldsHooked || !hotLeadOn() || !document.addEventListener) return;
+    idFieldsHooked = true;
+    document.addEventListener('submit', function (e) {
+      var form = e && e.target;
+      if (!form || !form.querySelectorAll) return;
+      var fields = form.querySelectorAll('[d2-ma-visitor-id], [data-d2-ma-visitor-id]');
+      if (!fields.length) return;
+      var id = shareVisitorId();
+      for (var i = 0; i < fields.length; i++) fields[i].value = id || '';
+    }, true);
+  }
+
+  // ---------------------------------------------------------------------------
   // Elementy strony: „co o Tobie wie strona", wyczyść, symuluj powrót
   // ---------------------------------------------------------------------------
 
@@ -3051,7 +3253,7 @@
       if (t - lastTouch < TOUCH_THROTTLE_MS) return;
       lastTouch = t;
       var visit = touch();
-      if (visit) { dispatch(visit); runDue(); }
+      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); runDue(); }
       afterChange();
     }
     ['click', 'keydown', 'scroll', 'touchstart'].forEach(function (n) {
@@ -3150,6 +3352,9 @@
   // gdy zgoda nie była wymagana).
   function wipe(reason) {
     _log('no consent — d2ma deleted (' + reason + ')');
+    var hadState = !!state;
+    revokeHotLead();
+    if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
     blocked = true;
     views = [];
@@ -3163,7 +3368,18 @@
     resetSignals();
     resetOrder();
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
-    _queue(function () { return s.clear(); });
+    _queue(function () {
+      // Zgoda wycofana między wizytami (wykryta przy starcie): stanu nie ma
+      // w pamięci, więc visitorId do /revoke czytamy z bazy tuż przed jej
+      // usunięciem - sam rekord state i tylko w tym celu. Bazy, której nie
+      // ma, peekState nie zakłada.
+      var peek = !hadState && hotLeadOn()
+        ? (typeof s.peekState === 'function' ? s.peekState()
+          : typeof s.load === 'function' ? s.load().then(function (d) { return d && d.state; }) : null)
+        : null;
+      var before = peek ? Promise.resolve(peek).then(function (st) { revokeHotLead(st); }, function () {}) : null;
+      return Promise.resolve(before).then(function () { return s.clear(); });
+    });
     render();
     _emit('ma:change', { cleared: true, tracking: false, reason: reason });
   }
@@ -3233,6 +3449,8 @@
       prune();
       applyEnvelope(envelope);
       var visit = touch();
+      // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
+      state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
       if (crm) dispatch(crm);
       if (visit) dispatch(visit);
@@ -3247,6 +3465,7 @@
       hookSignals();
       replayFormExits();
       replayStateActions();
+      sendVisitSignal();
       runDue();
       afterChange();
       highlightProfile();
@@ -3291,6 +3510,7 @@
     hookMap();
     bindUi();
     deepLinkView();
+    hookVisitorIdFields();
     pageUtm = readUtm();
     envelopeUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     fetchEnvelope(envelopeUrl).then(function (raw) {
@@ -3349,6 +3569,9 @@
       intake({ type: 'view', unit: u });
     },
     lead: function () { intake({ type: 'lead' }); },
+    // visitorId dla zgłoszenia do 2destate (d2-ma-hot-lead). null bez zgody,
+    // bez d2-ma-hot-lead albo przed otwarciem magazynu.
+    visitorId: function () { return shareVisitorId(); },
     profile: function () {
       if (!state) return null;
       return {
@@ -3373,12 +3596,14 @@
       state.shift = (state.shift || 0) + Math.max(scaled(VISIT_GAP_MS), scaled(maxAfter * HOUR_MS)) + 1000;
       _log('simulated return, clock moved by ' + Math.round(state.shift / 1000) + ' s in total');
       var visit = touch();
-      if (visit) dispatch(visit);
+      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); }
       runDue();
       afterChange();
     },
     clear: function () {
       var wasTracking = tracking;
+      revokeHotLead();
+      if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
       views = [];
       highlighted = {};
       markWaiting = [];
