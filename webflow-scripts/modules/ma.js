@@ -85,7 +85,8 @@
  *                                 visitor has not touched the filters in this visit
  *   (ma.19) a pending filter change is flushed on form submit (scenario actions
  *   may run then), with the time of the last change; (ma.20) on pagehide only
- *   the fact is stored — no scenario action at exit, no replay on the next page
+ *   the fact is stored — no scenario action at exit, no replay on the next page;
+ *   (ma.21) GA4 events carry every contract key, a missing value is undefined
  *   (ma.18) filter changes debounced 500 ms before the profile; item_list_sort only
  *   price|area|floor; d2ma_consent="1" in forms with an active profile
  *   action  map_order             also skipped once the visitor picked a sort in
@@ -200,7 +201,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 20;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 21;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -1913,7 +1914,10 @@
 
   function dlPush(o) {
     if (searchEventsOff()) return;
-    Object.keys(o).forEach(function (k) { if (o[k] == null) delete o[k]; });
+    // Każdy klucz kontraktu w każdym pushu (ma.21, zasada 9 standardu GTM): zmienna
+    // DLV czyta model danych, więc brakujący klucz dałby wartość z poprzedniego
+    // pushu. Brak wartości = undefined jako własny klucz, nie usunięcie.
+    Object.keys(o).forEach(function (k) { if (o[k] == null) o[k] = undefined; });
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push(o);
   }

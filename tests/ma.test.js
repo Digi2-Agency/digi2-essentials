@@ -2831,7 +2831,7 @@ test('GA4: view_item_list po 500 ms (jedno zdarzenie z ostatnim stanem), select_
   assert.deepEqual(dlZdarzenia(env, 'view_flat'), [
     { event: 'view_flat', flat_id: 'u3', flat_name: 'u3', flat_rooms: 6, flat_rooms_group: '5+', flat_floor: 1, flat_area: 50.5, flat_type: 'mieszkanie',
       flat_building: 'B', flat_availability: 'available', flat_price: 550000, flat_isPromo: true, view_source: 'wyszukiwarka' },
-    { event: 'view_flat', flat_id: 'u2', flat_name: 'u2', flat_rooms: 2, flat_rooms_group: '2', flat_floor: 1, flat_area: 50.5,
+    { event: 'view_flat', flat_id: 'u2', flat_name: 'u2', flat_rooms: 2, flat_rooms_group: '2', flat_floor: 1, flat_area: 50.5, flat_type: undefined,
       flat_building: 'B', flat_availability: 'available', flat_price: 600000, flat_isPromo: false, view_source: 'mapa' },
   ]);
   assert.equal(dlZdarzenia(env, 'select_item').length, 1, 'klik w mapę to nie select_item');
@@ -3024,4 +3024,40 @@ test('ma.20: flush bez zgody — przy wysyłce i przy wyjściu nic nie trafia do
   assert.equal(env.ma.profile(), null);
   assert.equal(env.segmenty().length, 0);
   assert.equal(JSON.stringify(env._dysk).includes('rooms'), false, 'nic w magazynie');
+});
+
+
+test('ma.21: zdarzenia GA4 wyszukiwarki mają każdy klucz kontraktu — brak wartości = undefined, nie brak klucza (DLV nie bierze wartości z poprzedniego pushu)', async () => {
+  const env = await start({ koperta: koperta([]), produkty: [produkt2d('u1', 2)] });
+  env.klik(produkt2d('u1', 2, { price_gross: 640000 }));
+  env.klik({ id: 'u2', name: 'u2', rooms: 3, floor: 2, status: 'available' });
+  await env.gotowe();
+  const vf = env.dataLayer.filter((e) => e && e.event === 'view_flat');
+  assert.equal(vf[0].flat_price, 640000);
+  assert.ok(Object.prototype.hasOwnProperty.call(vf[1], 'flat_price'), 'klucz flat_price obecny');
+  assert.equal(vf[1].flat_price, undefined);
+  for (const k of ['flat_id', 'flat_name', 'flat_rooms', 'flat_rooms_group', 'flat_floor', 'flat_area', 'flat_type', 'flat_building',
+    'flat_availability', 'flat_price', 'flat_isPromo', 'view_source']) assert.ok(k in vf[1], k);
+
+  env.sortuj('price', 'asc');
+  await env.minie(600);
+  env.sortuj('rooms', 'asc');
+  await env.minie(600);
+  const vil = env.dataLayer.filter((e) => e && e.event === 'view_item_list');
+  assert.equal(vil[0].item_list_sort, 'price_asc');
+  assert.ok(Object.prototype.hasOwnProperty.call(vil[1], 'item_list_sort'), 'klucz item_list_sort obecny');
+  assert.equal(vil[1].item_list_sort, undefined);
+  for (const k of ['item_list_name', 'filters', 'filter_count', 'matching', 'total', 'item_list_sort']) assert.ok(k in vil[1], k);
+
+  env.klik({ id: 'u3', rooms: 1, status: 'available' }, { source: 'list' });
+  await env.gotowe();
+  const si = env.dataLayer.filter((e) => e && e.event === 'select_item').pop();
+  assert.ok('item_name' in si && si.item_name === undefined, 'select_item bez nazwy: klucz z undefined');
+
+  // ma_segment nie przechodzi przez dlPush — bez zmian (bez kluczy z undefined).
+  const seg = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [DL('ma_segment')])]) });
+  seg.dataLayer.push(unitOpen('A_1'));
+  await seg.gotowe();
+  const e = seg.dataLayer.find((x) => x && x.event === 'ma_segment');
+  assert.deepEqual(Object.keys(e).sort(), ['event', 'ma_scenario', 'segment']);
 });

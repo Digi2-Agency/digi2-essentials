@@ -5,6 +5,15 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.21 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.20–ma.16)
+
+### `d2-ma`
+
+- Zdarzenia GA4 wyszukiwarki (`view_item_list`, `select_item`, `view_flat`)
+  zawsze mają wszystkie swoje pola. Brak wartości jest wysyłany jako pusty
+  (`undefined`), a nie pomijany. Dzięki temu zmienna w GTM nie pokaże wartości
+  z poprzedniego zdarzenia, np. ceny innego lokalu albo starego sortowania.
+
 ## v1.9.0-ma.20 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.19–ma.16)
 
 ### `d2-ma`
