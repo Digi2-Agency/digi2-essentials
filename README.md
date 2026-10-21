@@ -1796,7 +1796,7 @@ tracking still on.
 
 ### Sandbox
 
-`sandbox/ma.html` + `sandbox/ma-koperta.json`: fake units, both search engines
+`sandbox/ma.html` + `sandbox/ma-koperta.json` (loaded as an object with `digi2.ma.load(k)`, since ma.23 a relative URL is not fetched): fake units, both search engines
 simulated, a lead button (no form), "phone result" buttons acting as the panel,
 and a webhook that never leaves the browser.
 
