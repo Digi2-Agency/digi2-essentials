@@ -5,6 +5,24 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.16 — 2026-10-21 (przedpremierowa, nie `@latest`; ma.15 zajął tag na gałęzi hot lead, PR #17)
+
+### `d2-ma` — kontekst leadu w formularzu (§13.13)
+
+- Przy wysyłce **każdego** formularza (poza `d2-ma-ignore`) moduł dopisuje ukryte
+  pole `d2ma_context`: zdanie po polsku dla handlowca o tym, co gość robił na
+  tej stronie (wizyty z datami, obejrzane lokale z ceną i liczbą obejrzeń,
+  preferencja, segmenty, lead, ostatni lokal, bieżąca strona, UTM), ≤ 2000
+  znaków. Formularz z `d2-ma-context="json"` dostaje dodatkowo
+  `d2ma_context_json` (≤ 4 kB) dla webhooka. Webflow, d2-forms i
+  `new FormData(form)` widzą pola jak każde inne; istniejące pole o tej nazwie
+  jest nadpisywane, nie dublowane.
+- Tylko po zgodzie, tą samą bramką co profil: bez zgody `d2ma_context` =
+  „brak kontekstu (brak zgody)”, JSON pominięty. Nigdy wartości pól, IP, UA,
+  geolokalizacji.
+- Wyłącznik: `d2-ma-context="off"` na tagu loadera. API: `digi2.ma.context()`,
+  `digi2.ma.fillContext(form)`.
+
 ## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`; numer ma.13 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma`

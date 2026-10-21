@@ -52,7 +52,23 @@
  *   [d2-ma-clear]                 Button — wipe the d2ma database
  *   [d2-ma-simulate-return]       Button — end the visit as if afterHours had passed
  *   [d2-ma-slot="hero-title"]     Text the content action may replace (textContent only)
- *   form[d2-ma-ignore]            Never counted by form_abandon
+ *   form[d2-ma-ignore]            Never counted by form_abandon; gets no lead context
+ *
+ * ─── Lead context in forms (ma.16) ──────────────────────────────────────────
+ *
+ *   On submit of every form (not inside [d2-ma-ignore]) the module writes a
+ *   hidden input, overwriting a field of the same name when the page has one:
+ *     d2ma_context        Polish text for the sales rep, ≤ 2000 chars
+ *   A form with d2-ma-context="json" also gets:
+ *     d2ma_context_json   compact JSON ≤ 4 kB: { v:1, visits:[{t,path}],
+ *                         units:[{id,name,rooms,floor,area,price,views,last}],
+ *                         pref:{rooms,floor}, segments:[], last_unit, lead,
+ *                         source:{utm_source,utm_medium,utm_campaign} }
+ *   Only with consent (the profile's own gate). Without it d2ma_context is
+ *   "brak kontekstu (brak zgody)" and the JSON field is left out. Only this
+ *   site's behaviour — never other forms' values, IP, UA or location.
+ *   d2-ma-context="off" on the loader tag switches it off.
+ *   digi2.ma.context() → { text, json } | null; digi2.ma.fillContext(form).
  *
  * ─── Contract v1 nodes (ma.4, §13.8) — listening only when the envelope uses them
  *
@@ -3168,6 +3184,227 @@
     _emit('ma:change', { cleared: true, tracking: false, reason: reason });
   }
 
+  // ---------------------------------------------------------------------------
+  // Kontekst leadu w formularzu (ma.16): dwa ukryte pola z profilu przy każdej
+  // wysyłce (poza [d2-ma-ignore]); tylko po zgodzie — ta sama bramka co profil.
+  // d2ma_context: tekst po polsku dla handlowca (≤ 2000 znaków, ucinany od
+  // najstarszych wizyt, potem lokali); d2ma_context_json: zwięzły JSON (≤ 4 kB).
+  // Pola dopisujemy w fazie przechwytywania na dokumencie, więc przed Webflow
+  // (bąbelkowanie na formularzu) i przed d2-forms (przechwytywanie na formularzu).
+  // ---------------------------------------------------------------------------
+  var CTX_FIELD = 'd2ma_context';
+  var CTX_JSON_FIELD = 'd2ma_context_json';
+  var CTX_TEXT_MAX = 2000;
+  var CTX_JSON_MAX = 4096;
+  var CTX_NO_CONSENT = 'brak kontekstu (brak zgody)';
+  var CTX_UNITS_MAX = 30;
+  var CTX_VISITS_MAX = 60;
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function ctxDay(ts) { var d = new Date(ts); return pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1); }
+  function ctxTime(ts) { var d = new Date(ts); return ctxDay(ts) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function ctxIso(ts) { try { return new Date(ts).toISOString(); } catch (e) { return null; } }
+  function ctxPlural(n, one, few, many) {
+    if (n === 1) return one;
+    if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) return few;
+    return many;
+  }
+  function ctxFloor(f) {
+    if (f == null) return null;
+    if (f === 0) return 'parter';
+    return f < 0 ? 'poziom ' + f : f + ' p.';
+  }
+  function utf8Len(str) {
+    var n = 0;
+    for (var i = 0; i < str.length; i++) {
+      var c = str.charCodeAt(i);
+      if (c < 0x80) n += 1;
+      else if (c < 0x800) n += 2;
+      else if (c >= 0xD800 && c < 0xDC00) { n += 4; i++; }
+      else n += 3;
+    }
+    return n;
+  }
+
+  // Dane kontekstu z profilu (§13.2). null = brak zgody albo brak profilu.
+  function contextData() {
+    if (!tracking || !state) return null;
+    var byId = {};
+    var units = [];
+    views.forEach(function (v) {
+      var u = v.unit || {};
+      if (u.unitId == null) return;
+      var e = byId[u.unitId];
+      if (!e) {
+        e = { id: u.unitId, name: null, rooms: null, floor: null, area: null, price: null, views: 0, last: 0 };
+        byId[u.unitId] = e;
+        units.push(e);
+      }
+      e.views += 1;
+      if (v.ts > e.last) e.last = v.ts;
+      // Najświeższe dane lokalu (cena mogła się zmienić między obejrzeniami).
+      ['name', 'rooms', 'floor', 'area', 'price'].forEach(function (k) { if (u[k] != null) e[k] = u[k]; });
+    });
+    units.sort(function (a, b) { return b.last - a.last; });
+    var log = (state.visitLog || []).slice();
+    if (!log.length && state.visitStart != null) log = [state.visitStart];
+    var visits = log.map(function (t) { return { t: t }; });
+    var path = null;
+    try { path = (window.location && window.location.pathname) || null; } catch (e) {}
+    // Ścieżka znana tylko dla bieżącej odsłony: wizyt wstecz moduł nie zapisuje.
+    if (visits.length && path) visits[visits.length - 1].path = path;
+    var utm = state.utm || null;
+    var last = lastUnit();
+    return {
+      visits: visits, visitCount: state.visits, units: units,
+      pref: { rooms: prefOf('rooms'), floor: prefOf('floor') },
+      segments: Object.keys(state.segments || {}),
+      lastUnit: last ? { id: last.unitId, name: last.name || null } : null,
+      lead: !!state.lead, leadAt: state.leadAt || null,
+      source: utm ? { utm_source: utm.source || null, utm_medium: utm.medium || null, utm_campaign: utm.campaign || null } : null,
+      path: path
+    };
+  }
+
+  function ctxUnitLabel(e) {
+    var bits = [];
+    if (e.rooms != null) bits.push(e.rooms + ' pok.');
+    if (e.floor != null) bits.push(ctxFloor(e.floor));
+    if (e.area != null) bits.push(fmtNumber(e.area, 1) + ' m²');
+    if (e.price != null) bits.push(fmtNumber(e.price, 0) + ' zł');
+    return (e.name || e.id) + (bits.length ? ' (' + bits.join(', ') + ')' : '');
+  }
+
+  // Tekst dla handlowca. Za długi: najpierw znikają najstarsze daty wizyt,
+  // potem najstarsze lokale z listy; liczby wizyt i lokali zostają prawdziwe.
+  function contextText(d) {
+    var dates = d.visits.map(function (v) { return ctxDay(v.t); });
+    var list = d.units.slice();   // od najnowszego
+    var top = null;
+    d.units.forEach(function (e) { if (!top || e.views > top.views) top = e; });
+    for (;;) {
+      var parts = [];
+      var n = d.visitCount;
+      var dropped = d.visits.length - dates.length;
+      parts.push(n + ' ' + ctxPlural(n, 'wizyta', 'wizyty', 'wizyt')
+        + (dates.length ? ' (' + (dropped ? '…, ' : '') + dates.join(', ') + ')' : ''));
+      if (d.units.length) {
+        var m = d.units.length;
+        parts.push(m + ' ' + ctxPlural(m, 'obejrzany lokal', 'obejrzane lokale', 'obejrzanych lokali')
+          + ', najczęściej ' + ctxUnitLabel(top) + ' ×' + top.views);
+        if (list.length) {
+          parts.push('lokale: ' + list.map(function (e) {
+            return (e.name || e.id) + ' ×' + e.views + ' (' + ctxTime(e.last) + ')';
+          }).join(', ') + (list.length < d.units.length ? ', …' : ''));
+        }
+      } else {
+        parts.push('bez obejrzanych lokali');
+      }
+      var pref = [];
+      if (d.pref.rooms != null) pref.push(roomsLabel(d.pref.rooms));
+      if (d.pref.floor != null) pref.push(ctxFloor(d.pref.floor));
+      if (pref.length) parts.push('preferencja: ' + pref.join(', '));
+      if (d.segments.length) parts.push('segmenty: ' + d.segments.join(', '));
+      if (d.lead) parts.push('lead: tak' + (d.leadAt ? ' (' + ctxDay(d.leadAt) + ')' : ''));
+      if (d.lastUnit) parts.push('ostatni lokal: ' + (d.lastUnit.name || d.lastUnit.id));
+      if (d.path) parts.push('strona: ' + d.path);
+      if (d.source) {
+        parts.push('źródło: ' + [d.source.utm_source, d.source.utm_medium, d.source.utm_campaign]
+          .filter(function (x) { return x; }).join(' / '));
+      }
+      var text = parts.join(' · ');
+      if (text.length <= CTX_TEXT_MAX) return text;
+      if (dates.length > 1) dates.shift();
+      else if (list.length) list.pop();
+      else return text.slice(0, CTX_TEXT_MAX - 1) + '…';
+    }
+  }
+
+  // JSON ≤ 4 kB (bajty UTF-8): za duży traci najstarsze wizyty, potem lokale.
+  function contextJson(d) {
+    var units = d.units.slice(0, CTX_UNITS_MAX);
+    var visits = d.visits.slice(-CTX_VISITS_MAX);
+    for (;;) {
+      var o = {
+        v: 1,
+        visits: visits.map(function (v) { var x = { t: ctxIso(v.t) }; if (v.path) x.path = v.path; return x; }),
+        units: units.map(function (e) {
+          return { id: e.id, name: e.name, rooms: e.rooms, floor: e.floor, area: e.area, price: e.price, views: e.views, last: ctxIso(e.last) };
+        }),
+        pref: d.pref, segments: d.segments, last_unit: d.lastUnit, lead: d.lead, source: d.source
+      };
+      var str = JSON.stringify(o);
+      if (utf8Len(str) <= CTX_JSON_MAX) return str;
+      if (visits.length > 1) visits.shift();
+      else if (units.length) units.pop();
+      else return str;
+    }
+  }
+
+  function ctxOff() {
+    var v = _cfg('d2-ma-context');
+    return v === 'off' || v === 'false';
+  }
+
+  function ctxField(form, name) {
+    try { return form.querySelector('[name="' + name + '"]'); } catch (e) { return null; }
+  }
+
+  function setCtxField(form, name, value) {
+    var el = ctxField(form, name);
+    if (!el) {
+      el = document.createElement('input');
+      el.setAttribute('type', 'hidden');
+      el.setAttribute('name', name);
+      el.setAttribute('data-name', name);
+      el.type = 'hidden';
+      el.name = name;
+      form.appendChild(el);
+    }
+    el.value = value;
+    el.setAttribute('value', value);
+  }
+
+  // Dopisuje (albo nadpisuje) pola w formularzu. true = formularz obsłużony.
+  // Tekst zawsze; JSON tylko dla formularza z d2-ma-context="json" (opt-in:
+  // w natywnym mailu Webflow JSON byłby śmieciem; dostaje go webhook 2destate).
+  function fillContext(form) {
+    if (!form || !form.tagName || String(form.tagName).toUpperCase() !== 'FORM') return false;
+    if (ctxOff()) return false;
+    if (form.closest && form.closest('[d2-ma-ignore], [data-d2-ma-ignore]')) return false;
+    var wantJson = _attr(form, 'd2-ma-context') === 'json';
+    var d = contextData();
+    if (!d) {
+      setCtxField(form, CTX_FIELD, CTX_NO_CONSENT);
+      // Własne pole strony na JSON zostaje, ale puste; nowego nie dokładamy.
+      var j = wantJson ? ctxField(form, CTX_JSON_FIELD) : null;
+      if (j) { j.value = ''; j.setAttribute('value', ''); }
+      return true;
+    }
+    setCtxField(form, CTX_FIELD, contextText(d));
+    if (wantJson) setCtxField(form, CTX_JSON_FIELD, contextJson(d));
+    return true;
+  }
+
+  var ctxHooked = false;
+  function hookContext() {
+    if (ctxHooked || ctxOff() || !document.addEventListener) return;
+    ctxHooked = true;
+    document.addEventListener('submit', function (e) { fillContext(e && e.target); }, true);
+    // Klik w przycisk wysyłki wyprzedza submit: skrypt strony, który czyta
+    // formularz już w handlerze kliknięcia, też dostaje pola.
+    document.addEventListener('click', function (e) {
+      var t = e && e.target;
+      if (!t || typeof t.closest !== 'function') return;
+      var form = t.closest('form');
+      if (!form) return;
+      var btn = t.closest('button, input[type="submit"]') || t;
+      var type = (btn.getAttribute && btn.getAttribute('type')) || '';
+      if (!type && btn.tagName && String(btn.tagName).toUpperCase() === 'BUTTON') type = 'submit';
+      if (String(type).toLowerCase() === 'submit') fillContext(form);
+    }, true);
+  }
+
   var consentHooked = false;
   function waitForConsent() {
     if (consentHooked || typeof window.digi2.on !== 'function') return;
@@ -3288,6 +3525,7 @@
     if (booted) return;
     booted = true;
     hookDataLayer();
+    hookContext();
     hookMap();
     bindUi();
     deepLinkView();
@@ -3359,6 +3597,12 @@
       };
     },
     history: function () { return _clone(views); },
+    // Kontekst leadu (ma.16): to, co trafia do ukrytych pól formularza.
+    context: function () {
+      var d = contextData();
+      return d ? { text: contextText(d), json: contextJson(d) } : null;
+    },
+    fillContext: function (form) { return fillContext(form); },
     simulateReturn: function () {
       if (!tracking) return;
       var maxAfter = 1;
