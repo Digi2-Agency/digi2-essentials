@@ -83,8 +83,10 @@
  *   action  prefer_filters        by: rooms | floor | both — d2estate.setFilters with
  *                                 the profile's preference, once a visit, only if the
  *                                 visitor has not touched the filters in this visit
- *   (ma.19) a pending filter change is flushed on form submit and on pagehide,
- *   with the time of the last change
+ *   (ma.19) a pending filter change is flushed on form submit (scenario actions
+ *   may run then), with the time of the last change; (ma.20) on pagehide only
+ *   the fact is stored — no scenario action at exit, no replay on the next page;
+ *   (ma.21) GA4 events carry every contract key, a missing value is undefined
  *   (ma.18) filter changes debounced 500 ms before the profile; item_list_sort only
  *   price|area|floor; d2ma_consent="1" in forms with an active profile
  *   action  map_order             also skipped once the visitor picked a sort in
@@ -199,7 +201,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 19;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 21;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -700,6 +702,12 @@
     afterChange();
   }
 
+  // Fakt filtra w stanie (bez scenariuszy) — wspólne dla zdarzenia i dla wyjścia ze strony.
+  function storeFilter(f, t) {
+    state.filters = Object.assign({}, f, { ts: t, visit: state.visits });
+    state.filterLog = (state.filterLog || []).concat([{ t: t, rooms: f.rooms || null, floor: f.floor || null }]).slice(-50);
+  }
+
   function handle(evt, at) {
     var visit = touch();
     if (visit) dispatch(visit);
@@ -726,8 +734,7 @@
       dispatch({ type: evt.type, t: t, data: evt.data });
     } else if (evt.type === 'search_filter') {
       var f = evt.filter || {};
-      state.filters = Object.assign({}, f, { ts: t, visit: state.visits });
-      state.filterLog = (state.filterLog || []).concat([{ t: t, rooms: f.rooms || null, floor: f.floor || null }]).slice(-50);
+      storeFilter(f, t);
       dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } });
     } else if (evt.type === 'search_sort') {
       state.sortVisit = state.visits;
@@ -1841,6 +1848,19 @@
     if (p) intake({ type: 'search_filter', filter: p.filter, results: p.results, realAt: p.realAt });
   }
 
+  // Wyjście ze strony (ma.20): tylko fakt w d2ma — jak formsOnExit, żadnych akcji
+  // scenariusza (dataLayer, webhook, popup) w chwili wyjścia. Wyzwalacza
+  // search_filter nie odtwarzamy przy następnej odsłonie: filtr dotyczył strony,
+  // której już nie ma; zostaje w profilu, kontekście leadu i filterLog (minCount).
+  function filterOnExit() {
+    if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
+    var p = pendingFilter;
+    pendingFilter = null;
+    if (!p || !tracking || !state || blocked) return;
+    storeFilter(p.filter, p.realAt + (state.shift || 0));
+    save();
+  }
+
   function onFilterChange(p) {
     if (!p || typeof p !== 'object') return;
     var user = p.source === 'user';
@@ -1854,7 +1874,7 @@
       // po 500 ms ciszy — inaczej minCount nabija się jednym ruchem, a filterLog puchnie.
       pendingFilter = { filter: search.filters, results: search.matching, realAt: Date.now() };
       // pagehide dopiero od pierwszego filtra gościa: strona bez wyszukiwarki nie dostaje nasłuchu.
-      if (!flushHooked && window.addEventListener) { flushHooked = true; window.addEventListener('pagehide', flushFilter); }
+      if (!flushHooked && window.addEventListener) { flushHooked = true; window.addEventListener('pagehide', filterOnExit); }
       if (filterTimer) clearTimeout(filterTimer);
       filterTimer = setTimeout(flushFilter, LIST_DEBOUNCE_MS);
     }
@@ -1894,7 +1914,10 @@
 
   function dlPush(o) {
     if (searchEventsOff()) return;
-    Object.keys(o).forEach(function (k) { if (o[k] == null) delete o[k]; });
+    // Każdy klucz kontraktu w każdym pushu (ma.21, zasada 9 standardu GTM): zmienna
+    // DLV czyta model danych, więc brakujący klucz dałby wartość z poprzedniego
+    // pushu. Brak wartości = undefined jako własny klucz, nie usunięcie.
+    Object.keys(o).forEach(function (k) { if (o[k] == null) o[k] = undefined; });
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push(o);
   }

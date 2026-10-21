@@ -2831,7 +2831,7 @@ test('GA4: view_item_list po 500 ms (jedno zdarzenie z ostatnim stanem), select_
   assert.deepEqual(dlZdarzenia(env, 'view_flat'), [
     { event: 'view_flat', flat_id: 'u3', flat_name: 'u3', flat_rooms: 6, flat_rooms_group: '5+', flat_floor: 1, flat_area: 50.5, flat_type: 'mieszkanie',
       flat_building: 'B', flat_availability: 'available', flat_price: 550000, flat_isPromo: true, view_source: 'wyszukiwarka' },
-    { event: 'view_flat', flat_id: 'u2', flat_name: 'u2', flat_rooms: 2, flat_rooms_group: '2', flat_floor: 1, flat_area: 50.5,
+    { event: 'view_flat', flat_id: 'u2', flat_name: 'u2', flat_rooms: 2, flat_rooms_group: '2', flat_floor: 1, flat_area: 50.5, flat_type: undefined,
       flat_building: 'B', flat_availability: 'available', flat_price: 600000, flat_isPromo: false, view_source: 'mapa' },
   ]);
   assert.equal(dlZdarzenia(env, 'select_item').length, 1, 'klik w mapę to nie select_item');
@@ -2979,4 +2979,85 @@ test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG'
   const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
   const top = Number(/^## v\d+\.\d+\.\d+-ma\.(\d+)/m.exec(log)[1]);
   assert.equal(v, top, 'podbij SCRIPT_VERSION razem z wpisem w CHANGELOG');
+});
+
+
+test('ma.20: pagehide z odłożonym filtrem zapisuje tylko fakt — 0 webhooków, 0 nowych wpisów dataLayer, bez popupu; następna odsłona nie odtwarza', async () => {
+  const k = koperta([scenariusz('f', { event: 'search_filter', rooms: 2 }, [
+    Object.assign(SEG('filtr-2'), { frequency: 'once_per_days:0' }),
+    { do: 'webhook', channel: 'email', template: 't', testOnly: true },
+    { do: 'popup', template: 'promo-filter', cta: 'contact' },
+  ])], { minScript: 'ma.20' });
+  const env = await start({ koperta: k });
+  await env.minie(MIN);
+  const t0 = env.zegar.t;
+  env.filtr({ rooms: [2] });
+  await env.minie(100);
+  const dlPrzed = env.dataLayer.length;
+  env.okno('pagehide');
+  await env.gotowe();
+  assert.equal(env.webhooki.length, 0, 'bez webhooka przy wyjściu');
+  assert.equal(env.dataLayer.length, dlPrzed, 'bez nowych wpisów dataLayer');
+  assert.equal(env.popupy.length, 0);
+  assert.deepEqual(czyste(env.ma.profile().filters.rooms), [2]);
+  assert.equal(env.ma.profile().filters.ts, t0, 'czas ostatniej zmiany');
+  await env.minie(600);
+  assert.equal(env.segmenty().length, 0, 'timer zdjęty — nic nie dochodzi po wyjściu');
+
+  const p2 = await powrot(env, 5 * MIN);
+  assert.equal(p2.segmenty().length, 0, 'następna odsłona nie odtwarza wyzwalacza');
+  assert.equal(p2.webhooki.length, 0);
+  assert.deepEqual(czyste(p2.ma.profile().filters.rooms), [2], 'fakt w d2ma przetrwał');
+});
+
+test('ma.20: flush bez zgody — przy wysyłce i przy wyjściu nic nie trafia do d2ma ani do scenariuszy', async () => {
+  const k = koperta([scenariusz('f', { event: 'search_filter' }, [SEG('filtr')])], { storage: { retentionDays: 90, consentRequired: true } });
+  const env = await start({ koperta: k });
+  env.filtr({ rooms: [3] });
+  await env.minie(100);
+  const form = element({}, 'FORM');
+  env.dom('submit', { target: form });
+  assert.equal(form.querySelector('[name="d2ma_context"]').value, 'brak kontekstu (brak zgody)');
+  env.filtr({ rooms: [4] });
+  env.okno('pagehide');
+  await env.minie(600);
+  assert.equal(env.ma.profile(), null);
+  assert.equal(env.segmenty().length, 0);
+  assert.equal(JSON.stringify(env._dysk).includes('rooms'), false, 'nic w magazynie');
+});
+
+
+test('ma.21: zdarzenia GA4 wyszukiwarki mają każdy klucz kontraktu — brak wartości = undefined, nie brak klucza (DLV nie bierze wartości z poprzedniego pushu)', async () => {
+  const env = await start({ koperta: koperta([]), produkty: [produkt2d('u1', 2)] });
+  env.klik(produkt2d('u1', 2, { price_gross: 640000 }));
+  env.klik({ id: 'u2', name: 'u2', rooms: 3, floor: 2, status: 'available' });
+  await env.gotowe();
+  const vf = env.dataLayer.filter((e) => e && e.event === 'view_flat');
+  assert.equal(vf[0].flat_price, 640000);
+  assert.ok(Object.prototype.hasOwnProperty.call(vf[1], 'flat_price'), 'klucz flat_price obecny');
+  assert.equal(vf[1].flat_price, undefined);
+  for (const k of ['flat_id', 'flat_name', 'flat_rooms', 'flat_rooms_group', 'flat_floor', 'flat_area', 'flat_type', 'flat_building',
+    'flat_availability', 'flat_price', 'flat_isPromo', 'view_source']) assert.ok(k in vf[1], k);
+
+  env.sortuj('price', 'asc');
+  await env.minie(600);
+  env.sortuj('rooms', 'asc');
+  await env.minie(600);
+  const vil = env.dataLayer.filter((e) => e && e.event === 'view_item_list');
+  assert.equal(vil[0].item_list_sort, 'price_asc');
+  assert.ok(Object.prototype.hasOwnProperty.call(vil[1], 'item_list_sort'), 'klucz item_list_sort obecny');
+  assert.equal(vil[1].item_list_sort, undefined);
+  for (const k of ['item_list_name', 'filters', 'filter_count', 'matching', 'total', 'item_list_sort']) assert.ok(k in vil[1], k);
+
+  env.klik({ id: 'u3', rooms: 1, status: 'available' }, { source: 'list' });
+  await env.gotowe();
+  const si = env.dataLayer.filter((e) => e && e.event === 'select_item').pop();
+  assert.ok('item_name' in si && si.item_name === undefined, 'select_item bez nazwy: klucz z undefined');
+
+  // ma_segment nie przechodzi przez dlPush — bez zmian (bez kluczy z undefined).
+  const seg = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [DL('ma_segment')])]) });
+  seg.dataLayer.push(unitOpen('A_1'));
+  await seg.gotowe();
+  const e = seg.dataLayer.find((x) => x && x.event === 'ma_segment');
+  assert.deepEqual(Object.keys(e).sort(), ['event', 'ma_scenario', 'segment']);
 });

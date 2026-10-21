@@ -5,6 +5,26 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.21 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.20–ma.16)
+
+### `d2-ma`
+
+- Zdarzenia GA4 wyszukiwarki (`view_item_list`, `select_item`, `view_flat`)
+  zawsze mają wszystkie swoje pola. Brak wartości jest wysyłany jako pusty
+  (`undefined`), a nie pomijany. Dzięki temu zmienna w GTM nie pokaże wartości
+  z poprzedniego zdarzenia, np. ceny innego lokalu albo starego sortowania.
+
+## v1.9.0-ma.20 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.19–ma.16)
+
+### `d2-ma`
+
+- Wyjście ze strony z niezapisaną jeszcze zmianą filtra zapisuje tylko sam
+  filtr w profilu. Nie uruchamia akcji scenariusza: żadnego wpisu w dataLayer,
+  webhooka ani popupu w chwili wyjścia. Przy następnej odsłonie wyzwalacz nie
+  jest odtwarzany, a filtr zostaje w profilu i kontekście leadu.
+- Przy wysyłce formularza zmiana filtra dalej trafia do profilu od razu, więc
+  akcje scenariusza z wyzwalaczem `search_filter` mogą się wtedy wykonać.
+
 ## v1.9.0-ma.19 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.18, ma.17, ma.16)
 
 ### `d2-ma`
