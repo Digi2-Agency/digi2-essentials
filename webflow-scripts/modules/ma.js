@@ -2958,15 +2958,30 @@
   }
 
   // Popup z warunkiem d2-ma, który czekał (veto w module popupów), dostaje drugą szansę.
+  // Zanim moduł popupów się załaduje, digi2.popups to proxy loadera: każda
+  // właściwość jest funkcją, która dociąga moduł i zwraca Promise. Test kształtu
+  // ją przepuszcza, a list().forEach rzucało i przerywało start d2-ma (#16).
+  // Dlatego pytamy loader, czy moduł już jest; bez loadera zostaje test kształtu.
+  // Popup, który załaduje się później, sam pyta digi2.ma.allows() przy otwarciu,
+  // a kolejna zmiana profilu trafia już w prawdziwy moduł.
   function resumePopups() {
+    var loaded = window.digi2._loaded;
+    if (loaded && !loaded.popups) return;
     var p = window.digi2.popups;
     if (!p || typeof p.list !== 'function' || typeof p.get !== 'function') return;
-    p.list().forEach(function (name) {
-      var inst = p.get(name);
-      if (inst && inst.pendingShow && inst.popupElement && condAttrs(inst.popupElement).length && allows(inst.popupElement)) {
-        inst.showIfPending({ auto: true });
-      }
-    });
+    try {
+      var names = p.list();
+      if (!names || typeof names.forEach !== 'function') return;
+      names.forEach(function (name) {
+        var inst = p.get(name);
+        if (inst && inst.pendingShow && inst.popupElement && condAttrs(inst.popupElement).length && allows(inst.popupElement)) {
+          inst.showIfPending({ auto: true });
+        }
+      });
+    } catch (e) {
+      // Błąd w module popupów nie może zatrzymać d2-ma (render, ma:ready, podświetlenie mapy).
+      _warn('popups resume failed', e);
+    }
   }
 
   // Czy element wolno pokazać - pyta moduł popupów (veto jak canShow, §13.11.3).
