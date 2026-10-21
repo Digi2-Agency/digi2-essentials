@@ -2571,7 +2571,8 @@ test('kontekst leadu: submit dopisuje d2ma_context (tekst PL) i, przy d2-ma-cont
   assert.ok(txt && json, 'oba pola dopisane');
   assert.equal(txt.getAttribute('type'), 'hidden');
   assert.equal(json.getAttribute('type'), 'hidden');
-  assert.equal(form.children.length, 2);
+  assert.equal(pole(form, 'd2ma_consent').value, '1', 'ma.18: znacznik zgody');
+  assert.equal(form.children.length, 3);
 
   const t = txt.value;
   assert.ok(t.startsWith('1 wizyta (20.10)'), t);
@@ -2603,7 +2604,7 @@ test('kontekst leadu: submit dopisuje d2ma_context (tekst PL) i, przy d2-ma-cont
   env.dataLayer.push({ event: 'generate_lead' });
   await env.gotowe();
   env.dom('submit', { target: form });
-  assert.equal(form.children.length, 2, 'bez duplikatów');
+  assert.equal(form.children.length, 3, 'bez duplikatów');
   assert.ok(pole(form, 'd2ma_context').value.includes('lead: tak (20.10)'));
   assert.equal(JSON.parse(pole(form, 'd2ma_context_json').value).lead, true);
 
@@ -2622,7 +2623,7 @@ test('kontekst leadu: bez d2-ma-context="json" tylko tekst; własne pole strony 
   wlasne.value = 'stare';
   form.appendChild(wlasne);
   env.dom('submit', { target: form });
-  assert.equal(form.children.length, 1, 'tylko własne pole, bez JSON');
+  assert.equal(form.children.length, 2, 'własne pole + d2ma_consent, bez JSON');
   assert.ok(wlasne.value.startsWith('1 wizyta'), wlasne.value);
   assert.equal(pole(form, 'd2ma_context_json'), null);
 });
@@ -2705,16 +2706,17 @@ test('search_filter: filtr gościa (source user) z pokojami odpala wyzwalacz; so
   const env = await start({ koperta: k });
   assert.ok(!env.ostrzezenia.some((w) => w.includes('needs d2-ma')), 'ma.17 zna nowe węzły');
   env.filtr({ rooms: [2] }, { source: 'api' });
-  await env.gotowe();
-  assert.equal(env.segmenty().length, 0, 'zmiana ze skryptu nie jest zachowaniem gościa');
+  env.filtr({ rooms: [2] }, { source: undefined });
+  await env.minie(600);
+  assert.equal(env.segmenty().length, 0, 'zmiana ze skryptu (i bez source) nie jest zachowaniem gościa');
   env.filtr({ rooms: [1] });
-  await env.gotowe();
+  await env.minie(600);
   assert.equal(env.segmenty().length, 0);
   env.filtr({ rooms: [2, 3], priceMax: 700000 });
-  await env.gotowe();
+  await env.minie(600);
   assert.deepEqual(env.segmenty().map((e) => e.segment), ['filtr-2-pokoje'], '3 pokoje: dopiero drugi filtr');
   env.filtr({ rooms: [3] });
-  await env.gotowe();
+  await env.minie(600);
   assert.deepEqual(env.segmenty().map((e) => e.segment), ['filtr-2-pokoje', 'filtr-3-pokoje']);
   const p = env.ma.profile();
   assert.deepEqual(czyste(p.filters.rooms), [3]);
@@ -2724,7 +2726,7 @@ test('search_filter: filtr gościa (source user) z pokojami odpala wyzwalacz; so
 test('pref z filtra tylko przy pustej historii; pierwsze obejrzenie przejmuje preferencję', async () => {
   const env = await start({ koperta: koperta([]) });
   env.filtr({ rooms: [2], floor: [3] });
-  await env.gotowe();
+  await env.minie(600);
   assert.deepEqual(czyste(env.ma.profile().pref), { rooms: 2, floor: 3 });
   env.dataLayer.push(unitOpen('A_1', { rooms: 4, floor: 0 }));
   await env.gotowe();
@@ -2735,14 +2737,14 @@ test('popup promo-filter: search_filter rooms=2 przy pustej historii → wbudowa
   const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
   const bez = await start({ koperta: k });
   bez.filtr({ priceMax: 500000 });
-  await bez.gotowe();
+  await bez.minie(600);
   assert.equal(bez.popupy.length, 0, 'bez pref.rooms nie ma czego wstawić — popup pominięty');
 
   const env = await start({ koperta: k });
   const akcje = [];
   env.window.digi2.on('ma:action', (a) => akcje.push(a));
   env.filtr({ rooms: [2] });
-  await env.gotowe();
+  await env.minie(600);
   assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter']);
   assert.ok(akcje.some((a) => a.do === 'popup' && a.template === 'promo-filter' && a.unit == null));
   assert.ok(potomkowie(env.window.document.body).some((x) => x.getAttribute && x.getAttribute('d2-ma-popup') === 'promo-filter' && x.getAttribute('d2-ma-builtin') !== null));
@@ -2769,6 +2771,7 @@ test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na 
   const k2 = koperta([scenariusz('pref2', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'both', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
   const nowa = await start({ koperta: k2, imp: { instances: { mapa: {} } } });
   nowa.filtr({ rooms: [1] });
+  await nowa.minie(600);
   nowa.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: 2 }));
   await nowa.gotowe();
   assert.equal(nowa.ustawioneFiltry.length, 0, 'filtr gościa w tej wizycie wygrywa');
@@ -2844,7 +2847,7 @@ test('GA4: view_item_list po 500 ms (jedno zdarzenie z ostatnim stanem), select_
 test('kontekst leadu: „filtrował: …” w tekście i filters w JSON (ma.17)', async () => {
   const env = await start({ koperta: koperta([]) });
   env.filtr({ rooms: [2, 3], priceMax: 700000, status: ['available'] });
-  await env.gotowe();
+  await env.minie(600);
   const form = element({ 'd2-ma-context': 'json' }, 'FORM');
   env.dom('submit', { target: form });
   const t = bezNbsp(form.querySelector('[name="d2ma_context"]').value);
@@ -2877,4 +2880,58 @@ test('kontekst leadu: klik w przycisk wysyłki wypełnia pola przed submit; alia
   zwykly.appendChild(wlasne);
   env.dom('submit', { target: zwykly });
   assert.equal(wlasne.value, 'strony', 'bez d2-ma-context="json" pole JSON strony ani wypełniane, ani opróżniane');
+});
+
+
+test('ma.18 d2ma_consent: "1" tylko przy aktywnym profilu; bez zgody nie dodawane, a własne pole strony opróżnione; d2-ma-ignore — nietknięte', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = element({}, 'FORM');
+  env.dom('submit', { target: form });
+  const c = form.querySelector('[name="d2ma_consent"]');
+  assert.ok(c, 'dopisane także bez d2-ma-context="json"');
+  assert.equal(c.value, '1');
+  assert.equal(c.getAttribute('type'), 'hidden');
+  env.dom('submit', { target: form });
+  assert.equal(form.children.filter((x) => x.getAttribute('name') === 'd2ma_consent').length, 1, 'bez duplikatu');
+
+  const bez = await start({ koperta: koperta([], { storage: { retentionDays: 90, consentRequired: true } }) });
+  const f2 = element({}, 'FORM');
+  bez.dom('submit', { target: f2 });
+  assert.equal(f2.querySelector('[name="d2ma_consent"]'), null, 'bez zgody pola nie ma');
+  const f3 = element({}, 'FORM');
+  const wlasne = element({ type: 'hidden', name: 'd2ma_consent' }, 'INPUT');
+  wlasne.value = '1';
+  f3.appendChild(wlasne);
+  bez.dom('submit', { target: f3 });
+  assert.equal(wlasne.value, '', 'własne pole strony opróżnione');
+  assert.equal(f3.querySelector('[name="d2ma_context"]').value, 'brak kontekstu (brak zgody)');
+
+  const ign = element({ 'd2-ma-ignore': '' }, 'FORM');
+  env.dom('submit', { target: ign });
+  assert.equal(ign.children.length, 0);
+});
+
+
+test('ma.18 (#23 recenzja): seria zmian filtra w 500 ms = jedno trafienie search_filter i jeden wpis filterLog; item_list_sort tylko price|area|floor; Wyczyść zeruje filtry', async () => {
+  const k = koperta([scenariusz('dwa', { event: 'search_filter', minCount: 2 }, [Object.assign(SEG('filtr-x2'), { frequency: 'once_per_days:0' })])], { minScript: 'ma.17' });
+  const env = await start({ koperta: k, imp: { instances: { mapa: {} } } });
+  for (let i = 0; i < 6; i++) { env.filtr({ priceMax: 500000 + i * 10000 }); await env.minie(100); }
+  await env.minie(600);
+  assert.equal(env.segmenty().length, 0, 'suwak = jedno zdarzenie, minCount 2 nie nabity');
+  assert.equal(czyste(env.ma.profile().filters).priceMax, 550000, 'ostatnia wartość serii');
+  env.filtr({ priceMax: 600000 });
+  await env.minie(600);
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['filtr-x2'], 'druga, osobna zmiana');
+
+  for (const [by, want] of [['rooms', undefined], ['name', undefined], ['area', 'area_desc'], ['floor', 'floor_desc']]) {
+    env.sortuj(by, 'desc');
+    await env.minie(600);
+    const ev = dlZdarzenia(env, 'view_item_list').pop();
+    assert.equal(ev.item_list_sort, want, by);
+  }
+
+  await env.ma.clear();
+  assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', {}, { source: 'api' }], 'Wyczyść');
 });
