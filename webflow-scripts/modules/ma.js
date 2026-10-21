@@ -223,7 +223,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 25;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 26;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -1748,12 +1748,15 @@
 
   // „Wyczyść" (§13.2): lista 2destate wraca do swojej kolejności.
   // „Wyczyść” (ma.18): wyszukiwarka wraca do pustego filtra, jak po wejściu.
+  // ma.26: core scala filtry (mergeFilters), więc {} niczego nie zdejmuje — każde
+  // pole jawnie null. Pola dotknięte przez gościa core i tak zostawia (touched).
+  var FILTER_RESET = { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null };
   function resetFilters() {
     var api = mapApi();
     if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
     pendingFilter = null;
     if (!api || typeof api.setFilters !== 'function') return;
-    try { mapNames().forEach(function (m) { api.setFilters(m, {}, { source: 'api' }); }); } catch (e) {}
+    try { mapNames().forEach(function (m) { api.setFilters(m, _clone(FILTER_RESET), { source: 'api' }); }); } catch (e) {}
   }
 
   function resetOrder() {
@@ -2030,10 +2033,20 @@
       _log('prefer_filters waits for the map → ' + sc.id + '/' + node.id);
       return true;
     }
+    var applied = false;
     try {
-      maps.forEach(function (m) { api.setFilters(m, f, { source: 'api' }); });
+      maps.forEach(function (m) {
+        var r = api.setFilters(m, f, { source: 'api' });
+        // core 1.7.0: { applied, skipped }. Nic nie weszło (pole dotknięte przez gościa,
+        // panel wyszukiwarki wyłączony) = akcja nie zrobiła swojego. Starsza paczka: bez wyniku.
+        if (!r || typeof r !== 'object' || !Array.isArray(r.applied) || r.applied.length) applied = true;
+      });
     } catch (e) {
       _warn('prefer_filters failed', e);
+      return false;
+    }
+    if (!applied) {
+      _log('prefer_filters — 2destate applied nothing (field touched by the visitor or no search panel)');
       return false;
     }
     _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'prefer_filters', filters: f });

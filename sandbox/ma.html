@@ -213,10 +213,13 @@
   ['ma:ready', 'ma:view', 'ma:action'].forEach(function (n) {
     window.digi2.on(n, function (d) { log(n, d); });
   });
-  // Koperta obiektem (adres względny nie jest na liście hostów, ma.23).
-  realFetch('ma-koperta.json', { cache: 'no-store' }).then(function (r) { return r.json(); })
-    .then(function (k) { return window.digi2.ma.load(k); })
-    .then(null, function (e) { log('koperta: ' + e); });
+  // Koperta obiektem (adres względny nie jest na liście hostów, ma.23) — po załadowaniu
+  // modułów, żeby load() trafił w prawdziwy moduł, nie w proxy loadera (ma.26).
+  window.digi2.onReady(function () {
+    realFetch('ma-koperta.json', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (k) { return window.digi2.ma.load(k); })
+      .then(null, function (e) { log('koperta: ' + e); });
+  });
 </script>
 </body>
 </html>

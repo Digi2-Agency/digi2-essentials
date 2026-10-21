@@ -127,6 +127,10 @@ function strona(opts) {
   const filtry = [];
   const sortowania = [];
   const ustawioneFiltry = [];
+  // Stan wyszukiwarki jak w core 1.7.0 (mergeFilters): scalanie, null zdejmuje pole,
+  // pole dotknięte przez gościa (touched) zostaje; bez panelu wyszukiwarki — nic nie wchodzi.
+  const POLA_FILTRA = ['rooms', 'floor', 'areaMin', 'areaMax', 'priceMin', 'priceMax', 'status', 'building'];
+  const stanFiltrow = { filters: {}, touched: new Set(o.dotkniete || []) };
   const zmianyPietra = [];
   const klatki = [];
   const naMape = [];
@@ -223,8 +227,23 @@ function strona(opts) {
       ...(o.wyszukiwarka === false ? {} : {
         onFilterChange(f) { filtry.push(f); },
         onSortChange(f) { sortowania.push(f); },
-        setFilters(m, f, opt) { ustawioneFiltry.push([m, JSON.parse(JSON.stringify(f)), opt]); return true; },
-        getFilters() { return {}; },
+        setFilters(m, f, opt) {
+          ustawioneFiltry.push([m, JSON.parse(JSON.stringify(f)), opt]);
+          const keys = Object.keys(f || {}).filter((k) => POLA_FILTRA.includes(k));
+          if (o.bezPanelu) return { applied: [], skipped: keys };
+          const applied = [];
+          const skipped = [];
+          for (const k of keys) {
+            if (stanFiltrow.touched.has(k)) { skipped.push(k); continue; }
+            const v = f[k] === undefined ? null : f[k];
+            const przed = stanFiltrow.filters[k] === undefined ? null : stanFiltrow.filters[k];
+            if (JSON.stringify(przed) === JSON.stringify(v)) continue;
+            if (v === null) delete stanFiltrow.filters[k]; else stanFiltrow.filters[k] = v;
+            applied.push(k);
+          }
+          return { applied, skipped };
+        },
+        getFilters() { return { filters: JSON.parse(JSON.stringify(stanFiltrow.filters)), touched: [...stanFiltrow.touched] }; },
       }),
       onMapLoad(f) { naMape.push(f); },
       onFloorChange(f) { zmianyPietra.push(f); },
@@ -302,7 +321,12 @@ function strona(opts) {
     mapaGotowa() { naMape.forEach((f) => f()); },
     klik(produkt, meta) { klikProduktu.forEach((f) => f(produkt, Object.assign({ mapName: 'mapa' }, meta || {}))); },
     /** Zmiana filtra w wyszukiwarce (core 1.7.0). */
-    filtr(filters, extra) { filtry.forEach((f) => f(Object.assign({ mapName: 'mapa', filters, resultCount: 7, resultIds: null, source: 'user' }, extra || {}))); },
+    filtr(filters, extra) {
+      const p = Object.assign({ mapName: 'mapa', filters, resultCount: 7, resultIds: null, source: 'user' }, extra || {});
+      if (p.source === 'user') Object.keys(filters || {}).forEach((k) => { stanFiltrow.touched.add(k); stanFiltrow.filters[k] = filters[k]; });
+      filtry.forEach((f) => f(p));
+    },
+    stanFiltrow,
     sortuj(by, dir, extra) { sortowania.forEach((f) => f(Object.assign({ mapName: 'mapa', sort: { by, dir }, source: 'user' }, extra || {}))); },
     ustawioneFiltry,
     /** Jedna klatka animacji: odpala to, co czekało na requestAnimationFrame. */
@@ -2948,7 +2972,7 @@ test('ma.18 (#23 recenzja): seria zmian filtra w 500 ms = jedno trafienie search
   }
 
   await env.ma.clear();
-  assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', {}, { source: 'api' }], 'Wyczyść');
+  assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null }, { source: 'api' }], 'Wyczyść (ma.26: jawne null)');
 });
 
 
@@ -3448,4 +3472,33 @@ test('ma.25: lista hostów koperty — wielkie litery, kropka na końcu, host w 
   assert.equal(await zla.ma.reload(), false);
   assert.equal(zla.pobrania.length, 0);
   assert.equal(zla.ostrzezenia.length, ile);
+});
+
+
+test('ma.26: Wyczyść zdejmuje filtr z prefer_filters (jawne null — core scala); pole dotknięte przez gościa zostaje', async () => {
+  const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'both' }])], { minScript: 'ma.17' });
+  const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
+  p1.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: 2 }));
+  await p1.gotowe();
+  const p2 = await powrot(p1, 2 * H);
+  assert.deepEqual(czyste(p2.stanFiltrow.filters), { rooms: [3], floor: [2] }, 'prefer_filters weszło');
+  p2.filtr({ priceMax: 700000 });
+  await p2.minie(600);
+  await p2.ma.clear();
+  assert.deepEqual(czyste(p2.stanFiltrow.filters), { priceMax: 700000 }, 'nasze pola zdjęte, pole gościa zostaje');
+});
+
+test('ma.26: prefer_filters, gdy core nic nie przyjął (pole dotknięte, brak panelu) — nie zużywa częstotliwości, próbuje przy następnej wizycie', async () => {
+  const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
+  for (const opt of [{ dotkniete: ['rooms'] }, { bezPanelu: true }]) {
+    const p1 = await start(Object.assign({ koperta: k, imp: { instances: { mapa: {} } } }, opt));
+    p1.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+    await p1.gotowe();
+    const p2 = await powrot(p1, 2 * H);
+    assert.equal(p2.ustawioneFiltry.length, 1, JSON.stringify(opt));
+    assert.equal((p2.zdarzenia['ma:action'] || []).filter((a) => a.do === 'prefer_filters').length, 0, 'bez ma:action, gdy nic nie weszło');
+    const p3 = await powrot(p2, 2 * H, { dotkniete: [], bezPanelu: false });
+    assert.equal(p3.ustawioneFiltry.length, 1, 'następna wizyta próbuje znowu');
+    assert.deepEqual(czyste(p3.stanFiltrow.filters), { rooms: [3] });
+  }
 });
