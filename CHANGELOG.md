@@ -5,6 +5,16 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.25 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.24–ma.16)
+
+### `d2-ma` — poprawki z recenzji ma.23
+
+- Adres koperty spoza listy nie jest zapamiętywany. `digi2.ma.reload()` i
+  `d2-ma-refresh` nie próbują go ponownie, a zły adres w `digi2.ma.load(url)`
+  nie zastępuje wcześniejszego, poprawnego.
+- Strona testowa `sandbox/ma.html` ładuje kopertę jako obiekt, więc działa
+  także po wprowadzeniu listy hostów.
+
 ## v1.9.0-ma.24 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.23–ma.16)
 
 ### `d2-ma` — gorący lead (poprawki z recenzji ma.22)

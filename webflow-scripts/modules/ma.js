@@ -154,7 +154,8 @@
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
- *   digi2.ma.load(urlOrEnvelope)  Read an envelope (a local file for tests)
+ *   digi2.ma.load(urlOrEnvelope)  Read an envelope: an object (a local file for tests), or an
+ *                                 https URL on digi2.app / api.2destate.com (ma.23)
  *   digi2.ma.reload()             Re-read the current envelope URL
  *   digi2.ma.track(unit)          Record a unit_view from any other source
  *   digi2.ma.lead()               Mark the visitor as a lead
@@ -222,7 +223,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 24;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 25;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -4182,8 +4183,10 @@
     deepLinkView();
     hookVisitorIdFields();
     pageUtm = readUtm();
-    envelopeUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
-    fetchEnvelope(envelopeUrl).then(function (raw) {
+    var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
+    // ma.25: adres spoza listy nie zostaje jako envelopeUrl — reload / d2-ma-refresh go nie ponawiają.
+    envelopeUrl = startUrl && allowedUrl(startUrl, ENVELOPE_HOSTS) ? startUrl : null;
+    fetchEnvelope(startUrl).then(function (raw) {
       envelope = compile(raw);
       return decide(envelope);
     })['catch'](function (e) { _warn('start failed', e); });
@@ -4220,8 +4223,10 @@
   var api = {
     load: function (src) {
       if (src && typeof src === 'object') return useEnvelope(src);
-      envelopeUrl = src || envelopeUrl;
-      return fetchEnvelope(envelopeUrl).then(function (raw) { return raw ? useEnvelope(raw) : false; });
+      var url = src || envelopeUrl;
+      // ma.25: zapamiętujemy adres dopiero po kontroli listy — zły adres nie podmienia dobrego.
+      if (url && allowedUrl(url, ENVELOPE_HOSTS)) envelopeUrl = url;
+      return fetchEnvelope(url).then(function (raw) { return raw ? useEnvelope(raw) : false; });
     },
     reload: function () {
       if (!envelopeUrl) return Promise.resolve(false);

@@ -3418,3 +3418,34 @@ test('ma.24: visitorId wpisywany także przy kliku w przycisk wysyłki (jak kont
   env.dom('click', { target: b2 });
   assert.equal(id2.value, 'x', 'przycisk type=button nie wysyła');
 });
+
+test('ma.25: lista hostów koperty — wielkie litery, kropka na końcu, host w ścieżce lub loginie; envelopeUrl zapisywany dopiero po kontroli', async () => {
+  for (const [url, ok] of [
+    ['https://DIGI2.APP/api/ma/scenario/demo.json', true],
+    ['HTTPS://Api.2destate.com/api/v1/public/ma/scenario/demo.json', true],
+    ['https://digi2.app./api/ma/scenario/demo.json', false],
+    ['https://evil.com/digi2.app', false],
+    ['https://evil.com@digi2.app/x.json', false],
+    ['https://digi2.app@evil.com/x.json', false],
+    ['https://evil.com\\@digi2.app/x.json', false],
+    ['https://digi2.app%2eevil.com/x.json', false],
+  ]) {
+    const env = await start({ koperta: koperta([]) });
+    env.pobrania.length = 0;
+    await env.ma.load(url);
+    assert.equal(env.pobrania.includes(url), ok, url);
+  }
+  // Zły adres w load() nie podmienia dobrego: reload() wraca do adresu ze startu.
+  const env = await start({ koperta: koperta([]) });
+  await env.ma.load('https://evil.example/k.json');
+  env.pobrania.length = 0;
+  await env.ma.reload();
+  assert.deepEqual(env.pobrania, ['https://digi2.app/api/ma/scenario/demo.json']);
+  // Zły adres na starcie: reload() (i d2-ma-refresh) nic nie pobiera ani nie ostrzega drugi raz.
+  const zla = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
+  await zla.gotowe();
+  const ile = zla.ostrzezenia.length;
+  assert.equal(await zla.ma.reload(), false);
+  assert.equal(zla.pobrania.length, 0);
+  assert.equal(zla.ostrzezenia.length, ile);
+});
