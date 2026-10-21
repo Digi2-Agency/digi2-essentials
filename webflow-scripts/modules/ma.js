@@ -342,6 +342,29 @@
           t.objectStore('counters').put(counters);
         });
       },
+      // Sam rekord state, bez zakładania bazy, której nie ma (wipe() przy
+      // starcie): nowa baza = onupgradeneeded, wtedy przerywamy i wraca null.
+      peekState: function () {
+        return new Promise(function (resolve) {
+          var req;
+          try { req = idb.open(DB_NAME, DB_VERSION); } catch (e) { resolve(null); return; }
+          var fresh = false;
+          req.onupgradeneeded = function () {
+            fresh = true;
+            try { req.transaction.abort(); } catch (e) {}
+          };
+          req.onsuccess = function () {
+            var db = req.result;
+            if (fresh || !db.objectStoreNames.contains('state')) { try { db.close(); } catch (e) {} resolve(null); return; }
+            try {
+              var r = db.transaction(['state'], 'readonly').objectStore('state').get('main');
+              r.onsuccess = function () { try { db.close(); } catch (e) {} resolve(r.result || null); };
+              r.onerror = function () { try { db.close(); } catch (e) {} resolve(null); };
+            } catch (e) { try { db.close(); } catch (x) {} resolve(null); }
+          };
+          req.onerror = req.onblocked = function () { resolve(null); };
+        });
+      },
       clear: function () {
         if (handle) { try { handle.close(); } catch (e) {} }
         handle = null;
@@ -362,6 +385,7 @@
     return {
       kind: 'memory',
       load: function () { return Promise.resolve({ views: _clone(b.views), state: _clone(b.state) }); },
+      peekState: function () { return Promise.resolve(_clone(b.state)); },
       putViews: function (list) {
         list.forEach(function (v) {
           var i = b.views.findIndex(function (x) { return x.id === v.id; });
@@ -3136,15 +3160,30 @@
   }
 
   // Popup z warunkiem d2-ma, który czekał (veto w module popupów), dostaje drugą szansę.
+  // Zanim moduł popupów się załaduje, digi2.popups to proxy loadera: każda
+  // właściwość jest funkcją, która dociąga moduł i zwraca Promise. Test kształtu
+  // ją przepuszcza, a list().forEach rzucało i przerywało start d2-ma (#16).
+  // Dlatego pytamy loader, czy moduł już jest; bez loadera zostaje test kształtu.
+  // Popup, który załaduje się później, sam pyta digi2.ma.allows() przy otwarciu,
+  // a kolejna zmiana profilu trafia już w prawdziwy moduł.
   function resumePopups() {
+    var loaded = window.digi2._loaded;
+    if (loaded && !loaded.popups) return;
     var p = window.digi2.popups;
     if (!p || typeof p.list !== 'function' || typeof p.get !== 'function') return;
-    p.list().forEach(function (name) {
-      var inst = p.get(name);
-      if (inst && inst.pendingShow && inst.popupElement && condAttrs(inst.popupElement).length && allows(inst.popupElement)) {
-        inst.showIfPending({ auto: true });
-      }
-    });
+    try {
+      var names = p.list();
+      if (!names || typeof names.forEach !== 'function') return;
+      names.forEach(function (name) {
+        var inst = p.get(name);
+        if (inst && inst.pendingShow && inst.popupElement && condAttrs(inst.popupElement).length && allows(inst.popupElement)) {
+          inst.showIfPending({ auto: true });
+        }
+      });
+    } catch (e) {
+      // Błąd w module popupów nie może zatrzymać d2-ma (render, ma:ready, podświetlenie mapy).
+      _warn('popups resume failed', e);
+    }
   }
 
   // Czy element wolno pokazać - pyta moduł popupów (veto jak canShow, §13.11.3).
@@ -3332,10 +3371,13 @@
     _queue(function () {
       // Zgoda wycofana między wizytami (wykryta przy starcie): stanu nie ma
       // w pamięci, więc visitorId do /revoke czytamy z bazy tuż przed jej
-      // usunięciem - tylko w tym celu, nic innego z odczytu nie korzystamy.
-      var before = !hadState && hotLeadOn() && typeof s.load === 'function'
-        ? s.load().then(function (d) { revokeHotLead(d && d.state); }, function () {})
+      // usunięciem - sam rekord state i tylko w tym celu. Bazy, której nie
+      // ma, peekState nie zakłada.
+      var peek = !hadState && hotLeadOn()
+        ? (typeof s.peekState === 'function' ? s.peekState()
+          : typeof s.load === 'function' ? s.load().then(function (d) { return d && d.state; }) : null)
         : null;
+      var before = peek ? Promise.resolve(peek).then(function (st) { revokeHotLead(st); }, function () {}) : null;
       return Promise.resolve(before).then(function () { return s.clear(); });
     });
     render();

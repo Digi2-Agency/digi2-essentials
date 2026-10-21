@@ -2814,6 +2814,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>Hide holds, or a key / value is wrong</td><td><code>d2-ma-hidden</code> — hidden (wrong = one <code>console.warn</code> per element)</td></tr>
       <tr><td>No consent, no history, an older script</td><td>Nothing matches: default content, conditional blocks stay hidden</td></tr>
       <tr><td>Popup overlay with a condition</td><td>Its opening is vetoed and parked; it opens once the condition holds. Triggers stay in the popup</td></tr>
+      <tr><td>Popups module loads after d2-ma</td><td>d2-ma waits for the loader to mark the module as loaded before resuming parked popups (no call into the loader's proxy); a popup that loads later asks <code>digi2.ma.allows()</code> itself. An error thrown by the popups module while resuming is logged and does not stop d2-ma</td></tr>
       <tr><td>DOM changed later (CMS, tabs)</td><td>Call <code>digi2.ma.apply()</code></td></tr>
       <tr><td><code>?d2-ma-preview=2-pokoje</code></td><td>Shows that segment / variant for checking in Webflow — no consent needed, nothing stored, nothing in <code>dataLayer</code></td></tr>
       <tr><td>Safari</td><td>Clears script storage after 7 days without interaction — a <code>/30d</code> window sees about a week</td></tr>
@@ -2923,7 +2924,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td>404</td><td>Route not live yet: signals paused for 24 h (ma.13)</td></tr>
       <tr><td>413 / 422</td><td>Body refused: no more signals this visit, next visit tries again (ma.13)</td></tr>
       <tr><td>429 / 503</td><td>Wait <code>Retry-After</code> (1 h without it)</td></tr>
-      <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer. Sent whenever the <code>visitorId</code> was ever handed to a form — 2destate links on the field alone, even when the page saw no lead (ma.13). Consent withdrawn between visits is caught on the next page view: the id is read from <code>d2ma</code> just for the revoke, then the database goes</td></tr>
+      <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer. Sent whenever the <code>visitorId</code> was ever handed to a form — 2destate links on the field alone, even when the page saw no lead (ma.13). Consent withdrawn between visits is caught on the next page view: the id is read from <code>d2ma</code> just for the revoke, then the database goes; a browser without <code>d2ma</code> doesn't get one (ma.15)</td></tr>
       <tr><td><code>d2-ma-hot-lead</code> not <code>https://…</code></td><td>Console warning, the production API is used (ma.13)</td></tr>
     </table>
     <p class="muted">The module never submits or blocks the form itself — it only fills the hidden field in the capture phase, before your handler. Pin MA with a tag (<code>@v1.9.0-ma.N/dist/digi2-loader.min.js</code>), never <code>@latest</code>.</p>

@@ -5,7 +5,34 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
-## v1.9.0-ma.13 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+## v1.9.0-ma.15 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+
+ma.14 (poprawka #16) + gorący lead z ma.12 / ma.13. **Tę wersję przypina strona dema.**
+
+### `d2-ma`
+
+- Zawiera poprawkę wyścigu popupów #16 z ma.14 i gorący lead (MA-D38 etap 1,
+  wariant D′) z poprawkami z recenzji, czyli wszystko z ma.12 i ma.13.
+- Wycofanie zgody wykryte przy wejściu na stronę, gdy przeglądarka nie ma
+  jeszcze bazy `d2ma`, nie zakłada jej tylko po to, żeby ją skasować.
+
+## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`; main, #18)
+
+### `d2-ma`
+
+- Start d2-ma nie przerywa się już, gdy moduł popupów dociąga się później niż
+  koperta scenariuszy (#16): wcześniej `[digi2.ma] start failed TypeError:
+  … forEach is not a function` w konsoli, brak `ma:ready`, brak podświetlenia
+  lokali gościa na mapie przy wejściu i pusta sekcja profilu do następnego
+  zdarzenia. Odłożony popup z warunkiem `d2-ma-show-*` wznawia się, gdy moduł
+  popupów już jest; popup załadowany później sam pyta d2-ma przy otwarciu.
+- Błąd rzucony przez moduł popupów przy wznawianiu odłożonego popupu nie
+  zatrzymuje d2-ma (`console.warn` „popups resume failed”).
+
+## v1.9.0-ma.13 — 2026-10-21 (wydanie gałęzi `feat/d2-ma-12-2destate-visitor` bez poprawki #16 — **nie używać**, zamiast niego ma.15)
+
+Tag `v1.9.0-ma.13` powstał na gałęzi gorącego leada, zanim poprawka #16 (#18) trafiła na main, która
+zapowiadała ją jako ma.13; poprawka #16 ostatecznie wyszła jako ma.14. Ten tag ma błąd wyścigu popupów (#16).
 
 ### `d2-ma` — gorący lead, poprawki z recenzji
 

@@ -102,6 +102,10 @@ function element(attrs, tagName) {
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
  *   dymek     { open } - pełnoekranowy dymek mapy 2destate na telefonie
+ *   idb       atrapa window.indexedDB zamiast magazynu testowego (prawdziwy idbStore)
+ *   popupsProxy  moduł popupów jeszcze się ładuje: digi2.popups to proxy loadera
+ *             (każda właściwość = funkcja zwracająca Promise), _loaded.popups = false;
+ *             env.proxyWolania zlicza wywołania, env.zaladujPopups() podstawia moduł
  */
 function strona(opts) {
   const o = opts || {};
@@ -169,6 +173,12 @@ function strona(opts) {
     },
   };
 
+  // Proxy loadera (digi2-loader.js createProxy): typeof p.list === 'function', p.list() = Promise.
+  const proxyWolania = [];
+  const popupsProxy = new Proxy({}, {
+    get(_t, method) { return (...a) => { proxyWolania.push(String(method)); return Promise.resolve(); }; },
+  });
+
   const window = {
     innerHeight: 1000,
     pageYOffset: 0,
@@ -188,11 +198,13 @@ function strona(opts) {
       },
       on(n, f) { (sluchacze[n] = sluchacze[n] || []).push(f); },
       modules: { require: () => Promise.resolve(), check: () => false },
-      popups: popupsApi,
-      _maStore: magazyn(o.dysk || {}),
+      _loaded: { popups: !o.popupsProxy },
+      popups: o.popupsProxy ? popupsProxy : popupsApi,
+      _maStore: o.idb ? undefined : magazyn(o.dysk || {}),
       _maEndpoint: 'koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null,
     },
   };
+  if (o.idb) window.indexedDB = o.idb;
   if (o.googleTag) window.google_tag_data = o.googleTag;
   if (o.imp) window.ImageMapPro = o.imp;
   if (o.dotyk) window.matchMedia = (q) => ({ matches: q === '(hover: none)' });
@@ -248,6 +260,9 @@ function strona(opts) {
 
   const env = {
     window, zegar, dataLayer, popupy, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
+    proxyWolania,
+    /** Moduł popupów dociągnął się po d2-ma: loader podstawia prawdziwy obiekt i oznacza _loaded. */
+    zaladujPopups() { window.digi2.popups = popupsApi; window.digi2._loaded.popups = true; },
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
     polaFormularza: () => dataLayer.filter((e) => e && e.event === 'ma_form_field').map((e) => ({ ...e })),
     async gotowe() { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); },
@@ -1988,6 +2003,38 @@ test('popup z warunkiem d2-ma czekający w module popupów dostaje showIfPending
   assert.deepEqual(wznowione.map((o) => ({ ...o })), [{ auto: true }], 'tylko popup z warunkiem d2-ma');
 });
 
+test('#16: moduł popupów ładuje się po d2-ma (proxy loadera) — start kończy się, ma:ready wychodzi, proxy nietknięte', async () => {
+  const nakladka = element({ 'd2-ma-cond': '', 'd2-ma-show-segment': '2-pokoje' });
+  const env = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [SEG('2-pokoje')])]), popupsProxy: true });
+  assert.deepEqual(env.ostrzezenia.filter((w) => w.includes('start failed')), [], 'start d2-ma nie pada na proxy');
+  assert.ok((env.zdarzenia['ma:ready'] || []).some((d) => d.tracking === true), 'ma:ready z tracking: true');
+  assert.deepEqual(env.proxyWolania, [], 'żadna metoda proxy nie wywołana — d2-ma nie dociąga popups na siłę');
+
+  // Zmiana profilu, zanim popups się załaduje: dalej bez błędu i bez dotykania proxy.
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.deepEqual(env.ostrzezenia.filter((w) => w.includes('failed')), []);
+  assert.deepEqual(env.proxyWolania, []);
+
+  // Moduł dociągnął się później (segment już pasuje): odłożony popup dostaje drugą szansę
+  // przy pierwszym przeliczeniu warunków z prawdziwym modułem.
+  env.zaladujPopups();
+  const wznowione = [];
+  env.window.digi2.popups.list = () => ['promo'];
+  env.window.digi2.popups.get = () => ({ pendingShow: true, popupElement: nakladka, showIfPending(o) { wznowione.push(o); } });
+  env.ma.apply();
+  assert.deepEqual(wznowione.map((o) => ({ ...o })), [{ auto: true }]);
+});
+
+test('#16: wyjątek w module popupów przy wznawianiu nie zatrzymuje d2-ma', async () => {
+  const env = await start({ koperta: koperta([scenariusz('s', { event: 'unit_view' }, [SEG('2-pokoje')])]) });
+  env.window.digi2.popups.list = () => { throw new Error('popups broken'); };
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.ok(env.ostrzezenia.some((w) => w.includes('popups resume failed')));
+  assert.ok((env.zdarzenia['ma:change'] || []).length >= 1, 'render doszedł do końca, ma:change wyszło');
+});
+
 test('every_time: treść wraca na każdej odsłonie, gdy ścieżka już do niej doszła; dla popupu niedozwolone', async () => {
   const slot = element({ 'd2-ma-slot': 'hero' }, 'H1');
   slot.textContent = 'Domyślny';
@@ -2689,4 +2736,62 @@ test('MA-D38 D′ (ma.13): d2-ma-hot-lead bez https — ostrzeżenie i API produ
   assert.ok(p2.ostrzezenia.some((w) => w.includes('not an https address')));
   const pusty = await powrot(p2, 26 * H, { cfg: HOT });
   assert.ok(!pusty.ostrzezenia.some((w) => w.includes('not an https address')), 'puste — bez ostrzeżenia');
+});
+
+// ma.15: wipe() przy starcie nie zakłada bazy d2ma, której nie ma (IndexedDB)
+
+/** Atrapa window.indexedDB: open / onupgradeneeded / abort, sam rekord state, deleteDatabase. */
+function atrapaIdb(bazy) {
+  const log = { utworzone: 0, usuniete: 0 };
+  const pozniej = (f) => setImmediate(f);
+  return {
+    log, bazy,
+    open(nazwa) {
+      const req = {};
+      pozniej(() => {
+        let przerwane = false;
+        req.result = {
+          objectStoreNames: { contains: (n) => n === 'state' },
+          close() {},
+          transaction() {
+            return { objectStore: () => ({ get() {
+              const r = {};
+              pozniej(() => { r.result = (bazy[nazwa] || {}).state || undefined; if (r.onsuccess) r.onsuccess(); });
+              return r;
+            } }) };
+          },
+        };
+        if (!Object.prototype.hasOwnProperty.call(bazy, nazwa)) {
+          req.transaction = { abort() { przerwane = true; } };
+          if (req.onupgradeneeded) req.onupgradeneeded();
+          if (przerwane) { req.error = new Error('AbortError'); if (req.onerror) req.onerror(); return; }
+          bazy[nazwa] = {};
+          log.utworzone++;
+        }
+        if (req.onsuccess) req.onsuccess();
+      });
+      return req;
+    },
+    deleteDatabase(nazwa) {
+      const req = {};
+      pozniej(() => { delete bazy[nazwa]; log.usuniete++; if (req.onsuccess) req.onsuccess(); });
+      return req;
+    },
+  };
+}
+
+test('MA-D38 D′ (ma.15): brak zgody przy starcie, przeglądarka bez bazy d2ma — baza nie powstaje, revoke nie idzie', async () => {
+  const idb = atrapaIdb({});
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT, idb });
+  assert.equal(idb.log.utworzone, 0, 'peekState nie zakłada bazy');
+  assert.ok(!('d2ma' in idb.bazy));
+  assert.equal(env.sygnaly.length, 0);
+});
+
+test('MA-D38 D′ (ma.15): brak zgody przy starcie, baza z oddanym visitorId — /revoke z rekordu state, baza usunięta', async () => {
+  const idb = atrapaIdb({ d2ma: { state: { key: 'main', visitorId: UID(7), idShared: 1, visits: 1 } } });
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT, idb });
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: UID(7) }]]);
+  assert.ok(!('d2ma' in idb.bazy), 'baza usunięta');
+  assert.equal(idb.log.utworzone, 0);
 });

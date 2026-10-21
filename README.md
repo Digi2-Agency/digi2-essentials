@@ -1488,8 +1488,10 @@ Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
   locally linked profile: 2destate links on `d2ma_visitor_id` alone, even
   when the page never saw the lead, and `/revoke` answers 204 for an unknown
   id, so it reveals nothing. Consent withdrawn between visits is found in
-  `decide()` before the store is open: `wipe()` then reads `d2ma` once, only
-  to take the `visitorId` for `/revoke`, and clears it right after.
+  `decide()` before the store is open: `wipe()` then reads only the `state`
+  record of `d2ma` (`peekState()`), only to take the `visitorId` for
+  `/revoke`, and clears it right after. A browser with no `d2ma` yet gets
+  none: `peekState()` aborts `onupgradeneeded` instead of creating it (ma.15).
 - **Attribute value:** anything that isn't `https://…` (a typo,
   `http://localhost`) logs a warning and falls back to production — on
   purpose, so a broken value never sends to an unchecked host.
@@ -1570,6 +1572,12 @@ never part of a counter.
 - **Popup:** conditions on a popup overlay veto its opening (see popups,
   "Where the gate sits"); the module calls `showIfPending()` on such a parked
   popup when its condition starts to hold. Triggers stay in the popup options.
+  d2-ma asks the loader whether the popups module is in (`digi2._loaded.popups`)
+  before it touches `digi2.popups` — before the module arrives that object is the
+  loader's proxy, whose every method auto-loads the module and returns a Promise.
+  A popups module that loads after d2-ma asks `digi2.ma.allows()` itself when
+  it opens, so nothing is lost; an exception thrown by the popups module while
+  resuming is logged (`popups resume failed`) and does not stop d2-ma.
 - **When it runs:** on every profile change. Elements are collected once;
   after changing the DOM (a CMS list, a tab loaded later) call
   `digi2.ma.apply()`. `digi2.ma.allows(el)` answers for one element.
