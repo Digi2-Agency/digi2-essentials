@@ -2920,10 +2920,13 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td>Next visit</td><td><code>POST {api}/public/ma/visit</code> <code>{ visitorId, units?, pageviews, source: "return_visit" }</code> — up to 20 2destate unit ids from this visit, page views 1–50; once per visit, then only new units and at most every 5 min. Never in the form's own visit. No form data, UTM or URLs; no credentials</td></tr>
       <tr><td>401</td><td>2destate doesn't know the visitor (or it was revoked): link dropped, no more signals</td></tr>
       <tr><td>403</td><td>Origin not on the project's list or lead not eligible: signals paused for 24 h, link kept</td></tr>
+      <tr><td>404</td><td>Route not live yet: signals paused for 24 h (ma.13)</td></tr>
+      <tr><td>413 / 422</td><td>Body refused: no more signals this visit, next visit tries again (ma.13)</td></tr>
       <tr><td>429 / 503</td><td>Wait <code>Retry-After</code> (1 h without it)</td></tr>
-      <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer</td></tr>
+      <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer. Sent whenever the <code>visitorId</code> was ever handed to a form — 2destate links on the field alone, even when the page saw no lead (ma.13). Consent withdrawn between visits is caught on the next page view: the id is read from <code>d2ma</code> just for the revoke, then the database goes</td></tr>
+      <tr><td><code>d2-ma-hot-lead</code> not <code>https://…</code></td><td>Console warning, the production API is used (ma.13)</td></tr>
     </table>
-    <p class="muted">The module never submits or blocks the form itself — it only fills the hidden field in the capture phase, before your handler.</p>
+    <p class="muted">The module never submits or blocks the form itself — it only fills the hidden field in the capture phase, before your handler. Pin MA with a tag (<code>@v1.9.0-ma.N/dist/digi2-loader.min.js</code>), never <code>@latest</code>.</p>
     <p class="muted">A working page with fake units, both search engines simulated and a webhook that never leaves the browser: <code>sandbox/ma.html</code>.</p>
   </section>
 

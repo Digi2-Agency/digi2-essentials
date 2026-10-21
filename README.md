@@ -1479,11 +1479,24 @@ Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
   dropped; 403 (Origin off the project's list or lead not eligible — one code
   for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
-  429 / 503 → wait `Retry-After` (1 h default); anything else → console
-  warning.
+  404 (route not live) → paused 24 h, so an undeployed route isn't hit every
+  5 minutes; 413 / 422 → no more signals this visit; 429 / 503 → wait
+  `Retry-After` (1 h default); anything else → console warning.
 - **"Clear" and consent withdrawn:** `POST {api}/public/ma/revoke
-  {visitorId}` first (only for a linked profile), then the profile goes
-  locally whatever the answer.
+  {visitorId}` first, then the profile goes locally whatever the answer.
+  Sent whenever the id was ever handed out (`idShared`), not only for a
+  locally linked profile: 2destate links on `d2ma_visitor_id` alone, even
+  when the page never saw the lead, and `/revoke` answers 204 for an unknown
+  id, so it reveals nothing. Consent withdrawn between visits is found in
+  `decide()` before the store is open: `wipe()` then reads `d2ma` once, only
+  to take the `visitorId` for `/revoke`, and clears it right after.
+- **Attribute value:** anything that isn't `https://…` (a typo,
+  `http://localhost`) logs a warning and falls back to production — on
+  purpose, so a broken value never sends to an unchecked host.
+- **Pinning:** load MA from a tag, `@v1.9.0-ma.N/dist/digi2-loader.min.js`,
+  never `@latest`. jsDelivr resolves `@latest` per file: `dist/modules/ma.min.js`
+  is missing from the latest stable tag, so `@latest` serves the newest tag that
+  has it. Loader 1.8.0 doesn't know d2-ma and never asks for it.
 - **Envelope from 2destate:** `d2-ma` already takes any URL, so switching the
   source is `d2-ma="https://api.2destate.com/api/v1/public/ma/scenario/<site>.json"`
   — same v0 shape, no code change.

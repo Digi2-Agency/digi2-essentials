@@ -5,6 +5,20 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.13 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+
+### `d2-ma` — gorący lead, poprawki z recenzji
+
+- „Wyczyść” i wycofanie zgody odwołują powiązanie w 2destate zawsze, gdy
+  formularz dostał kiedyś `visitorId`, także wtedy, gdy strona nie zobaczyła
+  leada.
+- Zgoda wycofana między wizytami: przy następnej odsłonie moduł najpierw
+  wysyła odwołanie do 2destate, potem kasuje bazę.
+- Gdy adres 2destate jeszcze nie działa (404), sygnały wstrzymują się na dobę.
+  Odrzucona treść (413, 422) wstrzymuje je do końca wizyty.
+- Wartość `d2-ma-hot-lead` bez `https://` daje ostrzeżenie w konsoli.
+- MA przypinaj tagiem `@v1.9.0-ma.N`, nigdy `@latest`.
+
 ## v1.9.0-ma.12 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
 
 ### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′)

@@ -2624,3 +2624,69 @@ test('MA-D38 D′: „Wyczyść" i wycofanie zgody wysyłają /revoke {visitorId
   assert.deepEqual(z.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: idZ }]]);
   assert.equal(z.ma.profile(), null);
 });
+
+// ma.13: poprawki z recenzji #17
+
+test('MA-D38 D′ (ma.13): visitorId oddany bez leada — „Wyczyść" i tak wysyła /revoke (2destate wiąże po samym polu)', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  const { form } = formularzDema();
+  env.dom('submit', { target: form });
+  await env.gotowe();
+  const id = env.ma.profile().visitorId;
+  assert.ok(!env._dysk.state.hotLead, 'bez leada nie ma lokalnego powiązania');
+  await env.ma.clear();
+  await env.gotowe();
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+
+  const nic = await start({ koperta: koperta([]), cfg: HOT });
+  await nic.ma.clear();
+  await nic.gotowe();
+  assert.equal(nic.sygnaly.length, 0, 'id nigdy nie oddany — revoke nie idzie');
+});
+
+test('MA-D38 D′ (ma.13): zgoda wycofana między wizytami — przy starcie /revoke z visitorId z bazy, potem baza pusta', async () => {
+  const k = koperta([], { storage: { consentRequired: true } });
+  const p1 = await leadDema({ koperta: k, zgoda: { analytics_storage: 'granted' } });
+  const id = p1.ma.profile().visitorId;
+  const p2 = await powrot(p1, 26 * H, { zgoda: { analytics_storage: 'denied' } });
+  assert.deepEqual(p2.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+  assert.equal(p2._dysk.state, null, 'baza skasowana');
+  assert.equal(p2.ma.profile(), null);
+  const p3 = await powrot(p2, 26 * H, { zgoda: { analytics_storage: 'denied' } });
+  assert.equal(p3.sygnaly.length, 0, 'pusta baza — nic do odwołania');
+
+  const bezAtrybutu = await leadDema({ koperta: k, zgoda: { analytics_storage: 'granted' } });
+  const q = await powrot(bezAtrybutu, 26 * H, { zgoda: { analytics_storage: 'denied' }, cfg: {} });
+  assert.equal(q.sygnaly.length, 0, 'strona bez d2-ma-hot-lead nie wysyła revoke');
+  assert.equal(q._dysk.state, null);
+});
+
+test('MA-D38 D′ (ma.13): 404 wstrzymuje na dobę; 413 / 422 — koniec sygnałów w tej wizycie', async () => {
+  const a1 = await leadDema({ statusSygnalu: () => 404 });
+  const a2 = await powrot(a1, 26 * H);
+  assert.equal(a2.sygnaly.length, 1);
+  assert.ok(a2.ostrzezenia.some((w) => w.includes('404')));
+  const a3 = await powrot(a2, 2 * H);
+  assert.equal(a3.sygnaly.length, 0, 'w ciągu doby cisza');
+  assert.equal((await powrot(a3, 23 * H)).sygnaly.length, 1, 'po dobie znowu');
+
+  for (const st of [413, 422]) {
+    const b1 = await leadDema({ statusSygnalu: () => st });
+    const b2 = await powrot(b1, 26 * H);
+    assert.equal(b2.sygnaly.length, 1);
+    b2.ma.track({ unitId: UID(2), name: 'A2', source: '2destate' });
+    await b2.minie(6 * MIN);
+    assert.equal(b2.sygnaly.length, 1, st + ': przyrost w tej wizycie nie idzie');
+    assert.ok(b2._dysk.state.hotLead, st + ': powiązanie zostaje');
+    assert.equal((await powrot(b2, 26 * H)).sygnaly.length, 1, st + ': następna wizyta znowu');
+  }
+});
+
+test('MA-D38 D′ (ma.13): d2-ma-hot-lead bez https — ostrzeżenie i API produkcyjne', async () => {
+  const p1 = await leadDema({ cfg: { 'd2-ma-hot-lead': 'http://localhost:8000/api/v1' } });
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly[0].url, VISIT);
+  assert.ok(p2.ostrzezenia.some((w) => w.includes('not an https address')));
+  const pusty = await powrot(p2, 26 * H, { cfg: HOT });
+  assert.ok(!pusty.ostrzezenia.some((w) => w.includes('not an https address')), 'puste — bez ostrzeżenia');
+});

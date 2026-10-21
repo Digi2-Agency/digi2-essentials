@@ -30,8 +30,9 @@
  *                                 result sent from the panel reaches an open page)
  *   d2-ma-hot-lead="<api>"        ma.12, demo / test leads (MA-D38 stage 1, D′): visitorId
  *                                 for the 2destate form, return-visit signal POST
- *                                 {api}/public/ma/visit, /revoke on clear / consent withdrawn.
- *                                 Empty = https://api.2destate.com/api/v1
+ *                                 {api}/public/ma/visit, /revoke on clear / consent withdrawn
+ *                                 (whenever the id was handed out). Empty or not https =
+ *                                 https://api.2destate.com/api/v1. Pin MA with @v1.9.0-ma.N.
  *
  * ─── Sources of unit_view (§13.1) ───────────────────────────────────────────
  *
@@ -2766,9 +2767,15 @@
   }
 
   // Wartość atrybutu = baza API 2destate (https), pusta = produkcja.
+  var hotLeadApiWarned = false;
   function hotLeadApi() {
-    var v = _cfg('d2-ma-hot-lead');
-    return (/^https:\/\//i.test(v || '') ? v : DEFAULT_HOT_LEAD_API).replace(/\/+$/, '');
+    var v = _cfg('d2-ma-hot-lead') || '';
+    if (/^https:\/\//i.test(v)) return v.replace(/\/+$/, '');
+    if (v && !hotLeadApiWarned) {
+      hotLeadApiWarned = true;
+      _warn('d2-ma-hot-lead="' + v + '" is not an https address — using ' + DEFAULT_HOT_LEAD_API);
+    }
+    return DEFAULT_HOT_LEAD_API;
   }
 
   // visitorId oddany stronie (formularz) - zapamiętujemy wizytę, w której to było.
@@ -2820,6 +2827,7 @@
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
+    if (state.hotLeadMuteVisit === state.visits) return;
     var units = viewedThisVisit();
     var sent = state.hotLeadSent;
     if (sent && sent.visit === state.visits) {
@@ -2852,6 +2860,14 @@
           // Zły Origin albo lead niekwalifikowany - nie zrywamy, wstrzymujemy na dobę.
           _warn('visit signal refused (403) — Origin not on the project list or lead not eligible; paused 24 h');
           if (same) { state.hotLeadRetryAt = Date.now() + DAY_MS; save(); }
+        } else if (r.status === 404) {
+          // Trasa jeszcze niewdrożona - nie pukamy co 5 minut, wracamy za dobę.
+          _warn('visit signal answered 404 — route not live; paused 24 h');
+          if (same) { state.hotLeadRetryAt = Date.now() + DAY_MS; save(); }
+        } else if (r.status === 413 || r.status === 422) {
+          // Treść odrzucona - w tej wizycie ten sam sygnał nie przejdzie.
+          _warn('visit signal answered ' + r.status + ' — no more signals this visit');
+          if (same) { state.hotLeadMuteVisit = state.visits; save(); }
         } else if (r.status === 429 || r.status === 503) {
           if (same) { state.hotLeadRetryAt = retryAfter(r, 3600); save(); }
         } else {
@@ -2865,13 +2881,17 @@
   }
 
   // „Wyczyść" i wycofanie zgody: najpierw /revoke w 2destate, potem lokalnie
-  // (bez czekania na odpowiedź).
-  function revokeHotLead() {
-    if (!state || !state.hotLead || !hotLeadOn() || typeof fetch !== 'function') return;
+  // (bez czekania na odpowiedź). Wystarczy oddany visitorId - 2destate wiąże
+  // lead po samym d2ma_visitor_id, także gdy strona nie zobaczyła leada;
+  // /revoke odpowiada 204 i dla nieznanego id, więc nic nie zdradza.
+  function revokeHotLead(st) {
+    st = st || state;
+    if (!st || (st.idShared == null && !st.hotLead) || !st.visitorId) return;
+    if (!hotLeadOn() || typeof fetch !== 'function') return;
     try {
       fetch(hotLeadApi() + '/public/ma/revoke', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorId: state.visitorId }),
+        body: JSON.stringify({ visitorId: st.visitorId }),
         credentials: 'omit', mode: 'cors', keepalive: true
       }).then(null, function (e) { _log('revoke failed', e); });
     } catch (e) { _log('revoke failed', e); }
@@ -3293,6 +3313,7 @@
   // gdy zgoda nie była wymagana).
   function wipe(reason) {
     _log('no consent — d2ma deleted (' + reason + ')');
+    var hadState = !!state;
     revokeHotLead();
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
@@ -3308,7 +3329,15 @@
     resetSignals();
     resetOrder();
     var s = store || window.digi2._maStore || idbStore() || memoryStore();
-    _queue(function () { return s.clear(); });
+    _queue(function () {
+      // Zgoda wycofana między wizytami (wykryta przy starcie): stanu nie ma
+      // w pamięci, więc visitorId do /revoke czytamy z bazy tuż przed jej
+      // usunięciem - tylko w tym celu, nic innego z odczytu nie korzystamy.
+      var before = !hadState && hotLeadOn() && typeof s.load === 'function'
+        ? s.load().then(function (d) { revokeHotLead(d && d.state); }, function () {})
+        : null;
+      return Promise.resolve(before).then(function () { return s.clear(); });
+    });
     render();
     _emit('ma:change', { cleared: true, tracking: false, reason: reason });
   }
