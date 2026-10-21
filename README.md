@@ -1476,8 +1476,9 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   inquiry, `digi2.ma.lead()`), in either order. A failed submit with no lead
   links nothing, so a visitor 2destate doesn't know never sends signals.
 - **Visit signal:** `POST {api}/public/ma/visit` with
-  `{ visitorId, units?, pageviews, source: "return_visit" }` — up to 20
-  unique 2destate unit ids (UUID) viewed this visit (left out when none),
+  `{ visitorId, units, pageviews, source: "return_visit" }` — up to 20
+  unique 2destate unit ids (UUID) viewed this visit (ma.24: always sent, `[]`
+  when none — the 2destate server requires the field and answers 422 without it),
   page views of the visit (1–50). Once per visit, then only when new units
   were viewed and at most every 5 minutes. Never in the form's visit. No form
   data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.

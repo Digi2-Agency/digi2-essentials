@@ -4,6 +4,10 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+// Testy liczą godziny jak przeglądarka w Polsce (12:10 = 10:10 UTC w październiku) —
+// niezależnie od strefy maszyny (CI w UTC, Windows).
+process.env.TZ = 'Europe/Warsaw';
+
 const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'ma.js');
 const kodModulu = fs.readFileSync(modulePath, 'utf8');
 
@@ -3153,7 +3157,7 @@ test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, p
   const p2 = await powrot(p1, 26 * H);
   assert.equal(p2.sygnaly.length, 1);
   assert.equal(p2.sygnaly[0].url, VISIT);
-  assert.deepEqual({ ...p2.sygnaly[0].body }, { visitorId: id, pageviews: 1, source: 'return_visit' });
+  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [] }, 'ma.24: units zawsze, także []');
   assert.equal(p2.sygnaly[0].init.credentials, 'omit');
   p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
   await p2.gotowe();
@@ -3393,4 +3397,24 @@ test('ma.23: koperta tylko z digi2.app i api.2destate.com po https — inny adre
   await obca.gotowe();
   assert.equal(obca.pobrania.length, 0);
   assert.ok(obca.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')));
+});
+
+
+test('ma.24: visitorId wpisywany także przy kliku w przycisk wysyłki (jak kontekst leadu); type=button nie', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = element({}, 'FORM');
+  const id = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  const btn = element({ type: 'submit' }, 'BUTTON');
+  form.appendChild(id); form.appendChild(btn); btn.parent = form; id.parent = form;
+  env.dom('click', { target: btn });
+  assert.equal(id.value, env.ma.profile().visitorId);
+  const f2 = element({}, 'FORM');
+  const id2 = element({ type: 'hidden', 'd2-ma-visitor-id': '' }, 'INPUT');
+  const b2 = element({ type: 'button' }, 'BUTTON');
+  f2.appendChild(id2); f2.appendChild(b2); b2.parent = f2;
+  id2.value = 'x';
+  env.dom('click', { target: b2 });
+  assert.equal(id2.value, 'x', 'przycisk type=button nie wysyła');
 });

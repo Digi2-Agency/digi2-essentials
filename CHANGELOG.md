@@ -5,6 +5,17 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.24 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.23–ma.16)
+
+### `d2-ma` — gorący lead (poprawki z recenzji ma.22)
+
+- Sygnał powrotu zawsze zawiera listę obejrzanych lokali, także pustą. Serwer
+  2destate wymaga tego pola. Bez niego pierwszy sygnał po powrocie, wysłany
+  przed obejrzeniem lokalu, dostawał odmowę i wyciszał całą wizytę.
+- Pole `[d2-ma-visitor-id]` dostaje identyfikator także przy kliknięciu
+  przycisku wysyłki, a nie tylko przy samym wysłaniu formularza. Działa więc
+  tak samo jak kontekst leadu.
+
 ## v1.9.0-ma.23 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.22–ma.16)
 
 ### `d2-ma` — dozwolone adresy
