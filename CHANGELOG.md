@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.13 — 2026-10-21 (przedpremierowa, nie `@latest`)
+
+### `d2-ma`
+
+- Start d2-ma nie przerywa się już, gdy moduł popupów dociąga się później niż
+  koperta scenariuszy (#16): wcześniej `[digi2.ma] start failed TypeError:
+  … forEach is not a function` w konsoli, brak `ma:ready`, brak podświetlenia
+  lokali gościa na mapie przy wejściu i pusta sekcja profilu do następnego
+  zdarzenia. Odłożony popup z warunkiem `d2-ma-show-*` wznawia się, gdy moduł
+  popupów już jest; popup załadowany później sam pyta d2-ma przy otwarciu.
+- Błąd rzucony przez moduł popupów przy wznawianiu odłożonego popupu nie
+  zatrzymuje d2-ma (`console.warn` „popups resume failed”).
+
 ## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
 ### `d2-popups`

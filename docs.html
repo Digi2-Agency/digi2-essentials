@@ -2811,6 +2811,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>Hide holds, or a key / value is wrong</td><td><code>d2-ma-hidden</code> — hidden (wrong = one <code>console.warn</code> per element)</td></tr>
       <tr><td>No consent, no history, an older script</td><td>Nothing matches: default content, conditional blocks stay hidden</td></tr>
       <tr><td>Popup overlay with a condition</td><td>Its opening is vetoed and parked; it opens once the condition holds. Triggers stay in the popup</td></tr>
+      <tr><td>Popups module loads after d2-ma</td><td>d2-ma waits for the loader to mark the module as loaded before resuming parked popups (no call into the loader's proxy); a popup that loads later asks <code>digi2.ma.allows()</code> itself. An error thrown by the popups module while resuming is logged and does not stop d2-ma</td></tr>
       <tr><td>DOM changed later (CMS, tabs)</td><td>Call <code>digi2.ma.apply()</code></td></tr>
       <tr><td><code>?d2-ma-preview=2-pokoje</code></td><td>Shows that segment / variant for checking in Webflow — no consent needed, nothing stored, nothing in <code>dataLayer</code></td></tr>
       <tr><td>Safari</td><td>Clears script storage after 7 days without interaction — a <code>/30d</code> window sees about a week</td></tr>
