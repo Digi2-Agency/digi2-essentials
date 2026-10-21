@@ -5,6 +5,28 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.17 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.16)
+
+### `d2-ma` — wyszukiwarka 2destate (§13.14, wymaga core 1.7.0)
+
+- Nowy wyzwalacz scenariusza `search_filter` (`rooms`, `floor`, `minCount`):
+  gość ustawił w wyszukiwarce filtr z tą liczbą pokoi / piętrem.
+- Nowa akcja `prefer_filters` (`by: rooms | floor | both`): przy powrocie
+  wyszukiwarka sama ustawia filtr z preferencji gościa — raz na wizytę i tylko,
+  jeśli gość jeszcze nie filtrował.
+- `map_order` układa też listę wyników i ustępuje sortowaniu wybranemu przez
+  gościa do końca wizyty.
+- Profil pamięta ostatni filtr; dopóki gość nie obejrzał żadnego lokalu,
+  preferencja pokoi / piętra bierze się z filtra. Kontekst leadu dostaje
+  „filtrował: 2–3 pokoje, do 700 000 zł, tylko wolne”.
+- Wbudowany popup `promo-filter` bez lokalu: „Szukasz mieszkania 2 pokoje?
+  Pokażemy wolne lokale i aktualne promocje.”
+- Zdarzenia GA4 z wyszukiwarki: `view_item_list` (filtry, liczba wyników,
+  sortowanie), `select_item`, `view_flat`. Wyłącznik `d2-ma-search-events="off"`.
+- Bez core 2destate 1.7.0 nic się nie zmienia.
+- Kontekst leadu: formularz bez `d2-ma-context="json"` nie rusza własnego
+  pola `d2ma_context_json` strony (doprecyzowanie z recenzji ma.16).
+
 ## v1.9.0-ma.16 — 2026-10-21 (przedpremierowa, nie `@latest`; ma.15 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma` — kontekst leadu w formularzu (§13.13)

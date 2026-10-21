@@ -70,6 +70,32 @@
  *   d2-ma-context="off" on the loader tag switches it off.
  *   digi2.ma.context() → { text, json } | null; digi2.ma.fillContext(form).
  *
+ * ─── 2destate search (ma.17, §13.14) — core 1.7.0 ─────────────────────────────
+ *
+ *   d2estate.onFilterChange({ mapName, filters, resultCount, resultIds, source })
+ *   d2estate.onSortChange({ mapName, sort: { by, dir }, source })
+ *   Only source "user" counts; "api" is a script (prefer_filters) and is ignored.
+ *   trigger search_filter         when: { rooms?, floor?, minCount? } — the
+ *                                 visitor's filter includes that room count / floor
+ *   action  prefer_filters        by: rooms | floor | both — d2estate.setFilters with
+ *                                 the profile's preference, once a visit, only if the
+ *                                 visitor has not touched the filters in this visit
+ *   action  map_order             also skipped once the visitor picked a sort in
+ *                                 this visit (their choice wins until the visit ends)
+ *   state   filters               last user filter; pref.rooms / pref.floor fall back
+ *                                 to it while no unit has been viewed
+ *   popup   promo-filter          built-in, needs no unit: "Szukasz mieszkania
+ *                                 {{pref.roomsLabel}}? …"; skipped without pref.rooms
+ *   GA4 (dataLayer, no visitor data; d2-ma-search-events="off" switches off):
+ *     view_item_list  { item_list_name: "wyszukiwarka", filters: "rooms=2|3;floor=1;
+ *                     area=40-60;price=-700000;status=available;building=B",
+ *                     filter_count, matching, total, item_list_sort: "price_asc" }
+ *                     on a user filter / sort change, debounced 500 ms
+ *     select_item     { item_list_name, item_id, item_name } on a click in the list
+ *     view_flat       { flat_id, flat_name, flat_rooms, flat_rooms_group, flat_floor,
+ *                     flat_area, flat_type, flat_building, flat_availability,
+ *                     flat_price, flat_isPromo, view_source: "wyszukiwarka"|"mapa" }
+ *
  * ─── Contract v1 nodes (ma.4, §13.8) — listening only when the envelope uses them
  *
  *   trigger exit_intent           Mouse leaves through the top edge, once a visit.
@@ -157,8 +183,8 @@
   var TEMPLATE_RE = /^[A-Za-z0-9_-]+$/;
 
   var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1,
-    exit_intent: 1, engagement: 1, form_abandon: 1 };
-  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1, map_order: 1 };
+    exit_intent: 1, engagement: 1, form_abandon: 1, search_filter: 1 };
+  var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1, map_order: 1, prefer_filters: 1 };
   // Akcje stanu strony: żyją do przeładowania, every_time wolno tylko im (§13.8.3a).
   var STATE_ACTIONS = { content: 1, map_mark: 1, map_order: 1 };
   var DL_EVENTS = { ma_segment: 1, ma_segment_exit: 1, ma_exit_intent: 1, ma_engaged: 1, ma_form_abandon: 1, ma_content: 1 };
@@ -166,7 +192,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 8;    // ma.8 - porównywane z minScript koperty
+  var SCRIPT_VERSION = 17;   // ma.17 - porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -423,7 +449,14 @@
     Object.keys(counts).forEach(function (k) {
       if (best === null || counts[k] > counts[best] || (counts[k] === counts[best] && last[k] > last[best])) best = k;
     });
-    return best === null ? null : Number(best);
+    if (best === null) {
+      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup z
+      // {{pref.roomsLabel}} działa od pierwszego filtra. Obejrzenia zawsze wygrywają.
+      var f = state && state.filters;
+      if (!views.length && f && Array.isArray(f[key]) && f[key].length) return Number(f[key][0]);
+      return null;
+    }
+    return Number(best);
   }
 
   function lastUnit() {
@@ -683,6 +716,14 @@
       dispatch({ type: 'exit_intent', t: t });
     } else if (evt.type === 'engagement' || evt.type === 'form_abandon') {
       dispatch({ type: evt.type, t: t, data: evt.data });
+    } else if (evt.type === 'search_filter') {
+      var f = evt.filter || {};
+      state.filters = Object.assign({}, f, { ts: t, visit: state.visits });
+      state.filterLog = (state.filterLog || []).concat([{ t: t, rooms: f.rooms || null, floor: f.floor || null }]).slice(-50);
+      dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } });
+    } else if (evt.type === 'search_sort') {
+      state.sortVisit = state.visits;
+      state.sort = evt.sort;
     }
   }
 
@@ -854,7 +895,7 @@
           return false;
         }
       }
-      if ((node['do'] === 'map_mark' || node['do'] === 'map_order') && !MAP_BY[node.by]) {
+      if ((node['do'] === 'map_mark' || node['do'] === 'map_order' || node['do'] === 'prefer_filters') && !MAP_BY[node.by]) {
         _warn(where + ' — ' + node['do'] + ' by "' + node.by + '" is not rooms, floor or both, skipped');
         return false;
       }
@@ -925,6 +966,16 @@
   // Wykonanie grafu (§13.3a)
   // ---------------------------------------------------------------------------
 
+  // search_filter: filtr gościa zawiera liczbę pokoi / piętro z when (brak klucza = dowolne).
+  function filterMatches(when, f) {
+    if (!f) return false;
+    var r = num(when.rooms);
+    var fl = num(when.floor);
+    if (r != null && !(Array.isArray(f.rooms) && f.rooms.indexOf(r) >= 0)) return false;
+    if (fl != null && !(Array.isArray(f.floor) && f.floor.indexOf(fl) >= 0)) return false;
+    return true;
+  }
+
   function minCount(when) {
     var n = num(when.minCount);
     return n && n > 0 ? n : 1;
@@ -982,6 +1033,14 @@
       return evt.gap >= scaled(after * HOUR_MS) ? ctx : null;
     }
     if (evt.type === 'lead' || evt.type === 'exit_intent') return ctx;
+    if (evt.type === 'search_filter') {
+      var sf = (evt.data && evt.data.filter) || {};
+      if (!filterMatches(w, sf)) return null;
+      var hits = (state.filterLog || []).filter(function (x) { return x.t > arm.at && filterMatches(w, x); }).length;
+      if (hits < minCount(w)) return null;
+      ctx.signal = { filter: sf };
+      return ctx;
+    }
     if (evt.type === 'engagement') {
       var e = evt.data || {};
       var key = sc.id + '/' + node.id;
@@ -1240,6 +1299,11 @@
     } else if (kind === 'map_mark' || kind === 'map_order') {
       recordFrequency(st, node, ctx.unit);
       mapMark(sc, node);
+    } else if (kind === 'prefer_filters') {
+      // Gość już filtrował w tej wizycie: jego wybór zostaje, a akcja nie zużywa
+      // swojej częstotliwości (spróbuje przy następnej wizycie).
+      if (!preferFilters(sc, node, true)) return;
+      recordFrequency(st, node, ctx.unit);
     } else if (kind === 'webhook') {
       if (sendWebhook(sc, node, ctx)) {
         recordFrequency(st, node, ctx.unit);
@@ -1633,6 +1697,12 @@
       if (window.console && console.info) console.info('[digi2.ma] ' + kind + ' skipped — no 2destate map on this page');
       return;
     }
+    if (kind === 'prefer_filters') { preferFilters(sc, node, false); return; }
+    // ma.17: sortowanie wybrane przez gościa wygrywa z profilem do końca wizyty.
+    if (kind === 'map_order' && userSorted()) {
+      _log('map_order skipped — the visitor picked a sort in this visit');
+      return;
+    }
     // map_order nie ma zastępstwa: bez setProductOrder (paczka 2destate) nic nie robi.
     if (kind === 'map_order' && typeof api.setProductOrder !== 'function') {
       if (window.console && console.info) console.info('[digi2.ma] map_order skipped — 2destate has no setProductOrder yet');
@@ -1699,6 +1769,165 @@
 
   function mapApi() {
     return window.d2estate || window['2destate'] || null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Wyszukiwarka 2destate (ma.17, §13.14, core 1.7.0): filtry, sortowanie,
+  // prefer_filters i zdarzenia GA4 listy. Tylko source "user" zasila profil.
+  // ---------------------------------------------------------------------------
+  var sortTouchedPage = false;   // sortowanie gościa przed otwarciem magazynu / bez zgody
+  var search = { filters: null, sort: null, matching: null, mapName: null, timer: null, user: false };
+  var LIST_NAME = 'wyszukiwarka';
+  var LIST_DEBOUNCE_MS = 500;
+
+  function normFilters(f) {
+    var o = {};
+    if (!f || typeof f !== 'object') return o;
+    ['rooms', 'floor'].forEach(function (k) {
+      if (!Array.isArray(f[k])) return;
+      var list = f[k].map(num).filter(function (x) { return x != null; }).slice(0, 20);
+      if (list.length) o[k] = list;
+    });
+    ['areaMin', 'areaMax', 'priceMin', 'priceMax'].forEach(function (k) {
+      var v = num(f[k]);
+      if (v != null) o[k] = v;
+    });
+    ['status', 'building'].forEach(function (k) {
+      if (!Array.isArray(f[k])) return;
+      var list = f[k].filter(function (x) { return x != null && x !== ''; })
+        .map(function (x) { return String(x).slice(0, 40); }).slice(0, 20);
+      if (list.length) o[k] = list;
+    });
+    return o;
+  }
+
+  function userSorted() {
+    return sortTouchedPage || !!(state && state.sortVisit != null && state.sortVisit === state.visits);
+  }
+
+  function searchEventsOff() {
+    var v = _cfg('d2-ma-search-events');
+    return v === 'off' || v === 'false';
+  }
+
+  function onFilterChange(p) {
+    if (!p || typeof p !== 'object') return;
+    var user = p.source !== 'api';
+    if (p.mapName) lastMapName = String(p.mapName);
+    search.filters = normFilters(p.filters);
+    search.matching = num(p.resultCount);
+    search.mapName = p.mapName ? String(p.mapName) : search.mapName;
+    if (user) {
+      scheduleListEvent();
+      intake({ type: 'search_filter', filter: search.filters, results: search.matching });
+    }
+  }
+
+  function onSortChange(p) {
+    if (!p || typeof p !== 'object' || !p.sort) return;
+    var by = String(p.sort.by || '');
+    var dir = p.sort.dir === 'desc' ? 'desc' : 'asc';
+    search.sort = by ? { by: by, dir: dir } : null;
+    if (p.mapName) lastMapName = String(p.mapName);
+    // custom = kolejność nadana przez setProductOrder (nasza), nie wybór gościa.
+    if (p.source === 'api' || by === 'custom') return;
+    sortTouchedPage = true;
+    scheduleListEvent();
+    intake({ type: 'search_sort', sort: search.sort });
+  }
+
+  function rangeOf(min, max) {
+    if (min == null && max == null) return null;
+    return (min == null ? '' : min) + '-' + (max == null ? '' : max);
+  }
+
+  // "rooms=2|3;floor=1;area=40-60;price=-700000;status=available;building=B"
+  function filtersString(f) {
+    var parts = [];
+    if (f.rooms) parts.push('rooms=' + f.rooms.join('|'));
+    if (f.floor) parts.push('floor=' + f.floor.join('|'));
+    var a = rangeOf(f.areaMin, f.areaMax);
+    if (a) parts.push('area=' + a);
+    var pr = rangeOf(f.priceMin, f.priceMax);
+    if (pr) parts.push('price=' + pr);
+    if (f.status) parts.push('status=' + f.status.join('|'));
+    if (f.building) parts.push('building=' + f.building.join('|'));
+    return { text: parts.join(';'), count: parts.length };
+  }
+
+  function dlPush(o) {
+    if (searchEventsOff()) return;
+    Object.keys(o).forEach(function (k) { if (o[k] == null) delete o[k]; });
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(o);
+  }
+
+  function scheduleListEvent() {
+    if (searchEventsOff()) return;
+    if (search.timer) clearTimeout(search.timer);
+    search.timer = setTimeout(function () {
+      search.timer = null;
+      var fs = filtersString(search.filters || {});
+      var total = null;
+      var api = mapApi();
+      try { if (api && typeof api.getProducts === 'function') total = (api.getProducts() || []).length || null; } catch (e) {}
+      dlPush({ event: 'view_item_list', item_list_name: LIST_NAME, filters: fs.text, filter_count: fs.count,
+        matching: search.matching, total: total,
+        item_list_sort: search.sort ? search.sort.by + '_' + search.sort.dir : null });
+    }, LIST_DEBOUNCE_MS);
+  }
+
+  function roomsGroup(n) {
+    if (n == null) return null;
+    return n >= 5 ? '5+' : String(n);
+  }
+
+  // Klik w lokal (mapa albo lista wyników core 1.7.0: meta.source "list").
+  function productAnalytics(product, meta) {
+    var u = from2destate(product);
+    if (!u) return;
+    var fromList = !!(meta && (meta.source === 'list' || meta.source === 'search'));
+    if (fromList) dlPush({ event: 'select_item', item_list_name: LIST_NAME, item_id: u.unitId, item_name: u.name });
+    dlPush({ event: 'view_flat', flat_id: u.unitId, flat_name: u.name, flat_rooms: u.rooms, flat_rooms_group: roomsGroup(u.rooms),
+      flat_floor: u.floor, flat_area: u.area, flat_type: str(product.type != null ? product.type : product.flat_type),
+      flat_building: u.building, flat_availability: u.status, flat_price: u.price, flat_isPromo: u.isPromo,
+      view_source: fromList ? LIST_NAME : 'mapa' });
+  }
+
+  // prefer_filters: ustawia filtr wyszukiwarki z preferencji profilu. now=true
+  // w chwili akcji (false przy ponowieniu po załadowaniu mapy). Zwraca, czy
+  // akcja zrobiła swoje (albo czeka na mapę) — false = gość już filtrował, brak
+  // preferencji albo brak setFilters.
+  function preferFilters(sc, node, now) {
+    if (state && state.filters && state.filters.visit === state.visits) {
+      _log('prefer_filters skipped — the visitor already filtered in this visit');
+      return false;
+    }
+    var f = {};
+    var rooms = node.by !== 'floor' ? prefOf('rooms') : null;
+    var floor = node.by !== 'rooms' ? prefOf('floor') : null;
+    if (rooms != null) f.rooms = [rooms];
+    if (floor != null) f.floor = [floor];
+    if (!f.rooms && !f.floor) { _log('prefer_filters skipped — no preference in the profile'); return false; }
+    var api = mapApi();
+    if (!api || typeof api.setFilters !== 'function') {
+      if (window.console && console.info) console.info('[digi2.ma] prefer_filters skipped — 2destate has no setFilters (core 1.7.0)');
+      return false;
+    }
+    var maps = mapNames();
+    if (!maps.length) {
+      if (now) markWaiting.push({ sc: sc, node: node });
+      _log('prefer_filters waits for the map → ' + sc.id + '/' + node.id);
+      return true;
+    }
+    try {
+      maps.forEach(function (m) { api.setFilters(m, f, { source: 'api' }); });
+    } catch (e) {
+      _warn('prefer_filters failed', e);
+      return false;
+    }
+    _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'prefer_filters', filters: f });
+    return true;
   }
 
   function mapProduct(id) {
@@ -1775,8 +2004,22 @@
 
   var LABELS = {
     'last-unit': { heading: 'Ostatnio oglądany lokal', cta: 'Zobacz lokal' },
-    'promo-rooms': { heading: 'Wybrane dla Ciebie', cta: 'Zobacz ofertę' }
+    'promo-rooms': { heading: 'Wybrane dla Ciebie', cta: 'Zobacz ofertę' },
+    'promo-filter': { heading: 'Dla Ciebie', cta: 'Porozmawiajmy' }
   };
+  // Popupy bez lokalu (ma.17): treść tylko z pref.*; bez wartości popup jest pomijany.
+  var UNITLESS_TEXT = {
+    'promo-filter': 'Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne promocje.'
+  };
+
+  // Popup bez lokalu: promo-filter zawsze; szablon z koperty bez {{unit.*}} tylko
+  // wtedy, gdy ścieżka nie ma lokalu (z lokalem zostaje jak dotąd).
+  function unitlessPopup(template, tpl, unit) {
+    if (Object.prototype.hasOwnProperty.call(UNITLESS_TEXT, template)) return true;
+    if (unit || !tpl) return false;
+    var js = JSON.stringify(tpl);
+    return !/\{\{\s*unit\./.test(js);
+  }
 
   // ---------------------------------------------------------------------------
   // Popup z szablonu panelu (templates.popup[], §13.9.3). Własny [d2-ma-popup]
@@ -2000,6 +2243,37 @@
     return el;
   }
 
+  // Wbudowany popup bez lokalu (promo-filter): nagłówek, zdanie z pref.*, przycisk kontaktu.
+  function buildUnitless(template) {
+    var l = LABELS[template] || { heading: 'Dla Ciebie', cta: 'Porozmawiajmy' };
+    var el = document.createElement('div');
+    el.setAttribute('d2-ma-popup', template);
+    el.setAttribute('d2-ma-builtin', '');
+    el.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;'
+      + 'padding:16px;background:rgba(15,18,24,.55);z-index:9999';
+    el.innerHTML =
+      '<div role="dialog" aria-modal="true" style="position:relative;width:100%;max-width:380px;'
+      + 'background:#fff;color:#1a1d1c;border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);'
+      + 'font:15px/1.5 -apple-system,BlinkMacSystemFont,\'Segoe UI\',system-ui,sans-serif">'
+      + '<button type="button" d2-ma-close aria-label="Zamknij" style="position:absolute;top:8px;right:8px;'
+      + 'width:36px;height:36px;border:0;border-radius:18px;background:rgba(255,255,255,.9);font-size:22px;'
+      + 'line-height:1;cursor:pointer;color:#1a1d1c">&times;</button>'
+      + '<div style="padding:22px 22px 22px">'
+      + '<p d2-ma-heading style="margin:0 0 4px;font-size:13px;color:#6b7370"></p>'
+      + '<h3 d2-ma-unitless-text style="margin:0 0 16px;font-size:20px;line-height:1.3"></h3>'
+      + '<a d2-ma-cta d2-ma-template-cta="contact" href="#" style="display:block;text-align:center;padding:12px 16px;'
+      + 'border-radius:10px;background:#1a1d1c;color:#fff;text-decoration:none;font-weight:600"></a>'
+      + '</div></div>';
+    var heading = el.querySelector('[d2-ma-heading]');
+    if (heading) heading.textContent = l.heading;
+    var cta = el.querySelector('[d2-ma-cta]');
+    if (cta) cta.textContent = l.cta;
+    var dialog = el.querySelector('[role="dialog"]');
+    if (dialog) dialog.setAttribute('aria-label', l.heading);
+    document.body.appendChild(el);
+    return el;
+  }
+
   function fmtNumber(v, digits) {
     try {
       return new Intl.NumberFormat('pl-PL', { maximumFractionDigits: digits }).format(v);
@@ -2053,7 +2327,7 @@
       var a = links[i];
       a._d2maUnit = unit;
       a._d2maCta = cta;
-      var href = cta === 'open_unit' && unit.url ? safeLink(unit.url) : null;
+      var href = cta === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
       if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
       a._d2maBound = true;
@@ -2121,13 +2395,22 @@
   }
 
   function showPopup(node, ctx, onShown, onSkipped, owner) {
-    var unit = ctx.unit;
     var epoch = profileEpoch;
-    if (!unit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
-    freshUnit(unit).then(function (fresh) {
+    var tplLib = popupTemplate(node.template);
+    var noUnit = unitlessPopup(node.template, tplLib, ctx.unit);
+    // Popup bez lokalu (promo-filter): lokal z historii go nie dotyczy.
+    var unit = noUnit ? null : ctx.unit;
+    if (!unit && !noUnit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
+    if (noUnit && !tplLib && contentText({ text: UNITLESS_TEXT[node.template] }, null) == null) {
+      _log('popup skipped — ' + node.template + ' needs pref.rooms');
+      onSkipped();
+      return;
+    }
+    (noUnit ? Promise.resolve({ noUnit: true }) : freshUnit(unit)).then(function (fresh) {
       // Profil wyczyszczony albo zgoda wycofana, gdy szedł odczyt statusu.
       if (epoch !== profileEpoch || !tracking) return null;
-      if (!fresh || fresh.status === 'sold') {
+      if (fresh && fresh.noUnit) fresh = null;
+      else if (!fresh || fresh.status === 'sold') {
         _log('popup skipped — unit no longer on offer → ' + unit.unitId);
         onSkipped();
         return null;
@@ -2149,7 +2432,7 @@
         }
         if (!inst || !inst.popupElement) {
           if (inst) popups.destroy(name);
-          var el = own || (tpl ? buildFromTemplate(tpl) : buildFallback(node.template));
+          var el = own || (tpl ? buildFromTemplate(tpl) : (noUnit ? buildUnitless(node.template) : buildFallback(node.template)));
           if (!own) el._d2maTplSig = sig;
           if (!el.id) el.id = name;
           inst = popups.create(name, {
@@ -2159,6 +2442,12 @@
         }
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
+        if (noUnit && !tpl && !own) {
+          var txt = contentText({ text: UNITLESS_TEXT[node.template] }, null);
+          if (txt == null) { onSkipped(); return null; }
+          var body = inst.popupElement.querySelector('[d2-ma-unitless-text]');
+          if (body) body.textContent = txt;
+        }
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, tpl ? (templateCta(tpl) || node.cta) : node.cta);
         whenMapTooltipClosed(node.template, owner, epoch, function () {
@@ -2374,9 +2663,12 @@
       mapHooked = true;
       api.onProductClick(function (product, meta) {
         if (meta && meta.mapName) lastMapName = String(meta.mapName);
+        try { productAnalytics(product, meta); } catch (e) { _warn('view_flat failed', e); }
         var unit = from2destate(product);
         if (unit) intake({ type: 'view', unit: unit });
       });
+      if (typeof api.onFilterChange === 'function') api.onFilterChange(onFilterChange);
+      if (typeof api.onSortChange === 'function') api.onSortChange(onSortChange);
       if (typeof api.onMapLoad === 'function') {
         api.onMapLoad(function () {
           openFromUrl();
@@ -3262,8 +3554,33 @@
       lastUnit: last ? { id: last.unitId, name: last.name || null } : null,
       lead: !!state.lead, leadAt: state.leadAt || null,
       source: utm ? { utm_source: utm.source || null, utm_medium: utm.medium || null, utm_campaign: utm.campaign || null } : null,
-      path: path
+      path: path,
+      filters: state.filters ? _clone(state.filters) : null
     };
+  }
+
+  // „filtrował: 2–3 pokoje, piętro 1, 40–60 m², do 700 000 zł, budynek B” (ma.17).
+  function filtersLabel(f) {
+    if (!f) return null;
+    var bits = [];
+    if (f.rooms && f.rooms.length) {
+      var r = f.rooms.slice().sort(function (a, b) { return a - b; });
+      var contiguous = r.length > 1 && r[r.length - 1] - r[0] === r.length - 1;
+      bits.push(r.length === 1 ? roomsLabel(r[0]) : (contiguous ? r[0] + '–' + r[r.length - 1] : r.join(', ')) + ' pokoje');
+    }
+    if (f.floor && f.floor.length) bits.push(f.floor.length === 1 ? (ctxFloor(f.floor[0]) === 'parter' ? 'parter' : 'piętro ' + f.floor[0]) : 'piętra ' + f.floor.join(', '));
+    if (f.areaMin != null || f.areaMax != null) {
+      bits.push(f.areaMin != null && f.areaMax != null ? fmtNumber(f.areaMin, 1) + '–' + fmtNumber(f.areaMax, 1) + ' m²'
+        : (f.areaMin != null ? 'od ' + fmtNumber(f.areaMin, 1) : 'do ' + fmtNumber(f.areaMax, 1)) + ' m²');
+    }
+    if (f.priceMin != null || f.priceMax != null) {
+      bits.push(f.priceMin != null && f.priceMax != null ? fmtNumber(f.priceMin, 0) + '–' + fmtNumber(f.priceMax, 0) + ' zł'
+        : (f.priceMin != null ? 'od ' + fmtNumber(f.priceMin, 0) : 'do ' + fmtNumber(f.priceMax, 0)) + ' zł');
+    }
+    if (f.building && f.building.length) bits.push('budynek ' + f.building.join(', '));
+    if (f.status && f.status.length && !(f.status.length === 1 && f.status[0] === 'available')) bits.push('status ' + f.status.join(', '));
+    else if (f.status && f.status[0] === 'available') bits.push('tylko wolne');
+    return bits.length ? bits.join(', ') : null;
   }
 
   function ctxUnitLabel(e) {
@@ -3304,6 +3621,8 @@
       if (d.pref.rooms != null) pref.push(roomsLabel(d.pref.rooms));
       if (d.pref.floor != null) pref.push(ctxFloor(d.pref.floor));
       if (pref.length) parts.push('preferencja: ' + pref.join(', '));
+      var fl = filtersLabel(d.filters);
+      if (fl) parts.push('filtrował: ' + fl);
       if (d.segments.length) parts.push('segmenty: ' + d.segments.join(', '));
       if (d.lead) parts.push('lead: tak' + (d.leadAt ? ' (' + ctxDay(d.leadAt) + ')' : ''));
       if (d.lastUnit) parts.push('ostatni lokal: ' + (d.lastUnit.name || d.lastUnit.id));
@@ -3333,6 +3652,14 @@
         }),
         pref: d.pref, segments: d.segments, last_unit: d.lastUnit, lead: d.lead, source: d.source
       };
+      if (d.filters) {
+        var jf = {};
+        ['rooms', 'floor', 'areaMin', 'areaMax', 'priceMin', 'priceMax', 'status', 'building'].forEach(function (k) {
+          if (d.filters[k] != null) jf[k] = d.filters[k];
+        });
+        jf.t = ctxIso(d.filters.ts);
+        o.filters = jf;
+      }
       var str = JSON.stringify(o);
       if (utf8Len(str) <= CTX_JSON_MAX) return str;
       if (visits.length > 1) visits.shift();
@@ -3593,6 +3920,7 @@
         visitorId: state.visitorId, visits: state.visits, lead: !!state.lead, views: views.length,
         pref: { rooms: prefOf('rooms'), floor: prefOf('floor') }, lastUnit: _clone(lastUnit()),
         segment: state.lastSegment, counters: counters(), tracking: tracking,
+        filters: state.filters ? _clone(state.filters) : null, sort: userSorted() && state.sort ? _clone(state.sort) : null,
         store: store ? store.kind : null, timeScale: timeScale
       };
     },

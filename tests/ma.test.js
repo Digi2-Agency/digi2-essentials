@@ -118,6 +118,9 @@ function strona(opts) {
   const zdarzenia = {};
   const sluchacze = {};
   const klikProduktu = [];
+  const filtry = [];
+  const sortowania = [];
+  const ustawioneFiltry = [];
   const zmianyPietra = [];
   const klatki = [];
   const naMape = [];
@@ -209,6 +212,13 @@ function strona(opts) {
   if (o.mapa !== false) {
     window.d2estate = {
       onProductClick(f) { klikProduktu.push(f); },
+      // Atrapa wyszukiwarki 2destate core 1.7.0 (kontrakt §13.14), opcja wyszukiwarka: false = paczka sprzed 1.7.0.
+      ...(o.wyszukiwarka === false ? {} : {
+        onFilterChange(f) { filtry.push(f); },
+        onSortChange(f) { sortowania.push(f); },
+        setFilters(m, f, opt) { ustawioneFiltry.push([m, JSON.parse(JSON.stringify(f)), opt]); return true; },
+        getFilters() { return {}; },
+      }),
       onMapLoad(f) { naMape.push(f); },
       onFloorChange(f) { zmianyPietra.push(f); },
       getProducts: () => o.produkty || [],
@@ -275,7 +285,11 @@ function strona(opts) {
     okno(n, e) { (naOknie[n] || []).forEach((f) => f(e || {})); },
     /** Mapa 2destate zgłasza onMapLoad. */
     mapaGotowa() { naMape.forEach((f) => f()); },
-    klik(produkt) { klikProduktu.forEach((f) => f(produkt, { mapName: 'mapa' })); },
+    klik(produkt, meta) { klikProduktu.forEach((f) => f(produkt, Object.assign({ mapName: 'mapa' }, meta || {}))); },
+    /** Zmiana filtra w wyszukiwarce (core 1.7.0). */
+    filtr(filters, extra) { filtry.forEach((f) => f(Object.assign({ mapName: 'mapa', filters, resultCount: 7, resultIds: null, source: 'user' }, extra || {}))); },
+    sortuj(by, dir, extra) { sortowania.forEach((f) => f(Object.assign({ mapName: 'mapa', sort: { by, dir }, source: 'user' }, extra || {}))); },
+    ustawioneFiltry,
     /** Jedna klatka animacji: odpala to, co czekało na requestAnimationFrame. */
     klatka() { klatki.splice(0).forEach((f) => f()); },
     zmianaPietra() { zmianyPietra.forEach((f) => f()); },
@@ -1663,8 +1677,8 @@ test('map_mark: strona bez 2destate — pominięty; mapa w trakcie ładowania �
 });
 
 test('minScript wyższy niż ma.4 ostrzega, scenariusze bez nowych węzłów działają', async () => {
-  const env = await start({ koperta: koperta([POWROT], { minScript: 'ma.9' }) });
-  assert.ok(env.ostrzezenia.some((w) => w.includes('needs d2-ma ma.9')));
+  const env = await start({ koperta: koperta([POWROT], { minScript: 'ma.99' }) });
+  assert.ok(env.ostrzezenia.some((w) => w.includes('needs d2-ma ma.99')));
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   assert.equal(env.ma.history().length, 1);
@@ -2671,4 +2685,196 @@ test('kontekst leadu: limity — tekst ≤ 2000 znaków ucina najstarsze wizyty 
   assert.ok(j.units.length < 120 && j.units.length > 0);
   assert.ok(j.visits.length >= 1 && j.visits.length <= 60);
   assert.equal(j.visits[j.visits.length - 1].path, '/oferta');
+});
+
+
+// ---------------------------------------------------------------------------
+// Wyszukiwarka 2destate (ma.17, §13.14): search_filter, prefer_filters, sort, GA4
+// ---------------------------------------------------------------------------
+
+const czyste = (x) => JSON.parse(JSON.stringify(x));
+const bezNbsp = (x) => String(x).replace(/\u00a0/g, ' ');
+const dlZdarzenia = (env, name) => env.dataLayer.filter((e) => e && e.event === name).map((e) => ({ ...e }));
+const produkt2d = (id, rooms, extra) => Object.assign({ id, name: id, rooms, floor: 1, area: 50.5, price_gross: 600000, status: 'available', building_name: 'B' }, extra || {});
+
+test('search_filter: filtr gościa (source user) z pokojami odpala wyzwalacz; source api i inny pokój — nie; minCount liczy filtry', async () => {
+  const k = koperta([
+    scenariusz('filtr2', { event: 'search_filter', rooms: 2 }, [Object.assign(SEG('filtr-2-pokoje'), { frequency: 'once_per_days:0' })]),
+    scenariusz('filtr3x2', { event: 'search_filter', rooms: 3, minCount: 2 }, [Object.assign(SEG('filtr-3-pokoje'), { frequency: 'once_per_days:0' })]),
+  ], { minScript: 'ma.17' });
+  const env = await start({ koperta: k });
+  assert.ok(!env.ostrzezenia.some((w) => w.includes('needs d2-ma')), 'ma.17 zna nowe węzły');
+  env.filtr({ rooms: [2] }, { source: 'api' });
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0, 'zmiana ze skryptu nie jest zachowaniem gościa');
+  env.filtr({ rooms: [1] });
+  await env.gotowe();
+  assert.equal(env.segmenty().length, 0);
+  env.filtr({ rooms: [2, 3], priceMax: 700000 });
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['filtr-2-pokoje'], '3 pokoje: dopiero drugi filtr');
+  env.filtr({ rooms: [3] });
+  await env.gotowe();
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['filtr-2-pokoje', 'filtr-3-pokoje']);
+  const p = env.ma.profile();
+  assert.deepEqual(czyste(p.filters.rooms), [3]);
+  assert.equal(p.filters.visit, 1);
+});
+
+test('pref z filtra tylko przy pustej historii; pierwsze obejrzenie przejmuje preferencję', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.filtr({ rooms: [2], floor: [3] });
+  await env.gotowe();
+  assert.deepEqual(czyste(env.ma.profile().pref), { rooms: 2, floor: 3 });
+  env.dataLayer.push(unitOpen('A_1', { rooms: 4, floor: 0 }));
+  await env.gotowe();
+  assert.deepEqual(czyste(env.ma.profile().pref), { rooms: 4, floor: 0 }, 'filtr nie przebija obejrzeń');
+});
+
+test('popup promo-filter: search_filter rooms=2 przy pustej historii → wbudowany popup bez lokalu; filtr bez pokoi — pominięty', async () => {
+  const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const bez = await start({ koperta: k });
+  bez.filtr({ priceMax: 500000 });
+  await bez.gotowe();
+  assert.equal(bez.popupy.length, 0, 'bez pref.rooms nie ma czego wstawić — popup pominięty');
+
+  const env = await start({ koperta: k });
+  const akcje = [];
+  env.window.digi2.on('ma:action', (a) => akcje.push(a));
+  env.filtr({ rooms: [2] });
+  await env.gotowe();
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter']);
+  assert.ok(akcje.some((a) => a.do === 'popup' && a.template === 'promo-filter' && a.unit == null));
+  assert.ok(potomkowie(env.window.document.body).some((x) => x.getAttribute && x.getAttribute('d2-ma-popup') === 'promo-filter' && x.getAttribute('d2-ma-builtin') !== null));
+  assert.equal(env.ostrzezenia.filter((w) => w.includes('popup failed')).length, 0);
+});
+
+test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na wizytę; gość, który już filtrował — bez zmian', async () => {
+  const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
+  const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
+  p1.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p1.gotowe();
+  assert.equal(p1.ustawioneFiltry.length, 0);
+  const p2 = await powrot(p1, 2 * H);
+  assert.deepEqual(czyste(p2.ustawioneFiltry), [['mapa', { rooms: [3] }, { source: 'api' }]]);
+  // Echo z core (source api) nie jest filtrem gościa: nie zmienia profilu.
+  p2.filtr({ rooms: [3] }, { source: 'api' });
+  await p2.gotowe();
+  assert.equal(p2.ma.profile().filters, null);
+
+  // Kolejna wizyta: gość zdążył filtrować sam, zanim przyszedł powrót — prefer_filters ustępuje.
+  const p3 = await powrot(p2, 2 * H);
+  assert.equal(p3.ustawioneFiltry.length, 1, 'nowa wizyta, nowe ustawienie');
+  // Wyzwalacz w trakcie wizyty (obejrzenie lokalu): gość filtrował wcześniej w tej wizycie → ustępuje.
+  const k2 = koperta([scenariusz('pref2', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'both', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const nowa = await start({ koperta: k2, imp: { instances: { mapa: {} } } });
+  nowa.filtr({ rooms: [1] });
+  nowa.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: 2 }));
+  await nowa.gotowe();
+  assert.equal(nowa.ustawioneFiltry.length, 0, 'filtr gościa w tej wizycie wygrywa');
+  const nowa2 = await powrot(nowa, 2 * H);
+  nowa2.dataLayer.push(unitOpen('A_2', { rooms: 3, floor: 2 }));
+  await nowa2.gotowe();
+  assert.deepEqual(czyste(nowa2.ustawioneFiltry), [['mapa', { rooms: [3], floor: [2] }, { source: 'api' }]], 'nowa wizyta bez filtra — by: both');
+
+  const stara = await start({ koperta: k, imp: { instances: { mapa: {} } }, wyszukiwarka: false });
+  stara.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await stara.gotowe();
+  const s2 = await powrot(stara, 2 * H);
+  assert.equal(s2.ostrzezenia.filter((w) => w.includes('prefer_filters failed')).length, 0, 'bez core 1.7.0 pominięte po cichu');
+});
+
+test('map_order ustępuje sortowaniu gościa do końca wizyty; sort custom (nasz) i api się nie liczą', async () => {
+  const produkty = [produkt2d('u1', 3), produkt2d('u2', 2)];
+  const k = koperta([scenariusz('kol', { event: 'type_view', rooms: 2, minCount: 1 }, [{ do: 'map_order', by: 'rooms', frequency: 'every_time' }])], { minScript: 'ma.17' });
+  const kolejnosc = [];
+  const env = await start({ koperta: k, produkty, imp: { instances: { mapa: {} } } });
+  env.window.d2estate.setProductOrder = (m, ids) => { kolejnosc.push([...ids]); return ids.length; };
+  env.sortuj('custom', 'asc');
+  env.sortuj('price', 'asc', { source: 'api' });
+  env.dataLayer.push(unitOpen('X', { rooms: 2 }));
+  await env.gotowe();
+  assert.deepEqual(kolejnosc, [['u2']], 'custom / api to nie wybór gościa');
+  env.sortuj('price', 'asc');
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('Y', { rooms: 2 }));
+  await env.gotowe();
+  assert.equal(kolejnosc.length, 1, 'gość wybrał sortowanie — profil nie przestawia listy');
+  assert.deepEqual(czyste(env.ma.profile().sort), { by: 'price', dir: 'asc' });
+});
+
+test('GA4: view_item_list po 500 ms (jedno zdarzenie z ostatnim stanem), select_item + view_flat z listy, view_flat z mapy; api bez zdarzenia; d2-ma-search-events="off"', async () => {
+  const produkty = [produkt2d('u1', 3), produkt2d('u2', 2), produkt2d('u3', 6)];
+  const env = await start({ koperta: koperta([]), produkty });
+  env.filtr({ rooms: [2] });
+  env.filtr({ rooms: [2, 3], floor: [1], areaMin: 40, areaMax: 60, priceMax: 700000, status: ['available'], building: ['B'] }, { resultCount: 5 });
+  env.sortuj('price', 'asc');
+  await env.minie(400);
+  assert.equal(dlZdarzenia(env, 'view_item_list').length, 0, 'debounce');
+  await env.minie(200);
+  assert.deepEqual(dlZdarzenia(env, 'view_item_list'), [{
+    event: 'view_item_list', item_list_name: 'wyszukiwarka', filters: 'rooms=2|3;floor=1;area=40-60;price=-700000;status=available;building=B',
+    filter_count: 6, matching: 5, total: 3, item_list_sort: 'price_asc',
+  }]);
+  env.filtr({ rooms: [2] }, { source: 'api' });
+  await env.minie(600);
+  assert.equal(dlZdarzenia(env, 'view_item_list').length, 1, 'zmiana ze skryptu bez zdarzenia');
+
+  env.klik(produkt2d('u3', 6, { promo_active: true, promo_price_gross: 550000, type: 'mieszkanie' }), { source: 'list' });
+  await env.gotowe();
+  assert.deepEqual(dlZdarzenia(env, 'select_item'), [{ event: 'select_item', item_list_name: 'wyszukiwarka', item_id: 'u3', item_name: 'u3' }]);
+  env.klik(produkt2d('u2', 2));
+  await env.gotowe();
+  assert.deepEqual(dlZdarzenia(env, 'view_flat'), [
+    { event: 'view_flat', flat_id: 'u3', flat_name: 'u3', flat_rooms: 6, flat_rooms_group: '5+', flat_floor: 1, flat_area: 50.5, flat_type: 'mieszkanie',
+      flat_building: 'B', flat_availability: 'available', flat_price: 550000, flat_isPromo: true, view_source: 'wyszukiwarka' },
+    { event: 'view_flat', flat_id: 'u2', flat_name: 'u2', flat_rooms: 2, flat_rooms_group: '2', flat_floor: 1, flat_area: 50.5,
+      flat_building: 'B', flat_availability: 'available', flat_price: 600000, flat_isPromo: false, view_source: 'mapa' },
+  ]);
+  assert.equal(dlZdarzenia(env, 'select_item').length, 1, 'klik w mapę to nie select_item');
+
+  const off = await start({ koperta: koperta([]), produkty, cfg: { 'd2-ma-search-events': 'off' } });
+  off.filtr({ rooms: [2] });
+  off.klik(produkt2d('u2', 2), { source: 'list' });
+  await off.minie(600);
+  assert.equal(off.dataLayer.filter((e) => e && ['view_item_list', 'select_item', 'view_flat'].includes(e.event)).length, 0);
+  assert.equal(off.ma.history().length, 1, 'wyłączone zdarzenia GA4, profil działa dalej');
+});
+
+test('kontekst leadu: „filtrował: …” w tekście i filters w JSON (ma.17)', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.filtr({ rooms: [2, 3], priceMax: 700000, status: ['available'] });
+  await env.gotowe();
+  const form = element({ 'd2-ma-context': 'json' }, 'FORM');
+  env.dom('submit', { target: form });
+  const t = bezNbsp(form.querySelector('[name="d2ma_context"]').value);
+  assert.ok(t.includes('filtrował: 2–3 pokoje, do 700 000 zł, tylko wolne'), t);
+  assert.ok(t.includes('preferencja: 2 pokoje'), 'pref z filtra przy pustej historii: ' + t);
+  const j = JSON.parse(form.querySelector('[name="d2ma_context_json"]').value);
+  assert.deepEqual(Object.assign({}, j.filters, { t: 0 }), { rooms: [2, 3], priceMax: 700000, status: ['available'], t: 0 });
+  assert.ok(/^2026-10-20T/.test(j.filters.t));
+});
+
+test('kontekst leadu: klik w przycisk wysyłki wypełnia pola przed submit; alias data-d2-ma-context; bez opt-in własne pole JSON strony nietknięte', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = element({ 'data-d2-ma-context': 'json' }, 'FORM');
+  const btn = element({ type: 'submit' }, 'BUTTON');
+  form.appendChild(btn);
+  btn.parent = form;
+  env.dom('click', { target: btn });
+  assert.ok(form.querySelector('[name="d2ma_context"]').value.startsWith('1 wizyta'));
+  assert.ok(JSON.parse(form.querySelector('[name="d2ma_context_json"]').value).v === 1, 'alias data-d2-ma-context');
+  const zwykly = element({}, 'FORM');
+  const przycisk = element({ type: 'button' }, 'BUTTON');
+  zwykly.appendChild(przycisk);
+  przycisk.parent = zwykly;
+  env.dom('click', { target: przycisk });
+  assert.equal(zwykly.querySelector('[name="d2ma_context"]'), null, 'przycisk type=button nie wysyła');
+  const wlasne = element({ type: 'hidden', name: 'd2ma_context_json' }, 'INPUT');
+  wlasne.value = 'strony';
+  zwykly.appendChild(wlasne);
+  env.dom('submit', { target: zwykly });
+  assert.equal(wlasne.value, 'strony', 'bez d2-ma-context="json" pole JSON strony ani wypełniane, ani opróżniane');
 });
