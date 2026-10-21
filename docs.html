@@ -2613,7 +2613,9 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Demo only. Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
       <tr><td><code>d2-ma-context="off"</code></td><td>on</td><td>Switch off the <a href="#ma-lead-context">lead context fields</a> written into forms on submit</td></tr>
       <tr><td><code>d2-ma-search-events="off"</code></td><td>on</td><td>Switch off the GA4 events of the <a href="#ma-search">2destate search</a></td></tr>
+      <tr><td><code>d2-ma-hot-lead="URL"</code></td><td>off; empty = <code>https://api.2destate.com/api/v1</code></td><td>Demo and agency test leads only (ma.12, MA-D38 stage 1). The visitor's <code>visitorId</code> goes with the form to 2destate; when that lead comes back, the module tells 2destate which units they view. See <a href="#ma-hot-lead">Hot lead comes back</a></td></tr>
     </table>
+    <p class="muted">The envelope can come from 2destate as well: <code>d2-ma="https://api.2destate.com/api/v1/public/ma/scenario/&lt;site&gt;.json"</code> — same shape, nothing else changes.</p>
     <div class="callout callout--warn">
       <span class="ic">⚠︎</span>
       <p><strong>On a client site always set <code>d2-ma-consent-required="true"</code>.</strong> Without it the envelope decides, and one published with <code>consentRequired: false</code> would switch consent off for that site. <code>"false"</code>, <code>d2-ma-refresh</code> and <code>demoState</code> are for our demo copy only.</p>
@@ -2656,6 +2658,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
 digi2.ma.<span class="fn">history</span>()          <span class="comment">// unit views, oldest first</span>
 digi2.ma.<span class="fn">track</span>(unit)        <span class="comment">// record a view from another source</span>
 digi2.ma.<span class="fn">lead</span>()             <span class="comment">// mark the visitor as a lead</span>
+digi2.ma.<span class="fn">visitorId</span>()        <span class="comment">// ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent</span>
 digi2.ma.<span class="fn">load</span>(urlOrObject)  <span class="comment">// read an envelope</span>
 digi2.ma.<span class="fn">reload</span>()           <span class="comment">// re-read it: new revision, new CRM call result</span>
 digi2.ma.<span class="fn">simulateReturn</span>()   <span class="comment">// demo: end the visit as if afterHours had passed</span>
@@ -2950,7 +2953,47 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>d2-ma-history</code> (+ <code>d2-ma-history-limit="10"</code>)</td><td>Viewed units, newest first. A child <code>[d2-ma-history-item]</code> is a row template with <code>[d2-ma-field]</code> inside (plus <code>time</code>)</td></tr>
       <tr><td><code>d2-ma-clear</code> (button)</td><td>Deletes the d2ma database</td></tr>
       <tr><td><code>d2-ma-simulate-return</code> (button)</td><td>Demo: start a return visit now</td></tr>
+      <tr><td><code>d2-ma-visitor-id</code> (hidden input)</td><td>ma.12, only with <code>d2-ma-hot-lead</code>: filled with <code>visitorId</code> when the form is submitted; empty without consent</td></tr>
     </table>
+
+    <h3 id="ma-hot-lead">Hot lead comes back (ma.12, MA-D38 stage 1)</h3>
+    <p>Demo and agency test leads only. Instead of a lead token, 2destate gets the browser's <code>visitorId</code> with the form and links it to the lead. When the same browser comes back, the module sends 2destate a visit signal, and 2destate tells the sales team.</p>
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+        <button class="platform-tab" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+      </div>
+      <div class="platform-panel is-active" data-platform-panel="js">
+        <pre><code><span class="comment">// in your submit handler, before the fetch to 2destate</span>
+<span class="keyword">var</span> id = window.digi2 &amp;&amp; digi2.ma &amp;&amp; <span class="keyword">typeof</span> digi2.ma.visitorId === <span class="string">'function'</span> ? digi2.ma.<span class="fn">visitorId</span>() : <span class="keyword">null</span>;
+<span class="keyword">if</span> (id) body.<span class="prop">d2ma_visitor_id</span> = id;   <span class="comment">// null without consent: leave the field out</span>
+<span class="comment">// after a successful answer</span>
+dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_lead'</span> });   <span class="comment">// or digi2.ma.lead()</span></code></pre>
+      </div>
+      <div class="platform-panel" data-platform-panel="webflow">
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Hidden input in the form <span class="muted">(field name d2ma_visitor_id)</span></span>
+            <span class="chip chip--attr"><span class="k">Name</span> d2-ma-visitor-id</span>
+            <span class="chip chip--attr"><span class="k">Value</span> (empty)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <table>
+      <tr><th>Case</th><th>What happens</th></tr>
+      <tr><td>No consent / no <code>d2-ma-hot-lead</code></td><td><code>visitorId()</code> returns <code>null</code>, the field stays empty (without the attribute it is not touched)</td></tr>
+      <tr><td>Linked</td><td>Only when, in the same visit, the <code>visitorId</code> was handed to the form <em>and</em> a lead was recorded (<code>generate_lead</code>, the 3D Estate inquiry or <code>digi2.ma.lead()</code>). Anonymous traffic never leaves the browser (MA-D30)</td></tr>
+      <tr><td>Next visit</td><td><code>POST {api}/public/ma/visit</code> <code>{ visitorId, units?, pageviews, source: "return_visit" }</code> — up to 20 2destate unit ids from this visit, page views 1–50; once per visit, then only new units and at most every 5 min. Never in the form's own visit. No form data, UTM or URLs; no credentials</td></tr>
+      <tr><td>401</td><td>2destate doesn't know the visitor (or it was revoked): link dropped, no more signals</td></tr>
+      <tr><td>403</td><td>Origin not on the project's list or lead not eligible: signals paused for 24 h, link kept</td></tr>
+      <tr><td>404</td><td>Route not live yet: signals paused for 24 h (ma.13)</td></tr>
+      <tr><td>413 / 422</td><td>Body refused: no more signals this visit, next visit tries again (ma.13)</td></tr>
+      <tr><td>429 / 503</td><td>Wait <code>Retry-After</code> (1 h without it)</td></tr>
+      <tr><td>"Clear" / consent withdrawn</td><td><code>POST {api}/public/ma/revoke</code> <code>{ visitorId }</code> first, then the profile goes locally whatever the answer. Sent whenever the <code>visitorId</code> was ever handed to a form — 2destate links on the field alone, even when the page saw no lead (ma.13). Consent withdrawn between visits is caught on the next page view: the id is read from <code>d2ma</code> just for the revoke, then the database goes; a browser without <code>d2ma</code> doesn't get one (ma.15)</td></tr>
+      <tr><td><code>d2-ma-hot-lead</code> not <code>https://…</code></td><td>Console warning, the production API is used (ma.13)</td></tr>
+    </table>
+    <p class="muted">The module never submits or blocks the form itself — it only fills the hidden field in the capture phase, before your handler. Pin MA with a tag (<code>@v1.9.0-ma.N/dist/digi2-loader.min.js</code>), never <code>@latest</code>.</p>
     <p class="muted">A working page with fake units, both search engines simulated and a webhook that never leaves the browser: <code>sandbox/ma.html</code>.</p>
   </section>
 

@@ -5,6 +5,22 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.22 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.21–ma.16 i gorący lead z ma.15)
+
+### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′) na aktualnej linii
+
+- Gorący lead z gałęzi `feat/d2-ma-12-2destate-visitor` (ma.12, ma.13, ma.15,
+  PR #17) przeniesiony na ma.21: kontekst leadu, wyszukiwarka 2destate,
+  `d2ma_consent` i zapis filtra przy wyjściu działają razem z nim.
+- Zachowanie gorącego leada bez zmian względem ma.15. Opt-in to atrybut
+  `d2-ma-hot-lead` na tagu loadera, tylko dla Osiedla Demo i leadów testowych.
+  Pole `[d2-ma-visitor-id]` albo `digi2.ma.visitorId()` przekazuje identyfikator
+  do formularza 2destate. Sygnał powrotu `POST {api}/public/ma/visit` idzie
+  tylko po oddaniu identyfikatora w wizycie z leadem i tylko po zgodzie, a
+  `/revoke` przy „Wyczyść” i wycofaniu zgody.
+- ma.15 zostaje bez zmian na swojej gałęzi. Strona dema przechodzi na ma.22
+  dopiero po recenzji.
+
 ## v1.9.0-ma.21 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.20–ma.16)
 
 ### `d2-ma`
@@ -90,6 +106,17 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Wyłącznik: `d2-ma-context="off"` na tagu loadera. API: `digi2.ma.context()`,
   `digi2.ma.fillContext(form)`.
 
+## v1.9.0-ma.15 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+
+ma.14 (poprawka #16) + gorący lead z ma.12 / ma.13. **Tę wersję przypina strona dema.**
+
+### `d2-ma`
+
+- Zawiera poprawkę wyścigu popupów #16 z ma.14 i gorący lead (MA-D38 etap 1,
+  wariant D′) z poprawkami z recenzji, czyli wszystko z ma.12 i ma.13.
+- Wycofanie zgody wykryte przy wejściu na stronę, gdy przeglądarka nie ma
+  jeszcze bazy `d2ma`, nie zakłada jej tylko po to, żeby ją skasować.
+
 ## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`; numer ma.13 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma`
@@ -102,6 +129,41 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   popupów już jest; popup załadowany później sam pyta d2-ma przy otwarciu.
 - Błąd rzucony przez moduł popupów przy wznawianiu odłożonego popupu nie
   zatrzymuje d2-ma (`console.warn` „popups resume failed”).
+
+## v1.9.0-ma.13 — 2026-10-21 (wydanie gałęzi `feat/d2-ma-12-2destate-visitor` bez poprawki #16 — **nie używać**, zamiast niego ma.15)
+
+Tag `v1.9.0-ma.13` powstał na gałęzi gorącego leada, zanim poprawka #16 (#18) trafiła na main, która
+zapowiadała ją jako ma.13; poprawka #16 ostatecznie wyszła jako ma.14. Ten tag ma błąd wyścigu popupów (#16).
+
+### `d2-ma` — gorący lead, poprawki z recenzji
+
+- „Wyczyść” i wycofanie zgody odwołują powiązanie w 2destate zawsze, gdy
+  formularz dostał kiedyś `visitorId`, także wtedy, gdy strona nie zobaczyła
+  leada.
+- Zgoda wycofana między wizytami: przy następnej odsłonie moduł najpierw
+  wysyła odwołanie do 2destate, potem kasuje bazę.
+- Gdy adres 2destate jeszcze nie działa (404), sygnały wstrzymują się na dobę.
+  Odrzucona treść (413, 422) wstrzymuje je do końca wizyty.
+- Wartość `d2-ma-hot-lead` bez `https://` daje ostrzeżenie w konsoli.
+- MA przypinaj tagiem `@v1.9.0-ma.N`, nigdy `@latest`.
+
+## v1.9.0-ma.12 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, nie `@latest`)
+
+### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′)
+
+- Nowy atrybut `d2-ma-hot-lead` na tagu loadera, tylko dla strony dema i leadów
+  testowych agencji. Wartość to adres API 2destate; puste pole oznacza
+  `https://api.2destate.com/api/v1`.
+- Formularz dema przekazuje 2destate identyfikator przeglądarki (`visitorId`)
+  w polu `d2ma_visitor_id`. Można go wziąć z `digi2.ma.visitorId()` albo
+  z ukrytego pola z atrybutem `d2-ma-visitor-id`, które moduł wypełnia przy
+  wysyłce. Bez zgody identyfikatora nie ma.
+- Gdy w tej samej wizycie był też lead (`generate_lead`), przy kolejnej wizycie
+  moduł wysyła do 2destate, jakie lokale gość ogląda (bez danych formularza).
+  Bez leada nic nie wychodzi z przeglądarki.
+- „Wyczyść” i wycofanie zgody usuwają powiązanie w 2destate.
+- Bez `d2-ma-hot-lead` strona działa jak dotąd.
+- Scenariusze można czytać z 2destate: wystarczy zmienić adres w `d2-ma`.
 
 ## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, nie `@latest`)
 
