@@ -2953,7 +2953,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>d2-ma-history</code> (+ <code>d2-ma-history-limit="10"</code>)</td><td>Viewed units, newest first. A child <code>[d2-ma-history-item]</code> is a row template with <code>[d2-ma-field]</code> inside (plus <code>time</code>)</td></tr>
       <tr><td><code>d2-ma-clear</code> (button)</td><td>Deletes the d2ma database</td></tr>
       <tr><td><code>d2-ma-simulate-return</code> (button)</td><td>Demo: start a return visit now</td></tr>
-      <tr><td><code>d2-ma-visitor-id</code> (hidden input)</td><td>ma.12, only with <code>d2-ma-hot-lead</code>: filled with <code>visitorId</code> when the form is submitted; empty without consent</td></tr>
+      <tr><td><code>d2-ma-visitor-id</code> (hidden input)</td><td>ma.12, only with <code>d2-ma-hot-lead</code>: filled with <code>visitorId</code> when the form is submitted or its submit button clicked (ma.24); empty without consent</td></tr>
     </table>
 
     <h3 id="ma-hot-lead">Hot lead comes back (ma.12, MA-D38 stage 1)</h3>
@@ -2984,7 +2984,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><th>Case</th><th>What happens</th></tr>
       <tr><td>No consent / no <code>d2-ma-hot-lead</code></td><td><code>visitorId()</code> returns <code>null</code>, the field stays empty (without the attribute it is not touched)</td></tr>
       <tr><td>Linked</td><td>Only when, in the same visit, the <code>visitorId</code> was handed to the form <em>and</em> a lead was recorded (<code>generate_lead</code>, the 3D Estate inquiry or <code>digi2.ma.lead()</code>). Anonymous traffic never leaves the browser (MA-D30)</td></tr>
-      <tr><td>Next visit</td><td><code>POST {api}/public/ma/visit</code> <code>{ visitorId, units?, pageviews, source: "return_visit" }</code> — up to 20 2destate unit ids from this visit, page views 1–50; once per visit, then only new units and at most every 5 min. Never in the form's own visit. No form data, UTM or URLs; no credentials</td></tr>
+      <tr><td>Next visit</td><td><code>POST {api}/public/ma/visit</code> <code>{ visitorId, units, pageviews, source: "return_visit" }</code> (ma.24: <code>units</code> always, <code>[]</code> when none — the server requires it) — up to 20 2destate unit ids from this visit, page views 1–50; once per visit, then only new units and at most every 5 min. Never in the form's own visit. No form data, UTM or URLs; no credentials</td></tr>
       <tr><td>401</td><td>2destate doesn't know the visitor (or it was revoked): link dropped, no more signals</td></tr>
       <tr><td>403</td><td>Origin not on the project's list or lead not eligible: signals paused for 24 h, link kept</td></tr>
       <tr><td>404</td><td>Route not live yet: signals paused for 24 h (ma.13)</td></tr>

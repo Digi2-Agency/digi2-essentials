@@ -222,7 +222,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 23;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 24;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3255,7 +3255,8 @@
     save();
     var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
       source: 'return_visit' };
-    if (units.length) body.units = units;
+    // ma.24: units zawsze, także [] — serwer 2destate #189 wymaga pola (bez niego 422 i wyciszona wizyta).
+    body.units = units;
     try {
       var base = hotLeadApi();
       if (!base) return;
@@ -3319,14 +3320,28 @@
   function hookVisitorIdFields() {
     if (idFieldsHooked || !hotLeadOn() || !document.addEventListener) return;
     idFieldsHooked = true;
-    document.addEventListener('submit', function (e) {
-      var form = e && e.target;
-      if (!form || !form.querySelectorAll) return;
-      var fields = form.querySelectorAll('[d2-ma-visitor-id], [data-d2-ma-visitor-id]');
-      if (!fields.length) return;
-      var id = shareVisitorId();
-      for (var i = 0; i < fields.length; i++) fields[i].value = id || '';
-    }, true);
+    document.addEventListener('submit', function (e) { fillVisitorId(e && e.target); }, true);
+    // ma.24: jak kontekst leadu — klik w przycisk wysyłki wyprzedza submit.
+    document.addEventListener('click', function (e) { fillVisitorId(submitFormOf(e && e.target)); }, true);
+  }
+
+  function fillVisitorId(form) {
+    if (!form || !form.querySelectorAll) return;
+    var fields = form.querySelectorAll('[d2-ma-visitor-id], [data-d2-ma-visitor-id]');
+    if (!fields.length) return;
+    var id = shareVisitorId();
+    for (var i = 0; i < fields.length; i++) fields[i].value = id || '';
+  }
+
+  // Formularz, który wyśle klik w ten element (przycisk / input type=submit), albo null.
+  function submitFormOf(t) {
+    if (!t || typeof t.closest !== 'function') return null;
+    var form = t.closest('form');
+    if (!form) return null;
+    var btn = t.closest('button, input[type="submit"]') || t;
+    var type = (btn.getAttribute && btn.getAttribute('type')) || '';
+    if (!type && btn.tagName && String(btn.tagName).toUpperCase() === 'BUTTON') type = 'submit';
+    return String(type).toLowerCase() === 'submit' ? form : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -4028,14 +4043,8 @@
     // Klik w przycisk wysyłki wyprzedza submit: skrypt strony, który czyta
     // formularz już w handlerze kliknięcia, też dostaje pola.
     document.addEventListener('click', function (e) {
-      var t = e && e.target;
-      if (!t || typeof t.closest !== 'function') return;
-      var form = t.closest('form');
-      if (!form) return;
-      var btn = t.closest('button, input[type="submit"]') || t;
-      var type = (btn.getAttribute && btn.getAttribute('type')) || '';
-      if (!type && btn.tagName && String(btn.tagName).toUpperCase() === 'BUTTON') type = 'submit';
-      if (String(type).toLowerCase() === 'submit') fillContext(form);
+      var form = submitFormOf(e && e.target);
+      if (form) fillContext(form);
     }, true);
   }
 
