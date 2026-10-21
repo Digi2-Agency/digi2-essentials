@@ -1104,6 +1104,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
 | `d2-ma-highlight` | off | Highlight units with the preferred room count on the 2destate map |
 | `d2-ma-refresh="30"` | off | Re-read the envelope every N s (≥ 5) |
+| `d2-ma-context="off"` | on | Switch off the [lead context fields](#lead-context-in-forms-ma16-1313) in forms |
 
 The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
@@ -1540,6 +1541,47 @@ never part of a counter.
   script storage after 7 days without interaction, so a `/30d` window on
   Safari sees about a week.
 
+### Lead context in forms (ma.16, §13.13)
+
+On submit of **every** form on the page (not inside `[d2-ma-ignore]`) the
+module writes a hidden input `d2ma_context`: a Polish sentence for the sales
+rep summarising what this visitor did on this site, ≤ 2 000 characters:
+
+```
+3 wizyty (18.10, 20.10, 21.10) · 5 obejrzanych lokali, najczęściej M12 (3 pok., 2 p., 64 m², 689 000 zł) ×3 · lokale: M12 ×3 (21.10 14:02), M8 ×1 (20.10 09:15), … · preferencja: 3 pokoje, 2 p. · segmenty: powrot-do-lokalu · lead: tak (20.10) · ostatni lokal: M12 · strona: /mieszkania/m12 · źródło: meta / cpc / jesien
+```
+
+A form with `d2-ma-context="json"` (opt-in — in Webflow's native e-mail the
+JSON would be noise; the 2destate webhook wants it) also gets
+`d2ma_context_json`, compact JSON ≤ 4 kB (UTF-8 bytes):
+
+```json
+{ "v": 1,
+  "visits": [{ "t": "2026-10-21T12:02:11.000Z", "path": "/mieszkania/m12" }],
+  "units": [{ "id": "A_M12", "name": "M12", "rooms": 3, "floor": 2, "area": 64, "price": 689000, "views": 3, "last": "2026-10-21T12:02:11.000Z" }],
+  "pref": { "rooms": 3, "floor": 2 }, "segments": ["powrot-do-lokalu"],
+  "last_unit": { "id": "A_M12", "name": "M12" }, "lead": true,
+  "source": { "utm_source": "meta", "utm_medium": "cpc", "utm_campaign": "jesien" } }
+```
+
+| Case | Behaviour |
+|---|---|
+| Consent and a profile | Both values rebuilt at every submit from the profile (§13.2): visit starts (`visitLog`), views grouped per unit (newest data of the unit, count, last view), `pref`, segments, last unit, lead flag, this visit's UTM |
+| No consent, or no profile yet | `d2ma_context` = `brak kontekstu (brak zgody)`; `d2ma_context_json` is not added (a page's own field of that name is emptied) |
+| The form already has a field of that name | Its value is overwritten — never a second input |
+| Too long | Text drops the oldest visit dates first (`…, 20.10, 21.10`), then the oldest units from the list; counts stay true. JSON drops the oldest visits, then the oldest units (keeps the 30 most recent units, 60 visits at most) |
+| `path` | Known only for the current page (`location.pathname`) on the last visit entry — the module does not store page paths of earlier visits |
+| What is never there | Values of this or other forms, IP, user agent, geolocation, anything from another site |
+| Off | `d2-ma-context="off"` on the loader tag, or `[d2-ma-ignore]` on the form |
+
+**When:** in the capture phase on `document`, on `submit` and on a click on a
+submit button — so before Webflow's own handler (bubbling on the form) and
+before d2-forms (capture on the form). `new FormData(form)` sees both fields;
+a script that lists fields explicitly must add them. `digi2.ma.context()`
+returns `{ text, json }` (`null` without consent) and
+`digi2.ma.fillContext(form)` fills a form by hand, e.g. before building a
+webhook body.
+
 ### Form field analytics (ma.5, MA-D13)
 
 With a `form_abandon` trigger in the envelope, and only after consent, the
@@ -1609,6 +1651,8 @@ action carries `fields_touched` next to `form_id`.
 ```js
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
 digi2.ma.history()          // views, oldest first
+digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent
+digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
 digi2.ma.load(urlOrObject)  // read an envelope

@@ -1394,9 +1394,12 @@ const DL = (event, params) => ({ do: 'datalayer', event, params });
 
 test('§13.8 opt-in: koperta bez nowych wyzwalaczy nie dokłada nasłuchu na stronie', async () => {
   const env = await start({ koperta: koperta([POWROT, POKOJE, LEAD]) });
-  for (const n of ['mouseout', 'focusin', 'input', 'submit', 'visibilitychange']) {
+  for (const n of ['mouseout', 'focusin', 'input', 'visibilitychange']) {
     assert.equal((env.naDokumencie[n] || []).length, 0, n);
   }
+  // Kontekst leadu (ma.16) słucha submit niezależnie od koperty — i tylko on
+  // (click ma już przyciski strony: d2-ma-clear, d2-ma-simulate-return).
+  assert.equal((env.naDokumencie.submit || []).length, 1, 'submit: tylko kontekst leadu');
   assert.equal((env.naOknie.scroll || []).length, 0);
   assert.equal((env.naOknie.pagehide || []).length, 0);
 });
@@ -2523,4 +2526,149 @@ test('#10: nowa koperta ze zmienionym szablonem przebudowuje popup (d2-ma-refres
   assert.equal(zbudowane.length, 1, 'stary szkielet usunięty');
   assert.match(oknoPopupu(env).okno.style.cssText, /max-width:520px/);
   assert.equal(env.popupy.length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Kontekst leadu w formularzu (ma.16): d2ma_context / d2ma_context_json
+// ---------------------------------------------------------------------------
+
+function formKontekst(attrs) {
+  return element(attrs || {}, 'FORM');
+}
+const pole = (form, name) => form.querySelector('[name="' + name + '"]');
+
+test('kontekst leadu: submit dopisuje d2ma_context (tekst PL) i, przy d2-ma-context="json", d2ma_context_json; drugi submit nadpisuje, nie dubluje', async () => {
+  const env = await start({
+    koperta: koperta([scenariusz('s', { event: 'unit_view' }, [SEG('powrot-do-lokalu')])]),
+    search: '?utm_source=meta&utm_medium=cpc&utm_campaign=jesien',
+  });
+  env.dataLayer.push(unitOpen('A_M12', { rooms: 3, floor: 2, area: 64, price: 689000 }));
+  await env.gotowe();
+  await env.minie(10 * MIN);
+  env.dataLayer.push(unitOpen('A_M12', { rooms: 3, floor: 2, area: 64, price: 689000 }));
+  await env.minie(MIN);
+  env.dataLayer.push(unitOpen('A_M8', { rooms: 2, floor: 0, area: 41.5, price: 455000 }));
+  await env.gotowe();
+
+  const form = formKontekst({ 'd2-ma-context': 'json' });
+  env.dom('submit', { target: form });
+  const txt = pole(form, 'd2ma_context');
+  const json = pole(form, 'd2ma_context_json');
+  assert.ok(txt && json, 'oba pola dopisane');
+  assert.equal(txt.getAttribute('type'), 'hidden');
+  assert.equal(json.getAttribute('type'), 'hidden');
+  assert.equal(form.children.length, 2);
+
+  const t = txt.value;
+  assert.ok(t.startsWith('1 wizyta (20.10)'), t);
+  assert.ok(t.includes('2 obejrzane lokale, najczęściej M12 (3 pok., 2 p., 64 m², 689'), t);
+  assert.ok(t.includes('×2'), t);
+  assert.ok(t.includes('lokale: M8 ×1 (20.10 12:11), M12 ×2 (20.10 12:10)'), 'lista od najnowszego: ' + t);
+  assert.ok(t.includes('preferencja: 3 pokoje'), t);
+  assert.ok(t.includes('segmenty: powrot-do-lokalu'), t);
+  assert.ok(t.includes('ostatni lokal: M8'), t);
+  assert.ok(t.includes('strona: /oferta'), t);
+  assert.ok(t.includes('źródło: meta / cpc / jesien'), t);
+  assert.ok(t.length <= 2000);
+
+  const j = JSON.parse(json.value);
+  assert.equal(j.v, 1);
+  assert.equal(j.visits.length, 1);
+  assert.ok(/^2026-10-20T/.test(j.visits[0].t), j.visits[0].t);
+  assert.equal(j.visits[0].path, '/oferta');
+  assert.deepEqual(j.units.map((u) => [u.id, u.name, u.views, u.rooms, u.price]), [['A_M8', 'M8', 1, 2, 455000], ['A_M12', 'M12', 2, 3, 689000]]);
+  assert.ok(/^2026-10-20T/.test(j.units[0].last));
+  assert.deepEqual(j.pref, { rooms: 3, floor: 2 });
+  assert.deepEqual(j.segments, ['powrot-do-lokalu']);
+  assert.deepEqual(j.last_unit, { id: 'A_M8', name: 'M8' });
+  assert.equal(j.lead, false);
+  assert.deepEqual(j.source, { utm_source: 'meta', utm_medium: 'cpc', utm_campaign: 'jesien' });
+  assert.ok(Buffer.byteLength(json.value, 'utf8') <= 4096);
+
+  // Lead i kolejne obejrzenie: drugi submit nadpisuje wartości w tych samych polach.
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  env.dom('submit', { target: form });
+  assert.equal(form.children.length, 2, 'bez duplikatów');
+  assert.ok(pole(form, 'd2ma_context').value.includes('lead: tak (20.10)'));
+  assert.equal(JSON.parse(pole(form, 'd2ma_context_json').value).lead, true);
+
+  // digi2.ma.context() daje to samo, co pola.
+  const c = env.ma.context();
+  assert.equal(c.text, pole(form, 'd2ma_context').value);
+  assert.equal(c.json, pole(form, 'd2ma_context_json').value);
+});
+
+test('kontekst leadu: bez d2-ma-context="json" tylko tekst; własne pole strony o tej nazwie jest nadpisywane, nie dublowane', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = formKontekst();
+  const wlasne = element({ type: 'text', name: 'd2ma_context', value: 'stare' }, 'INPUT');
+  wlasne.value = 'stare';
+  form.appendChild(wlasne);
+  env.dom('submit', { target: form });
+  assert.equal(form.children.length, 1, 'tylko własne pole, bez JSON');
+  assert.ok(wlasne.value.startsWith('1 wizyta'), wlasne.value);
+  assert.equal(pole(form, 'd2ma_context_json'), null);
+});
+
+test('kontekst leadu: bez zgody „brak kontekstu (brak zgody)”, JSON pominięty, a własne pole JSON strony opróżnione', async () => {
+  const env = await start({ koperta: koperta([], { storage: { retentionDays: 90, consentRequired: true } }) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env.ma.profile(), null, 'bez zgody brak profilu');
+  const form = formKontekst({ 'd2-ma-context': 'json' });
+  const wlasne = element({ type: 'hidden', name: 'd2ma_context_json' }, 'INPUT');
+  wlasne.value = '{"stare":1}';
+  form.appendChild(wlasne);
+  env.dom('submit', { target: form });
+  assert.equal(pole(form, 'd2ma_context').value, 'brak kontekstu (brak zgody)');
+  assert.equal(form.children.length, 2, 'tekst dopisany, JSON nie');
+  assert.equal(wlasne.value, '');
+  assert.equal(env.ma.context(), null);
+});
+
+test('kontekst leadu: formularz z d2-ma-ignore i strona z d2-ma-context="off" na tagu loadera zostają nietknięte', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const ignorowany = formKontekst({ 'd2-ma-ignore': '', 'd2-ma-context': 'json' });
+  env.dom('submit', { target: ignorowany });
+  assert.equal(ignorowany.children.length, 0);
+  assert.equal(env.ma.fillContext(ignorowany), false);
+  const nieFormularz = element({ 'd2-ma-context': 'json' });
+  env.dom('submit', { target: nieFormularz });
+  assert.equal(nieFormularz.children.length, 0);
+
+  const off = await start({ koperta: koperta([]), cfg: { 'd2-ma-context': 'off' } });
+  off.dataLayer.push(unitOpen('A_1'));
+  await off.gotowe();
+  const form = formKontekst({ 'd2-ma-context': 'json' });
+  off.dom('submit', { target: form });
+  assert.equal(form.children.length, 0, 'wyłączone na tagu loadera');
+  assert.equal(off.ma.fillContext(form), false);
+});
+
+test('kontekst leadu: limity — tekst ≤ 2000 znaków ucina najstarsze wizyty i lokale, JSON ≤ 4 kB zachowuje najnowsze lokale', async () => {
+  const env = await start({ koperta: koperta([]) });
+  for (let i = 0; i < 120; i++) {
+    env.dataLayer.push(unitOpen('B_Lokal-o-bardzo-dlugiej-nazwie-' + i, { rooms: (i % 4) + 1, floor: i % 6, area: 40 + i, price: 400000 + i * 1000 }));
+    await env.minie(45 * MIN);   // każde obejrzenie w nowej wizycie (przerwa > VISIT_GAP)
+  }
+  const form = formKontekst({ 'd2-ma-context': 'json' });
+  env.dom('submit', { target: form });
+  const t = pole(form, 'd2ma_context').value;
+  assert.ok(t.length <= 2000, 'tekst ' + t.length);
+  assert.ok(t.startsWith('120 wizyt (…, '), t.slice(0, 40));
+  assert.ok(t.includes('120 obejrzanych lokali'), t.slice(0, 200));
+  assert.ok(t.includes('Lokal-o-bardzo-dlugiej-nazwie-119 ×1'), 'najnowszy lokal zostaje');
+  assert.ok(t.includes(', …'), 'lista lokali ucięta');
+  const js = pole(form, 'd2ma_context_json').value;
+  assert.ok(Buffer.byteLength(js, 'utf8') <= 4096, 'json ' + Buffer.byteLength(js, 'utf8'));
+  const j = JSON.parse(js);
+  assert.equal(j.units[0].id, 'B_Lokal-o-bardzo-dlugiej-nazwie-119');
+  assert.ok(j.units.length < 120 && j.units.length > 0);
+  assert.ok(j.visits.length >= 1 && j.visits.length <= 60);
+  assert.equal(j.visits[j.visits.length - 1].path, '/oferta');
 });

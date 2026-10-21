@@ -784,6 +784,7 @@
       <a href="#ma">Overview</a>
       <a href="#ma-scenarios">Scenarios &amp; Rules</a>
       <a href="#ma-v1">Exit, Engagement, Forms, Content, Map</a>
+      <a href="#ma-lead-context">Lead Context in Forms</a>
       <a href="#ma-conditions">Page Conditions</a>
       <a href="#ma-webflow">Webflow Setup</a>
     </div>
@@ -2609,6 +2610,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
       <tr><td><code>d2-ma-highlight</code></td><td>off</td><td>Highlight units matching the visitor's preferred room count on the 2destate map: single shapes on the floor on screen only (a title repeated on another floor is skipped), one per animation frame, re-applied after a floor change. List order is unchanged</td></tr>
       <tr><td><code>d2-ma-refresh="30"</code></td><td>off</td><td>Demo only. Re-read the envelope every N seconds (≥ 5) — a CRM call result sent from the panel reaches an open page</td></tr>
+      <tr><td><code>d2-ma-context="off"</code></td><td>on</td><td>Switch off the <a href="#ma-lead-context">lead context fields</a> written into forms on submit</td></tr>
     </table>
     <div class="callout callout--warn">
       <span class="ic">⚠︎</span>
@@ -2774,7 +2776,45 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     <h3>Page elements</h3>
     <div class="wf-map">
       <div class="wf-el"><span class="wf-elname">Heading the content action may rewrite</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-slot = hero-title</span></div>
-      <div class="wf-el"><span class="wf-elname">Form <code>form_abandon</code> must never count</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-ignore</span></div>
+      <div class="wf-el"><span class="wf-elname">Form <code>form_abandon</code> must never count (and gets no lead context)</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-ignore</span></div>
+      <div class="wf-el"><span class="wf-elname">Form that should also carry <code>d2ma_context_json</code></span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-context</span><span class="chip"><span class="k">value</span> json</span></div>
+    </div>
+  </section>
+
+  <section id="ma-lead-context">
+    <h2>d2-ma: Lead Context in Forms (ma.16)</h2>
+    <p>On submit of <strong>every</strong> form (not inside <code>[d2-ma-ignore]</code>) the module writes a hidden input <code>d2ma_context</code>: a Polish sentence for the sales rep about what this visitor did on this site, ≤ 2 000 characters. A form with <code>d2-ma-context="json"</code> also gets <code>d2ma_context_json</code> (≤ 4 kB) for a webhook.</p>
+<pre><code><span class="comment">// d2ma_context</span>
+3 wizyty (18.10, 20.10, 21.10) · 5 obejrzanych lokali, najczęściej M12 (3 pok., 2 p., 64 m², 689 000 zł) ×3 · lokale: M12 ×3 (21.10 14:02), M8 ×1 (20.10 09:15), … · preferencja: 3 pokoje, 2 p. · segmenty: powrot-do-lokalu · lead: tak (20.10) · ostatni lokal: M12 · strona: /mieszkania/m12 · źródło: meta / cpc / jesien
+
+<span class="comment">// d2ma_context_json (only with d2-ma-context="json" on the form)</span>
+{ <span class="prop">v</span>: <span class="num">1</span>, <span class="prop">visits</span>: [{ <span class="prop">t</span>: <span class="string">"2026-10-21T12:02:11.000Z"</span>, <span class="prop">path</span>: <span class="string">"/mieszkania/m12"</span> }],
+  <span class="prop">units</span>: [{ <span class="prop">id</span>, <span class="prop">name</span>, <span class="prop">rooms</span>, <span class="prop">floor</span>, <span class="prop">area</span>, <span class="prop">price</span>, <span class="prop">views</span>, <span class="prop">last</span> }],
+  <span class="prop">pref</span>: { <span class="prop">rooms</span>, <span class="prop">floor</span> }, <span class="prop">segments</span>: [], <span class="prop">last_unit</span>: { <span class="prop">id</span>, <span class="prop">name</span> }, <span class="prop">lead</span>: <span class="keyword">true</span>,
+  <span class="prop">source</span>: { <span class="prop">utm_source</span>, <span class="prop">utm_medium</span>, <span class="prop">utm_campaign</span> } }</code></pre>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>Consent and a profile</td><td>Both values rebuilt at every submit from the profile: visit starts, views grouped per unit (newest unit data, count, last view), preference, segments, last unit, lead flag, this visit's UTM</td></tr>
+      <tr><td>No consent, or no profile yet</td><td><code>d2ma_context</code> = <code>brak kontekstu (brak zgody)</code>; the JSON field is not added (a page's own field of that name is emptied)</td></tr>
+      <tr><td>The form already has a field of that name</td><td>Its value is overwritten — never a second input</td></tr>
+      <tr><td>Too long</td><td>Text drops the oldest visit dates first (<code>…, 20.10, 21.10</code>), then the oldest units from the list; counts stay true. JSON drops the oldest visits, then the oldest units (30 most recent units, 60 visits at most)</td></tr>
+      <tr><td><code>path</code></td><td>Only for the current page on the last visit entry — earlier page paths are not stored</td></tr>
+      <tr><td>Never there</td><td>Values of this or other forms, IP, user agent, geolocation</td></tr>
+      <tr><td>When</td><td>Capture phase on <code>document</code>, on <code>submit</code> and on a click on a submit button — before Webflow's handler and before d2-forms. <code>new FormData(form)</code> sees both fields; a script listing fields explicitly must add them</td></tr>
+      <tr><td>Off</td><td><code>d2-ma-context="off"</code> on the loader tag, or <code>[d2-ma-ignore]</code> on the form</td></tr>
+    </table>
+    <div class="platform">
+      <div class="platform-tabs"><button data-platform-tab="js" class="active">JS</button><button data-platform-tab="webflow">Webflow</button></div>
+      <div data-platform-panel="js">
+<pre><code><span class="fn">digi2.ma.context</span>();          <span class="comment">// { text, json } — null without consent</span>
+<span class="fn">digi2.ma.fillContext</span>(form);   <span class="comment">// write the fields now, e.g. before building a webhook body</span></code></pre>
+      </div>
+      <div data-platform-panel="webflow">
+        <div class="wf-map">
+          <div class="wf-el"><span class="wf-elname">Form that should also carry the JSON (webhook)</span><span class="chip chip--attr"><span class="k">Name</span> d2-ma-context</span><span class="chip"><span class="k">Value</span> json</span></div>
+          <div class="wf-el"><span class="wf-elname">Loader script tag — switch the fields off</span><span class="chip chip--attr"><span class="k">Name</span> d2-ma-context</span><span class="chip"><span class="k">Value</span> off</span></div>
+        </div>
+      </div>
     </div>
   </section>
 
