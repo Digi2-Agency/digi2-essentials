@@ -5,7 +5,7 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
-## v1.9.0-ma.13 — 2026-10-21 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`)
 
 ### `d2-ma`
 
