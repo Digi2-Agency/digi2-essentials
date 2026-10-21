@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.26 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.25–ma.16)
+
+### `d2-ma` — wyszukiwarka z core 2destate 1.7.0
+
+- „Wyczyść” naprawdę zdejmuje filtr ustawiony przez `prefer_filters`. Core
+  scala filtry, więc pusty obiekt niczego nie zmieniał. Teraz moduł wysyła
+  każde pole jako puste. Pola, które ustawił sam gość, zostają.
+- Jeśli core nie przyjął filtra z `prefer_filters` (gość już ruszył to pole
+  albo strona nie ma panelu wyszukiwarki), akcja nie liczy się jako wykonana.
+  Przy następnej wizycie moduł spróbuje ponownie.
+- Strona testowa `sandbox/ma.html` ładuje kopertę dopiero po załadowaniu
+  modułów.
+
 ## v1.9.0-ma.25 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.24–ma.16)
 
 ### `d2-ma` — poprawki z recenzji ma.23
