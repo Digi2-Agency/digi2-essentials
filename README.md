@@ -1780,6 +1780,7 @@ the promo price while a promotion runs.
 ### API
 
 ```js
+digi2.ma.version            // ma.28: "ma.28" — the loaded script (same numbering as the envelope's minScript)
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
 digi2.ma.history()          // views, oldest first
 digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent

@@ -223,7 +223,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 27;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 28;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -4278,6 +4278,9 @@
   }
 
   var api = {
+    // ma.28: wersja skryptu, którą strona faktycznie załadowała ("ma.28") - do
+    // sprawdzenia w konsoli po podmianie tagu; ten sam numer co minScript koperty.
+    version: 'ma.' + SCRIPT_VERSION,
     load: function (src) {
       if (src && typeof src === 'object') return useEnvelope(src);
       var url = src || envelopeUrl;

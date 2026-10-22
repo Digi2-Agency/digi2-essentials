@@ -3099,6 +3099,15 @@ test('ma.19: item_list_sort — price_asc jest; custom (nasz setProductOrder) ni
   assert.equal(dlZdarzenia(env, 'view_item_list').pop().item_list_sort, undefined, 'lista ułożona custom (nasz setProductOrder) — bez item_list_sort');
 });
 
+test('ma.28: digi2.ma.version = „ma.N” z najwyższego wpisu CHANGELOG — wersję widać w konsoli strony', async () => {
+  const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const top = /^## v\d+\.\d+\.\d+-(ma\.\d+)/m.exec(log)[1];
+  const env = await start({ koperta: koperta([]) });
+  assert.equal(env.ma.version, top);
+  const bez = await start({});
+  assert.equal(bez.ma.version, top, 'także bez koperty i przed zgodą');
+});
+
 test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG', () => {
   const kod = fs.readFileSync(modulePath, 'utf8');
   const v = Number(/var SCRIPT_VERSION = (\d+);/.exec(kod)[1]);

@@ -5,6 +5,14 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.27–ma.16)
+
+### `d2-ma` — numer wersji w konsoli
+
+- `digi2.ma.version` podaje wersję skryptu załadowaną na stronie, np. `"ma.28"`.
+  Po podmianie tagu w Webflow wystarczy wpisać to w konsoli, zamiast szukać
+  adresu pliku w zakładce Sieć. Format jest ten sam co `minScript` w kopercie.
+
 ## v1.9.0-ma.27 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.26–ma.16)
 
 ### `d2-ma` — jeden popup na interakcję, popupy na telefonie

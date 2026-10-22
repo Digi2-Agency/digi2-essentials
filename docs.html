@@ -2654,7 +2654,8 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all and an existing database is deleted (also when the envelope switches to <code>consentRequired: true</code>); withdrawing consent deletes it too. A profile not seen for longer than the retention starts over with a new <code>visitorId</code>.</p>
 
     <h3>Module API</h3>
-    <pre><code>digi2.ma.<span class="fn">profile</span>()          <span class="comment">// { visitorId, visits, lead, views, pref: { rooms, floor }, lastUnit, segment, … }</span>
+    <pre><code>digi2.ma.<span class="prop">version</span>            <span class="comment">// ma.28: "ma.28" — the script version the page loaded</span>
+digi2.ma.<span class="fn">profile</span>()          <span class="comment">// { visitorId, visits, lead, views, pref: { rooms, floor }, lastUnit, segment, … }</span>
 digi2.ma.<span class="fn">history</span>()          <span class="comment">// unit views, oldest first</span>
 digi2.ma.<span class="fn">track</span>(unit)        <span class="comment">// record a view from another source</span>
 digi2.ma.<span class="fn">lead</span>()             <span class="comment">// mark the visitor as a lead</span>
