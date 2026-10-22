@@ -32,7 +32,13 @@
  *   Nothing ever opens on top of what is already on screen. A popup the PAGE
  *   opened (delay, exit-intent, scroll, idle, a sequence step) waits and takes
  *   its turn once the screen is free; a popup the VISITOR asked for wins, and
- *   the one on screen closes before it appears.
+ *   the one on screen closes before it appears. An open lightbox counts as a
+ *   busy screen for automatic opens; they come after lightbox:close.
+ *
+ * Scroll lock (see _installScrollLock):
+ *   window.digi2.scrollLock.acquire(owner) / .release(owner) / .isLocked() / .owners()
+ *   One lock shared with the lightbox; the last owner out restores the page's
+ *   own overflow, whatever the closing order.
  */
 (function () {
   'use strict';
@@ -228,6 +234,13 @@
 
     el.addEventListener('transitionend', onEnd);
     timer = setTimeout(finish, (Number(durationSec) || 0) * 1000 + 80);
+    // Drop the animation without its bookkeeping — destroy() does its own.
+    finish.cancel = function () {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener('transitionend', onEnd);
+      if (timer !== null) clearTimeout(timer);
+    };
     return finish;
   }
 
@@ -489,6 +502,10 @@
       // of the close one. `isVisible` flips at the START of hide(), so it alone
       // would let a second popup slide in underneath one still fading out.
       this._onScreen = false;
+      // This instance's key in digi2.scrollLock — unique, so a popup re-created
+      // under the same name never releases the old one's hold.
+      this._holdsScrollLock = false;
+      this._scrollOwner = 'popup:' + name + '#' + (++_scrollOwnerSeq);
       // Settles the animation currently running (open or close) — see
       // _afterTransition. Called when the other direction interrupts it.
       this._finishAnimation = null;
@@ -894,6 +911,32 @@
 
     destroy() {
       _log('destroy → ' + this.name);
+      // Destroyed while open (or mid-fade): take the popup off the screen and
+      // give back the scroll lock. Otherwise the page keeps a popup nothing can
+      // close any more and does not scroll. No popup:close / onClose — nobody
+      // closed it — but a popup parked behind it gets the screen.
+      if (this._finishAnimation) {
+        if (typeof this._finishAnimation.cancel === 'function') this._finishAnimation.cancel();
+        this._finishAnimation = null;
+      }
+      var wasOnScreen = this.isVisible || this._onScreen;
+      this.isVisible = false;
+      if (wasOnScreen) {
+        this._videoStop();
+        if (this.popupElement) {
+          this.popupElement.style.display = 'none';
+          applyStyles(this.popupElement, this._getAnimation().reset());
+        }
+        this._onScreen = false;
+        this._animating = false;
+      }
+      if (this._holdsScrollLock) {
+        this._holdsScrollLock = false;
+        _installScrollLock().release(this._scrollOwner);
+      }
+      this.pendingShow = false;
+      this._pendingNavigation = null;
+      if (wasOnScreen) _resumeParkedPopup();
       if (this._boundHandleMouseOut) {
         document.documentElement.removeEventListener('mouseout', this._boundHandleMouseOut);
       }
@@ -1010,6 +1053,16 @@
       //       → wins, because the visitor just asked for it. What is on screen
       //         closes FIRST and this one opens after that close finishes, so
       //         the two never overlap even for a frame.
+      // An open lightbox counts as a busy screen for automatic opens only —
+      // the visitor is looking at a gallery they opened. lightbox:close lets
+      // the parked popup through. A popup the visitor asked for (a button in
+      // the gallery, a form link) still opens on top of it.
+      if (auto && _lightboxOpen()) {
+        if (park) this.pendingShow = true;
+        _log('show deferred — the lightbox is open → ' + this.name);
+        return;
+      }
+
       var busy = _visiblePopupOtherThan(this);
       if (busy) {
         if (auto) {
@@ -1037,7 +1090,7 @@
 
       if (this.options.lockScrollOnShow) {
         this._holdsScrollLock = true;
-        _lockScroll();
+        _installScrollLock().acquire(this._scrollOwner);
       }
       const anim = this._getAnimation();
       const dur = this._activeAnimationDuration;
@@ -1180,7 +1233,7 @@
 
         if (this._holdsScrollLock) {
           this._holdsScrollLock = false;
-          _unlockScroll();
+          _installScrollLock().release(this._scrollOwner);
         }
 
         _emitEvent('popup:close', { name: this.name });
@@ -1849,34 +1902,64 @@
   // Popups in a sequence should be created WITHOUT their own auto-triggers
   // (no openOnLoad / openAfterDelay) — the sequence is what opens them.
   // ---------------------------------------------------------------------------
-  // ---- Body scroll lock ----------------------------------------------------
-  // Counted, not remembered per popup. Each instance used to snapshot
-  // body.style.overflow on open and write it back on close, which breaks the
-  // moment two popups overlap: the second snapshots the FIRST one's "hidden",
-  // so closing the first unlocks the page while a modal is still up, and
-  // closing the second restores "hidden" and leaves the page permanently
-  // unscrollable — which looks exactly like a close button that did nothing.
   // Page-view keys already incremented in THIS document — see _updatePageViews.
   var _pageViewCounted = {};
 
-  var _scrollLocks = 0;
-  var _scrollSaved = null;
-
-  function _lockScroll() {
-    if (_scrollLocks === 0) {
-      _scrollSaved = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-    }
-    _scrollLocks++;
+  // ---- Body scroll lock ----------------------------------------------------
+  // One lock for the whole page, shared with the lightbox: digi2.scrollLock.
+  // Each popup used to snapshot body.style.overflow on open and write it back
+  // on close, and the lightbox did the same on its own. The moment two of them
+  // overlap, the second snapshots the FIRST one's "hidden": close them in the
+  // "wrong" order and the last close writes "hidden" back, so nothing is open
+  // and the page will not scroll — which looks exactly like a close button that
+  // did nothing. The shared lock keeps a set of owners instead: the first one
+  // in takes the page's own value, the last one out puts it back, whatever the
+  // order. Both modules install the same implementation; whichever loads first
+  // wins and the other uses it.
+  function _installScrollLock() {
+    var d2 = window.digi2;
+    if (d2.scrollLock && typeof d2.scrollLock.acquire === 'function') return d2.scrollLock;
+    var owners = [];
+    var saved = null;
+    d2.scrollLock = {
+      // Idempotent per owner: a second acquire by the same owner is a no-op,
+      // so a double open can never need two releases.
+      acquire: function (owner) {
+        var body = document.body;
+        if (!body || owners.indexOf(owner) !== -1) return false;
+        if (!owners.length) saved = body.style.overflow;
+        owners.push(owner);
+        body.style.overflow = 'hidden';
+        return true;
+      },
+      // Releasing what you do not hold does nothing — never unlock more than
+      // was locked.
+      release: function (owner) {
+        var i = owners.indexOf(owner);
+        if (i === -1) return false;
+        owners.splice(i, 1);
+        if (!owners.length) {
+          if (document.body) document.body.style.overflow = saved || '';
+          saved = null;
+        }
+        return true;
+      },
+      isLocked: function () { return owners.length > 0; },
+      owners: function () { return owners.slice(); },
+    };
+    return d2.scrollLock;
   }
+  _installScrollLock();
 
-  function _unlockScroll() {
-    if (_scrollLocks === 0) return;      // never unlock more than we locked
-    _scrollLocks--;
-    if (_scrollLocks === 0) {
-      document.body.style.overflow = _scrollSaved || '';
-      _scrollSaved = null;
-    }
+  var _scrollOwnerSeq = 0;
+
+  // An open lightbox is a modal on screen as much as a popup is. Automatic
+  // popups wait for it (see show()); a popup the visitor asked for may still
+  // open over it.
+  function _lightboxOpen() {
+    var lb = window.digi2 && window.digi2.lightbox;
+    if (!lb || typeof lb.isOpen !== 'function') return false;
+    try { return !!lb.isOpen(); } catch (e) { return false; }
   }
 
   // Any popup currently on screen other than `self`. "On screen" covers the
@@ -1903,6 +1986,7 @@
   function _resumeParkedPopup() {
     setTimeout(function () {
       if (_visiblePopupOtherThan(null)) return;   // someone got there first
+      if (_lightboxOpen()) return;                // lightbox:close calls again
       for (var name in registry) {
         if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
         var inst = registry[name];
@@ -2125,6 +2209,10 @@
         _log('sequence step waiting — "' + busy.name + '" is open');
         return;                                    // try again next tick
       }
+      if (_lightboxOpen()) {
+        _log('sequence step waiting — the lightbox is open');
+        return;
+      }
 
       const off = inst._onCloseInternal(() => this._stepClosed());
       // Scheduled, and the sequence runs its own clock: if the screen is busy it
@@ -2315,6 +2403,13 @@
   // strings on every popup. If one is currently visible, re-apply the `in`
   // styles so its resting transition target picks up the new bucket's values
   // (so the next hide animates correctly).
+  // A popup that stepped aside for the lightbox opens once the gallery closes.
+  // Without the loader's event bus there is no lightbox:close; the parked popup
+  // then waits for the next popup close instead.
+  if (window.digi2 && typeof window.digi2.on === 'function') {
+    window.digi2.on('lightbox:close', _resumeParkedPopup);
+  }
+
   if (window.digi2 && typeof window.digi2.on === 'function') {
     window.digi2.on('responsive:change', function () {
       Object.keys(registry).forEach(function (k) {
