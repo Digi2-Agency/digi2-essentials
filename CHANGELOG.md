@@ -5,6 +5,35 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.27–ma.16)
+
+### `d2-ma` — numer wersji w konsoli
+
+- `digi2.ma.version` podaje wersję skryptu załadowaną na stronie, np. `"ma.28"`.
+  Po podmianie tagu w Webflow wystarczy wpisać to w konsoli, zamiast szukać
+  adresu pliku w zakładce Sieć. Format jest ten sam co `minScript` w kopercie.
+
+## v1.9.0-ma.27 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.26–ma.16)
+
+### `d2-ma` — jeden popup na interakcję, popupy na telefonie
+
+- Jedno kliknięcie lokalu daje najwyżej jeden popup ze scenariuszy. Gdy to
+  kliknięcie otwierało nową wizytę (`return_visit`) i jednocześnie spełniało
+  inny wyzwalacz (np. trzeci 2-pokojowy), pokazywały się dwa popupy: drugi
+  ok. 1 s po zamknięciu pierwszego. Teraz drugi czeka do następnej wizyty,
+  jak przy zwykłym konflikcie. To samo przy otwarciu strony (CRM, wizyta,
+  odłożone akcje) i przy `digi2.ma.simulateReturn()`.
+- Popup ze scenariusza nie czeka za innym popupem na ekranie (np. formularzem,
+  który gość otworzył sam). Jest pomijany i nie zużywa częstotliwości, więc
+  może przyjść przy następnym wyzwalaczu.
+- `ma:action` (i dataLayer z niego) dla popupu leci tylko wtedy, gdy popup
+  naprawdę wszedł na ekran.
+- Telefon: popupy znowu się pokazują. Image Map Pro zostawia klasę
+  `is-fullscreen` na zamkniętym dymku mapy, więc moduł uznawał dymek za otwarty
+  i po 5 minutach rezygnował z popupu. Teraz liczy się, czy dymek jest widoczny.
+  Popup czeka pół sekundy na otwarcie się dymka po stuknięciu i pokazuje się
+  po jego zamknięciu.
+
 ## v1.9.0-ma.26 — 2026-10-21 (przedpremierowa, nie `@latest`; zawiera ma.25–ma.16)
 
 ### `d2-ma` — wyszukiwarka z core 2destate 1.7.0
