@@ -223,7 +223,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 26;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 27;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -754,9 +754,13 @@
     state.filterLog = (state.filterLog || []).concat([{ t: t, rooms: f.rooms || null, floor: f.floor || null }]).slice(-50);
   }
 
-  function handle(evt, at) {
+  function handle(evt, at, pass) {
+    // Jedna interakcja = jeden pass: początek wizyty (return_visit), samo
+    // zdarzenie i dojrzałe odłożone akcje dzielą strażnika „jeden popup naraz".
+    // Osobne passy pokazywały dwa popupy na jedno kliknięcie (ma.27).
+    pass = pass || { popup: false };
     var visit = touch();
-    if (visit) dispatch(visit);
+    if (visit) dispatch(visit, pass);
     var t = at != null ? at : now();
     // Zdarzenie wizyty jest po jej początku (reguła 1) - także obejrzenie,
     // które ją otworzyło, i deep link z bufora sprzed otwarcia magazynu.
@@ -766,25 +770,25 @@
       if (!v) return;
       _emit('ma:view', { unit: v.unit });
       sendVisitSignal();
-      dispatch({ type: 'unit_view', t: t, unit: v.unit });
-      runDue();
+      dispatch({ type: 'unit_view', t: t, unit: v.unit }, pass);
+      runDue(pass);
     } else if (evt.type === 'lead') {
       state.lead = true;
       state.leadAt = t;
       state.leadVisit = state.visits;
       bindHotLead();
-      dispatch({ type: 'lead', t: t });
+      dispatch({ type: 'lead', t: t }, pass);
     } else if (evt.type === 'exit_intent') {
       // Raz na wizytę (§13.8.2).
       if (state.exitVisit === state.visits) return;
       state.exitVisit = state.visits;
-      dispatch({ type: 'exit_intent', t: t });
+      dispatch({ type: 'exit_intent', t: t }, pass);
     } else if (evt.type === 'engagement' || evt.type === 'form_abandon') {
-      dispatch({ type: evt.type, t: t, data: evt.data });
+      dispatch({ type: evt.type, t: t, data: evt.data }, pass);
     } else if (evt.type === 'search_filter') {
       var f = evt.filter || {};
       storeFilter(f, t);
-      dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } });
+      dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } }, pass);
     } else if (evt.type === 'search_sort') {
       state.sortVisit = state.visits;
       state.sort = evt.sort;
@@ -1146,9 +1150,10 @@
 
   // Jedno zdarzenie przechodzi przez wszystkie aktywne scenariusze, w kolejności
   // koperty - stąd pierwszeństwo popupu wcześniejszego scenariusza.
-  function dispatch(evt) {
+  // pass: wspólny dla kilku dispatchy tej samej interakcji (handle) - bez niego własny.
+  function dispatch(evt, pass) {
     if (!envelope || !tracking) return;
-    var pass = { popup: false };
+    pass = pass || { popup: false };
     // Typ zdarzenia z listy scenariusza: wyzwalacze unit_view i type_view
     // słuchają tego samego obejrzenia lokalu.
     var types = evt.type === 'unit_view' ? ['unit_view', 'type_view'] : [evt.type];
@@ -1379,7 +1384,7 @@
   }
 
   // Odłożone akcje: po czasie, w kolejności scenariuszy koperty.
-  function runDue() {
+  function runDue(pass) {
     if (!envelope || !tracking || !state.pending.length) { scheduleDue(); return; }
     var t = now();
     var due = [];
@@ -1390,7 +1395,7 @@
     });
     var order = envelope.scenarios.map(function (s) { return s.id; });
     due.sort(function (a, b) { return (order.indexOf(a.sc) - order.indexOf(b.sc)) || (a.due - b.due); });
-    var pass = { popup: false };
+    pass = pass || { popup: false };
     due.forEach(function (p) {
       var sc = envelope.scenarios[order.indexOf(p.sc)];
       var node = sc && sc.nodes[p.node];
@@ -2477,9 +2482,33 @@
   var TOOLTIP_SEL = '.imp-tooltips-container.is-fullscreen';
   var TOOLTIP_POLL_MS = 250;
   var TOOLTIP_MAX_MS = 5 * 60 * 1000;
+  // Dymek otwiera się chwilę po stuknięciu (po decyzji o popupie z tego samego
+  // kliknięcia), więc ukryty kontener jeszcze nic nie mówi - najpierw dajemy mu czas.
+  var TOOLTIP_SETTLE_MS = 500;
+
+  // Image Map Pro zostawia klasę is-fullscreen po zamknięciu dymka (kontener
+  // dostaje display:none), więc sama klasa nie znaczy „otwarty" - liczy się,
+  // czy kontener faktycznie jest na ekranie. Inaczej popup czekał 5 min i przepadał (ma.27).
+  function shownOnScreen(el) {
+    // visibility dziedziczy się w computed style; display:none przodka daje puste getClientRects().
+    var cs = window.getComputedStyle ? window.getComputedStyle(el) : el.style;
+    if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse')) return false;
+    if (el.getClientRects && !el.getClientRects().length) return false;
+    if (el.getBoundingClientRect) {
+      var r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return false;
+    }
+    return true;
+  }
+
+  function mapTooltips() {
+    return document.querySelectorAll ? document.querySelectorAll(TOOLTIP_SEL) : [];
+  }
 
   function mapTooltipOpen() {
-    return !!(document.querySelector && document.querySelector(TOOLTIP_SEL));
+    var list = mapTooltips();
+    for (var i = 0; i < list.length; i++) if (shownOnScreen(list[i])) return true;
+    return false;
   }
 
   // Profil z chwili decyzji: „Wyczyść" i wycofanie zgody podbijają epokę, więc
@@ -2496,7 +2525,8 @@
     // Nowszy popup tego samego szablonu zastępuje czekający.
     var prev = tooltipWaits[key];
     if (prev) { clearTimeout(prev.timer); delete tooltipWaits[key]; prev.giveUp(prev.owner === owner ? 'same' : 'other'); }
-    if (!mapTooltipOpen()) { go(); return; }
+    // Bez kontenera pełnoekranowego (desktop, strona bez mapy) - od razu.
+    if (!mapTooltips().length) { go(); return; }
     _log('popup waits for the map tooltip to close');
     // Czas z zegara, nie z liczby tyknięć - karta w tle spowalnia timery.
     var since = Date.now();
@@ -2507,7 +2537,11 @@
         if (tooltipWaits[key] !== wait) return;
         // Zgoda wycofana albo profil wyczyszczony w trakcie czekania - nic nie pokazujemy.
         if (!tracking || epoch !== profileEpoch) { delete tooltipWaits[key]; return; }
-        if (!mapTooltipOpen()) { delete tooltipWaits[key]; go(); }
+        if (!mapTooltipOpen()) {
+          if (Date.now() - since < TOOLTIP_SETTLE_MS) { tick(); return; }
+          delete tooltipWaits[key];
+          go();
+        }
         else if (Date.now() - since >= TOOLTIP_MAX_MS) {
           delete tooltipWaits[key];
           _log('map tooltip still open after 5 min — popup skipped');
@@ -2574,8 +2608,15 @@
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, tpl ? (templateCta(tpl) || node.cta) : node.cta);
         whenMapTooltipClosed(node.template, owner, epoch, function () {
-          inst.show({ auto: true });
-          onShown(fresh);
+          // park: false - popup ze scenariusza nie czeka za innym popupem na
+          // ekranie (popups.js pokazałby go po zamknięciu tamtego, ~1 s później,
+          // jako drugi na tę samą interakcję). Nie wszedł na ekran = pominięty:
+          // bez ma:action, a wpis częstotliwości wraca (onSkipped).
+          inst.show({ auto: true, park: false });
+          if (inst.isVisible || inst._onScreen) { onShown(fresh); return; }
+          inst.pendingShow = false;
+          _log('popup skipped — another popup is on screen → ' + name);
+          onSkipped();
         }, onSkipped);
         return null;
       });
@@ -3673,7 +3714,7 @@
       if (t - lastTouch < TOUCH_THROTTLE_MS) return;
       lastTouch = t;
       var visit = touch();
-      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); runDue(); }
+      if (visit) { var pass = { popup: false }; state.visitPageviews = 1; dispatch(visit, pass); sendVisitSignal(); runDue(pass); }
       afterChange();
     }
     ['click', 'keydown', 'scroll', 'touchstart'].forEach(function (n) {
@@ -4135,21 +4176,23 @@
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
       state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
-      if (crm) dispatch(crm);
-      if (visit) dispatch(visit);
+      // Otwarcie strony to jedna chwila: CRM, wizyta, zdarzenia z bufora i dojrzałe akcje - jeden popup.
+      var pass = { popup: false };
+      if (crm) dispatch(crm, pass);
+      if (visit) dispatch(visit, pass);
       var queued = buffer;
       var required = consentRequired(envelope);
       buffer = [];
       queued.forEach(function (q) {
         if (required && !q.consent) return;
-        handle(q.evt, q.real + (state.shift || 0));
+        handle(q.evt, q.real + (state.shift || 0), pass);
       });
       // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
       hookSignals();
       replayFormExits();
       replayStateActions();
       sendVisitSignal();
-      runDue();
+      runDue(pass);
       afterChange();
       highlightProfile();
       opening = null;
@@ -4227,8 +4270,9 @@
     applyEnvelope(env);
     hookSignals();
     var crm = crmEvent();
-    if (crm && crm.seq !== before) dispatch(crm);
-    runDue();
+    var pass = { popup: false };
+    if (crm && crm.seq !== before) dispatch(crm, pass);
+    runDue(pass);
     afterChange();
     return Promise.resolve(true);
   }
@@ -4291,8 +4335,9 @@
       state.shift = (state.shift || 0) + Math.max(scaled(VISIT_GAP_MS), scaled(maxAfter * HOUR_MS)) + 1000;
       _log('simulated return, clock moved by ' + Math.round(state.shift / 1000) + ' s in total');
       var visit = touch();
-      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); }
-      runDue();
+      var pass = { popup: false };
+      if (visit) { state.visitPageviews = 1; dispatch(visit, pass); sendVisitSignal(); }
+      runDue(pass);
       afterChange();
     },
     clear: function () {

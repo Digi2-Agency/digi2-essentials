@@ -1249,9 +1249,28 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   timer runs it while the page is open, otherwise the next start does. Void 24 h
   after `created` (real time, `timeScale` doesn't shorten it).
 - **Popup conflict:** one popup per event pass; the next one is stored with
-  `afterVisit` and runs on a later visit.
+  `afterVisit` and runs on a later visit. (ma.27) A pass is one interaction,
+  not one `dispatch()`: `handle()` shares it between the visit start
+  (`return_visit` from `touch()`), the event itself and the `runDue()` after
+  it; the page open shares it between the CRM event, the visit, the buffered
+  events and `runDue()`; `simulateReturn()` and the activity listener the same.
+  Before, a click that opened a new visit and also met a view trigger showed
+  two popups.
+- **Popup on screen (ma.27):** the scenario popup opens with
+  `show({ auto: true, park: false })`. If another popup is on screen (or the
+  popups module refused for any other reason), it is not parked — popups.js
+  would otherwise open it ~0.6 s after the other one closes, as a second popup
+  for the same interaction. It counts as skipped: frequency entry undone, no
+  `ma:action`. `ma:action` for a popup fires only when `isVisible` /
+  `_onScreen` is set after `show()`.
 - **Map tooltip (ma.6):** on a phone the first tap on a 2destate unit opens the
-  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`). A
+  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`).
+  (ma.27) Image Map Pro keeps that class on the closed container
+  (`display: none`), so "open" means the container is actually shown —
+  computed `display` / `visibility`, a client rect and a non-zero size. With
+  no such container at all (desktop) the popup opens at once; with one, it
+  first waits 500 ms, because the tooltip opens just after the popup decision
+  made by the same tap. A
   popup due at that moment waits (checked every 250 ms) until the visitor
   closes it, so they see the unit they tapped first. After 5 minutes with the
   tooltip still open (clock time, not ticks — background tabs slow timers)
