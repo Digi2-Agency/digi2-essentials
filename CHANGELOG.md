@@ -5,7 +5,7 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
-## Niewydane — wspólna blokada przewijania (numer wersji przy tagu)
+## v1.8.1 — 2026-10-23 (tag z gałęzi release/v1.8.1, na bazie v1.8.0)
 
 ### `d2-popups` + `d2-lightbox`
 
