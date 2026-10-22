@@ -456,7 +456,8 @@ the **top** popup answers Esc and Tab; a key another layer already handled
 (`defaultPrevented` — the lightbox marks its Esc so) is left alone, and focus
 sitting in a `[d2-lightbox-modal]` or another `aria-modal` dialog is never
 pulled back. A popup the page hid without `hide()` (no client rects) traps
-nothing, and `destroy()` on an open popup drops its key handler.
+nothing, and `destroy()` on an open popup drops its key handler, hides the popup
+and releases its scroll lock.
 
 For **2 seconds after opening**, focus that the page moves outside the popup
 (Webflow's anchor scroll focuses the `#section` a link points to, after its
@@ -683,8 +684,14 @@ written while it waited, a schedule that has since closed or a `canShow()` veto
 all still apply. It waits for the screen — it does not queue up a guaranteed
 appearance.
 
-**The page scroll lock always comes back off.** The lock is counted across
-popups and released when the last one holding it closes — but the release used
+An open **lightbox** counts as a busy screen too, for automatic opens only: they
+park and come ~0.6 s after `lightbox:close`, and a sequence step waits the same
+way. A popup the visitor asks for (a button inside the gallery, `d2-show-popup`)
+still opens over the gallery.
+
+**The page scroll lock always comes back off.** The lock is shared by every
+popup and the lightbox (`digi2.scrollLock`, below) and released when the last
+holder closes — but the release used
 to hang on a `transitionend` that the browser does not always send (`display:
 none`, reduced motion, a CSS override, a backgrounded tab) and that also fires
 for transitions bubbling up from buttons *inside* the popup. Either way the
@@ -693,6 +700,38 @@ nothing on screen to close. The animation now settles on the popup's own event
 or on a timer just past its duration, whichever lands first — and a close
 arriving mid-open (an impatient click on the ✕) settles the open first instead
 of being ignored.
+
+**One scroll lock for popups and the lightbox — `digi2.scrollLock`.** Each popup
+and the lightbox used to snapshot `body.style.overflow` on open and write it back
+on close. A popup opened over the gallery snapshotted the gallery's `hidden`; the
+visitor closed the gallery (restoring `""`), then the popup (restoring `hidden`),
+and the page stayed locked with nothing open. Now both modules use one lock with a
+set of owners:
+
+```js
+digi2.scrollLock.acquire(owner)   // first owner in: remember overflow, set "hidden"
+digi2.scrollLock.release(owner)   // last owner out: put the remembered value back
+digi2.scrollLock.isLocked()
+digi2.scrollLock.owners()         // e.g. ['lightbox', 'popup:form#1']
+```
+
+- `acquire` is idempotent per owner and returns `false` on a repeat; `release` of an
+  owner that holds nothing is a no-op, so nothing ever unlocks more than it locked.
+- The restored value is the page's own value from before the **first** acquire,
+  whatever the closing order.
+- Popups use the owner `popup:<name>#<n>` (unique per instance, so a popup re-created
+  under the same name never releases the old one's hold); the lightbox uses `lightbox`.
+- Both modules carry the same implementation and install it only if
+  `digi2.scrollLock` is not there yet, so the load order does not matter and each
+  module still works on its own. Mixed versions (one module from before this change)
+  fall back to the old per-module snapshot for that module.
+- Any other script that covers the page (a full-screen map tooltip, a menu) should
+  acquire/release with its own owner name instead of saving and restoring
+  `overflow` itself, or it can write a stale `hidden` back over the shared lock.
+
+`digi2.popups.destroy(name)` on an open (or fading) popup cancels the animation,
+hides the element, releases its lock and lets a parked popup through. It fires no
+`popup:close` / `onClose` — nobody closed it.
 
 > **Give every popup its own `cookieName`.** The default is the same
 > `popup_clicked` for all of them, so closing step one would mark the rest as
@@ -760,7 +799,7 @@ digi2.popups.show('name')
 digi2.popups.close('name')            // sets cookie
 digi2.popups.close('name', false)     // no cookie
 digi2.popups.get('name')
-digi2.popups.destroy('name')
+digi2.popups.destroy('name')         // an open popup is hidden, its scroll lock released
 digi2.popups.list()
 ```
 
@@ -3393,7 +3432,7 @@ Auto-shows "Copied!" feedback on the button + toast notification (if toasts modu
 
 ## Lightbox
 
-Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, arrow keys navigate, dragging left/right with the mouse or a finger moves between photos (the image follows the drag and snaps back below the threshold), body scroll locks, adjacent images preload. The gallery UI is either **your own modal built in the Designer** or, when the page has none, a **built-in dark modal** injected automatically (zero setup) with a close ✕ in the top-right corner.
+Click any `[d2-lightbox]` element to open a fullscreen gallery — Esc closes, arrow keys navigate, dragging left/right with the mouse or a finger moves between photos (the image follows the drag and snaps back below the threshold), body scroll locks, adjacent images preload. The scroll lock is the shared `digi2.scrollLock` (see Popups), so a popup opened over the gallery and the gallery itself can close in either order; automatic popups wait for the gallery to close. The gallery UI is either **your own modal built in the Designer** or, when the page has none, a **built-in dark modal** injected automatically (zero setup) with a close ✕ in the top-right corner.
 
 ```html
 <!-- zero-config: each CMS item is its own gallery -->

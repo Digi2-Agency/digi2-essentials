@@ -67,7 +67,8 @@
  *
  * Behavior: Esc closes, arrow keys navigate, drag/swipe left-right with the
  * mouse or a finger (the image follows the drag), body scroll is locked while
- * open, adjacent images are preloaded.
+ * open (the shared digi2.scrollLock, owner "lightbox" — the same lock popups
+ * hold, so the two close in any order), adjacent images are preloaded.
  *
  * API:
  *   window.digi2.lightbox.open(triggerEl | 'groupName' | [{src, caption}], index?)
@@ -87,6 +88,46 @@
 
   function _emit(event, data) {
     if (typeof window.digi2.emit === 'function') window.digi2.emit(event, data);
+  }
+
+  // Shared body scroll lock (digi2.scrollLock), the same implementation the
+  // popups module installs — whichever loads first wins. The lightbox used to
+  // snapshot body.style.overflow on open and write it back on close; a popup
+  // opening over the gallery snapshotted the gallery's "hidden", and closing
+  // the two in the other order left the page locked with nothing open. With a
+  // set of owners the last one out restores the page's own value.
+  function _installScrollLock() {
+    var d2 = window.digi2;
+    if (d2.scrollLock && typeof d2.scrollLock.acquire === 'function') return d2.scrollLock;
+    var owners = [];
+    var saved = null;
+    d2.scrollLock = {
+      // Idempotent per owner: a second acquire by the same owner is a no-op,
+      // so a double open can never need two releases.
+      acquire: function (owner) {
+        var body = document.body;
+        if (!body || owners.indexOf(owner) !== -1) return false;
+        if (!owners.length) saved = body.style.overflow;
+        owners.push(owner);
+        body.style.overflow = 'hidden';
+        return true;
+      },
+      // Releasing what you do not hold does nothing — never unlock more than
+      // was locked.
+      release: function (owner) {
+        var i = owners.indexOf(owner);
+        if (i === -1) return false;
+        owners.splice(i, 1);
+        if (!owners.length) {
+          if (document.body) document.body.style.overflow = saved || '';
+          saved = null;
+        }
+        return true;
+      },
+      isLocked: function () { return owners.length > 0; },
+      owners: function () { return owners.slice(); },
+    };
+    return d2.scrollLock;
   }
 
   // Responsive-aware getAttribute. Falls back to raw read when the loader
@@ -117,9 +158,11 @@
     variant: 'counter', // built-in bottom UI: 'counter' | 'thumbs'
     track: null,        // built-in modal: { viewport, track, slides:[img,img,img] }
     imageBg: '',        // background painted behind photos (fills transparent PNGs)
-    savedOverflow: '',
     lastFocus: null,
   };
+
+  var SCROLL_OWNER = 'lightbox';
+  _installScrollLock();
 
   var builtinModal = null; // cached injected fallback modal
 
@@ -897,8 +940,7 @@
     }
 
     if (!state.open) {
-      state.savedOverflow = document.body ? document.body.style.overflow : '';
-      if (document.body) document.body.style.overflow = 'hidden';
+      _installScrollLock().acquire(SCROLL_OWNER);
       state.lastFocus = document.activeElement || null;
     }
     state.open = true;
@@ -936,7 +978,7 @@
     drag.track = null;
     drag.img = null;
     if (state.modal) state.modal.style.display = 'none';
-    if (document.body) document.body.style.overflow = state.savedOverflow || '';
+    _installScrollLock().release(SCROLL_OWNER);
     if (state.lastFocus && typeof state.lastFocus.focus === 'function') state.lastFocus.focus();
     state.lastFocus = null;
     _log('close');

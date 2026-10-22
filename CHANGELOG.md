@@ -5,6 +5,37 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## Niewydane — wspólna blokada przewijania (numer wersji przy tagu)
+
+### `d2-popups` + `d2-lightbox`
+
+- **Strona nie zostaje już zablokowana po zamknięciu popupu i galerii.** Popupy
+  i lightbox trzymają jedną wspólną blokadę przewijania (`digi2.scrollLock`).
+  Wcześniej każdy z modułów zapamiętywał `overflow` osobno: lightbox otwarty, na
+  nim popup (formularz z `d2-show-popup` albo krok sekwencji), zamknięcie galerii,
+  potem popupu, i strony nie dało się przewinąć, choć nic nie było otwarte
+  (bernardynska.com/galeria). Teraz przewijanie wraca po zamknięciu ostatniego
+  okna, w dowolnej kolejności, z wartością `overflow` sprzed pierwszego otwarcia.
+- **Popupy automatyczne czekają na zamknięcie lightboxa** (opóźnienie, exit
+  intent, scroll, bezczynność, krok sekwencji): wchodzą ~0,6 s po
+  `lightbox:close`. Popup otwarty przez odwiedzającego dalej może wejść nad galerię.
+- `digi2.popups.destroy()` na otwartym popupie chowa go i zdejmuje blokadę
+  przewijania (wcześniej popup zostawał na ekranie bez obsługi zamykania). Nie
+  wysyła `popup:close` ani `onClose`; popup odłożony za nim dostaje ekran.
+- Nowe API dla własnych nakładek strony: `digi2.scrollLock.acquire(nazwa)` /
+  `release(nazwa)` / `isLocked()` / `owners()`. Skrypt strony, który sam
+  zapamiętuje i przywraca `overflow` (np. pełnoekranowy tooltip mapy), powinien
+  przejść na nie, bo inaczej może przywrócić nieaktualne `hidden`.
+- Strony bez lightboxa działają jak dotąd; API, które strony już wywołują, się
+  nie zmienia.
+
+### Dokumentacja
+
+- `docs.html`: tabela pól wykrywanych automatycznie podawała dla `MESSAGE`
+  `minLength: 30`, którego biblioteka nie ustawia od v1.0.0. `MESSAGE` jest
+  domyślnie wymagane, bez minimalnej długości. Kreator formularza w `docs/`
+  przestał dopisywać `minLength: 30` przy „Wiadomość wymagana”.
+
 ## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`; numer ma.13 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma`
