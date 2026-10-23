@@ -83,6 +83,26 @@ git tag -a v1.3.8 -m "opis" && git push origin v1.3.8
 curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/<moduł>.min.js"
 ```
 
+Dwie pułapki jsDelivr, sprawdzone 2026-10-21:
+
+- **Plik, którego nie ma w najnowszym stabilnym tagu, `@latest` bierze z
+  najnowszego tagu, który go ma — także przedpremierowego.** Dopóki moduł
+  istnieje tylko w linii `v1.9.0-ma.N`, `@latest/dist/modules/ma.min.js` serwuje
+  kod gałęzi prerelease (nawet niescalonej), z cache 12 h na CDN i 7 dni w
+  przeglądarce. Loader 1.8.0 zamienia każdy nieznany atrybut `d2-x` na moduł
+  `x`, więc strona z `@latest` i `d2-ma` **uruchomiłaby** ten kod. Strona na
+  `@latest` nie dostaje atrybutu nowego modułu, dopóki nie wyjdzie stabilny tag
+  z tym plikiem. Purge tego nie naprawia: po nim `@latest` przelicza się na
+  najnowszy prerelease z tym plikiem.
+- **Strona przypięta do `@main` (gałęzi) dostaje każdy merge do main od razu**,
+  z pominięciem tagów i `@latest`. Przed scaleniem zmian, które mają czekać na
+  wydanie, sprawdź, czy żadna strona nie ładuje `@main`.
+- **Tagi `ma.N` bywają kładzione na gałęziach spoza main** (drugi zespół).
+  Wolny numer sprawdzaj `git ls-remote --tags origin 'v1.9.0-ma.*'`, nie po
+  stanie main; cudzego tagu nie przesuwaj, bierz następny numer. Pierwsze
+  żądanie pliku ze świeżego tagu może dostać 404 z cache — purge tego jednego
+  adresu z tagiem (nie `@latest`) je czyści.
+
 Purge czyści CDN, ale **nie** przeglądarkę odwiedzającego: jsDelivr wysyła
 `max-age=604800`, więc powracający użytkownik trzyma stary plik nawet tydzień.
 Strona, która musi dostać zmianę od razu, wskazuje przypiętą wersję
