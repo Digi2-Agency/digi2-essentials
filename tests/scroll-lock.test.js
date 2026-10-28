@@ -332,6 +332,53 @@ test('openAfterDelay coming due during the gallery waits for it', () => {
   assert.equal(delayed.isVisible, true);
 });
 
+// Page without d2-lightbox: digi2.lightbox is the loader's proxy, whose every
+// method pulls the module in and returns a Promise. A Promise is truthy, so
+// popups read "the lightbox is open" and parked the delay popup for good,
+// waiting for a lightbox:close that never came (osiedlebo.pl).
+function loaderLightboxStub(env, { loaded = false } = {}) {
+  const d2 = env.window.digi2;
+  const calls = [];
+  d2._loaded = d2._loaded || {};
+  if (loaded) d2._loaded.lightbox = true;
+  d2.lightbox = new Proxy({}, {
+    get: (_t, method) => function () { calls.push(method); return Promise.resolve(); },
+  });
+  return calls;
+}
+
+test('openAfterDelay opens on a page without the lightbox (loader proxy in place)', () => {
+  const env = createEnvironment();
+  installBus(env);
+  env.window.requestAnimationFrame = () => 0;
+  env.window.cancelAnimationFrame = () => {};
+  const calls = loaderLightboxStub(env);
+  load(env, popupsPath);
+  env.body.appendChild(createElement('div', { class: 'p-contact' }));
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null, openAfterDelay: 6,
+  });
+  fireTimers(env, 6000);
+  assert.equal(contact.pendingShow, false, 'not parked behind a lightbox that is not there');
+  assert.equal(contact.isVisible, true);
+  assert.deepEqual(calls, [], 'asking must not pull the lightbox module in');
+});
+
+test('a proxy that answers isOpen() with a Promise is not an open lightbox', () => {
+  const env = createEnvironment();
+  installBus(env);
+  env.window.requestAnimationFrame = () => 0;
+  env.window.cancelAnimationFrame = () => {};
+  loaderLightboxStub(env, { loaded: true });     // no loader bookkeeping to go by
+  load(env, popupsPath);
+  env.body.appendChild(createElement('div', { class: 'p-contact' }));
+  const contact = env.window.digi2.popups.create('contact', {
+    popupSelector: '.p-contact', animation: 'none', cookieName: null,
+  });
+  contact.show({ auto: true });
+  assert.equal(contact.isVisible, true);
+});
+
 test('a popup the visitor asks for still opens over the lightbox', () => {
   const t = pageEnv();
   openGallery(t);

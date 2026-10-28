@@ -5,6 +5,19 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.8.2 — 2026-10-28 (tag z gałęzi release/v1.8.2, na bazie v1.8.1)
+
+### `d2-popups`
+
+- **Automatyczne popupy znów się otwierają na stronach bez `d2-lightbox`.** W
+  v1.8.1 popup z `openAfterDelay` (i każdy inny automatyczny: exit intent,
+  scroll, bezczynność, krok sekwencji) na stronie bez lightboxa nigdy nie
+  wchodził (osiedlebo.pl). Pytanie „czy lightbox jest otwarty” trafiało w
+  zaślepkę loadera, która zamiast odpowiedzi zwraca Promise; popup brał to za
+  otwartą galerię i czekał na `lightbox:close`, które nie przychodziło. Teraz
+  popupy najpierw pytają loader, czy moduł lightbox jest załadowany, i nie
+  dociągają go przy okazji. Strony z `d2-lightbox` działają jak w v1.8.1.
+
 ## v1.8.1 — 2026-10-23 (tag z gałęzi release/v1.8.1, na bazie v1.8.0)
 
 ### `d2-popups` + `d2-lightbox`

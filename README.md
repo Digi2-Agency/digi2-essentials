@@ -689,6 +689,13 @@ park and come ~0.6 s after `lightbox:close`, and a sequence step waits the same
 way. A popup the visitor asks for (a button inside the gallery, `d2-show-popup`)
 still opens over the gallery.
 
+"Is the lightbox open" is asked of the loader first: until the `lightbox` module
+is loaded (`digi2._loaded.lightbox`), `digi2.lightbox` is the loader's proxy,
+whose `isOpen()` would fetch the module and return a Promise — truthy, so on a
+page without `d2-lightbox` every automatic popup used to park for a
+`lightbox:close` that never comes (v1.8.1, fixed in v1.8.2). Only `isOpen() ===
+true` counts as open; the check never pulls the lightbox module in.
+
 **The page scroll lock always comes back off.** The lock is shared by every
 popup and the lightbox (`digi2.scrollLock`, below) and released when the last
 holder closes — but the release used

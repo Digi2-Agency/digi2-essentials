@@ -2136,10 +2136,17 @@
   // An open lightbox is a modal on screen as much as a popup is. Automatic
   // popups wait for it (see show()); a popup the visitor asked for may still
   // open over it.
+  //
+  // Until the lightbox module is in, digi2.lightbox is the loader's proxy:
+  // every method pulls the module in and returns a Promise, which is truthy,
+  // so a page without d2-lightbox had its auto popups parked for good. Ask the
+  // loader first (no loader: go by the shape), and never take a Promise for yes.
   function _lightboxOpen() {
-    var lb = window.digi2 && window.digi2.lightbox;
-    if (!lb || typeof lb.isOpen !== 'function') return false;
-    try { return !!lb.isOpen(); } catch (e) { return false; }
+    var d2 = window.digi2;
+    var lb = d2 && d2.lightbox;
+    if (!lb || (d2._loaded && !d2._loaded.lightbox)) return false;
+    if (typeof lb.isOpen !== 'function') return false;
+    try { return lb.isOpen() === true; } catch (e) { return false; }
   }
 
   // Any popup currently on screen other than `self`. "On screen" covers the
