@@ -4,6 +4,10 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
+// Testy liczą godziny jak przeglądarka w Polsce (12:10 = 10:10 UTC w październiku) —
+// niezależnie od strefy maszyny (CI w UTC, Windows).
+process.env.TZ = 'Europe/Warsaw';
+
 const modulePath = path.join(__dirname, '..', 'webflow-scripts', 'modules', 'ma.js');
 const kodModulu = fs.readFileSync(modulePath, 'utf8');
 
@@ -101,7 +105,10 @@ function element(attrs, tagName) {
  *   dotyk     matchMedia('(hover: none)') = true
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
- *   dymek     { open } - pełnoekranowy dymek mapy 2destate na telefonie
+ *   dymek     { open, zostawiaKlase } - pełnoekranowy dymek mapy 2destate na telefonie;
+ *             zostawiaKlase: jak Image Map Pro, klasa is-fullscreen zostaje na zamkniętym (display:none)
+ *   zajety    { on } - inny popup na ekranie: automatyczny show() nie wchodzi (env.zablokowane)
+ *   idb       atrapa window.indexedDB zamiast magazynu testowego (prawdziwy idbStore)
  *   popupsProxy  moduł popupów jeszcze się ładuje: digi2.popups to proxy loadera
  *             (każda właściwość = funkcja zwracająca Promise), _loaded.popups = false;
  *             env.proxyWolania zlicza wywołania, env.zaladujPopups() podstawia moduł
@@ -113,7 +120,9 @@ function strona(opts) {
   let idTimera = 0;
   const dataLayer = o.dataLayer || [];
   const popupy = [];
+  const zablokowane = [];
   const webhooki = [];
+  const sygnaly = [];
   const ostrzezenia = [];
   const zdarzenia = {};
   const sluchacze = {};
@@ -121,6 +130,10 @@ function strona(opts) {
   const filtry = [];
   const sortowania = [];
   const ustawioneFiltry = [];
+  // Stan wyszukiwarki jak w core 1.7.0 (mergeFilters): scalanie, null zdejmuje pole,
+  // pole dotknięte przez gościa (touched) zostaje; bez panelu wyszukiwarki — nic nie wchodzi.
+  const POLA_FILTRA = ['rooms', 'floor', 'areaMin', 'areaMax', 'priceMin', 'priceMax', 'status', 'building'];
+  const stanFiltrow = { filters: {}, touched: new Set(o.dotkniete || []) };
   const zmianyPietra = [];
   const klatki = [];
   const naMape = [];
@@ -141,8 +154,14 @@ function strona(opts) {
     create(n, opcje) {
       const inst = {
         name: n, opcje, popupElement: document.querySelector(opcje.popupSelector) || element(),
-        show(x) { popupy.push({ name: n, auto: x && x.auto }); },
-        hide() {},
+        // Jak popups.js: automatyczny przy innym popupie na ekranie nie wchodzi
+        // (z park: false też nie czeka); park zapisany, by test widział, o co prosił moduł.
+        show(x) {
+          if (o.zajety && o.zajety.on && x && x.auto) { zablokowane.push({ name: n, park: x.park }); if (x.park !== false) this.pendingShow = true; return; }
+          popupy.push({ name: n, auto: x && x.auto });
+          this.isVisible = true;
+        },
+        hide() { this.isVisible = false; },
       };
       this._rejestr[n] = inst;
       return inst;
@@ -158,7 +177,6 @@ function strona(opts) {
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
-      if (sel === '.imp-tooltips-container.is-fullscreen') return o.dymek && o.dymek.open ? element() : null;
       const s = o.szablon;
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       // Element zbudowany przez moduł i dołożony do body (popup z szablonu).
@@ -167,6 +185,15 @@ function strona(opts) {
     },
     querySelectorAll(sel) {
       if (sel === '*') return elementy.slice();
+      // Image Map Pro: klasa is-fullscreen zostaje po zamknięciu dymka (zostawiaKlase),
+      // zamknięty kontener ma display:none.
+      if (sel === '.imp-tooltips-container.is-fullscreen') {
+        if (!o.dymek || (!o.dymek.open && !o.dymek.zostawiaKlase)) return [];
+        const k = element({ class: 'imp-tooltips-container is-fullscreen' });
+        k.style.display = o.dymek.open ? 'block' : 'none';
+        k.getClientRects = () => (o.dymek.open ? [{ width: 390, height: 844 }] : []);
+        return [k];
+      }
       return elementy.filter((el) => Object.keys(el.attributes).some((a) => {
         const v = el.attributes[a];
         return sel.indexOf('[' + a + ']') >= 0 || sel.indexOf('[' + a + '="' + v + '"]') >= 0;
@@ -201,10 +228,11 @@ function strona(opts) {
       modules: { require: () => Promise.resolve(), check: () => false },
       _loaded: { popups: !o.popupsProxy },
       popups: o.popupsProxy ? popupsProxy : popupsApi,
-      _maStore: magazyn(o.dysk || {}),
-      _maEndpoint: 'koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null,
+      _maStore: o.idb ? undefined : magazyn(o.dysk || {}),
+      _maEndpoint: o.endpoint || ('koperta' in o ? 'https://digi2.app/api/ma/scenario/demo.json' : null),
     },
   };
+  if (o.idb) window.indexedDB = o.idb;
   if (o.googleTag) window.google_tag_data = o.googleTag;
   if (o.imp) window.ImageMapPro = o.imp;
   if (o.dotyk) window.matchMedia = (q) => ({ matches: q === '(hover: none)' });
@@ -216,8 +244,23 @@ function strona(opts) {
       ...(o.wyszukiwarka === false ? {} : {
         onFilterChange(f) { filtry.push(f); },
         onSortChange(f) { sortowania.push(f); },
-        setFilters(m, f, opt) { ustawioneFiltry.push([m, JSON.parse(JSON.stringify(f)), opt]); return true; },
-        getFilters() { return {}; },
+        setFilters(m, f, opt) {
+          ustawioneFiltry.push([m, JSON.parse(JSON.stringify(f)), opt]);
+          const keys = Object.keys(f || {}).filter((k) => POLA_FILTRA.includes(k));
+          if (o.bezPanelu) return { applied: [], skipped: keys };
+          const applied = [];
+          const skipped = [];
+          for (const k of keys) {
+            if (stanFiltrow.touched.has(k)) { skipped.push(k); continue; }
+            const v = f[k] === undefined ? null : f[k];
+            const przed = stanFiltrow.filters[k] === undefined ? null : stanFiltrow.filters[k];
+            if (JSON.stringify(przed) === JSON.stringify(v)) continue;
+            if (v === null) delete stanFiltrow.filters[k]; else stanFiltrow.filters[k] = v;
+            applied.push(k);
+          }
+          return { applied, skipped };
+        },
+        getFilters() { return { filters: JSON.parse(JSON.stringify(stanFiltrow.filters)), touched: [...stanFiltrow.touched] }; },
       }),
       onMapLoad(f) { naMape.push(f); },
       onFloorChange(f) { zmianyPietra.push(f); },
@@ -225,10 +268,17 @@ function strona(opts) {
     };
   }
 
+  const pobrania = [];
   function fetch(url, init) {
+    pobrania.push(String(url));
     if (url === 'https://digi2.app/api/ma/scenario/demo.json') {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
+    }
+    if (url.indexOf('/public/ma/') >= 0) {
+      sygnaly.push({ url, body: JSON.parse(init.body), init });
+      const st = (o.statusSygnalu && o.statusSygnalu(url)) || (url.indexOf('/revoke') >= 0 ? 204 : 202);
+      return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
     }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
       webhooki.push({ url, body: JSON.parse(init.body) });
@@ -261,8 +311,9 @@ function strona(opts) {
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
-    window, zegar, dataLayer, popupy, webhooki, ostrzezenia, zdarzenia, ma: window.digi2.ma,
+    window, zegar, dataLayer, popupy, zablokowane, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     proxyWolania,
+    pobrania,
     /** Moduł popupów dociągnął się po d2-ma: loader podstawia prawdziwy obiekt i oznacza _loaded. */
     zaladujPopups() { window.digi2.popups = popupsApi; window.digi2._loaded.popups = true; },
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
@@ -287,7 +338,12 @@ function strona(opts) {
     mapaGotowa() { naMape.forEach((f) => f()); },
     klik(produkt, meta) { klikProduktu.forEach((f) => f(produkt, Object.assign({ mapName: 'mapa' }, meta || {}))); },
     /** Zmiana filtra w wyszukiwarce (core 1.7.0). */
-    filtr(filters, extra) { filtry.forEach((f) => f(Object.assign({ mapName: 'mapa', filters, resultCount: 7, resultIds: null, source: 'user' }, extra || {}))); },
+    filtr(filters, extra) {
+      const p = Object.assign({ mapName: 'mapa', filters, resultCount: 7, resultIds: null, source: 'user' }, extra || {});
+      if (p.source === 'user') Object.keys(filters || {}).forEach((k) => { stanFiltrow.touched.add(k); stanFiltrow.filters[k] = filters[k]; });
+      filtry.forEach((f) => f(p));
+    },
+    stanFiltrow,
     sortuj(by, dir, extra) { sortowania.forEach((f) => f(Object.assign({ mapName: 'mapa', sort: { by, dir }, source: 'user' }, extra || {}))); },
     ustawioneFiltry,
     /** Jedna klatka animacji: odpala to, co czekało na requestAnimationFrame. */
@@ -950,6 +1006,45 @@ test('konflikt: dwa popupy w tej samej chwili — wygrywa wcześniejszy scenariu
   assert.deepEqual(p2.segmenty().map((e) => e.segment), ['powrot-do-lokalu', 'drugi'], 'datalayer bez konfliktu, w kolejności scenariuszy');
   const p3 = await powrot(p2, 2 * H);
   assert.deepEqual(p3.popupy.map((p) => p.name), ['d2-ma-inny']);
+});
+
+test('ma.27: jedno kliknięcie, które otwiera wizytę (return_visit) i liczy się do preferencji — jeden popup, drugi czeka do następnej wizyty', async () => {
+  // Przebieg z demo: A_1, A_2 (2 pokoje), przerwa > 30 min na tej samej stronie, A_3.
+  // handle() robił dwa dispatche z osobnym strażnikiem - last-unit i promo-rooms naraz.
+  const env = await start({ koperta: koperta([POWROT, POKOJE]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.minie(2 * H);
+  env.dataLayer.push(unitOpen('A_3'));
+  await env.gotowe();
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-last-unit']);
+  assert.equal((env.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup').length, 1, 'ma:action tylko dla pokazanego');
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['powrot-do-lokalu', '2-pokoje'], 'datalayer bez konfliktu');
+  await env.minie(10 * MIN);
+  assert.equal(env.popupy.length, 1, 'w tej wizycie nic więcej');
+  // Następna wizyta: powrót do A_3 (nowy lokal, once_per_unit) znów ma pierwszeństwo,
+  // odłożony promo-rooms czeka dalej - też tylko jeden popup.
+  const p2 = await powrot(env, 2 * H);
+  assert.deepEqual(p2.popupy.map((p) => p.name), ['d2-ma-last-unit']);
+  const p3 = await powrot(p2, 2 * H);
+  assert.deepEqual(p3.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'odłożony popup, gdy nic go nie wyprzedza');
+});
+
+test('ma.27: inny popup na ekranie — popup ze scenariusza nie parkuje się, jest pominięty (bez ma:action), częstotliwość wraca', async () => {
+  const zajety = { on: true };
+  const p1 = await start({ koperta: koperta([POKOJE]), zajety });
+  for (const id of ['A_1', 'A_2', 'A_3']) { p1.dataLayer.push(unitOpen(id)); await p1.minie(6000); }
+  assert.deepEqual(p1.zablokowane, [{ name: 'd2-ma-promo-rooms', park: false }], 'show z park: false');
+  assert.equal(p1.popupy.length, 0);
+  assert.ok(!p1.window.digi2.popups.get('d2-ma-promo-rooms').pendingShow, 'nic nie czeka na zamknięcie tamtego');
+  assert.equal((p1.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup').length, 0);
+  assert.ok(!p1._dysk.state.scenarios['preferencja-2'].freq.a2, 'częstotliwość oddana');
+  zajety.on = false;
+  p1.dataLayer.push(unitOpen('A_4'));
+  await p1.gotowe();
+  assert.deepEqual(p1.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'ekran wolny - następne obejrzenie pokazuje');
+  assert.equal(p1.zdarzenia['ma:action'].filter((a) => a.do === 'popup').length, 1);
 });
 
 test('popup nie promuje sprzedanego lokalu (świeży status z mapy)', async () => {
@@ -2312,6 +2407,37 @@ test('#5: popup ze scenariusza czeka, aż gość zamknie pełnoekranowy dymek ma
   assert.equal(e3.popupy.length, 1, 'bez dymku od razu, jak dotąd');
 });
 
+test('ma.27: telefon — Image Map Pro zostawia is-fullscreen po zamknięciu dymka; ukryty kontener nie wstrzymuje popupu', async () => {
+  const dymek = { open: false, zostawiaKlase: true };
+  const env = await start({ koperta: koperta([POKOJE]), dymek });
+  for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+  assert.equal(env.popupy.length, 0, 'pół sekundy na otwarcie się dymka');
+  for (let i = 0; i < 3; i++) await env.minie(250);
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'klasa bez widocznego dymka - nie czeka 5 min');
+
+  // Stuknięcie otwiera dymek chwilę po decyzji o popupie: ukryty kontener w chwili
+  // decyzji nie może przepuścić popupu na dymek klikniętego lokalu.
+  const d3 = { open: false, zostawiaKlase: true };
+  const e3 = await start({ koperta: koperta([POKOJE]), dymek: d3 });
+  for (const id of ['C_1', 'C_2']) { e3.dataLayer.push(unitOpen(id)); await e3.minie(6000); }
+  e3.dataLayer.push(unitOpen('C_3'));
+  await e3.gotowe();
+  d3.open = true;
+  for (let i = 0; i < 4; i++) await e3.minie(250);
+  assert.equal(e3.popupy.length, 0, 'dymek otworzył się po decyzji - popup czeka');
+  d3.open = false;
+  await e3.minie(250);
+  assert.deepEqual(e3.popupy.map((p) => p.name), ['d2-ma-promo-rooms']);
+
+  const d2 = { open: true, zostawiaKlase: true };
+  const e2 = await start({ koperta: koperta([POKOJE]), dymek: d2 });
+  for (const id of ['B_1', 'B_2', 'B_3']) { e2.dataLayer.push(unitOpen(id)); await e2.minie(6000); }
+  assert.equal(e2.popupy.length, 0, 'dymek widoczny - czeka');
+  d2.open = false;
+  for (let i = 0; i < 3; i++) await e2.minie(250);
+  assert.deepEqual(e2.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'zamknięty (klasa została) - pokazuje');
+});
+
 test('#5: zgoda wycofana w czasie czekania na dymek — popup się nie pokazuje', async () => {
   const dymek = { open: true };
   const env = await start({ koperta: koperta([POKOJE], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, dymek });
@@ -2751,6 +2877,66 @@ test('popup promo-filter: search_filter rooms=2 przy pustej historii → wbudowa
   assert.equal(env.ostrzezenia.filter((w) => w.includes('popup failed')).length, 0);
 });
 
+// Mini-DOM nie parsuje innerHTML: wbudowany popup dostaje dzieci z atrybutami, które moduł potem szuka.
+function zParsowaniemPopupu(env) {
+  const doc = env.window.document;
+  const stary = doc.createElement;
+  doc.createElement = (tag) => {
+    const el = stary(tag);
+    let html = '';
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return html; },
+      set(v) {
+        html = String(v);
+        ['d2-ma-heading', 'd2-ma-unitless-text', 'd2-ma-cta'].forEach((a) => {
+          if (html.indexOf(a) >= 0) el.appendChild(element({ [a]: '' }));
+        });
+      },
+    });
+    return el;
+  };
+}
+
+test('ma.29: promo-filter „Szukasz mieszkania N-pokojowego?” dla 1, 2, 5, 12; filtr [2, 3] bierze pierwszą liczbę', async () => {
+  const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const tekst = (env) => {
+    const el = potomkowie(env.window.document.body).find((x) => x.getAttribute && x.getAttribute('d2-ma-unitless-text') !== null);
+    return el ? el.textContent : null;
+  };
+  for (const [pokoje, oczekiwany] of [[[1], '1-pokojowego'], [[2], '2-pokojowego'], [[5], '5-pokojowego'], [[12], '12-pokojowego'], [[2, 3], '2-pokojowego']]) {
+    const env = await start({ koperta: k });
+    zParsowaniemPopupu(env);
+    env.filtr({ rooms: pokoje });
+    await env.minie(600);
+    assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter'], String(pokoje));
+    assert.equal(tekst(env), 'Szukasz mieszkania ' + oczekiwany + '? Pokażemy wolne lokale i aktualne promocje.');
+  }
+  const zero = await start({ koperta: k });
+  zero.filtr({ rooms: [0] });
+  await zero.minie(600);
+  assert.equal(zero.popupy.length, 0, '0 pokoi to nie liczba do zdania — popup pominięty');
+});
+
+test('ma.29: szablon koperty bez {{unit.*}} znika (d2-ma-refresh) między decyzją a renderem — popup pominięty, bez TypeError', async () => {
+  const promo = { templateId: 'promo-bez-lokalu', version: 1, blocks: [{ type: 'title', text: 'Mamy coś dla Ciebie' }, { type: 'cta', label: 'Porozmawiajmy', action: 'contact' }] };
+  const sc = [scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-bez-lokalu', cta: 'contact', frequency: 'once_per_days:0' }])];
+  const k = koperta(sc, { minScript: 'ma.17', templates: { popup: [promo] } });
+  const env = await start({ koperta: k });
+  // Nowa rewizja koperty bez szablonu przychodzi, gdy moduł popupów już szuka instancji.
+  const popups = env.window.digi2.popups;
+  const get = popups.get;
+  popups.get = function (n) {
+    popups.get = get;
+    env.ma.load(koperta(sc, { minScript: 'ma.17' }));
+    return get.call(this, n);
+  };
+  env.filtr({ rooms: [2] });
+  await env.minie(600);
+  await env.gotowe();
+  assert.equal(env.popupy.length, 0, 'bez szablonu i bez tekstu wbudowanego nie ma czego pokazać');
+  assert.equal(env.ostrzezenia.filter((w) => /TypeError|popup failed/.test(w)).length, 0, env.ostrzezenia.join('\n'));
+});
+
 test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na wizytę; gość, który już filtrował — bez zmian', async () => {
   const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
   const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
@@ -2933,7 +3119,7 @@ test('ma.18 (#23 recenzja): seria zmian filtra w 500 ms = jedno trafienie search
   }
 
   await env.ma.clear();
-  assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', {}, { source: 'api' }], 'Wyczyść');
+  assert.deepEqual(czyste(env.ustawioneFiltry.pop()), ['mapa', { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null }, { source: 'api' }], 'Wyczyść (ma.26: jawne null)');
 });
 
 
@@ -2971,6 +3157,15 @@ test('ma.19: item_list_sort — price_asc jest; custom (nasz setProductOrder) ni
   env.sortuj('custom', 'asc', { source: 'user' });
   await env.minie(600);
   assert.equal(dlZdarzenia(env, 'view_item_list').pop().item_list_sort, undefined, 'lista ułożona custom (nasz setProductOrder) — bez item_list_sort');
+});
+
+test('ma.28: digi2.ma.version = „ma.N” z najwyższego wpisu CHANGELOG — wersję widać w konsoli strony', async () => {
+  const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const top = /^## v\d+\.\d+\.\d+-(ma\.\d+)/m.exec(log)[1];
+  const env = await start({ koperta: koperta([]) });
+  assert.equal(env.ma.version, top);
+  const bez = await start({});
+  assert.equal(bez.ma.version, top, 'także bez koperty i przed zgodą');
 });
 
 test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG', () => {
@@ -3060,4 +3255,406 @@ test('ma.21: zdarzenia GA4 wyszukiwarki mają każdy klucz kontraktu — brak wa
   await seg.gotowe();
   const e = seg.dataLayer.find((x) => x && x.event === 'ma_segment');
   assert.deepEqual(Object.keys(e).sort(), ['event', 'ma_scenario', 'segment']);
+});
+
+// ---------------------------------------------------------------------------
+// ma.12: gorący lead wraca — MA-D38 etap 1, wariant D′ (visitorId, 2destate)
+// ---------------------------------------------------------------------------
+
+const UID = (n) => 'aaaaaaaa-bbbb-4ccc-8ddd-' + String(n).padStart(12, '0');
+const HOT = { 'd2-ma-hot-lead': '' };
+const VISIT = 'https://api.2destate.com/api/v1/public/ma/visit';
+const REVOKE = 'https://api.2destate.com/api/v1/public/ma/revoke';
+
+/** Formularz dema z ukrytym polem [d2-ma-visitor-id]. */
+function formularzDema() {
+  const form = element({ id: 'demo' }, 'FORM');
+  const ukryte = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  ukryte.value = 'stare';
+  form.appendChild(ukryte);
+  return { form, ukryte };
+}
+
+/** Pierwsza wizyta: formularz z visitorId i lead (generate_lead). */
+async function leadDema(opts) {
+  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts || {}));
+  const { form, ukryte } = formularzDema();
+  env.dom('submit', { target: form });
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  env._ukryte = ukryte;
+  return env;
+}
+
+test('MA-D38 D′: ukryte pole i digi2.ma.visitorId() dostają visitorId tylko z d2-ma-hot-lead i po zgodzie', async () => {
+  const env = await leadDema();
+  assert.equal(env._ukryte.value, env.ma.profile().visitorId);
+  assert.equal(env.ma.visitorId(), env.ma.profile().visitorId);
+
+  const bezZgody = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT });
+  const a = formularzDema();
+  bezZgody.dom('submit', { target: a.form });
+  await bezZgody.gotowe();
+  assert.equal(a.ukryte.value, '', 'bez zgody pole puste');
+  assert.equal(bezZgody.ma.visitorId(), null);
+
+  const wylaczony = await start({ koperta: koperta([]) });
+  const b = formularzDema();
+  wylaczony.dom('submit', { target: b.form });
+  await wylaczony.gotowe();
+  assert.equal(b.ukryte.value, 'stare', 'bez d2-ma-hot-lead pole nietknięte');
+  assert.equal(wylaczony.ma.visitorId(), null);
+});
+
+test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic nie wychodzi (MA-D30)', async () => {
+  const samLead = await start({ koperta: koperta([]), cfg: HOT });
+  samLead.dataLayer.push({ event: 'generate_lead' });
+  await samLead.gotowe();
+  assert.equal((await powrot(samLead, 26 * H)).sygnaly.length, 0, 'lead bez visitorId');
+
+  const samoId = await start({ koperta: koperta([]), cfg: HOT });
+  samoId.ma.visitorId();
+  await samoId.gotowe();
+  const p2 = await powrot(samoId, 26 * H);
+  assert.equal(p2.sygnaly.length, 0, 'visitorId bez leada');
+  p2.dataLayer.push({ event: 'generate_lead' });
+  await p2.gotowe();
+  assert.equal((await powrot(p2, 26 * H)).sygnaly.length, 0, 'lead w innej wizycie niż oddanie id');
+
+  const wylaczony = await start({ koperta: koperta([]) });
+  wylaczony.ma.visitorId();
+  wylaczony.dataLayer.push({ event: 'generate_lead' });
+  await wylaczony.gotowe();
+  assert.equal((await powrot(wylaczony, 26 * H)).sygnaly.length, 0, 'bez d2-ma-hot-lead');
+});
+
+test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, pageviews, source}; przyrost co 5 min', async () => {
+  const p1 = await leadDema();
+  const id = p1.ma.profile().visitorId;
+  p1.ma.track({ unitId: UID(9), name: 'A9', source: '2destate' });
+  await p1.minie(6 * MIN);
+  assert.equal(p1.sygnaly.length, 0, 'wizyta formularza to nie powrót');
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly.length, 1);
+  assert.equal(p2.sygnaly[0].url, VISIT);
+  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [] }, 'ma.24: units zawsze, także []');
+  assert.equal(p2.sygnaly[0].init.credentials, 'omit');
+  p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
+  await p2.gotowe();
+  assert.equal(p2.sygnaly.length, 1, 'nowy lokal, ale nie minęło 5 min');
+  await p2.minie(5 * MIN + 100);
+  assert.equal(p2.sygnaly.length, 2);
+  assert.deepEqual([...p2.sygnaly[1].body.units], [UID(1)]);
+  p2.ma.track({ unitId: 'A_ze_spoza_2destate', name: 'X' });
+  await p2.minie(6 * MIN);
+  assert.equal(p2.sygnaly.length, 2, 'lokal bez UUID 2destate nie jest przyrostem');
+  const p3 = await powrot(p2, 3 * MIN);
+  assert.equal(p3.sygnaly.length, 0, 'kolejna odsłona tej samej wizyty bez nowych lokali');
+  const p4 = await powrot(p3, 26 * H, { cfg: { 'd2-ma-hot-lead': 'https://api.2destate.com/api/v1/' } });
+  assert.equal(p4.sygnaly[0].url, 'https://api.2destate.com/api/v1/public/ma/visit', 'baza z atrybutu, końcowy / zdjęty');
+});
+
+test('MA-D38 D′: 401 zrywa powiązanie; 403 wstrzymuje na dobę; 429/503 czeka Retry-After', async () => {
+  const a1 = await leadDema({ statusSygnalu: () => 401 });
+  const a2 = await powrot(a1, 26 * H);
+  assert.equal(a2.sygnaly.length, 1);
+  assert.ok(!a2._dysk.state.hotLead, '401 zrywa');
+  assert.equal((await powrot(a2, 26 * H)).sygnaly.length, 0);
+
+  const b1 = await leadDema({ statusSygnalu: () => 403 });
+  const b2 = await powrot(b1, 26 * H);
+  assert.ok(b2._dysk.state.hotLead, '403 nie zrywa');
+  const b3 = await powrot(b2, 2 * H);
+  assert.equal(b3.sygnaly.length, 0, 'w ciągu doby cisza');
+  assert.equal((await powrot(b3, 23 * H)).sygnaly.length, 1, 'po dobie znowu');
+
+  for (const st of [429, 503]) {
+    const q1 = await leadDema({ statusSygnalu: () => st, retryAfter: '7200' });
+    const q2 = await powrot(q1, 26 * H);
+    assert.equal(q2.sygnaly.length, 1);
+    assert.equal((await powrot(q2, H)).sygnaly.length, 0, st + ': w oknie Retry-After cisza');
+    assert.ok(q2._dysk.state.hotLead);
+  }
+});
+
+test('MA-D38 D′: „Wyczyść" i wycofanie zgody wysyłają /revoke {visitorId}, potem nowy profil', async () => {
+  const env = await leadDema();
+  const id = env.ma.profile().visitorId;
+  await env.ma.clear();
+  await env.gotowe();
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+  assert.notEqual(env.ma.profile().visitorId, id);
+  await env.ma.clear();
+  await env.gotowe();
+  assert.equal(env.sygnaly.length, 1, 'profil bez powiązania nie wysyła revoke');
+
+  const z = await leadDema({ koperta: koperta([], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' } });
+  const idZ = z.ma.profile().visitorId;
+  z.zgoda({ analytics_storage: 'denied' });
+  await z.gotowe();
+  assert.deepEqual(z.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: idZ }]]);
+  assert.equal(z.ma.profile(), null);
+});
+
+// ma.13: poprawki z recenzji #17
+
+test('MA-D38 D′ (ma.13): visitorId oddany bez leada — „Wyczyść" i tak wysyła /revoke (2destate wiąże po samym polu)', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  const { form } = formularzDema();
+  env.dom('submit', { target: form });
+  await env.gotowe();
+  const id = env.ma.profile().visitorId;
+  assert.ok(!env._dysk.state.hotLead, 'bez leada nie ma lokalnego powiązania');
+  await env.ma.clear();
+  await env.gotowe();
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+
+  const nic = await start({ koperta: koperta([]), cfg: HOT });
+  await nic.ma.clear();
+  await nic.gotowe();
+  assert.equal(nic.sygnaly.length, 0, 'id nigdy nie oddany — revoke nie idzie');
+});
+
+test('MA-D38 D′ (ma.13): zgoda wycofana między wizytami — przy starcie /revoke z visitorId z bazy, potem baza pusta', async () => {
+  const k = koperta([], { storage: { consentRequired: true } });
+  const p1 = await leadDema({ koperta: k, zgoda: { analytics_storage: 'granted' } });
+  const id = p1.ma.profile().visitorId;
+  const p2 = await powrot(p1, 26 * H, { zgoda: { analytics_storage: 'denied' } });
+  assert.deepEqual(p2.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+  assert.equal(p2._dysk.state, null, 'baza skasowana');
+  assert.equal(p2.ma.profile(), null);
+  const p3 = await powrot(p2, 26 * H, { zgoda: { analytics_storage: 'denied' } });
+  assert.equal(p3.sygnaly.length, 0, 'pusta baza — nic do odwołania');
+
+  const bezAtrybutu = await leadDema({ koperta: k, zgoda: { analytics_storage: 'granted' } });
+  const q = await powrot(bezAtrybutu, 26 * H, { zgoda: { analytics_storage: 'denied' }, cfg: {} });
+  assert.equal(q.sygnaly.length, 0, 'strona bez d2-ma-hot-lead nie wysyła revoke');
+  assert.equal(q._dysk.state, null);
+});
+
+test('MA-D38 D′ (ma.13): 404 wstrzymuje na dobę; 413 / 422 — koniec sygnałów w tej wizycie', async () => {
+  const a1 = await leadDema({ statusSygnalu: () => 404 });
+  const a2 = await powrot(a1, 26 * H);
+  assert.equal(a2.sygnaly.length, 1);
+  assert.ok(a2.ostrzezenia.some((w) => w.includes('404')));
+  const a3 = await powrot(a2, 2 * H);
+  assert.equal(a3.sygnaly.length, 0, 'w ciągu doby cisza');
+  assert.equal((await powrot(a3, 23 * H)).sygnaly.length, 1, 'po dobie znowu');
+
+  for (const st of [413, 422]) {
+    const b1 = await leadDema({ statusSygnalu: () => st });
+    const b2 = await powrot(b1, 26 * H);
+    assert.equal(b2.sygnaly.length, 1);
+    b2.ma.track({ unitId: UID(2), name: 'A2', source: '2destate' });
+    await b2.minie(6 * MIN);
+    assert.equal(b2.sygnaly.length, 1, st + ': przyrost w tej wizycie nie idzie');
+    assert.ok(b2._dysk.state.hotLead, st + ': powiązanie zostaje');
+    assert.equal((await powrot(b2, 26 * H)).sygnaly.length, 1, st + ': następna wizyta znowu');
+  }
+});
+
+test('ma.23: d2-ma-hot-lead spoza listy (http, inny host, staging, port, login) — ostrzeżenie i zero żądań /visit i /revoke', async () => {
+  for (const zly of ['http://localhost:8000/api/v1', 'https://staging.2destate.example/api/v1', 'https://api.dev.2destate.com/api/v1',
+    'https://api.2destate.com:8443/api/v1', 'https://x@api.2destate.com/api/v1', 'https://api.2destate.com.evil.example/api/v1']) {
+    const p1 = await leadDema({ cfg: { 'd2-ma-hot-lead': zly } });
+    const p2 = await powrot(p1, 26 * H);
+    assert.equal(p2.sygnaly.length, 0, zly);
+    assert.ok(p2.ostrzezenia.some((w) => w.includes('is not https://api.2destate.com')), zly);
+    await p2.ma.clear();
+    assert.equal(p2.sygnaly.length, 0, 'bez revoke: ' + zly);
+  }
+  const p1 = await leadDema();
+  const pusty = await powrot(p1, 26 * H, { cfg: HOT });
+  assert.equal(pusty.sygnaly[0].url, VISIT, 'puste = produkcja');
+  assert.ok(!pusty.ostrzezenia.some((w) => w.includes('is not https://api.2destate.com')), 'puste — bez ostrzeżenia');
+});
+
+// ma.15: wipe() przy starcie nie zakłada bazy d2ma, której nie ma (IndexedDB)
+
+/** Atrapa window.indexedDB: open / onupgradeneeded / abort, sam rekord state, deleteDatabase. */
+function atrapaIdb(bazy) {
+  const log = { utworzone: 0, usuniete: 0 };
+  const pozniej = (f) => setImmediate(f);
+  return {
+    log, bazy,
+    open(nazwa) {
+      const req = {};
+      pozniej(() => {
+        let przerwane = false;
+        req.result = {
+          objectStoreNames: { contains: (n) => n === 'state' },
+          close() {},
+          transaction() {
+            return { objectStore: () => ({ get() {
+              const r = {};
+              pozniej(() => { r.result = (bazy[nazwa] || {}).state || undefined; if (r.onsuccess) r.onsuccess(); });
+              return r;
+            } }) };
+          },
+        };
+        if (!Object.prototype.hasOwnProperty.call(bazy, nazwa)) {
+          req.transaction = { abort() { przerwane = true; } };
+          if (req.onupgradeneeded) req.onupgradeneeded();
+          if (przerwane) { req.error = new Error('AbortError'); if (req.onerror) req.onerror(); return; }
+          bazy[nazwa] = {};
+          log.utworzone++;
+        }
+        if (req.onsuccess) req.onsuccess();
+      });
+      return req;
+    },
+    deleteDatabase(nazwa) {
+      const req = {};
+      pozniej(() => { delete bazy[nazwa]; log.usuniete++; if (req.onsuccess) req.onsuccess(); });
+      return req;
+    },
+  };
+}
+
+test('MA-D38 D′ (ma.15): brak zgody przy starcie, przeglądarka bez bazy d2ma — baza nie powstaje, revoke nie idzie', async () => {
+  const idb = atrapaIdb({});
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT, idb });
+  assert.equal(idb.log.utworzone, 0, 'peekState nie zakłada bazy');
+  assert.ok(!('d2ma' in idb.bazy));
+  assert.equal(env.sygnaly.length, 0);
+});
+
+test('MA-D38 D′ (ma.15): brak zgody przy starcie, baza z oddanym visitorId — /revoke z rekordu state, baza usunięta', async () => {
+  const idb = atrapaIdb({ d2ma: { state: { key: 'main', visitorId: UID(7), idShared: 1, visits: 1 } } });
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), cfg: HOT, idb });
+  assert.deepEqual(env.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: UID(7) }]]);
+  assert.ok(!('d2ma' in idb.bazy), 'baza usunięta');
+  assert.equal(idb.log.utworzone, 0);
+});
+
+test('ma.22: gorący lead razem z kontekstem leadu — formularz dostaje visitorId, d2ma_context i d2ma_consent; bez zgody visitorId puste i brak znacznika', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = element({}, 'FORM');
+  const id = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  form.appendChild(id);
+  env.dom('submit', { target: form });
+  assert.equal(id.value, env.ma.profile().visitorId);
+  assert.ok(form.querySelector('[name="d2ma_context"]').value.startsWith('1 wizyta'));
+  assert.equal(form.querySelector('[name="d2ma_consent"]').value, '1');
+
+  const bez = await start({ koperta: koperta([], { storage: { retentionDays: 90, consentRequired: true } }), cfg: HOT });
+  const f2 = element({}, 'FORM');
+  const id2 = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  id2.value = 'stare';
+  f2.appendChild(id2);
+  bez.dom('submit', { target: f2 });
+  assert.equal(id2.value, '');
+  assert.equal(f2.querySelector('[name="d2ma_consent"]'), null);
+  assert.equal(f2.querySelector('[name="d2ma_context"]').value, 'brak kontekstu (brak zgody)');
+});
+
+
+test('ma.23: koperta tylko z digi2.app i api.2destate.com po https — inny adres bez fetch, z ostrzeżeniem; także digi2.ma.load()', async () => {
+  for (const [url, ok] of [
+    ['https://digi2.app/api/ma/scenario/demo.json', true],
+    ['https://api.2destate.com/api/v1/public/ma/scenario/demo.json', true],
+    ['http://digi2.app/api/ma/scenario/demo.json', false],
+    ['https://evil.example/koperta.json', false],
+    ['https://digi2.app.evil.example/x.json', false],
+    ['https://user@digi2.app/x.json', false],
+    ['https://digi2.app:444/x.json', false],
+    ['/ma-koperta.json', false],
+  ]) {
+    const env = await start({ koperta: koperta([]) });
+    env.pobrania.length = 0;
+    await env.ma.load(url);
+    await env.gotowe();
+    assert.equal(env.pobrania.includes(url), ok, url);
+    assert.equal(env.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')), !ok, 'warn: ' + url);
+  }
+  // Atrybut loadera (start strony): adres spoza listy — zero fetch koperty, strona działa bez MA.
+  const zla = strona({ koperta: koperta([]) });
+  await zla.gotowe();
+  assert.ok(zla.pobrania.includes('https://digi2.app/api/ma/scenario/demo.json'), 'kontrola: adres z listy pobrany przy starcie');
+  const obca = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
+  await obca.gotowe();
+  assert.equal(obca.pobrania.length, 0);
+  assert.ok(obca.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')));
+});
+
+
+test('ma.24: visitorId wpisywany także przy kliku w przycisk wysyłki (jak kontekst leadu); type=button nie', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  const form = element({}, 'FORM');
+  const id = element({ type: 'hidden', name: 'd2ma_visitor_id', 'd2-ma-visitor-id': '' }, 'INPUT');
+  const btn = element({ type: 'submit' }, 'BUTTON');
+  form.appendChild(id); form.appendChild(btn); btn.parent = form; id.parent = form;
+  env.dom('click', { target: btn });
+  assert.equal(id.value, env.ma.profile().visitorId);
+  const f2 = element({}, 'FORM');
+  const id2 = element({ type: 'hidden', 'd2-ma-visitor-id': '' }, 'INPUT');
+  const b2 = element({ type: 'button' }, 'BUTTON');
+  f2.appendChild(id2); f2.appendChild(b2); b2.parent = f2;
+  id2.value = 'x';
+  env.dom('click', { target: b2 });
+  assert.equal(id2.value, 'x', 'przycisk type=button nie wysyła');
+});
+
+test('ma.25: lista hostów koperty — wielkie litery, kropka na końcu, host w ścieżce lub loginie; envelopeUrl zapisywany dopiero po kontroli', async () => {
+  for (const [url, ok] of [
+    ['https://DIGI2.APP/api/ma/scenario/demo.json', true],
+    ['HTTPS://Api.2destate.com/api/v1/public/ma/scenario/demo.json', true],
+    ['https://digi2.app./api/ma/scenario/demo.json', false],
+    ['https://evil.com/digi2.app', false],
+    ['https://evil.com@digi2.app/x.json', false],
+    ['https://digi2.app@evil.com/x.json', false],
+    ['https://evil.com\\@digi2.app/x.json', false],
+    ['https://digi2.app%2eevil.com/x.json', false],
+  ]) {
+    const env = await start({ koperta: koperta([]) });
+    env.pobrania.length = 0;
+    await env.ma.load(url);
+    assert.equal(env.pobrania.includes(url), ok, url);
+  }
+  // Zły adres w load() nie podmienia dobrego: reload() wraca do adresu ze startu.
+  const env = await start({ koperta: koperta([]) });
+  await env.ma.load('https://evil.example/k.json');
+  env.pobrania.length = 0;
+  await env.ma.reload();
+  assert.deepEqual(env.pobrania, ['https://digi2.app/api/ma/scenario/demo.json']);
+  // Zły adres na starcie: reload() (i d2-ma-refresh) nic nie pobiera ani nie ostrzega drugi raz.
+  const zla = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
+  await zla.gotowe();
+  const ile = zla.ostrzezenia.length;
+  assert.equal(await zla.ma.reload(), false);
+  assert.equal(zla.pobrania.length, 0);
+  assert.equal(zla.ostrzezenia.length, ile);
+});
+
+
+test('ma.26: Wyczyść zdejmuje filtr z prefer_filters (jawne null — core scala); pole dotknięte przez gościa zostaje', async () => {
+  const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'both' }])], { minScript: 'ma.17' });
+  const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
+  p1.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: 2 }));
+  await p1.gotowe();
+  const p2 = await powrot(p1, 2 * H);
+  assert.deepEqual(czyste(p2.stanFiltrow.filters), { rooms: [3], floor: [2] }, 'prefer_filters weszło');
+  p2.filtr({ priceMax: 700000 });
+  await p2.minie(600);
+  await p2.ma.clear();
+  assert.deepEqual(czyste(p2.stanFiltrow.filters), { priceMax: 700000 }, 'nasze pola zdjęte, pole gościa zostaje');
+});
+
+test('ma.26: prefer_filters, gdy core nic nie przyjął (pole dotknięte, brak panelu) — nie zużywa częstotliwości, próbuje przy następnej wizycie', async () => {
+  const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
+  for (const opt of [{ dotkniete: ['rooms'] }, { bezPanelu: true }]) {
+    const p1 = await start(Object.assign({ koperta: k, imp: { instances: { mapa: {} } } }, opt));
+    p1.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+    await p1.gotowe();
+    const p2 = await powrot(p1, 2 * H);
+    assert.equal(p2.ustawioneFiltry.length, 1, JSON.stringify(opt));
+    assert.equal((p2.zdarzenia['ma:action'] || []).filter((a) => a.do === 'prefer_filters').length, 0, 'bez ma:action, gdy nic nie weszło');
+    const p3 = await powrot(p2, 2 * H, { dotkniete: [], bezPanelu: false });
+    assert.equal(p3.ustawioneFiltry.length, 1, 'następna wizyta próbuje znowu');
+    assert.deepEqual(czyste(p3.stanFiltrow.filters), { rooms: [3] });
+  }
 });
