@@ -1135,7 +1135,7 @@ digi2.popups.<span class="fn">show</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>)            <span class="comment">// sets cookie</span>
 digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>, <span class="keyword">false</span>)     <span class="comment">// no cookie</span>
 digi2.popups.<span class="fn">get</span>(<span class="string">'name'</span>)
-digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)
+digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)         <span class="comment">// an open popup is hidden, its scroll lock released</span>
 digi2.popups.<span class="fn">list</span>()</code></pre>
 
     <h3>Requiring a few pages first</h3>
@@ -1153,8 +1153,25 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td><strong>The page</strong> — <code>openAfterDelay</code>, exit intent, scroll, idle, page views, a <a href="#popups-sequences">sequence</a> step</td><td><strong>Waits.</strong> It parks itself and opens ~0.6 s after the screen frees up. A promo never covers the form the visitor is filling in, and never closes it either</td></tr>
       <tr><td><strong>The visitor</strong> — <code>d2-show-popup</code>, <code>openTriggerSelector</code>, <code>digi2.popups.show()</code>, an intercepted link</td><td><strong>Wins.</strong> What is on screen closes first; this one opens once that close has finished, so the two never overlap even for a frame</td></tr>
     </table>
+    <p>An open <a href="#lightbox">lightbox</a> counts as a busy screen too — for automatic opens only. They park and come ~0.6 s after <code>lightbox:close</code>, and a sequence step waits the same way. A popup the visitor asks for (a button inside the gallery, <code>d2-show-popup</code>) still opens over it.</p>
+    <p class="muted">On a page without <code>d2-lightbox</code> nothing waits: popups ask the loader whether the lightbox module is loaded before asking it anything, so the check neither fetches the module nor mistakes the loader’s placeholder for an open gallery (fixed in v1.8.2 — on v1.8.1 automatic popups never opened on such pages).</p>
     <p class="muted">A deferred popup re-runs every check when its turn comes — a dismissal cookie written while it waited, a <a href="#popups-schedule">schedule</a> that has since closed, a <code>canShow()</code> veto. It waits for a free screen; it does not book a guaranteed appearance.</p>
-    <p class="muted">The page scroll lock is released by the last popup holding it, whatever the browser does with the close animation: the popup settles on its own <code>transitionend</code> or on a timer just past the animation duration, whichever comes first. A ✕ pressed while the popup is still fading in closes it rather than being ignored.</p>
+
+    <h3 id="scroll-lock">Shared scroll lock</h3>
+    <p>Popups and the lightbox hold <strong>one</strong> page scroll lock, <code>digi2.scrollLock</code>. Each of them used to remember <code>body.style.overflow</code> on open and write it back on close, so a popup opened over the gallery remembered the gallery's <code>hidden</code> — close the gallery first, then the popup, and nothing was open on a page that would not scroll. The shared lock keeps a set of owners: the first one in remembers the page's own value, the last one out puts it back, in whatever order they close.</p>
+    <pre><code>digi2.scrollLock.<span class="fn">acquire</span>(<span class="string">'my-overlay'</span>)   <span class="comment">// overflow: hidden — idempotent per owner</span>
+digi2.scrollLock.<span class="fn">release</span>(<span class="string">'my-overlay'</span>)   <span class="comment">// last owner out restores the page's value</span>
+digi2.scrollLock.<span class="fn">isLocked</span>()
+digi2.scrollLock.<span class="fn">owners</span>()              <span class="comment">// e.g. ['lightbox', 'popup:form#1']</span></code></pre>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>Popup and lightbox closed in either order</td><td>The page scrolls again only after the last one closes, and gets back the value it had before the first one opened</td></tr>
+      <tr><td>The same owner acquires twice</td><td>No-op — one <code>release</code> undoes it</td></tr>
+      <tr><td>Release by an owner that holds nothing</td><td>No-op — never unlocks more than was locked</td></tr>
+      <tr><td>The close animation never reports its end</td><td>The popup settles on its own <code>transitionend</code> or on a timer just past the animation duration, whichever comes first, and releases the lock. A ✕ pressed mid fade-in closes the popup rather than being ignored</td></tr>
+      <tr><td><code>digi2.popups.destroy()</code> on an open popup</td><td>The popup is hidden and its lock released. No <code>popup:close</code> / <code>onClose</code> — nobody closed it — but a popup parked behind it gets the screen</td></tr>
+    </table>
+    <p class="muted">Your own overlay script (a full-screen map tooltip, a menu) should use <code>digi2.scrollLock</code> with its own owner name instead of saving and restoring <code>overflow</code> by itself — otherwise it can write a stale <code>hidden</code> back over the shared lock.</p>
   </section>
 
   <!-- ── POPUPS · SCHEDULING ── -->
@@ -1364,7 +1381,8 @@ digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)</
       <tr><td>A step whose popup isn't on this page waits</td><td>It may simply live on another page</td></tr>
       <tr><td>A step waits while another popup is on screen</td><td>A scheduled popup does not land on top of a form the visitor opened — two stacked modals read as broken, since closing the top one leaves the other behind</td></tr>
       <tr><td>Opening a popup deliberately dismisses whatever is in the way</td><td>The visitor asked for this one. The popup on screen closes first, and the new one opens after that close finishes — never both at once</td></tr>
-      <tr><td>The scroll lock is counted across popups</td><td>Released when the last popup holding it closes — two overlapping popups used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
+      <tr><td>The <a href="#scroll-lock">scroll lock is shared</a> by popups and the lightbox</td><td>Released when the last one holding it closes, in any order — two overlapping modals used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
+      <tr><td>A step waits while the lightbox is open</td><td>The visitor is looking at a gallery they opened; the step comes once it closes</td></tr>
     </table>
 
     <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>
@@ -1525,7 +1543,7 @@ digi2.cookies.<span class="fn">remove</span>(<span class="string">'theme'</span>
       <tr><td><code>NAME</code></td><td>required, minLength: 2, letters</td></tr>
       <tr><td><code>EMAIL</code></td><td>required, email</td></tr>
       <tr><td><code>PHONE</code></td><td>required, phone</td></tr>
-      <tr><td><code>MESSAGE</code></td><td>required, minLength: 30</td></tr>
+      <tr><td><code>MESSAGE</code></td><td>required (no minimum length — set <code>minLength</code> yourself if the project wants one)</td></tr>
       <tr><td><code>CONSENT_GDPR</code></td><td>required (checkbox)</td></tr>
       <tr><td><code>CONSENT_EMAIL</code></td><td>required (checkbox)</td></tr>
       <tr><td><code>CONSENT_PHONE</code></td><td>required (checkbox)</td></tr>
@@ -2414,6 +2432,7 @@ digi2.lazy.<span class="fn">refresh</span>()       <span class="comment">// afte
   <section id="lightbox">
     <h2>Lightbox</h2>
     <p>Clicking anything marked <code>d2-lightbox</code> opens a full-screen gallery — arrows, keyboard, drag, and a bottom bar that is either a counter or a strip of thumbnails. Without a modal of your own, the module injects a built-in one.</p>
+    <p class="muted">While open, the gallery holds the page's <a href="#scroll-lock">shared scroll lock</a>, so it and a popup opened over it can close in either order. Automatic popups wait until the gallery closes.</p>
     <pre><code>&lt;script src="…/digi2-loader.min.js" <span class="attr">d2-lightbox</span>=<span class="string">"thumbs"</span>&gt;&lt;/script&gt;
 
 &lt;img <span class="attr">d2-lightbox</span> src=<span class="string">"/photo-1.jpg"</span>&gt;

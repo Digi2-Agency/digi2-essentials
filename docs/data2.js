@@ -341,7 +341,7 @@
     ],
 
     api: {
-      desc: 'Eventy: <code>lightbox:open</code>, <code>lightbox:change</code>, <code>lightbox:close</code> (przez <code>digi2.on</code>). Body dostaje blokadę scrolla na czas otwarcia; sąsiednie zdjęcia są preloadowane.',
+      desc: 'Eventy: <code>lightbox:open</code>, <code>lightbox:change</code>, <code>lightbox:close</code> (przez <code>digi2.on</code>). Na czas otwarcia galeria trzyma wspólną blokadę scrolla (<code>digi2.scrollLock</code>, tę samą co popupy), więc ona i popup otwarty nad nią zamykają się w dowolnej kolejności. Popupy automatyczne czekają, aż galeria się zamknie. Sąsiednie zdjęcia są preloadowane.',
       code: "digi2.lightbox.open(el);            // otwórz od triggera (jak klik)\ndigi2.lightbox.open('rzuty', 1);    // nazwana galeria, od 2. zdjęcia\ndigi2.lightbox.open([\n  { src: '/a.jpg', caption: 'Taras' },\n  { src: '/b.jpg' }\n]);\ndigi2.lightbox.next();  digi2.lightbox.prev();\ndigi2.lightbox.close();\ndigi2.lightbox.isOpen();            // true / false\n\ndigi2.on('lightbox:change', function (d) {\n  console.log(d.index + 1, '/', d.total, d.src);\n});"
     }
   };

@@ -29,6 +29,50 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   mieszkania 0 pokoi?”. Teraz popup jest wtedy pomijany, tak jak bez liczby
   pokoi w filtrze.
 
+## v1.8.2 — 2026-10-28 (tag z gałęzi release/v1.8.2, na bazie v1.8.1)
+
+### `d2-popups`
+
+- **Automatyczne popupy znów się otwierają na stronach bez `d2-lightbox`.** W
+  v1.8.1 popup z `openAfterDelay` (i każdy inny automatyczny: exit intent,
+  scroll, bezczynność, krok sekwencji) na stronie bez lightboxa nigdy nie
+  wchodził (osiedlebo.pl). Pytanie „czy lightbox jest otwarty” trafiało w
+  zaślepkę loadera, która zamiast odpowiedzi zwraca Promise; popup brał to za
+  otwartą galerię i czekał na `lightbox:close`, które nie przychodziło. Teraz
+  popupy najpierw pytają loader, czy moduł lightbox jest załadowany, i nie
+  dociągają go przy okazji. Strony z `d2-lightbox` działają jak w v1.8.1.
+
+## v1.8.1 — 2026-10-23 (tag z gałęzi release/v1.8.1, na bazie v1.8.0)
+
+### `d2-popups` + `d2-lightbox`
+
+- **Strona nie zostaje już zablokowana po zamknięciu popupu i galerii.** Popupy
+  i lightbox trzymają jedną wspólną blokadę przewijania (`digi2.scrollLock`).
+  Wcześniej każdy z modułów zapamiętywał `overflow` osobno: lightbox otwarty, na
+  nim popup (formularz z `d2-show-popup` albo krok sekwencji), zamknięcie galerii,
+  potem popupu, i strony nie dało się przewinąć, choć nic nie było otwarte
+  (bernardynska.com/galeria). Teraz przewijanie wraca po zamknięciu ostatniego
+  okna, w dowolnej kolejności, z wartością `overflow` sprzed pierwszego otwarcia.
+- **Popupy automatyczne czekają na zamknięcie lightboxa** (opóźnienie, exit
+  intent, scroll, bezczynność, krok sekwencji): wchodzą ~0,6 s po
+  `lightbox:close`. Popup otwarty przez odwiedzającego dalej może wejść nad galerię.
+- `digi2.popups.destroy()` na otwartym popupie chowa go i zdejmuje blokadę
+  przewijania (wcześniej popup zostawał na ekranie bez obsługi zamykania). Nie
+  wysyła `popup:close` ani `onClose`; popup odłożony za nim dostaje ekran.
+- Nowe API dla własnych nakładek strony: `digi2.scrollLock.acquire(nazwa)` /
+  `release(nazwa)` / `isLocked()` / `owners()`. Skrypt strony, który sam
+  zapamiętuje i przywraca `overflow` (np. pełnoekranowy tooltip mapy), powinien
+  przejść na nie, bo inaczej może przywrócić nieaktualne `hidden`.
+- Strony bez lightboxa działają jak dotąd; API, które strony już wywołują, się
+  nie zmienia.
+
+### Dokumentacja
+
+- `docs.html`: tabela pól wykrywanych automatycznie podawała dla `MESSAGE`
+  `minLength: 30`, którego biblioteka nie ustawia od v1.0.0. `MESSAGE` jest
+  domyślnie wymagane, bez minimalnej długości. Kreator formularza w `docs/`
+  przestał dopisywać `minLength: 30` przy „Wiadomość wymagana”.
+
 ## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.27–ma.16)
 
 ### `d2-ma` — numer wersji w konsoli
