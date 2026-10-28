@@ -37,6 +37,13 @@ Numeru ma.30 nie wydano (szkic PR #37).
   otwarta za zgodą, i bazę nieotwieraną za zgodą dłużej niż retencja
   (90 dni). Bazy sprzed ma.31 nie mają znacznika zgody, więc u gościa, który
   wejdzie bez znanej jeszcze zgody, skasują się jeden raz.
+- Wybór zapisany przez moduł `google` (`d2-gtm`) liczy się przed każdym
+  `default`, także regionalnym. To decyzja gościa, a moduł odtwarza ją przy
+  starcie jako `default`. Zapisana odmowa kasuje bazę, zapisana zgoda ją
+  otwiera, nawet gdy strona ma regionalne `default` denied.
+- Wejście na stronę, która zgody nie wymaga, zdejmuje znacznik zgody. Po
+  powrocie na stronę z wymogiem i z nieznaną zgodą baza się skasuje.
+- Koperta bez wymogu zgody kończy czekanie na zgodę.
 - `ma:change` podaje nowe powody: `consent denied`,
   `profile not opened with consent`, `consent older than retention`.
   `consent required` już nie występuje.

@@ -2625,10 +2625,11 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     <table>
       <tr><th>Source</th><th>When it applies</th></tr>
       <tr><td>1. <code>gtag('consent', 'update', {...})</code> in the <code>dataLayer</code></td><td>Decides. Includes commands pushed before the module started. A denial deletes the database</td></tr>
-      <tr><td>2. Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM; already accounts for <code>region</code>. Re-checked on every <code>dataLayer</code> event, so a grant or a denial applies in the same visit</td></tr>
-      <tr><td>3. <code>default</code> with <code>region</code></td><td>Counts only as a denial, and beats a general <code>default</code> (without the Google tag state the visitor's country is unknown); a regional grant is never taken</td></tr>
-      <tr><td>4. <code>gtag('consent', 'default', {...})</code> without <code>region</code></td><td>When no source above knows the category</td></tr>
-      <tr><td>5. Module <code>d2-gtm</code> (<code>digi2.google.consent</code>, <code>consent:updated</code>)</td><td>Only when no source above knows the category</td></tr>
+      <tr><td>2. <code>update</code> in the Google tag consent state (<code>google_tag_data.ics</code>)</td><td>A CMP template inside GTM. Re-checked on every <code>dataLayer</code> event, so a grant or a denial applies in the same visit; <code>update: false</code> deletes the database</td></tr>
+      <tr><td>3. Choice saved by module <code>d2-gtm</code> (<code>localStorage</code> <code>consentModeV2</code>)</td><td>The visitor's own decision, read before every <code>default</code> (the module replays it as a <code>default</code>); a saved denial deletes the database. No saved choice = skipped</td></tr>
+      <tr><td>4. Google tag <code>default</code> granted</td><td>Already accounts for <code>region</code></td></tr>
+      <tr><td>5. <code>default</code> with <code>region</code>, denied <code>default</code></td><td>Never grants, never deletes: consent stays unknown and the module waits (ma.31). A regional grant is never taken</td></tr>
+      <tr><td>6. <code>gtag('consent', 'default', {...})</code> granted, without <code>region</code></td><td>When no source above knows the category</td></tr>
     </table>
     <p class="muted">Only real <code>gtag()</code> commands count (an <code>arguments</code> object). A plain array <code>['consent', …]</code> is ignored, as the Google tag ignores it. A denial that arrives while the database is opening keeps it closed.</p>
     <p>Consent is required when the envelope says <code>consentRequired: true</code> <em>or</em> the tag says <code>d2-ma-consent-required="true"</code>. The attribute can force consent but never switch it off. <code>demoState</code> follows the envelope only, so a demo envelope with <code>false</code> plus the attribute waits for the banner, then runs with the demo data. Before consent nothing is stored and no action runs. Events seen while waiting are dropped, including those seen while the envelope was loading.</p>

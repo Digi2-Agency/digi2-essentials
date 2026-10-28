@@ -834,8 +834,9 @@ test('Consent Mode: kolejność źródeł — update, tag Google, default, defau
   assert.equal(await zapisuje({ dataLayer: regiony() }), false);
   // Sam default bez region rozstrzyga.
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted' })] }), true);
-  // Sam default z region: odmowa liczy się, zgoda nie.
-  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), false);
+  // Sam default z region: zgoda nie liczy się. ma.31: zapisany wybór modułu google
+  // (decyzja gościa) wygrywa z regionalnym default, które decyzją nie jest.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), true);
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted', region: ['PL'] })] }), false);
   // Zwykła tablica to nie komenda gtag - tag Google jej nie wykona.
   assert.equal(await zapisuje({ dataLayer: [['consent', 'update', { analytics_storage: 'granted' }]] }), false);
@@ -993,6 +994,36 @@ test('ma.31: jawna odmowa kasuje bazę — przy starcie i w trakcie czekania (da
   p5.dataLayer.push({ event: 'cookie_consent_update' });
   await p5.gotowe();
   assert.equal(p4._dysk.cleared, 1, 'odmowa z szablonu CMP w trakcie czekania');
+});
+
+test('ma.31: odmowa zapisana przez moduł google (odtwarzana jako default) kasuje bazę — recenzja #38, S1', async () => {
+  const p1 = await profilZeZgoda();
+  // Moduł google przy starcie robi gtag('consent', 'default', zapis) — tu zapis to odmowa.
+  await powrot(p1, 2 * H, {
+    dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' })],
+    zgoda: { analytics_storage: 'denied' },
+  });
+  assert.equal(p1._dysk.cleared, 1);
+});
+
+test('ma.31: otwarcie bez wymogu zgody zdejmuje znacznik — potem nieznana zgoda kasuje bazę (recenzja #38, S3)', async () => {
+  const p1 = await profilZeZgoda();
+  const p2 = await powrot(p1, 2 * H, { koperta: koperta([]), dataLayer: [] });
+  p2.dataLayer.push(unitOpen('A_2'));
+  await p2.gotowe();
+  assert.equal(p1._dysk.views.length, 2);
+  assert.equal(p1._dysk.state.consentAt, undefined, 'otwarcie bez zgody zdejmuje znacznik');
+  await powrot(p2, 2 * H, { koperta: WYMAGANA(), dataLayer: [] });
+  assert.equal(p1._dysk.cleared, 1);
+});
+
+test('ma.31: koperta bez wymogu zgody kończy czekanie (hold)', async () => {
+  const p1 = await profilZeZgoda();
+  const p2 = await powrot(p1, 2 * H, { dataLayer: [] });
+  assert.equal(p2.ma.profile(), null);
+  await p2.ma.load(koperta([]));
+  await p2.gotowe();
+  assert.equal(p2.ma.profile().visits, 2);
 });
 
 test('ma.31: bezpiecznik — baza bez znacznika zgody (zebrana bez wymogu, sprzed ma.31) kasuje się przy nieznanej zgodzie', async () => {

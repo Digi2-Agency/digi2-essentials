@@ -1098,7 +1098,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 | Loader attribute | Default | Description |
 |---|---|---|
-| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS — **ma.31:** the module waits for the first `load()` before it opens the database and counts the visit (so `return_visit` sees the scenarios); an envelope passed before start is kept; without `load()` it starts with no envelope after 10 s. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS — **ma.31:** the module waits for the first `load()` before it opens the database and counts the visit (so `return_visit` sees the scenarios); an envelope passed before start is kept; without `load()` it starts with no envelope after 10 s — so with consent known a page view shorter than 10 s without `load()` isn't counted, and after that fallback start `return_visit` runs without scenarios. The protection against overwriting covers only an envelope from `load()` given before start or while the attribute's envelope is being fetched; with a non-empty `d2-ma`, a `load()` called before the module boots is replaced by the attribute's envelope. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
 | `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
 | `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
@@ -1111,23 +1111,27 @@ The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
 
 Consent is read from whatever banner the page has, as long as it speaks
-Consent Mode. The first source that knows the category decides:
+Consent Mode. The first source that knows the category decides (ma.31 order —
+see the three states below):
 
 1. A `gtag('consent', 'update', {...})` command in the `dataLayer`, including
    one pushed before the module started (a CMP restoring a saved choice). An
    `update` that denies the category deletes the `d2ma` database.
-2. The Google tag's own consent state (`google_tag_data.ics`, which already
-   accounts for `region`). This is where a CMP template inside GTM writes
-   without a `gtag` command. It is checked again on every `dataLayer` event,
-   so a grant or a denial made this way applies at the CMP's next event, in
-   the same visit.
-3. A `default` with `region` counts only as a denial, and it is checked before
-   a general `default`. Without the Google tag's state (a slow gtag.js, an
-   adblocker) the module doesn't know the visitor's country, so it never takes
-   a regional grant and never lets a general grant override a regional denial.
-4. A `gtag('consent', 'default', {...})` without `region`.
-5. Only when none of those knows the category: the `google` module
-   (`d2-gtm`), meaning `digi2.google.consent` and its `consent:updated` event.
+2. An `update` in the Google tag's own consent state (`google_tag_data.ics`).
+   This is where a CMP template inside GTM writes without a `gtag` command. It
+   is checked again on every `dataLayer` event, so a grant or a denial made
+   this way applies at the CMP's next event, in the same visit. `update: false`
+   is an explicit denial.
+3. The choice saved by the `google` module (`d2-gtm`, `localStorage`
+   `consentModeV2`) — the visitor's own decision. The module replays it as a
+   `default` on start, so it is read before every `default`; a saved denial
+   deletes the database. Without a saved choice it is skipped (the module's
+   `get()` would return its built-in denials, which are no decision).
+4. A grant in the Google tag's `default` (already accounts for `region`).
+5. A `default` with `region` or a denied `default` never grants and never
+   deletes: consent stays **unknown** and the module waits. A regional grant is
+   never taken, and a general grant never overrides a regional `default`.
+6. A granted `gtag('consent', 'default', {...})` without `region`.
 
 Only real `gtag()` commands count (an `arguments` object). A plain array
 `['consent', …]` is ignored, because the Google tag doesn't run it either. A

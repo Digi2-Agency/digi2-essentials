@@ -419,6 +419,8 @@
       },
       // Sam rekord state, bez zakładania bazy, której nie ma (wipe() przy
       // starcie): nowa baza = onupgradeneeded, wtedy przerywamy i wraca null.
+      // To samo przy bazie ze starszą DB_VERSION: upgrade przerwany, null -
+      // bezpieczniki ma.31 (hold) wtedy nic nie kasują.
       peekState: function () {
         return new Promise(function (resolve) {
           var req;
@@ -3811,6 +3813,13 @@
     } catch (x) { return false; }
   }
 
+  function googleTagUpdated() {
+    try {
+      var e = window.google_tag_data.ics.entries[consentCategory()];
+      return !!e && e.update !== undefined;
+    } catch (x) { return false; }
+  }
+
   // Kolejność źródeł Consent Mode: update z dataLayer rozstrzyga, potem stan
   // tagu Google (liczy region), potem default z region (tylko jako odmowa),
   // potem default bez region. Gdy żadne nie zna kategorii - moduł google biblioteki
@@ -3823,14 +3832,24 @@
   function consentState() {
     if (gtagConsent.update) return gtagConsent.update;
     var tag = googleTagConsent();
+    if (tag === 'granted' && googleTagUpdated()) return tag;
+    if (googleTagDenied()) return 'denied';
+    // Zapis modułu google to decyzja gościa, a moduł odtwarza ją przy starcie
+    // jako default - dlatego przed gałęziami default (ma.31, recenzja #38).
+    var saved = savedConsent();
+    if (saved) return saved;
     if (tag === 'granted') return tag;
-    if (tag === 'denied') return googleTagDenied() ? 'denied' : null;
+    if (tag === 'denied') return null;
     // Regionalna odmowa przed ogólnym default: bez stanu tagu Google (wolny
     // gtag.js, adblock) nie wiemy, czy odwiedzający nie jest w tamtym regionie.
     if (gtagConsent.regionDenied) return null;
     if (gtagConsent['default']) return gtagConsent['default'] === 'granted' ? 'granted' : null;
-    // Moduł google zapisuje wybór dopiero po decyzji na banerze; jego get()
-    // bez zapisu zwraca same domyślne odmowy, więc czytamy sam zapis.
+    return null;
+  }
+
+  // Wybór zapisany przez moduł google po decyzji na banerze. Jego get() bez
+  // zapisu zwraca same domyślne odmowy, więc czytamy sam zapis.
+  function savedConsent() {
     var c = null;
     try { c = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) || 'null'); } catch (e) { c = null; }
     var v = c && c[consentCategory()];
@@ -4247,7 +4266,9 @@
       prune();
       // ma.31: znacznik dla startu z nieznaną zgodą (hold) - baza otwarta za zgodą i kiedy.
       openedWithConsent = hasConsent();
+      // Znacznik = ostatnie otwarcie za zgodą; otwarcie bez wymogu go zdejmuje.
       if (openedWithConsent) state.consentAt = now();
+      else delete state.consentAt;
       applyEnvelope(envelope);
       var visit = touch();
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
@@ -4335,8 +4356,10 @@
     } else {
       var seq = envelopeSeq;
       fetchEnvelope(startUrl).then(function (raw) {
-        // Koperta z load() w trakcie pobierania wygrywa z tą z atrybutu.
-        if (envelopeSeq === seq) envelope = compile(raw);
+        // Koperta z load() w trakcie pobierania wygrywa z tą z atrybutu - i to
+        // load() już wywołał decide(), więc drugi raz go nie wołamy.
+        if (envelopeSeq !== seq) return null;
+        envelope = compile(raw);
         return decide(envelope);
       })['catch'](function (e) { _warn('start failed', e); });
     }
@@ -4353,6 +4376,8 @@
     if (!tracking) {
       // Magazyn się otwiera albo czekamy na zgodę - openStore() weźmie tę kopertę.
       envelope = env;
+      // Czekanie na zgodę (hold) kończy też koperta, która zgody nie wymaga.
+      if (holding && !consentRequired(env)) { blocked = false; holding = false; }
       if (blocked || !booted || opening) return Promise.resolve(true);
       return decide(env).then(function () { return true; });
     }
