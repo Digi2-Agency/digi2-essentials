@@ -21,9 +21,11 @@
     npx serve -l 5175 .            # albo: python3 -m http.server 5175
     otwórz http://localhost:5175/sandbox/ma.html
 
-  Koperta: sandbox/ma-koperta.json (timeScale 60 = minuta zamiast godziny).
+  Koperta: sandbox/ma-koperta.json (timeScale 60 = minuta zamiast godziny),
+  ładowana obiektem przez digi2.ma.load(k) - od ma.23 d2-ma pobiera adres tylko
+  z https://digi2.app albo https://api.2destate.com, więc d2-ma na tagu jest pusty.
   Wynik telefonu z CRM: przycisk „nie odebrał" podmienia demoState
-  i woła digi2.ma.load() - jak przycisk w panelu digi2.app.
+  i woła digi2.ma.load(k) - jak przycisk w panelu digi2.app.
 -->
 
 <style>
@@ -203,13 +205,20 @@
 </script>
 
 <script src="../webflow-scripts/digi2-loader.js"
-  d2-ma="ma-koperta.json"
+  d2-ma=""
   d2-ma-consent-required="false"
   d2-popups
   d2-debug-mode></script>
 <script>
   ['ma:ready', 'ma:view', 'ma:action'].forEach(function (n) {
     window.digi2.on(n, function (d) { log(n, d); });
+  });
+  // Koperta obiektem (adres względny nie jest na liście hostów, ma.23) — po załadowaniu
+  // modułów, żeby load() trafił w prawdziwy moduł, nie w proxy loadera (ma.26).
+  window.digi2.onReady(function () {
+    realFetch('ma-koperta.json', { cache: 'no-store' }).then(function (r) { return r.json(); })
+      .then(function (k) { return window.digi2.ma.load(k); })
+      .then(null, function (e) { log('koperta: ' + e); });
   });
 </script>
 </body>
