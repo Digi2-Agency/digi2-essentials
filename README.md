@@ -1098,7 +1098,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 | Loader attribute | Default | Description |
 |---|---|---|
-| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS — **ma.31:** the module waits for the first `load()` before it opens the database and counts the visit (so `return_visit` sees the scenarios); an envelope passed before start is kept; without `load()` it starts with no envelope after 10 s. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
 | `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
 | `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
@@ -1140,6 +1140,27 @@ so a demo envelope with `false` plus the attribute `"true"` waits for the
 banner and then runs with the demo data. Before consent nothing is stored and
 no action runs. Events seen while waiting are dropped, not replayed, including
 ones seen while the envelope was loading.
+
+**ma.31: three consent states** (Piotr's decision, 28.10.2026: "Trzy stany +
+2 bezpieczniki"). A CMP loaded through GTM (Cookiebot and the like) sends its
+`update` 30 ms to 5 s after the module starts, and ma.29 counted that gap as a
+refusal: a returning visitor who had consented lost the profile on every page.
+
+| State | When | What happens |
+|---|---|---|
+| granted | `update` granted (`dataLayer` or the Google tag), Google tag `default` granted, `default` granted without `region`, a saved choice of the `google` module | the database opens |
+| denied | an explicit refusal: `gtag('consent', 'update', … 'denied')`, `update: false` in `google_tag_data.ics`, a refusal saved by the `google` module | the database is deleted — at start and also while the module waits |
+| unknown | nothing yet, or only `default` denied (also with `region`) — a CMP template in GTM always sets that before the banner | the database is not opened, read, written or deleted; the module waits for an `update` |
+
+Two safeguards while consent is unknown. The module reads only the `state`
+record (like `peekState` for revoke) and deletes the database when: (a) it was
+never opened with consent — `state.consentAt` is missing (collected while
+consent wasn't required, or before ma.31: such databases go once), or (b) the
+last opening with consent is older than the retention (`storage.retentionDays`,
+90), so retention also applies to a visitor who never answers the banner again.
+There is no "delete after N seconds" timeout. An envelope that switches to
+`consentRequired: true` mid-visit deletes the database only on a refusal or
+when it was opened without consent.
 
 > **On a client site always put `d2-ma-consent-required="true"` on the tag.**
 > Without the attribute the envelope decides, and an envelope published with
@@ -1805,8 +1826,11 @@ digi2.ma.allows(el)         // ma.5: may this element show (used by popups)
 
 `ma:change` also fires when the module wipes the database for lack of consent:
 `{ cleared: true, tracking: false, reason }`, where `reason` is
-`consent withdrawn`, `consent withdrawn while opening`, `consent required`
-or `envelope now requires consent`. After it `profile()` returns `null`.
+`consent withdrawn`, `consent withdrawn while opening`, `consent denied`,
+`profile not opened with consent`, `consent older than retention` (ma.31; the
+last two come from the safeguards while consent is unknown) or
+`envelope now requires consent`. Before ma.31 `consent required` fired on
+every start without known consent. After it `profile()` returns `null`.
 Before this, a withdrawal mid-visit cleared the `[d2-ma-profile]` fields
 without any event, so a page section with its own "no consent" state could
 not tell. `digi2.ma.clear()` keeps emitting `{ cleared: true }`, with

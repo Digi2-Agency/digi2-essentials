@@ -2605,7 +2605,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
 
     <table>
       <tr><th>Loader attribute</th><th>Default</th><th>Effect</th></tr>
-      <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests as an object). ma.23: only <code>https://digi2.app/…</code> or <code>https://api.2destate.com/…</code> — any other address, also in <code>digi2.ma.load(url)</code>, is not fetched (console warning, the page runs without MA)</td></tr>
+      <tr><td><code>d2-ma="URL"</code></td><td>—</td><td>Scenario envelope. Empty = call <code>digi2.ma.load()</code> yourself (a local JSON for tests as an object). ma.31: the module waits for that first <code>load()</code> before it opens the database and counts the visit; without it, it starts with no envelope after 10 s. ma.23: only <code>https://digi2.app/…</code> or <code>https://api.2destate.com/…</code> — any other address, also in <code>digi2.ma.load(url)</code>, is not fetched (console warning, the page runs without MA)</td></tr>
       <tr><td><code>d2-ma-consent-required</code></td><td>required</td><td>The envelope's <code>storage.consentRequired</code> decides; this applies when the envelope can't be read. <code>"true"</code> forces consent whatever the envelope says</td></tr>
       <tr><td><code>d2-ma-consent</code></td><td><code>analytics_storage</code></td><td>Consent Mode category that unlocks storage. Read from any banner that speaks Consent Mode, see below</td></tr>
       <tr><td><code>d2-ma-products-api</code></td><td><code>https://api.2destate.com/api/v1</code></td><td>Where the fresh unit status comes from before a popup</td></tr>
@@ -2632,6 +2632,14 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
     </table>
     <p class="muted">Only real <code>gtag()</code> commands count (an <code>arguments</code> object). A plain array <code>['consent', …]</code> is ignored, as the Google tag ignores it. A denial that arrives while the database is opening keeps it closed.</p>
     <p>Consent is required when the envelope says <code>consentRequired: true</code> <em>or</em> the tag says <code>d2-ma-consent-required="true"</code>. The attribute can force consent but never switch it off. <code>demoState</code> follows the envelope only, so a demo envelope with <code>false</code> plus the attribute waits for the banner, then runs with the demo data. Before consent nothing is stored and no action runs. Events seen while waiting are dropped, including those seen while the envelope was loading.</p>
+    <p><b>ma.31 — three consent states</b> (Piotr's decision, 28.10.2026). A CMP loaded through GTM answers after the module starts, so “not known yet” must not count as a refusal.</p>
+    <table>
+      <tr><th>State</th><th>When</th><th>Database</th></tr>
+      <tr><td>Granted</td><td><code>update</code> granted, Google tag granted, <code>default</code> granted without <code>region</code>, a choice saved by the <code>google</code> module</td><td>Opens</td></tr>
+      <tr><td>Denied</td><td>An explicit refusal: <code>update</code> denied in <code>dataLayer</code> or in the Google tag, a refusal saved by the <code>google</code> module</td><td>Deleted — at start and while waiting</td></tr>
+      <tr><td>Unknown</td><td>Nothing yet, or only <code>default</code> denied (also with <code>region</code>)</td><td>Not opened, read, written or deleted — the module waits for an <code>update</code></td></tr>
+    </table>
+    <p class="muted">While consent is unknown the module reads only the <code>state</code> record and deletes the database when it was never opened with consent (collected while consent wasn't required, or before ma.31 — once) or when the last opening with consent is older than the retention (90 days).</p>
 
     <h3>Where unit views come from</h3>
     <table>
@@ -2651,7 +2659,7 @@ digi2.copy.<span class="fn">fromElement</span>(<span class="string">'#selector'<
       <tr><td><code>counters</code></td><td>Views per unit, per room count, per floor; visits; last visit; lead flag</td></tr>
       <tr><td><code>state</code></td><td><code>visitorId</code> (random UUID), visit clock, scenario progress, frequency records, deferred actions, last seen <code>crmCallSeq</code></td></tr>
     </table>
-    <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all and an existing database is deleted (also when the envelope switches to <code>consentRequired: true</code>); withdrawing consent deletes it too. A profile not seen for longer than the retention starts over with a new <code>visitorId</code>.</p>
+    <p class="muted">Kept for <code>storage.retentionDays</code> (90). A visit ends after 30 min of silence. <code>pref.rooms</code> / <code>pref.floor</code> are computed from history when needed: the most viewed value, a tie goes to the most recently viewed. Nothing leaves the browser except the segment name (<code>dataLayer</code>) and the webhook body — no personal data, only the random <code>visitorId</code>. With consent required and not given, nothing is recorded at all. An explicit refusal or withdrawal deletes the database; consent not known yet leaves it untouched (ma.31, see Consent above), except a database never opened with consent or not opened with consent for longer than the retention. A profile not seen for longer than the retention starts over with a new <code>visitorId</code>.</p>
 
     <h3>Module API</h3>
     <pre><code>digi2.ma.<span class="prop">version</span>            <span class="comment">// ma.28: "ma.28" — the script version the page loaded</span>
