@@ -16,6 +16,19 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.32 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.31–ma.16)
+
+### `d2-ma` — popup, który już jest na ekranie
+
+- Gdy popup ze scenariusza jest otwarty, a gość klika kolejny lokal, który
+  ma ten sam popup, otwarty popup zostaje z dotychczasową treścią. Wcześniej
+  treść podmieniała się na nowy lokal w trakcie czytania, a moduł liczył to
+  jako nowe pokazanie: wysyłał `ma:action` i zużywał częstotliwość. Tak samo
+  przy popupie, który właśnie się zamyka. Po zamknięciu następne kliknięcie
+  pokazuje popup normalnie.
+- Komunikat w konsoli przy pominiętym popupie mówi teraz, że na ekranie jest
+  inny popup albo galeria (lightbox). Wcześniej wspominał tylko o popupie.
+
 ## v1.9.0-ma.31 — 2026-10-28 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.29–ma.16)
 
 Numeru ma.30 nie wydano (szkic PR #37).

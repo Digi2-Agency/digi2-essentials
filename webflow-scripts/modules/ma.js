@@ -227,7 +227,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 31;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 32;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -2625,6 +2625,13 @@
           });
         }
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
+        // ma.32: ten sam popup już na ekranie (albo jeszcze się zamyka) - nie
+        // podmieniamy mu treści i nie liczymy go jako pokazanego (recenzja #32).
+        if (inst.isVisible || inst._onScreen) {
+          _log('popup skipped — the same popup is already on screen → ' + name);
+          onSkipped();
+          return null;
+        }
         if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
         if (noUnit && !tpl && !own) {
           var txt = unitlessText(node.template);
@@ -2639,10 +2646,12 @@
           // ekranie (popups.js pokazałby go po zamknięciu tamtego, ~1 s później,
           // jako drugi na tę samą interakcję). Nie wszedł na ekran = pominięty:
           // bez ma:action, a wpis częstotliwości wraca (onSkipped).
+          // Pokazany = przejście z niewidocznego na widoczny w tym show().
+          var wasVisible = inst.isVisible || inst._onScreen;
           inst.show({ auto: true, park: false });
-          if (inst.isVisible || inst._onScreen) { onShown(fresh); return; }
+          if (!wasVisible && inst.isVisible) { onShown(fresh); return; }
           inst.pendingShow = false;
-          _log('popup skipped — another popup is on screen → ' + name);
+          _log('popup skipped — popups module did not show it (another popup or the lightbox on screen) → ' + name);
           onSkipped();
         }, onSkipped);
         return null;
