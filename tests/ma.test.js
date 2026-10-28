@@ -464,6 +464,25 @@ test('3D Estate: statusy po numerze, isNotAvailable = sprzedany', async () => {
   assert.deepEqual(h, [['reserved', 829212], ['sold', null], ['sold', 829212], ['other', 829212]]);
 });
 
+test('3D Estate: cena ukryta w makiecie (priceIsHidden) nie trafia do historii ani do treści (ma.30)', async () => {
+  const env = await start({ koperta: koperta([]) });
+  env.dataLayer.push(unitOpen('A_1', { priceIsHidden: true }));
+  env.dataLayer.push(unitOpen('A_2', { priceIsHidden: 'true' }));
+  env.dataLayer.push(unitOpen('A_3', { priceIsHidden: false }));
+  env.dataLayer.push(unitOpen('A_4'));
+  await env.gotowe();
+  const h = env.ma.history().map((v) => [v.unit.unitId, v.unit.price, v.unit.pricePerSqm]);
+  assert.deepEqual(h, [['A_1', null, null], ['A_2', null, null], ['A_3', 829212, 16634], ['A_4', 829212, 16634]]);
+
+  const slot = element({ 'd2-ma-slot': 's' }, 'P');
+  slot.textContent = 'Oryginał';
+  const k = koperta([scenariusz('t', { event: 'unit_view' }, [{ do: 'content', slot: 's', text: '{{unit.name}} za {{unit.price}}' }])]);
+  const env2 = await start({ koperta: k, elementy: [slot] });
+  env2.dataLayer.push(unitOpen('B_1', { priceIsHidden: true }));
+  await env2.gotowe();
+  assert.equal(slot.textContent, 'Oryginał', 'ukryta cena = pole bez wartości, treść bez zmian');
+});
+
 test('ten sam lokal w ciągu 5 s liczy się raz, po 5 s znowu', async () => {
   const env = await start({ koperta: koperta([]) });
   env.dataLayer.push(unitOpen('A_1'));

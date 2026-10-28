@@ -224,7 +224,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 29;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 30;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -620,13 +620,20 @@
     return s === 'available' || s === 'reserved' || s === 'sold' ? s : 'other';
   }
 
+  // ma.30: cena ukryta w makiecie (custom.priceIsHidden) nie trafia nigdzie -
+  // makieta i tak podaje w custom.price pełną kwotę.
+  function hidden3de(v) {
+    return v === true || v === 1 || v === '1' || v === 'true';
+  }
+
   function from3destate(entry) {
     var u = entry && entry.data && entry.data.unit;
     if (!u || u.id == null) return null;
     var c = u.custom || {};
+    var hide = hidden3de(c.priceIsHidden);
     return {
       unitId: String(u.id), name: str(u.name), rooms: num(c.rooms), floor: num(c.floor),
-      area: num(c.area), price: num(c.price), pricePerSqm: num(c.priceOfferPerSqm),
+      area: num(c.area), price: hide ? null : num(c.price), pricePerSqm: hide ? null : num(c.priceOfferPerSqm),
       building: c.building == null || c.building === '' ? null : String(c.building),
       status: status3de(c), isPromo: !!c.isPromo,
       url: smUnitLink(u.id),

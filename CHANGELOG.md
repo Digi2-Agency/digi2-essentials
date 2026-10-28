@@ -16,6 +16,18 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.30 — 2026-10-28 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.29–ma.16)
+
+### `d2-ma` — cena ukryta w makiecie 3D Estate zostaje ukryta
+
+- Lokal, któremu deweloper ukrył cenę w makiecie 3D Estate
+  (`custom.priceIsHidden`), trafia do historii bez ceny i bez ceny za m².
+  Popup, pole `d2-ma-field="price"`, `{{unit.price}}` w treściach i webhook
+  zachowują się wtedy jak przy lokalu bez ceny. Wcześniej pokazywały pełną
+  cenę, bo makieta podaje ją w `custom.price` także przy ukrytej cenie.
+- Obejrzenia zapisane przed ma.30 zachowują cenę z chwili zapisu. Nowe
+  obejrzenie tego samego lokalu zapisuje się już bez ceny.
+
 ## v1.9.0-ma.29 — 2026-10-28 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.28–ma.16)
 
 ### `d2-ma` — odmiana w popupie `promo-filter`
