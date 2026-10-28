@@ -1249,9 +1249,28 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   timer runs it while the page is open, otherwise the next start does. Void 24 h
   after `created` (real time, `timeScale` doesn't shorten it).
 - **Popup conflict:** one popup per event pass; the next one is stored with
-  `afterVisit` and runs on a later visit.
+  `afterVisit` and runs on a later visit. (ma.27) A pass is one interaction,
+  not one `dispatch()`: `handle()` shares it between the visit start
+  (`return_visit` from `touch()`), the event itself and the `runDue()` after
+  it; the page open shares it between the CRM event, the visit, the buffered
+  events and `runDue()`; `simulateReturn()` and the activity listener the same.
+  Before, a click that opened a new visit and also met a view trigger showed
+  two popups.
+- **Popup on screen (ma.27):** the scenario popup opens with
+  `show({ auto: true, park: false })`. If another popup is on screen (or the
+  popups module refused for any other reason), it is not parked — popups.js
+  would otherwise open it ~0.6 s after the other one closes, as a second popup
+  for the same interaction. It counts as skipped: frequency entry undone, no
+  `ma:action`. `ma:action` for a popup fires only when `isVisible` /
+  `_onScreen` is set after `show()`.
 - **Map tooltip (ma.6):** on a phone the first tap on a 2destate unit opens the
-  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`). A
+  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`).
+  (ma.27) Image Map Pro keeps that class on the closed container
+  (`display: none`), so "open" means the container is actually shown —
+  computed `display` / `visibility`, a client rect and a non-zero size. With
+  no such container at all (desktop) the popup opens at once; with one, it
+  first waits 500 ms, because the tooltip opens just after the popup decision
+  made by the same tap. A
   popup due at that moment waits (checked every 250 ms) until the visitor
   closes it, so they see the unit they tapped first. After 5 minutes with the
   tooltip still open (clock time, not ticks — background tabs slow timers)
@@ -1722,8 +1741,13 @@ from the first filter; the first view takes over. `digi2.ma.profile()` gets
 tylko wolne` and `filters` in the JSON.
 
 **Popup `promo-filter`** — built in like `promo-rooms`, but needs **no unit**:
-„Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne
-promocje.”, CTA contact. Skipped without `pref.rooms`. A `templates.popup[]`
+„Szukasz mieszkania 2-pokojowego? Pokażemy wolne lokale i aktualne
+promocje.”, CTA contact. The number is `pref.rooms` as an adjective in the
+genitive, `N-pokojowego` for every N ≥ 1 (1-, 5-, 12-pokojowego — the hyphenated
+form has no plural endings to get wrong); before ma.29 it said „2 pokoje”.
+`pref.rooms` is always one number (a filter `[2, 3]` gives 2), so there is no
+„2- lub 3-pokojowego”. Skipped without `pref.rooms` (or with 0). The adjective is
+only for this built-in text — it is not an envelope field like `roomsLabel`. A `templates.popup[]`
 entry with that id wins over the built-in one, and the page's own
 `[d2-ma-popup="promo-filter"]` over both. Any envelope template without
 `{{unit.*}}` now also opens when the path has no unit.
@@ -1741,7 +1765,7 @@ loader tag switches them off):
   flat_type, flat_building, flat_availability, flat_price, flat_isPromo, view_source: 'wyszukiwarka' | 'mapa' }
 ```
 
-Every contract key is in every push; a missing value is sent as `undefined`, not left out (ma.21) — a GTM Data Layer Variable reads the data model, so a missing key would keep the previous push's value. `item_list_sort` only for `price`, `area`, `floor` × `asc` / `desc` (ma.18) — for `rooms`, `name`, `custom` it is left out. A filter change reaches the profile and the scenarios once, after 500 ms of quiet (ma.18: a price slider is one `search_filter`, not ten). Only `source: "user"` counts — a missing `source` does not. A change still waiting for those 500 ms is written at once on form submit (so it is in the lead context — `search_filter` scenario actions may run at that moment), with the time of the last change (ma.19). On `pagehide` only the fact is stored in `d2ma` (ma.20): no scenario action at exit — no dataLayer push, webhook or popup, like form exits — and the trigger is not replayed on the next page; the filter stays in the profile, the lead context and `filterLog`. A list ordered `custom` (our own `setProductOrder`) sends no `view_item_list`, and the next list event has no `item_list_sort`. `digi2.ma.clear()` also resets the search: `setFilters(map, {}, { source: 'api' })`. `total` is `getProducts().length`; `flat_price` is
+Every contract key is in every push; a missing value is sent as `undefined`, not left out (ma.21) — a GTM Data Layer Variable reads the data model, so a missing key would keep the previous push's value. `item_list_sort` only for `price`, `area`, `floor` × `asc` / `desc` (ma.18) — for `rooms`, `name`, `custom` it is left out. A filter change reaches the profile and the scenarios once, after 500 ms of quiet (ma.18: a price slider is one `search_filter`, not ten). Only `source: "user"` counts — a missing `source` does not. A change still waiting for those 500 ms is written at once on form submit (so it is in the lead context — `search_filter` scenario actions may run at that moment), with the time of the last change (ma.19). On `pagehide` only the fact is stored in `d2ma` (ma.20): no scenario action at exit — no dataLayer push, webhook or popup, like form exits — and the trigger is not replayed on the next page; the filter stays in the profile, the lead context and `filterLog`. A list ordered `custom` (our own `setProductOrder`) sends no `view_item_list`, and the next list event has no `item_list_sort`. `digi2.ma.clear()` also resets the search: `setFilters(map, { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null }, { source: 'api' })` — explicit nulls, because core 1.7.0 merges filters and `{}` would change nothing; fields the visitor touched stay (ma.26). `prefer_filters` reads the `{ applied, skipped }` result: when nothing was applied (a touched field, no search panel) it does not count as done and tries again next visit (ma.26). `total` is `getProducts().length`; `flat_price` is
 the promo price while a promotion runs.
 
 ### State actions: `every_time`, `map_order` (ma.5)
@@ -1761,6 +1785,7 @@ the promo price while a promotion runs.
 ### API
 
 ```js
+digi2.ma.version            // ma.28: "ma.28" — the loaded script (same numbering as the envelope's minScript)
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
 digi2.ma.history()          // views, oldest first
 digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent
