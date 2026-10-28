@@ -80,7 +80,8 @@
  *   digi2.ma.history()                     Viewed units (unit_view), oldest first
  *   digi2.ma.track(unit)                   Record a unit_view from another source
  *   digi2.ma.lead()                        Mark the visitor as a lead
- *   digi2.ma.load(urlOrEnvelope)           Read a scenario envelope
+ *   digi2.ma.load(urlOrEnvelope)           Read a scenario envelope (object, or https URL on
+ *                                          digi2.app / api.2destate.com — ma.23)
  *   digi2.ma.reload()                      Re-read it (new revision, CRM call result)
  *   digi2.ma.simulateReturn()              End the visit as if afterHours had passed (demo)
  *   digi2.ma.clear()                       Delete the d2ma database

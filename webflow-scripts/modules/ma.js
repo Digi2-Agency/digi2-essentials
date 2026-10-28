@@ -103,7 +103,8 @@
  *   state   filters               last user filter; pref.rooms / pref.floor fall back
  *                                 to it while no unit has been viewed
  *   popup   promo-filter          built-in, needs no unit: "Szukasz mieszkania
- *                                 {{pref.roomsLabel}}? …"; skipped without pref.rooms
+ *                                 2-pokojowego? …" (ma.29: N-pokojowego for any
+ *                                 N ≥ 1); skipped without pref.rooms
  *   GA4 (dataLayer, no visitor data; d2-ma-search-events="off" switches off):
  *     view_item_list  { item_list_name: "wyszukiwarka", filters: "rooms=2|3;floor=1;
  *                     area=40-60;price=-700000;status=available;building=B",
@@ -154,7 +155,8 @@
  *
  * ─── Module API ─────────────────────────────────────────────────────────────
  *
- *   digi2.ma.load(urlOrEnvelope)  Read an envelope (a local file for tests)
+ *   digi2.ma.load(urlOrEnvelope)  Read an envelope: an object (a local file for tests), or an
+ *                                 https URL on digi2.app / api.2destate.com (ma.23)
  *   digi2.ma.reload()             Re-read the current envelope URL
  *   digi2.ma.track(unit)          Record a unit_view from any other source
  *   digi2.ma.lead()               Mark the visitor as a lead
@@ -222,7 +224,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 23;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 29;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -504,8 +506,8 @@
       if (best === null || counts[k] > counts[best] || (counts[k] === counts[best] && last[k] > last[best])) best = k;
     });
     if (best === null) {
-      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup z
-      // {{pref.roomsLabel}} działa od pierwszego filtra. Obejrzenia zawsze wygrywają.
+      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup
+      // promo-filter i {{pref.roomsLabel}} działają od pierwszego filtra. Obejrzenia zawsze wygrywają.
       var f = state && state.filters;
       if (!views.length && f && Array.isArray(f[key]) && f[key].length) return Number(f[key][0]);
       return null;
@@ -753,9 +755,13 @@
     state.filterLog = (state.filterLog || []).concat([{ t: t, rooms: f.rooms || null, floor: f.floor || null }]).slice(-50);
   }
 
-  function handle(evt, at) {
+  function handle(evt, at, pass) {
+    // Jedna interakcja = jeden pass: początek wizyty (return_visit), samo
+    // zdarzenie i dojrzałe odłożone akcje dzielą strażnika „jeden popup naraz".
+    // Osobne passy pokazywały dwa popupy na jedno kliknięcie (ma.27).
+    pass = pass || { popup: false };
     var visit = touch();
-    if (visit) dispatch(visit);
+    if (visit) dispatch(visit, pass);
     var t = at != null ? at : now();
     // Zdarzenie wizyty jest po jej początku (reguła 1) - także obejrzenie,
     // które ją otworzyło, i deep link z bufora sprzed otwarcia magazynu.
@@ -765,25 +771,25 @@
       if (!v) return;
       _emit('ma:view', { unit: v.unit });
       sendVisitSignal();
-      dispatch({ type: 'unit_view', t: t, unit: v.unit });
-      runDue();
+      dispatch({ type: 'unit_view', t: t, unit: v.unit }, pass);
+      runDue(pass);
     } else if (evt.type === 'lead') {
       state.lead = true;
       state.leadAt = t;
       state.leadVisit = state.visits;
       bindHotLead();
-      dispatch({ type: 'lead', t: t });
+      dispatch({ type: 'lead', t: t }, pass);
     } else if (evt.type === 'exit_intent') {
       // Raz na wizytę (§13.8.2).
       if (state.exitVisit === state.visits) return;
       state.exitVisit = state.visits;
-      dispatch({ type: 'exit_intent', t: t });
+      dispatch({ type: 'exit_intent', t: t }, pass);
     } else if (evt.type === 'engagement' || evt.type === 'form_abandon') {
-      dispatch({ type: evt.type, t: t, data: evt.data });
+      dispatch({ type: evt.type, t: t, data: evt.data }, pass);
     } else if (evt.type === 'search_filter') {
       var f = evt.filter || {};
       storeFilter(f, t);
-      dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } });
+      dispatch({ type: 'search_filter', t: t, data: { filter: f, results: evt.results } }, pass);
     } else if (evt.type === 'search_sort') {
       state.sortVisit = state.visits;
       state.sort = evt.sort;
@@ -1145,9 +1151,10 @@
 
   // Jedno zdarzenie przechodzi przez wszystkie aktywne scenariusze, w kolejności
   // koperty - stąd pierwszeństwo popupu wcześniejszego scenariusza.
-  function dispatch(evt) {
+  // pass: wspólny dla kilku dispatchy tej samej interakcji (handle) - bez niego własny.
+  function dispatch(evt, pass) {
     if (!envelope || !tracking) return;
-    var pass = { popup: false };
+    pass = pass || { popup: false };
     // Typ zdarzenia z listy scenariusza: wyzwalacze unit_view i type_view
     // słuchają tego samego obejrzenia lokalu.
     var types = evt.type === 'unit_view' ? ['unit_view', 'type_view'] : [evt.type];
@@ -1378,7 +1385,7 @@
   }
 
   // Odłożone akcje: po czasie, w kolejności scenariuszy koperty.
-  function runDue() {
+  function runDue(pass) {
     if (!envelope || !tracking || !state.pending.length) { scheduleDue(); return; }
     var t = now();
     var due = [];
@@ -1389,7 +1396,7 @@
     });
     var order = envelope.scenarios.map(function (s) { return s.id; });
     due.sort(function (a, b) { return (order.indexOf(a.sc) - order.indexOf(b.sc)) || (a.due - b.due); });
-    var pass = { popup: false };
+    pass = pass || { popup: false };
     due.forEach(function (p) {
       var sc = envelope.scenarios[order.indexOf(p.sc)];
       var node = sc && sc.nodes[p.node];
@@ -1498,6 +1505,13 @@
     if (n === 1) word = 'pokój';
     else if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) word = 'pokoje';
     return n + ' ' + word;
+  }
+
+  // „1-pokojowego", „2-pokojowego", „5-pokojowego" (ma.29) — przymiotnik w dopełniaczu
+  // do zdania popupu promo-filter. Tylko do tekstu wbudowanego, nie pole koperty.
+  function roomsAdj(n) {
+    if (n == null || !isFinite(n) || n < 1) return null;
+    return n + '-pokojowego';
   }
 
   function contentValue(key, unit) {
@@ -1747,12 +1761,15 @@
 
   // „Wyczyść" (§13.2): lista 2destate wraca do swojej kolejności.
   // „Wyczyść” (ma.18): wyszukiwarka wraca do pustego filtra, jak po wejściu.
+  // ma.26: core scala filtry (mergeFilters), więc {} niczego nie zdejmuje — każde
+  // pole jawnie null. Pola dotknięte przez gościa core i tak zostawia (touched).
+  var FILTER_RESET = { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null };
   function resetFilters() {
     var api = mapApi();
     if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
     pendingFilter = null;
     if (!api || typeof api.setFilters !== 'function') return;
-    try { mapNames().forEach(function (m) { api.setFilters(m, {}, { source: 'api' }); }); } catch (e) {}
+    try { mapNames().forEach(function (m) { api.setFilters(m, _clone(FILTER_RESET), { source: 'api' }); }); } catch (e) {}
   }
 
   function resetOrder() {
@@ -2029,10 +2046,20 @@
       _log('prefer_filters waits for the map → ' + sc.id + '/' + node.id);
       return true;
     }
+    var applied = false;
     try {
-      maps.forEach(function (m) { api.setFilters(m, f, { source: 'api' }); });
+      maps.forEach(function (m) {
+        var r = api.setFilters(m, f, { source: 'api' });
+        // core 1.7.0: { applied, skipped }. Nic nie weszło (pole dotknięte przez gościa,
+        // panel wyszukiwarki wyłączony) = akcja nie zrobiła swojego. Starsza paczka: bez wyniku.
+        if (!r || typeof r !== 'object' || !Array.isArray(r.applied) || r.applied.length) applied = true;
+      });
     } catch (e) {
       _warn('prefer_filters failed', e);
+      return false;
+    }
+    if (!applied) {
+      _log('prefer_filters — 2destate applied nothing (field touched by the visitor or no search panel)');
       return false;
     }
     _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'prefer_filters', filters: f });
@@ -2117,9 +2144,18 @@
     'promo-filter': { heading: 'Dla Ciebie', cta: 'Porozmawiajmy' }
   };
   // Popupy bez lokalu (ma.17): treść tylko z pref.*; bez wartości popup jest pomijany.
+  // ma.29: „Szukasz mieszkania 2-pokojowego?" zamiast „… 2 pokoje?".
   var UNITLESS_TEXT = {
-    'promo-filter': 'Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne promocje.'
+    'promo-filter': function () {
+      var adj = roomsAdj(prefOf('rooms'));
+      return adj == null ? null : 'Szukasz mieszkania ' + adj + '? Pokażemy wolne lokale i aktualne promocje.';
+    }
   };
+  // null także dla szablonu spoza UNITLESS_TEXT: szablon koperty bez {{unit.*}},
+  // który zniknął po d2-ma-refresh, ma pominąć popup, nie rzucić TypeError.
+  function unitlessText(template) {
+    return typeof UNITLESS_TEXT[template] === 'function' ? UNITLESS_TEXT[template]() : null;
+  }
 
   // Popup bez lokalu: promo-filter zawsze; szablon z koperty bez {{unit.*}} tylko
   // wtedy, gdy ścieżka nie ma lokalu (z lokalem zostaje jak dotąd).
@@ -2463,9 +2499,33 @@
   var TOOLTIP_SEL = '.imp-tooltips-container.is-fullscreen';
   var TOOLTIP_POLL_MS = 250;
   var TOOLTIP_MAX_MS = 5 * 60 * 1000;
+  // Dymek otwiera się chwilę po stuknięciu (po decyzji o popupie z tego samego
+  // kliknięcia), więc ukryty kontener jeszcze nic nie mówi - najpierw dajemy mu czas.
+  var TOOLTIP_SETTLE_MS = 500;
+
+  // Image Map Pro zostawia klasę is-fullscreen po zamknięciu dymka (kontener
+  // dostaje display:none), więc sama klasa nie znaczy „otwarty" - liczy się,
+  // czy kontener faktycznie jest na ekranie. Inaczej popup czekał 5 min i przepadał (ma.27).
+  function shownOnScreen(el) {
+    // visibility dziedziczy się w computed style; display:none przodka daje puste getClientRects().
+    var cs = window.getComputedStyle ? window.getComputedStyle(el) : el.style;
+    if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.visibility === 'collapse')) return false;
+    if (el.getClientRects && !el.getClientRects().length) return false;
+    if (el.getBoundingClientRect) {
+      var r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return false;
+    }
+    return true;
+  }
+
+  function mapTooltips() {
+    return document.querySelectorAll ? document.querySelectorAll(TOOLTIP_SEL) : [];
+  }
 
   function mapTooltipOpen() {
-    return !!(document.querySelector && document.querySelector(TOOLTIP_SEL));
+    var list = mapTooltips();
+    for (var i = 0; i < list.length; i++) if (shownOnScreen(list[i])) return true;
+    return false;
   }
 
   // Profil z chwili decyzji: „Wyczyść" i wycofanie zgody podbijają epokę, więc
@@ -2482,7 +2542,8 @@
     // Nowszy popup tego samego szablonu zastępuje czekający.
     var prev = tooltipWaits[key];
     if (prev) { clearTimeout(prev.timer); delete tooltipWaits[key]; prev.giveUp(prev.owner === owner ? 'same' : 'other'); }
-    if (!mapTooltipOpen()) { go(); return; }
+    // Bez kontenera pełnoekranowego (desktop, strona bez mapy) - od razu.
+    if (!mapTooltips().length) { go(); return; }
     _log('popup waits for the map tooltip to close');
     // Czas z zegara, nie z liczby tyknięć - karta w tle spowalnia timery.
     var since = Date.now();
@@ -2493,7 +2554,11 @@
         if (tooltipWaits[key] !== wait) return;
         // Zgoda wycofana albo profil wyczyszczony w trakcie czekania - nic nie pokazujemy.
         if (!tracking || epoch !== profileEpoch) { delete tooltipWaits[key]; return; }
-        if (!mapTooltipOpen()) { delete tooltipWaits[key]; go(); }
+        if (!mapTooltipOpen()) {
+          if (Date.now() - since < TOOLTIP_SETTLE_MS) { tick(); return; }
+          delete tooltipWaits[key];
+          go();
+        }
         else if (Date.now() - since >= TOOLTIP_MAX_MS) {
           delete tooltipWaits[key];
           _log('map tooltip still open after 5 min — popup skipped');
@@ -2510,7 +2575,7 @@
     // Popup bez lokalu (promo-filter): lokal z historii go nie dotyczy.
     var unit = noUnit ? null : ctx.unit;
     if (!unit && !noUnit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
-    if (noUnit && !tplLib && contentText({ text: UNITLESS_TEXT[node.template] }, null) == null) {
+    if (noUnit && !tplLib && unitlessText(node.template) == null) {
       _log('popup skipped — ' + node.template + ' needs pref.rooms');
       onSkipped();
       return;
@@ -2552,7 +2617,7 @@
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
         if (noUnit && !tpl && !own) {
-          var txt = contentText({ text: UNITLESS_TEXT[node.template] }, null);
+          var txt = unitlessText(node.template);
           if (txt == null) { onSkipped(); return null; }
           var body = inst.popupElement.querySelector('[d2-ma-unitless-text]');
           if (body) body.textContent = txt;
@@ -2560,8 +2625,15 @@
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, tpl ? (templateCta(tpl) || node.cta) : node.cta);
         whenMapTooltipClosed(node.template, owner, epoch, function () {
-          inst.show({ auto: true });
-          onShown(fresh);
+          // park: false - popup ze scenariusza nie czeka za innym popupem na
+          // ekranie (popups.js pokazałby go po zamknięciu tamtego, ~1 s później,
+          // jako drugi na tę samą interakcję). Nie wszedł na ekran = pominięty:
+          // bez ma:action, a wpis częstotliwości wraca (onSkipped).
+          inst.show({ auto: true, park: false });
+          if (inst.isVisible || inst._onScreen) { onShown(fresh); return; }
+          inst.pendingShow = false;
+          _log('popup skipped — another popup is on screen → ' + name);
+          onSkipped();
         }, onSkipped);
         return null;
       });
@@ -3255,7 +3327,8 @@
     save();
     var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
       source: 'return_visit' };
-    if (units.length) body.units = units;
+    // ma.24: units zawsze, także [] — serwer 2destate #189 wymaga pola (bez niego 422 i wyciszona wizyta).
+    body.units = units;
     try {
       var base = hotLeadApi();
       if (!base) return;
@@ -3319,14 +3392,28 @@
   function hookVisitorIdFields() {
     if (idFieldsHooked || !hotLeadOn() || !document.addEventListener) return;
     idFieldsHooked = true;
-    document.addEventListener('submit', function (e) {
-      var form = e && e.target;
-      if (!form || !form.querySelectorAll) return;
-      var fields = form.querySelectorAll('[d2-ma-visitor-id], [data-d2-ma-visitor-id]');
-      if (!fields.length) return;
-      var id = shareVisitorId();
-      for (var i = 0; i < fields.length; i++) fields[i].value = id || '';
-    }, true);
+    document.addEventListener('submit', function (e) { fillVisitorId(e && e.target); }, true);
+    // ma.24: jak kontekst leadu — klik w przycisk wysyłki wyprzedza submit.
+    document.addEventListener('click', function (e) { fillVisitorId(submitFormOf(e && e.target)); }, true);
+  }
+
+  function fillVisitorId(form) {
+    if (!form || !form.querySelectorAll) return;
+    var fields = form.querySelectorAll('[d2-ma-visitor-id], [data-d2-ma-visitor-id]');
+    if (!fields.length) return;
+    var id = shareVisitorId();
+    for (var i = 0; i < fields.length; i++) fields[i].value = id || '';
+  }
+
+  // Formularz, który wyśle klik w ten element (przycisk / input type=submit), albo null.
+  function submitFormOf(t) {
+    if (!t || typeof t.closest !== 'function') return null;
+    var form = t.closest('form');
+    if (!form) return null;
+    var btn = t.closest('button, input[type="submit"]') || t;
+    var type = (btn.getAttribute && btn.getAttribute('type')) || '';
+    if (!type && btn.tagName && String(btn.tagName).toUpperCase() === 'BUTTON') type = 'submit';
+    return String(type).toLowerCase() === 'submit' ? form : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -3644,7 +3731,7 @@
       if (t - lastTouch < TOUCH_THROTTLE_MS) return;
       lastTouch = t;
       var visit = touch();
-      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); runDue(); }
+      if (visit) { var pass = { popup: false }; state.visitPageviews = 1; dispatch(visit, pass); sendVisitSignal(); runDue(pass); }
       afterChange();
     }
     ['click', 'keydown', 'scroll', 'touchstart'].forEach(function (n) {
@@ -4028,14 +4115,8 @@
     // Klik w przycisk wysyłki wyprzedza submit: skrypt strony, który czyta
     // formularz już w handlerze kliknięcia, też dostaje pola.
     document.addEventListener('click', function (e) {
-      var t = e && e.target;
-      if (!t || typeof t.closest !== 'function') return;
-      var form = t.closest('form');
-      if (!form) return;
-      var btn = t.closest('button, input[type="submit"]') || t;
-      var type = (btn.getAttribute && btn.getAttribute('type')) || '';
-      if (!type && btn.tagName && String(btn.tagName).toUpperCase() === 'BUTTON') type = 'submit';
-      if (String(type).toLowerCase() === 'submit') fillContext(form);
+      var form = submitFormOf(e && e.target);
+      if (form) fillContext(form);
     }, true);
   }
 
@@ -4112,21 +4193,23 @@
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
       state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
-      if (crm) dispatch(crm);
-      if (visit) dispatch(visit);
+      // Otwarcie strony to jedna chwila: CRM, wizyta, zdarzenia z bufora i dojrzałe akcje - jeden popup.
+      var pass = { popup: false };
+      if (crm) dispatch(crm, pass);
+      if (visit) dispatch(visit, pass);
       var queued = buffer;
       var required = consentRequired(envelope);
       buffer = [];
       queued.forEach(function (q) {
         if (required && !q.consent) return;
-        handle(q.evt, q.real + (state.shift || 0));
+        handle(q.evt, q.real + (state.shift || 0), pass);
       });
       // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
       hookSignals();
       replayFormExits();
       replayStateActions();
       sendVisitSignal();
-      runDue();
+      runDue(pass);
       afterChange();
       highlightProfile();
       opening = null;
@@ -4173,8 +4256,10 @@
     deepLinkView();
     hookVisitorIdFields();
     pageUtm = readUtm();
-    envelopeUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
-    fetchEnvelope(envelopeUrl).then(function (raw) {
+    var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
+    // ma.25: adres spoza listy nie zostaje jako envelopeUrl — reload / d2-ma-refresh go nie ponawiają.
+    envelopeUrl = startUrl && allowedUrl(startUrl, ENVELOPE_HOSTS) ? startUrl : null;
+    fetchEnvelope(startUrl).then(function (raw) {
       envelope = compile(raw);
       return decide(envelope);
     })['catch'](function (e) { _warn('start failed', e); });
@@ -4202,17 +4287,23 @@
     applyEnvelope(env);
     hookSignals();
     var crm = crmEvent();
-    if (crm && crm.seq !== before) dispatch(crm);
-    runDue();
+    var pass = { popup: false };
+    if (crm && crm.seq !== before) dispatch(crm, pass);
+    runDue(pass);
     afterChange();
     return Promise.resolve(true);
   }
 
   var api = {
+    // ma.28: wersja skryptu, którą strona faktycznie załadowała ("ma.28") - do
+    // sprawdzenia w konsoli po podmianie tagu; ten sam numer co minScript koperty.
+    version: 'ma.' + SCRIPT_VERSION,
     load: function (src) {
       if (src && typeof src === 'object') return useEnvelope(src);
-      envelopeUrl = src || envelopeUrl;
-      return fetchEnvelope(envelopeUrl).then(function (raw) { return raw ? useEnvelope(raw) : false; });
+      var url = src || envelopeUrl;
+      // ma.25: zapamiętujemy adres dopiero po kontroli listy — zły adres nie podmienia dobrego.
+      if (url && allowedUrl(url, ENVELOPE_HOSTS)) envelopeUrl = url;
+      return fetchEnvelope(url).then(function (raw) { return raw ? useEnvelope(raw) : false; });
     },
     reload: function () {
       if (!envelopeUrl) return Promise.resolve(false);
@@ -4264,8 +4355,9 @@
       state.shift = (state.shift || 0) + Math.max(scaled(VISIT_GAP_MS), scaled(maxAfter * HOUR_MS)) + 1000;
       _log('simulated return, clock moved by ' + Math.round(state.shift / 1000) + ' s in total');
       var visit = touch();
-      if (visit) { state.visitPageviews = 1; dispatch(visit); sendVisitSignal(); }
-      runDue();
+      var pass = { popup: false };
+      if (visit) { state.visitPageviews = 1; dispatch(visit, pass); sendVisitSignal(); }
+      runDue(pass);
       afterChange();
     },
     clear: function () {
