@@ -14,6 +14,9 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   1-pokojowego, 5-pokojowego, 12-pokojowego. Przy filtrze z kilkoma liczbami
   (np. 2 i 3) zdanie bierze pierwszą, jak dotąd. Popup własny strony i szablon
   z koperty o tym id bez zmian.
+- Zmiana zachowania: filtr z liczbą pokoi 0 dawał wcześniej popup „Szukasz
+  mieszkania 0 pokoi?”. Teraz popup jest wtedy pomijany, tak jak bez liczby
+  pokoi w filtrze.
 
 ## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.27–ma.16)
 

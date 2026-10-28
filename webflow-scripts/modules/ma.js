@@ -506,8 +506,8 @@
       if (best === null || counts[k] > counts[best] || (counts[k] === counts[best] && last[k] > last[best])) best = k;
     });
     if (best === null) {
-      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup z
-      // {{pref.roomsLabel}} działa od pierwszego filtra. Obejrzenia zawsze wygrywają.
+      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup
+      // promo-filter i {{pref.roomsLabel}} działają od pierwszego filtra. Obejrzenia zawsze wygrywają.
       var f = state && state.filters;
       if (!views.length && f && Array.isArray(f[key]) && f[key].length) return Number(f[key][0]);
       return null;
@@ -2151,6 +2151,11 @@
       return adj == null ? null : 'Szukasz mieszkania ' + adj + '? Pokażemy wolne lokale i aktualne promocje.';
     }
   };
+  // null także dla szablonu spoza UNITLESS_TEXT: szablon koperty bez {{unit.*}},
+  // który zniknął po d2-ma-refresh, ma pominąć popup, nie rzucić TypeError.
+  function unitlessText(template) {
+    return typeof UNITLESS_TEXT[template] === 'function' ? UNITLESS_TEXT[template]() : null;
+  }
 
   // Popup bez lokalu: promo-filter zawsze; szablon z koperty bez {{unit.*}} tylko
   // wtedy, gdy ścieżka nie ma lokalu (z lokalem zostaje jak dotąd).
@@ -2570,7 +2575,7 @@
     // Popup bez lokalu (promo-filter): lokal z historii go nie dotyczy.
     var unit = noUnit ? null : ctx.unit;
     if (!unit && !noUnit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
-    if (noUnit && !tplLib && UNITLESS_TEXT[node.template]() == null) {
+    if (noUnit && !tplLib && unitlessText(node.template) == null) {
       _log('popup skipped — ' + node.template + ' needs pref.rooms');
       onSkipped();
       return;
@@ -2612,7 +2617,7 @@
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
         if (noUnit && !tpl && !own) {
-          var txt = UNITLESS_TEXT[node.template]();
+          var txt = unitlessText(node.template);
           if (txt == null) { onSkipped(); return null; }
           var body = inst.popupElement.querySelector('[d2-ma-unitless-text]');
           if (body) body.textContent = txt;

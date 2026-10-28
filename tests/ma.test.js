@@ -2917,6 +2917,26 @@ test('ma.29: promo-filter „Szukasz mieszkania N-pokojowego?” dla 1, 2, 5, 12
   assert.equal(zero.popupy.length, 0, '0 pokoi to nie liczba do zdania — popup pominięty');
 });
 
+test('ma.29: szablon koperty bez {{unit.*}} znika (d2-ma-refresh) między decyzją a renderem — popup pominięty, bez TypeError', async () => {
+  const promo = { templateId: 'promo-bez-lokalu', version: 1, blocks: [{ type: 'title', text: 'Mamy coś dla Ciebie' }, { type: 'cta', label: 'Porozmawiajmy', action: 'contact' }] };
+  const sc = [scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-bez-lokalu', cta: 'contact', frequency: 'once_per_days:0' }])];
+  const k = koperta(sc, { minScript: 'ma.17', templates: { popup: [promo] } });
+  const env = await start({ koperta: k });
+  // Nowa rewizja koperty bez szablonu przychodzi, gdy moduł popupów już szuka instancji.
+  const popups = env.window.digi2.popups;
+  const get = popups.get;
+  popups.get = function (n) {
+    popups.get = get;
+    env.ma.load(koperta(sc, { minScript: 'ma.17' }));
+    return get.call(this, n);
+  };
+  env.filtr({ rooms: [2] });
+  await env.minie(600);
+  await env.gotowe();
+  assert.equal(env.popupy.length, 0, 'bez szablonu i bez tekstu wbudowanego nie ma czego pokazać');
+  assert.equal(env.ostrzezenia.filter((w) => /TypeError|popup failed/.test(w)).length, 0, env.ostrzezenia.join('\n'));
+});
+
 test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na wizytę; gość, który już filtrował — bez zmian', async () => {
   const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
   const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
