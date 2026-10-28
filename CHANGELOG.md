@@ -6,12 +6,13 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
 **Wersje przedpremierowe `v1.9.0-ma.N` a `@latest`.** `@latest` na jsDelivr
-pomija tagi z sufiksem, więc pliki, które są w 1.8.0, zostają na 1.8.0. Pliku,
-którego w 1.8.0 nie ma (`dist/modules/ma.min.js`), jsDelivr szuka jednak w
-najnowszym tagu, który go ma — także przedpremierowym, także na gałęzi spoza
-`main`. Strona z `d2-ma` na `@latest` dostaje więc najnowszy `ma.N` zaraz po
-tagu (cache CDN do 12 h, przeglądarki do 7 dni; purge nie pomaga), a loader 1.8.0
-zamienia każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
+pomija tagi z sufiksem, więc pliki z wersji stabilnych idą z najnowszej stabilnej
+1.8.x (dziś 1.8.2). Pliku, którego nie ma w żadnej wersji stabilnej
+(`dist/modules/ma.min.js`), jsDelivr szuka jednak w najnowszym tagu, który go ma —
+także przedpremierowym, także na gałęzi spoza `main`. Strona z `d2-ma` na
+`@latest` dostaje więc najnowszy `ma.N` zaraz po tagu (cache CDN do 12 h; purge
+czyści tylko CDN, przeglądarki trzymają plik do 7 dni), a loader 1.8.x zamienia
+każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
