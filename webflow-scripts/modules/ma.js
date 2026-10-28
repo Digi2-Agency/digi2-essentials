@@ -103,7 +103,8 @@
  *   state   filters               last user filter; pref.rooms / pref.floor fall back
  *                                 to it while no unit has been viewed
  *   popup   promo-filter          built-in, needs no unit: "Szukasz mieszkania
- *                                 {{pref.roomsLabel}}? …"; skipped without pref.rooms
+ *                                 2-pokojowego? …" (ma.29: N-pokojowego for any
+ *                                 N ≥ 1); skipped without pref.rooms
  *   GA4 (dataLayer, no visitor data; d2-ma-search-events="off" switches off):
  *     view_item_list  { item_list_name: "wyszukiwarka", filters: "rooms=2|3;floor=1;
  *                     area=40-60;price=-700000;status=available;building=B",
@@ -223,7 +224,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 28;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 29;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -505,8 +506,8 @@
       if (best === null || counts[k] > counts[best] || (counts[k] === counts[best] && last[k] > last[best])) best = k;
     });
     if (best === null) {
-      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup z
-      // {{pref.roomsLabel}} działa od pierwszego filtra. Obejrzenia zawsze wygrywają.
+      // Bez obejrzeń (ma.17): preferencja z ostatniego filtra gościa — popup
+      // promo-filter i {{pref.roomsLabel}} działają od pierwszego filtra. Obejrzenia zawsze wygrywają.
       var f = state && state.filters;
       if (!views.length && f && Array.isArray(f[key]) && f[key].length) return Number(f[key][0]);
       return null;
@@ -1506,6 +1507,13 @@
     return n + ' ' + word;
   }
 
+  // „1-pokojowego", „2-pokojowego", „5-pokojowego" (ma.29) — przymiotnik w dopełniaczu
+  // do zdania popupu promo-filter. Tylko do tekstu wbudowanego, nie pole koperty.
+  function roomsAdj(n) {
+    if (n == null || !isFinite(n) || n < 1) return null;
+    return n + '-pokojowego';
+  }
+
   function contentValue(key, unit) {
     if (key === 'pref.rooms' || key === 'pref.floor') {
       var p = prefOf(key.slice(5));
@@ -2136,9 +2144,18 @@
     'promo-filter': { heading: 'Dla Ciebie', cta: 'Porozmawiajmy' }
   };
   // Popupy bez lokalu (ma.17): treść tylko z pref.*; bez wartości popup jest pomijany.
+  // ma.29: „Szukasz mieszkania 2-pokojowego?" zamiast „… 2 pokoje?".
   var UNITLESS_TEXT = {
-    'promo-filter': 'Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne promocje.'
+    'promo-filter': function () {
+      var adj = roomsAdj(prefOf('rooms'));
+      return adj == null ? null : 'Szukasz mieszkania ' + adj + '? Pokażemy wolne lokale i aktualne promocje.';
+    }
   };
+  // null także dla szablonu spoza UNITLESS_TEXT: szablon koperty bez {{unit.*}},
+  // który zniknął po d2-ma-refresh, ma pominąć popup, nie rzucić TypeError.
+  function unitlessText(template) {
+    return typeof UNITLESS_TEXT[template] === 'function' ? UNITLESS_TEXT[template]() : null;
+  }
 
   // Popup bez lokalu: promo-filter zawsze; szablon z koperty bez {{unit.*}} tylko
   // wtedy, gdy ścieżka nie ma lokalu (z lokalem zostaje jak dotąd).
@@ -2558,7 +2575,7 @@
     // Popup bez lokalu (promo-filter): lokal z historii go nie dotyczy.
     var unit = noUnit ? null : ctx.unit;
     if (!unit && !noUnit) { _log('popup skipped — no unit in the path'); onSkipped(); return; }
-    if (noUnit && !tplLib && contentText({ text: UNITLESS_TEXT[node.template] }, null) == null) {
+    if (noUnit && !tplLib && unitlessText(node.template) == null) {
       _log('popup skipped — ' + node.template + ' needs pref.rooms');
       onSkipped();
       return;
@@ -2600,7 +2617,7 @@
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         if (tpl) renderTemplate(inst.popupElement, tpl, fresh);
         if (noUnit && !tpl && !own) {
-          var txt = contentText({ text: UNITLESS_TEXT[node.template] }, null);
+          var txt = unitlessText(node.template);
           if (txt == null) { onSkipped(); return null; }
           var body = inst.popupElement.querySelector('[d2-ma-unitless-text]');
           if (body) body.textContent = txt;

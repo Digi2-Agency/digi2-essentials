@@ -1741,8 +1741,13 @@ from the first filter; the first view takes over. `digi2.ma.profile()` gets
 tylko wolne` and `filters` in the JSON.
 
 **Popup `promo-filter`** — built in like `promo-rooms`, but needs **no unit**:
-„Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne
-promocje.”, CTA contact. Skipped without `pref.rooms`. A `templates.popup[]`
+„Szukasz mieszkania 2-pokojowego? Pokażemy wolne lokale i aktualne
+promocje.”, CTA contact. The number is `pref.rooms` as an adjective in the
+genitive, `N-pokojowego` for every N ≥ 1 (1-, 5-, 12-pokojowego — the hyphenated
+form has no plural endings to get wrong); before ma.29 it said „2 pokoje”.
+`pref.rooms` is always one number (a filter `[2, 3]` gives 2), so there is no
+„2- lub 3-pokojowego”. Skipped without `pref.rooms` (or with 0). The adjective is
+only for this built-in text — it is not an envelope field like `roomsLabel`. A `templates.popup[]`
 entry with that id wins over the built-in one, and the page's own
 `[d2-ma-popup="promo-filter"]` over both. Any envelope template without
 `{{unit.*}}` now also opens when the path has no unit.
