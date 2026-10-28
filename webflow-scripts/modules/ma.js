@@ -170,8 +170,9 @@
  *   digi2.ma.allows(el)           May this element show (popups ask it)
  *
  *   digi2.on('ma:ready' | 'ma:view' | 'ma:action' | 'ma:change', fn)
- *     ma:change { cleared: true, tracking: false, reason } — consent withdrawn
- *     or required; the database is wiped and profile() returns null
+ *     ma:change { cleared: true, tracking: false, reason } — consent denied or
+ *     withdrawn (ma.31: unknown consent only waits); the database is wiped
+ *     and profile() returns null
  */
 (function () {
   'use strict';
@@ -192,6 +193,8 @@
   var MAX_VIEWS = 2000;
   var MAX_BUFFER = 100;
   var FETCH_TIMEOUT_MS = 5000;
+  // ma.31: pusty d2-ma czeka tyle na pierwsze digi2.ma.load(), potem startuje bez koperty.
+  var ENVELOPE_WAIT_MS = 10000;
   var STATUS_TIMEOUT_MS = 3000;
   var TOUCH_THROTTLE_MS = 15000;
   var EVENT_3DE_VIEW = 'oa3de__unit-open';
@@ -224,7 +227,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 29;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 31;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -310,8 +313,13 @@
   var dueTimer = null;
   var writeChain = Promise.resolve();
   var booted = false;
+  // ma.31: każda koperta z load() podbija licznik - start nie nadpisuje jej swoją.
+  var envelopeSeq = 0;
+  var envelopeWait = null;
   var gtagConsent = {};      // komendy gtag('consent', …) z dataLayer: update, default, regionDenied
   var revoked = false;       // odmowa w trakcie otwierania magazynu
+  var holding = false;       // ma.31: zgoda nieznana - czekamy, bazy nie ruszamy
+  var openedWithConsent = false; // ma.31: magazyn otwarty za zgodą (nie tylko bez wymogu)
   var pageUtm = null;        // utm_source / utm_medium / utm_campaign z adresu tej odsłony
 
   function now() {
@@ -411,6 +419,8 @@
       },
       // Sam rekord state, bez zakładania bazy, której nie ma (wipe() przy
       // starcie): nowa baza = onupgradeneeded, wtedy przerywamy i wraca null.
+      // To samo przy bazie ze starszą DB_VERSION: upgrade przerwany, null -
+      // bezpieczniki ma.31 (hold) wtedy nic nie kasują.
       peekState: function () {
         return new Promise(function (resolve) {
           var req;
@@ -2809,6 +2819,7 @@
       var tag = googleTagConsent();
       if (blocked && tag === 'granted') consentChanged(true);
       else if ((tracking || opening) && tag === 'denied') consentChanged(false);
+      else if (holding && googleTagDenied()) consentChanged(false);
     }
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
@@ -3793,35 +3804,71 @@
     } catch (x) { return null; }
   }
 
+  // ma.31: odmowa w stanie tagu Google tylko z update - samo default to nie
+  // decyzja gościa (szablon CMP w GTM stawia je zawsze przed banerem).
+  function googleTagDenied() {
+    try {
+      var e = window.google_tag_data.ics.entries[consentCategory()];
+      return !!e && e.update === false;
+    } catch (x) { return false; }
+  }
+
+  function googleTagUpdated() {
+    try {
+      var e = window.google_tag_data.ics.entries[consentCategory()];
+      return !!e && e.update !== undefined;
+    } catch (x) { return false; }
+  }
+
   // Kolejność źródeł Consent Mode: update z dataLayer rozstrzyga, potem stan
   // tagu Google (liczy region), potem default z region (tylko jako odmowa),
   // potem default bez region. Gdy żadne nie zna kategorii - moduł google biblioteki
   // albo jego zapis w localStorage.
-  function hasConsent() {
-    if (gtagConsent.update) return gtagConsent.update === 'granted';
+  //
+  // ma.31 (decyzja Piotra 28.10.2026): trzy stany. 'granted' otwiera bazę,
+  // 'denied' to jawna odmowa (update w dataLayer albo w tagu Google, zapis
+  // modułu google) i kasuje bazę, null = nieznana (nic albo samo default,
+  // także z region): bazy nie otwieramy, nie zapisujemy i nie kasujemy.
+  function consentState() {
+    if (gtagConsent.update) return gtagConsent.update;
     var tag = googleTagConsent();
-    if (tag) return tag === 'granted';
+    if (tag === 'granted' && googleTagUpdated()) return tag;
+    if (googleTagDenied()) return 'denied';
+    // Zapis modułu google to decyzja gościa, a moduł odtwarza ją przy starcie
+    // jako default - dlatego przed gałęziami default (ma.31, recenzja #38).
+    var saved = savedConsent();
+    if (saved) return saved;
+    if (tag === 'granted') return tag;
+    if (tag === 'denied') return null;
     // Regionalna odmowa przed ogólnym default: bez stanu tagu Google (wolny
     // gtag.js, adblock) nie wiemy, czy odwiedzający nie jest w tamtym regionie.
-    if (gtagConsent.regionDenied) return false;
-    if (gtagConsent['default']) return gtagConsent['default'] === 'granted';
+    if (gtagConsent.regionDenied) return null;
+    if (gtagConsent['default']) return gtagConsent['default'] === 'granted' ? 'granted' : null;
+    return null;
+  }
+
+  // Wybór zapisany przez moduł google po decyzji na banerze. Jego get() bez
+  // zapisu zwraca same domyślne odmowy, więc czytamy sam zapis.
+  function savedConsent() {
     var c = null;
-    try {
-      if (window.digi2.modules && window.digi2.modules.check && window.digi2.modules.check('google')) {
-        c = window.digi2.google.consent.get();
-      } else {
-        c = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) || 'null');
-      }
-    } catch (e) { c = null; }
-    return !!(c && c[consentCategory()] === 'granted');
+    try { c = JSON.parse(window.localStorage.getItem(CONSENT_STORAGE_KEY) || 'null'); } catch (e) { c = null; }
+    var v = c && c[consentCategory()];
+    return v === 'granted' || v === 'denied' ? v : null;
+  }
+
+  function hasConsent() {
+    return consentState() === 'granted';
   }
 
   function consentChanged(granted) {
     if (granted) revoked = false;
-    if (granted && blocked) { blocked = false; openStore(); }
+    if (granted && blocked) { blocked = false; holding = false; openStore(); }
     if (!granted && consentRequired(envelope)) {
       if (tracking) wipe('consent withdrawn');
       else if (opening) revoked = true;
+      // ma.31: jawna odmowa w trakcie czekania kasuje bazę z poprzednich wizyt.
+      // Przed decide() (koperta jeszcze nieznana) rozstrzyga sam decide().
+      else if (holding) wipe('consent denied');
     }
   }
 
@@ -3831,6 +3878,8 @@
   function wipe(reason) {
     _log('no consent — d2ma deleted (' + reason + ')');
     var hadState = !!state;
+    holding = false;
+    openedWithConsent = false;
     revokeHotLead();
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
@@ -4151,15 +4200,41 @@
   }
 
   function decide(env) {
-    if (consentRequired(env) && !hasConsent()) {
-      wipe('consent required');
+    var cs = consentRequired(env) ? consentState() : 'granted';
+    if (cs === 'denied') {
+      wipe('consent denied');
       waitForConsent();
-      _log('waiting for consent → ' + consentCategory());
+      _log('consent denied → ' + consentCategory());
       _emit('ma:ready', { tracking: false });
       return Promise.resolve();
     }
+    if (cs !== 'granted') return hold(env);
     waitForConsent();
     return openStore();
+  }
+
+  // ma.31: zgoda jeszcze nieznana (CMP z GTM odpowiada po starcie modułu).
+  // Bazy nie otwieramy i nie kasujemy - czytamy tylko rekord state i kasujemy
+  // bazę, gdy nie była otwarta za zgodą (zebrana bez wymogu albo sprzed ma.31)
+  // albo ostatnie otwarcie za zgodą jest starsze niż retencja.
+  function hold(env) {
+    blocked = true;
+    holding = true;
+    // Warunki d2-ma-show-* i podgląd ?d2-ma-preview liczą się bez profilu, jak po wipe().
+    render();
+    waitForConsent();
+    _log('waiting for consent → ' + consentCategory());
+    _emit('ma:ready', { tracking: false });
+    var s = window.digi2._maStore || idbStore() || memoryStore();
+    var peek = typeof s.peekState === 'function' ? s.peekState()
+      : typeof s.load === 'function' ? s.load().then(function (d) { return d && d.state; }) : null;
+    return Promise.resolve(peek).then(function (st) {
+      if (!st || !holding || tracking || opening) return;
+      var days = env && num(env.storage.retentionDays);
+      if (!days || days <= 0) days = DEFAULT_RETENTION_DAYS;
+      if (st.consentAt == null) wipe('profile not opened with consent');
+      else if (Date.now() + (st.shift || 0) - st.consentAt > days * DAY_MS) wipe('consent older than retention');
+    }, function () {});
   }
 
   var opening = null;
@@ -4187,7 +4262,13 @@
       if (!state.pending) state.pending = [];
       tracking = true;
       blocked = false;
+      holding = false;
       prune();
+      // ma.31: znacznik dla startu z nieznaną zgodą (hold) - baza otwarta za zgodą i kiedy.
+      openedWithConsent = hasConsent();
+      // Znacznik = ostatnie otwarcie za zgodą; otwarcie bez wymogu go zdejmuje.
+      if (openedWithConsent) state.consentAt = now();
+      else delete state.consentAt;
       applyEnvelope(envelope);
       var visit = touch();
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
@@ -4259,10 +4340,29 @@
     var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     // ma.25: adres spoza listy nie zostaje jako envelopeUrl — reload / d2-ma-refresh go nie ponawiają.
     envelopeUrl = startUrl && allowedUrl(startUrl, ENVELOPE_HOSTS) ? startUrl : null;
-    fetchEnvelope(startUrl).then(function (raw) {
-      envelope = compile(raw);
-      return decide(envelope);
-    })['catch'](function (e) { _warn('start failed', e); });
+    if (!startUrl) {
+      // ma.31: pusty d2-ma = koperta z digi2.ma.load(). Bez niej magazyn się nie
+      // otwiera - inaczej wizyta (return_visit) przeszłaby bez scenariuszy.
+      // Koperta podana przed startem rusza od razu; bez load() start po 10 s.
+      if (envelope) {
+        decide(envelope)['catch'](function (e) { _warn('start failed', e); });
+      } else {
+        envelopeWait = setTimeout(function () {
+          envelopeWait = null;
+          _log('no digi2.ma.load() within ' + ENVELOPE_WAIT_MS / 1000 + ' s — starting without an envelope');
+          decide(envelope)['catch'](function (e) { _warn('start failed', e); });
+        }, ENVELOPE_WAIT_MS);
+      }
+    } else {
+      var seq = envelopeSeq;
+      fetchEnvelope(startUrl).then(function (raw) {
+        // Koperta z load() w trakcie pobierania wygrywa z tą z atrybutu - i to
+        // load() już wywołał decide(), więc drugi raz go nie wołamy.
+        if (envelopeSeq !== seq) return null;
+        envelope = compile(raw);
+        return decide(envelope);
+      })['catch'](function (e) { _warn('start failed', e); });
+    }
     var every = num(_cfg('d2-ma-refresh'));
     if (every && every >= 5) setInterval(function () { api.reload(); }, every * 1000);
   }
@@ -4271,13 +4371,20 @@
   function useEnvelope(raw) {
     var env = compile(raw);
     if (!env) return Promise.resolve(false);
+    envelopeSeq++;
+    if (envelopeWait) { clearTimeout(envelopeWait); envelopeWait = null; }
     if (!tracking) {
       // Magazyn się otwiera albo czekamy na zgodę - openStore() weźmie tę kopertę.
       envelope = env;
+      // Czekanie na zgodę (hold) kończy też koperta, która zgody nie wymaga.
+      if (holding && !consentRequired(env)) { blocked = false; holding = false; }
       if (blocked || !booted || opening) return Promise.resolve(true);
       return decide(env).then(function () { return true; });
     }
-    if (consentRequired(env) && !hasConsent()) {
+    // ma.31: nieznana zgoda nie kasuje bazy otwartej za zgodą - tylko jawna
+    // odmowa albo baza zebrana bez wymogu zgody.
+    var cs = consentRequired(env) ? consentState() : 'granted';
+    if (cs === 'denied' || (cs !== 'granted' && !openedWithConsent)) {
       envelope = env;
       wipe('envelope now requires consent');
       waitForConsent();

@@ -1144,7 +1144,7 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 | Loader attribute | Default | Description |
 |---|---|---|
-| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS — **ma.31:** the module waits for the first `load()` before it opens the database and counts the visit (so `return_visit` sees the scenarios); an envelope passed before start is kept; without `load()` it starts with no envelope after 10 s — so with consent known a page view shorter than 10 s without `load()` isn't counted, and after that fallback start `return_visit` runs without scenarios. The protection against overwriting covers only an envelope from `load()` given before start or while the attribute's envelope is being fetched; with a non-empty `d2-ma`, a `load()` called before the module boots is replaced by the attribute's envelope. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
 | `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
 | `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
@@ -1157,23 +1157,27 @@ The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
 
 Consent is read from whatever banner the page has, as long as it speaks
-Consent Mode. The first source that knows the category decides:
+Consent Mode. The first source that knows the category decides (ma.31 order —
+see the three states below):
 
 1. A `gtag('consent', 'update', {...})` command in the `dataLayer`, including
    one pushed before the module started (a CMP restoring a saved choice). An
    `update` that denies the category deletes the `d2ma` database.
-2. The Google tag's own consent state (`google_tag_data.ics`, which already
-   accounts for `region`). This is where a CMP template inside GTM writes
-   without a `gtag` command. It is checked again on every `dataLayer` event,
-   so a grant or a denial made this way applies at the CMP's next event, in
-   the same visit.
-3. A `default` with `region` counts only as a denial, and it is checked before
-   a general `default`. Without the Google tag's state (a slow gtag.js, an
-   adblocker) the module doesn't know the visitor's country, so it never takes
-   a regional grant and never lets a general grant override a regional denial.
-4. A `gtag('consent', 'default', {...})` without `region`.
-5. Only when none of those knows the category: the `google` module
-   (`d2-gtm`), meaning `digi2.google.consent` and its `consent:updated` event.
+2. An `update` in the Google tag's own consent state (`google_tag_data.ics`).
+   This is where a CMP template inside GTM writes without a `gtag` command. It
+   is checked again on every `dataLayer` event, so a grant or a denial made
+   this way applies at the CMP's next event, in the same visit. `update: false`
+   is an explicit denial.
+3. The choice saved by the `google` module (`d2-gtm`, `localStorage`
+   `consentModeV2`) — the visitor's own decision. The module replays it as a
+   `default` on start, so it is read before every `default`; a saved denial
+   deletes the database. Without a saved choice it is skipped (the module's
+   `get()` would return its built-in denials, which are no decision).
+4. A grant in the Google tag's `default` (already accounts for `region`).
+5. A `default` with `region` or a denied `default` never grants and never
+   deletes: consent stays **unknown** and the module waits. A regional grant is
+   never taken, and a general grant never overrides a regional `default`.
+6. A granted `gtag('consent', 'default', {...})` without `region`.
 
 Only real `gtag()` commands count (an `arguments` object). A plain array
 `['consent', …]` is ignored, because the Google tag doesn't run it either. A
@@ -1186,6 +1190,27 @@ so a demo envelope with `false` plus the attribute `"true"` waits for the
 banner and then runs with the demo data. Before consent nothing is stored and
 no action runs. Events seen while waiting are dropped, not replayed, including
 ones seen while the envelope was loading.
+
+**ma.31: three consent states** (Piotr's decision, 28.10.2026: "Trzy stany +
+2 bezpieczniki"). A CMP loaded through GTM (Cookiebot and the like) sends its
+`update` 30 ms to 5 s after the module starts, and ma.29 counted that gap as a
+refusal: a returning visitor who had consented lost the profile on every page.
+
+| State | When | What happens |
+|---|---|---|
+| granted | `update` granted (`dataLayer` or the Google tag), Google tag `default` granted, `default` granted without `region`, a saved choice of the `google` module | the database opens |
+| denied | an explicit refusal: `gtag('consent', 'update', … 'denied')`, `update: false` in `google_tag_data.ics`, a refusal saved by the `google` module | the database is deleted — at start and also while the module waits |
+| unknown | nothing yet, or only `default` denied (also with `region`) — a CMP template in GTM always sets that before the banner | the database is not opened, read, written or deleted; the module waits for an `update` |
+
+Two safeguards while consent is unknown. The module reads only the `state`
+record (like `peekState` for revoke) and deletes the database when: (a) it was
+never opened with consent — `state.consentAt` is missing (collected while
+consent wasn't required, or before ma.31: such databases go once), or (b) the
+last opening with consent is older than the retention (`storage.retentionDays`,
+90), so retention also applies to a visitor who never answers the banner again.
+There is no "delete after N seconds" timeout. An envelope that switches to
+`consentRequired: true` mid-visit deletes the database only on a refusal or
+when it was opened without consent.
 
 > **On a client site always put `d2-ma-consent-required="true"` on the tag.**
 > Without the attribute the envelope decides, and an envelope published with
@@ -1851,8 +1876,11 @@ digi2.ma.allows(el)         // ma.5: may this element show (used by popups)
 
 `ma:change` also fires when the module wipes the database for lack of consent:
 `{ cleared: true, tracking: false, reason }`, where `reason` is
-`consent withdrawn`, `consent withdrawn while opening`, `consent required`
-or `envelope now requires consent`. After it `profile()` returns `null`.
+`consent withdrawn`, `consent withdrawn while opening`, `consent denied`,
+`profile not opened with consent`, `consent older than retention` (ma.31; the
+last two come from the safeguards while consent is unknown) or
+`envelope now requires consent`. Before ma.31 `consent required` fired on
+every start without known consent. After it `profile()` returns `null`.
 Before this, a withdrawal mid-visit cleared the `[d2-ma-profile]` fields
 without any event, so a page section with its own "no consent" state could
 not tell. `digi2.ma.clear()` keeps emitting `{ cleared: true }`, with

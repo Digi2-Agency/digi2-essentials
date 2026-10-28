@@ -834,8 +834,9 @@ test('Consent Mode: kolejność źródeł — update, tag Google, default, defau
   assert.equal(await zapisuje({ dataLayer: regiony() }), false);
   // Sam default bez region rozstrzyga.
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted' })] }), true);
-  // Sam default z region: odmowa liczy się, zgoda nie.
-  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), false);
+  // Sam default z region: zgoda nie liczy się. ma.31: zapisany wybór modułu google
+  // (decyzja gościa) wygrywa z regionalnym default, które decyzją nie jest.
+  assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })], zgoda: { analytics_storage: 'granted' } }), true);
   assert.equal(await zapisuje({ dataLayer: [gtag('consent', 'default', { analytics_storage: 'granted', region: ['PL'] })] }), false);
   // Zwykła tablica to nie komenda gtag - tag Google jej nie wykona.
   assert.equal(await zapisuje({ dataLayer: [['consent', 'update', { analytics_storage: 'granted' }]] }), false);
@@ -893,6 +894,162 @@ test('Consent Mode z szablonu CMP w GTM: stan tagu Google odblokowuje', async ()
   p2.dataLayer.push(unitOpen('A_1'));
   await p2.gotowe();
   assert.equal(p2._dysk.views.length, 1, 'zgoda z tagu Google przy starcie');
+});
+
+test('ma.31: pusty d2-ma czeka z otwarciem magazynu na digi2.ma.load() — powrót widzi scenariusze', async () => {
+  const k = koperta([POWROT]);
+  const p1 = await start({});
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.equal(p1.ma.profile(), null, 'przed load() magazyn zamknięty');
+  await p1.ma.load(k);
+  await p1.gotowe();
+  assert.deepEqual(p1.ma.history().map((v) => v.unit.unitId), ['A_1'], 'obejrzenie z bufora po load()');
+  // Powrót po 2 h: koperta przychodzi z JS chwilę po starcie strony.
+  const p2 = await powrot(p1, 2 * H);
+  assert.equal(p2.ma.profile(), null);
+  await p2.ma.load(k);
+  await p2.gotowe();
+  assert.equal(p2.ma.profile().visits, 2);
+  assert.equal(p2.popupy.length, 1, 'return_visit z koperty z load()');
+  assert.deepEqual(p2.segmenty().map((e) => e.segment), ['powrot-do-lokalu']);
+});
+
+test('ma.31: pusty d2-ma bez load() — po 10 s start bez koperty, historia się zapisuje', async () => {
+  // Bez koperty zgoda jest wymagana domyślnie - tu strona ją wyłącza atrybutem.
+  const env = await start({ cfg: { 'd2-ma-consent-required': 'false' } });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(9000);
+  assert.equal(env.ma.profile(), null);
+  await env.minie(1001);
+  assert.equal(env.ma.profile().visits, 1);
+  assert.deepEqual(env._dysk.views.map((v) => v.unit.unitId), ['A_1']);
+  // Spóźnione load() działa jak zmiana koperty w trakcie wizyty.
+  assert.equal(await env.ma.load(koperta([POWROT])), true);
+});
+
+// ma.31 (decyzja Piotra 28.10.2026): zgoda w trzech stanach — nieznana czeka, kasuje tylko jawna odmowa.
+const WYMAGANA = () => koperta([], { storage: { consentRequired: true } });
+const zgodaTak = () => [gtag('consent', 'update', { analytics_storage: 'granted' })];
+
+async function profilZeZgoda() {
+  const p1 = await start({ koperta: WYMAGANA(), dataLayer: zgodaTak() });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.equal(p1._dysk.views.length, 1);
+  return p1;
+}
+
+test('ma.31: zgoda z CMP w GTM przychodzi po starcie — profil zostaje, po zgodzie wizyta 2 z historią', async () => {
+  const p1 = await profilZeZgoda();
+  const p2 = await powrot(p1, 2 * H, { dataLayer: [] });
+  assert.ok(!p1._dysk.cleared, 'nieznana zgoda nie kasuje bazy');
+  assert.equal(p1._dysk.views.length, 1);
+  assert.equal(p2.ma.profile(), null, 'bez zgody profil niedostępny');
+  p2.dataLayer.push(unitOpen('A_2'));
+  p2.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p2.gotowe();
+  assert.equal(p2.ma.profile().visits, 2);
+  assert.deepEqual(p2.ma.history().map((v) => v.unit.unitId), ['A_1'], 'obejrzenie sprzed zgody nie wraca');
+});
+
+test('ma.31: samo default denied (dataLayer, region, tag Google) bez update nie kasuje bazy', async () => {
+  const warianty = [
+    { dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' })] },
+    { dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', region: ['PL'] })] },
+    { dataLayer: [], googleTag: { ics: { entries: { analytics_storage: { default: false } } } } },
+  ];
+  for (const [i, w] of warianty.entries()) {
+    const p1 = await profilZeZgoda();
+    const p2 = await powrot(p1, 2 * H, w);
+    await p2.minie(60 * 1000);
+    assert.ok(!p1._dysk.cleared, 'wariant ' + i);
+    assert.equal(p1._dysk.views.length, 1, 'wariant ' + i);
+    assert.equal(p2.ma.profile(), null, 'wariant ' + i + ': baza zamknięta');
+  }
+});
+
+test('ma.31: jawna odmowa kasuje bazę — przy starcie i w trakcie czekania (dataLayer i tag Google)', async () => {
+  const p1 = await profilZeZgoda();
+  await powrot(p1, 2 * H, { dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  assert.equal(p1._dysk.cleared, 1, 'odmowa przy starcie');
+
+  const p2 = await profilZeZgoda();
+  const p3 = await powrot(p2, 2 * H, { dataLayer: [] });
+  assert.ok(!p2._dysk.cleared);
+  p3.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p3.gotowe();
+  assert.equal(p2._dysk.cleared, 1, 'odmowa w trakcie czekania');
+  p3.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p3.gotowe();
+  assert.equal(p2._dysk.cleared, 1, 'druga odmowa nie kasuje drugi raz');
+
+  const p4 = await profilZeZgoda();
+  const tag = { ics: { entries: { analytics_storage: { default: false } } } };
+  const p5 = await powrot(p4, 2 * H, { dataLayer: [], googleTag: tag });
+  p5.dataLayer.push({ event: 'gtm.js' });
+  await p5.gotowe();
+  assert.ok(!p4._dysk.cleared, 'default z tagu Google czeka');
+  tag.ics.entries.analytics_storage.update = false;
+  p5.dataLayer.push({ event: 'cookie_consent_update' });
+  await p5.gotowe();
+  assert.equal(p4._dysk.cleared, 1, 'odmowa z szablonu CMP w trakcie czekania');
+});
+
+test('ma.31: odmowa zapisana przez moduł google (odtwarzana jako default) kasuje bazę — recenzja #38, S1', async () => {
+  const p1 = await profilZeZgoda();
+  // Moduł google przy starcie robi gtag('consent', 'default', zapis) — tu zapis to odmowa.
+  await powrot(p1, 2 * H, {
+    dataLayer: [gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' })],
+    zgoda: { analytics_storage: 'denied' },
+  });
+  assert.equal(p1._dysk.cleared, 1);
+});
+
+test('ma.31: otwarcie bez wymogu zgody zdejmuje znacznik — potem nieznana zgoda kasuje bazę (recenzja #38, S3)', async () => {
+  const p1 = await profilZeZgoda();
+  const p2 = await powrot(p1, 2 * H, { koperta: koperta([]), dataLayer: [] });
+  p2.dataLayer.push(unitOpen('A_2'));
+  await p2.gotowe();
+  assert.equal(p1._dysk.views.length, 2);
+  assert.equal(p1._dysk.state.consentAt, undefined, 'otwarcie bez zgody zdejmuje znacznik');
+  await powrot(p2, 2 * H, { koperta: WYMAGANA(), dataLayer: [] });
+  assert.equal(p1._dysk.cleared, 1);
+});
+
+test('ma.31: koperta bez wymogu zgody kończy czekanie (hold)', async () => {
+  const p1 = await profilZeZgoda();
+  const p2 = await powrot(p1, 2 * H, { dataLayer: [] });
+  assert.equal(p2.ma.profile(), null);
+  await p2.ma.load(koperta([]));
+  await p2.gotowe();
+  assert.equal(p2.ma.profile().visits, 2);
+});
+
+test('ma.31: bezpiecznik — baza bez znacznika zgody (zebrana bez wymogu, sprzed ma.31) kasuje się przy nieznanej zgodzie', async () => {
+  const p1 = await start({ koperta: koperta([]) });
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.gotowe();
+  assert.equal(p1._dysk.state.consentAt, undefined, 'bez zgody znacznika nie ma');
+  await powrot(p1, 2 * H, { koperta: WYMAGANA(), dataLayer: [] });
+  assert.equal(p1._dysk.cleared, 1);
+
+  // Ta sama baza, ale zgoda już jest — zostaje.
+  const p2 = await start({ koperta: koperta([]) });
+  p2.dataLayer.push(unitOpen('A_1'));
+  await p2.gotowe();
+  await powrot(p2, 2 * H, { koperta: WYMAGANA(), dataLayer: zgodaTak() });
+  assert.ok(!p2._dysk.cleared);
+});
+
+test('ma.31: bezpiecznik — ostatnie otwarcie za zgodą starsze niż retencja (90 dni) kasuje bazę przy nieznanej zgodzie', async () => {
+  const p1 = await profilZeZgoda();
+  assert.equal(typeof p1._dysk.state.consentAt, 'number');
+  await powrot(p1, 89 * 24 * H, { dataLayer: [] });
+  assert.ok(!p1._dysk.cleared, '89 dni: zostaje');
+  const p2 = await profilZeZgoda();
+  await powrot(p2, 91 * 24 * H, { dataLayer: [] });
+  assert.equal(p2._dysk.cleared, 1, '91 dni: kasowana');
 });
 
 // ---------------------------------------------------------------------------
