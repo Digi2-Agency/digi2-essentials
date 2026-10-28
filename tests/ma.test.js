@@ -464,15 +464,18 @@ test('3D Estate: statusy po numerze, isNotAvailable = sprzedany', async () => {
   assert.deepEqual(h, [['reserved', 829212], ['sold', null], ['sold', 829212], ['other', 829212]]);
 });
 
-test('3D Estate: cena ukryta w makiecie (priceIsHidden) nie trafia do historii ani do treści (ma.30)', async () => {
+test('3D Estate: priceIsHidden ukrywa cenę przy każdej wartości poza jawnym „nie” (ma.30)', async () => {
+  const wartosci = [
+    [true, true], ['true', true], ['TRUE', true], [' True ', true], [1, true], ['1', true], ['tak', true],
+    [false, false], [0, false], ['0', false], ['false', false], ['FALSE', false], ['', false], [null, false], [undefined, false],
+  ];
   const env = await start({ koperta: koperta([]) });
-  env.dataLayer.push(unitOpen('A_1', { priceIsHidden: true }));
-  env.dataLayer.push(unitOpen('A_2', { priceIsHidden: 'true' }));
-  env.dataLayer.push(unitOpen('A_3', { priceIsHidden: false }));
-  env.dataLayer.push(unitOpen('A_4'));
+  wartosci.forEach(([v], i) => env.dataLayer.push(unitOpen('A_' + i, v === undefined ? {} : { priceIsHidden: v })));
   await env.gotowe();
-  const h = env.ma.history().map((v) => [v.unit.unitId, v.unit.price, v.unit.pricePerSqm]);
-  assert.deepEqual(h, [['A_1', null, null], ['A_2', null, null], ['A_3', 829212, 16634], ['A_4', 829212, 16634]]);
+  const h = env.ma.history();
+  wartosci.forEach(([v, ukryta], i) => {
+    assert.deepEqual([h[i].unit.price, h[i].unit.pricePerSqm], ukryta ? [null, null] : [829212, 16634], JSON.stringify(v));
+  });
 
   const slot = element({ 'd2-ma-slot': 's' }, 'P');
   slot.textContent = 'Oryginał';
@@ -481,6 +484,36 @@ test('3D Estate: cena ukryta w makiecie (priceIsHidden) nie trafia do historii a
   env2.dataLayer.push(unitOpen('B_1', { priceIsHidden: true }));
   await env2.gotowe();
   assert.equal(slot.textContent, 'Oryginał', 'ukryta cena = pole bez wartości, treść bez zmian');
+});
+
+test('3D Estate: ukryta cena czyści cenę ze starszych obejrzeń w IndexedDB, w kontekście i w popupie (ma.30)', async () => {
+  const pola = {};
+  const lista = ['name', 'price', 'pricePerSqm'].map((k) => (pola[k] = element({ 'd2-ma-field': k })));
+  pola.price.textContent = '829 212 zł';
+  pola.pricePerSqm.textContent = '16 634 zł/m²';
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
+  const p1 = await start({ koperta: koperta([POWROT]), szablon: s });
+  p1.dataLayer.push(unitOpen('A_2'));
+  p1.dataLayer.push(unitOpen('A_1'));
+  await p1.minie(6000);
+  p1.dataLayer.push(unitOpen('A_1', { priceIsHidden: true }));
+  await p1.gotowe();
+  const ceny = (lista) => lista.filter((v) => v.unit.unitId === 'A_1').map((v) => [v.unit.price, v.unit.pricePerSqm]);
+  assert.deepEqual(ceny(p1.ma.history()), [[null, null], [null, null]], 'historia w pamięci');
+  assert.deepEqual(ceny(p1._dysk.views), [[null, null], [null, null]], 'IndexedDB');
+  assert.equal(p1._dysk.views.find((v) => v.unit.unitId === 'A_2').unit.price, 829212, 'inny lokal bez zmian');
+  const units = JSON.parse(p1.ma.context().json).units;
+  assert.equal(units.find((u) => u.id === 'A_1').price, null, 'kontekst leadu');
+
+  const p2 = await powrot(p1, 2 * H, { szablon: s });
+  assert.equal(p2.popupy.length, 1);
+  assert.equal(pola.name.textContent, '1');
+  for (const k of ['price', 'pricePerSqm']) {
+    assert.equal(pola[k].textContent, '', k + ': pole puste');
+    assert.equal(pola[k].style.display, 'none', k + ': pole ukryte');
+  }
+  assert.deepEqual(ceny(p2.ma.history()), [[null, null], [null, null]], 'po przeładowaniu z IndexedDB');
 });
 
 test('ten sam lokal w ciągu 5 s liczy się raz, po 5 s znowu', async () => {

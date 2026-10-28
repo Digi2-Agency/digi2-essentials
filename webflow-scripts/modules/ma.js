@@ -621,9 +621,15 @@
   }
 
   // ma.30: cena ukryta w makiecie (custom.priceIsHidden) nie trafia nigdzie -
-  // makieta i tak podaje w custom.price pełną kwotę.
+  // makieta i tak podaje w custom.price pełną kwotę. Cenę zostawia tylko jawne
+  // „nie": brak pola, false, 0, "0", "false", "" - każda inna wartość ją ukrywa.
   function hidden3de(v) {
-    return v === true || v === 1 || v === '1' || v === 'true';
+    if (v == null || v === false || v === 0) return false;
+    if (typeof v === 'string') {
+      v = v.replace(/^\s+|\s+$/g, '').toLowerCase();
+      return v !== '' && v !== '0' && v !== 'false';
+    }
+    return true;
   }
 
   function from3destate(entry) {
@@ -743,6 +749,30 @@
     return v;
   }
 
+  // ma.30: lokal z ukrytą ceną czyści ją też w starszych zapisach - w historii,
+  // w stanie scenariuszy i w odłożonych akcjach. Inaczej kontekst, popup
+  // i {{unit.price}} wzięłyby cenę z obejrzenia sprzed ukrycia.
+  function stripPrice(o, id, depth) {
+    if (!o || typeof o !== 'object' || depth > 8) return false;
+    var hit = false;
+    if (o.unitId === id && (o.price != null || o.pricePerSqm != null)) {
+      o.price = null;
+      o.pricePerSqm = null;
+      hit = true;
+    }
+    Object.keys(o).forEach(function (k) {
+      if (stripPrice(o[k], id, depth + 1)) hit = true;
+    });
+    return hit;
+  }
+
+  function dropPrice(id) {
+    var changed = views.filter(function (v) { return stripPrice(v.unit, id, 0); });
+    persistViews(changed);
+    stripPrice(state.scenarios, id, 0);
+    stripPrice(state.pending, id, 0);
+  }
+
   // Wejście do modułu z każdego źródła. Przed otwarciem magazynu czeka w buforze.
   function intake(evt) {
     if (blocked) return;
@@ -774,6 +804,7 @@
     // które ją otworzyło, i deep link z bufora sprzed otwarcia magazynu.
     if (state.visitStart != null && t <= state.visitStart) t = state.visitStart + 1;
     if (evt.type === 'view') {
+      if (evt.priceHidden) dropPrice(evt.unit.unitId);
       var v = recordView(_clone(evt.unit), t);
       if (!v) return;
       _emit('ma:view', { unit: v.unit });
@@ -2820,7 +2851,8 @@
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
       var unit = from3destate(entry);
-      if (unit) intake({ type: 'view', unit: unit });
+      var c = entry.data.unit.custom || {};
+      if (unit) intake({ type: 'view', unit: unit, priceHidden: hidden3de(c.priceIsHidden) });
     } else if (ev === EVENT_LEAD || ev === EVENT_3DE_LEAD) {
       intake({ type: 'lead' });
     }

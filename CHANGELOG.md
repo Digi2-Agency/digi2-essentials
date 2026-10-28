@@ -25,8 +25,12 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   Popup, pole `d2-ma-field="price"`, `{{unit.price}}` w treściach i webhook
   zachowują się wtedy jak przy lokalu bez ceny. Wcześniej pokazywały pełną
   cenę, bo makieta podaje ją w `custom.price` także przy ukrytej cenie.
-- Obejrzenia zapisane przed ma.30 zachowują cenę z chwili zapisu. Nowe
-  obejrzenie tego samego lokalu zapisuje się już bez ceny.
+- Cenę zostawia tylko jawne „nie”: brak pola, `false`, `0`, `"0"`, `"false"`
+  albo pusty tekst (bez względu na wielkość liter). Każda inna wartość ukrywa
+  cenę.
+- Obejrzenie lokalu z ukrytą ceną czyści też cenę z jego starszych obejrzeń
+  w przeglądarce (także zapisanych przed ma.30), z kontekstu leadu i z
+  odłożonych akcji. Popup po powrocie nie pokaże więc ceny sprzed ukrycia.
 
 ## v1.9.0-ma.29 — 2026-10-28 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.28–ma.16)
 

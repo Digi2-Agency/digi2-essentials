@@ -1169,11 +1169,14 @@ parameters — `gclid`, `fbclid`, UTM or an `?email=` from a campaign link never
 reach `d2ma` or the webhook. 3D Estate statuses map by
 number (`1` available, `2` reserved, `3` or `isNotAvailable` sold, other →
 `other`) because the names are the developer's own dictionary. A 3D Estate unit
-with `custom.priceIsHidden` (`true`, `1`, `"1"` or `"true"`) gets `price` and
-`pricePerSqm` = `null` (ma.30): the app still sends the full price in
-`custom.price`, but the developer hid it on the map, so the popup,
-`{{unit.price}}`, the history and the webhook must not show it. Views stored
-before ma.30 keep the price they were saved with. 2destate price is
+with `custom.priceIsHidden` gets `price` and `pricePerSqm` = `null` (ma.30): the
+app still sends the full price in `custom.price`, but the developer hid it on
+the map, so the popup, `{{unit.price}}`, the history, the lead context and the
+webhook must not show it. Only an explicit "no" keeps the price — no field,
+`false`, `0`, `"0"`, `"false"` or `""` (strings trimmed, any case); every other
+value hides it. A view with the price hidden also clears `price` and
+`pricePerSqm` of that `unitId` everywhere the module keeps it: earlier views in
+`d2ma` (IndexedDB), scenario state and delayed actions. 2destate price is
 `promo_price_gross` while `promo_active`, else `price_gross`; `building` is
 `building_name` when the map sends it, otherwise `null`; `image` is read from
 the registry field `obrazek-popup`, then `marketing_image` / `image`;
