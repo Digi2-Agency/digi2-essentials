@@ -105,7 +105,9 @@ function element(attrs, tagName) {
  *   dotyk     matchMedia('(hover: none)') = true
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
- *   dymek     { open } - pełnoekranowy dymek mapy 2destate na telefonie
+ *   dymek     { open, zostawiaKlase } - pełnoekranowy dymek mapy 2destate na telefonie;
+ *             zostawiaKlase: jak Image Map Pro, klasa is-fullscreen zostaje na zamkniętym (display:none)
+ *   zajety    { on } - inny popup na ekranie: automatyczny show() nie wchodzi (env.zablokowane)
  *   idb       atrapa window.indexedDB zamiast magazynu testowego (prawdziwy idbStore)
  *   popupsProxy  moduł popupów jeszcze się ładuje: digi2.popups to proxy loadera
  *             (każda właściwość = funkcja zwracająca Promise), _loaded.popups = false;
@@ -118,6 +120,7 @@ function strona(opts) {
   let idTimera = 0;
   const dataLayer = o.dataLayer || [];
   const popupy = [];
+  const zablokowane = [];
   const webhooki = [];
   const sygnaly = [];
   const ostrzezenia = [];
@@ -151,8 +154,14 @@ function strona(opts) {
     create(n, opcje) {
       const inst = {
         name: n, opcje, popupElement: document.querySelector(opcje.popupSelector) || element(),
-        show(x) { popupy.push({ name: n, auto: x && x.auto }); },
-        hide() {},
+        // Jak popups.js: automatyczny przy innym popupie na ekranie nie wchodzi
+        // (z park: false też nie czeka); park zapisany, by test widział, o co prosił moduł.
+        show(x) {
+          if (o.zajety && o.zajety.on && x && x.auto) { zablokowane.push({ name: n, park: x.park }); if (x.park !== false) this.pendingShow = true; return; }
+          popupy.push({ name: n, auto: x && x.auto });
+          this.isVisible = true;
+        },
+        hide() { this.isVisible = false; },
       };
       this._rejestr[n] = inst;
       return inst;
@@ -168,7 +177,6 @@ function strona(opts) {
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
-      if (sel === '.imp-tooltips-container.is-fullscreen') return o.dymek && o.dymek.open ? element() : null;
       const s = o.szablon;
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       // Element zbudowany przez moduł i dołożony do body (popup z szablonu).
@@ -177,6 +185,15 @@ function strona(opts) {
     },
     querySelectorAll(sel) {
       if (sel === '*') return elementy.slice();
+      // Image Map Pro: klasa is-fullscreen zostaje po zamknięciu dymka (zostawiaKlase),
+      // zamknięty kontener ma display:none.
+      if (sel === '.imp-tooltips-container.is-fullscreen') {
+        if (!o.dymek || (!o.dymek.open && !o.dymek.zostawiaKlase)) return [];
+        const k = element({ class: 'imp-tooltips-container is-fullscreen' });
+        k.style.display = o.dymek.open ? 'block' : 'none';
+        k.getClientRects = () => (o.dymek.open ? [{ width: 390, height: 844 }] : []);
+        return [k];
+      }
       return elementy.filter((el) => Object.keys(el.attributes).some((a) => {
         const v = el.attributes[a];
         return sel.indexOf('[' + a + ']') >= 0 || sel.indexOf('[' + a + '="' + v + '"]') >= 0;
@@ -294,7 +311,7 @@ function strona(opts) {
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
 
   const env = {
-    window, zegar, dataLayer, popupy, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
+    window, zegar, dataLayer, popupy, zablokowane, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     proxyWolania,
     pobrania,
     /** Moduł popupów dociągnął się po d2-ma: loader podstawia prawdziwy obiekt i oznacza _loaded. */
@@ -989,6 +1006,45 @@ test('konflikt: dwa popupy w tej samej chwili — wygrywa wcześniejszy scenariu
   assert.deepEqual(p2.segmenty().map((e) => e.segment), ['powrot-do-lokalu', 'drugi'], 'datalayer bez konfliktu, w kolejności scenariuszy');
   const p3 = await powrot(p2, 2 * H);
   assert.deepEqual(p3.popupy.map((p) => p.name), ['d2-ma-inny']);
+});
+
+test('ma.27: jedno kliknięcie, które otwiera wizytę (return_visit) i liczy się do preferencji — jeden popup, drugi czeka do następnej wizyty', async () => {
+  // Przebieg z demo: A_1, A_2 (2 pokoje), przerwa > 30 min na tej samej stronie, A_3.
+  // handle() robił dwa dispatche z osobnym strażnikiem - last-unit i promo-rooms naraz.
+  const env = await start({ koperta: koperta([POWROT, POKOJE]) });
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.minie(2 * H);
+  env.dataLayer.push(unitOpen('A_3'));
+  await env.gotowe();
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-last-unit']);
+  assert.equal((env.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup').length, 1, 'ma:action tylko dla pokazanego');
+  assert.deepEqual(env.segmenty().map((e) => e.segment), ['powrot-do-lokalu', '2-pokoje'], 'datalayer bez konfliktu');
+  await env.minie(10 * MIN);
+  assert.equal(env.popupy.length, 1, 'w tej wizycie nic więcej');
+  // Następna wizyta: powrót do A_3 (nowy lokal, once_per_unit) znów ma pierwszeństwo,
+  // odłożony promo-rooms czeka dalej - też tylko jeden popup.
+  const p2 = await powrot(env, 2 * H);
+  assert.deepEqual(p2.popupy.map((p) => p.name), ['d2-ma-last-unit']);
+  const p3 = await powrot(p2, 2 * H);
+  assert.deepEqual(p3.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'odłożony popup, gdy nic go nie wyprzedza');
+});
+
+test('ma.27: inny popup na ekranie — popup ze scenariusza nie parkuje się, jest pominięty (bez ma:action), częstotliwość wraca', async () => {
+  const zajety = { on: true };
+  const p1 = await start({ koperta: koperta([POKOJE]), zajety });
+  for (const id of ['A_1', 'A_2', 'A_3']) { p1.dataLayer.push(unitOpen(id)); await p1.minie(6000); }
+  assert.deepEqual(p1.zablokowane, [{ name: 'd2-ma-promo-rooms', park: false }], 'show z park: false');
+  assert.equal(p1.popupy.length, 0);
+  assert.ok(!p1.window.digi2.popups.get('d2-ma-promo-rooms').pendingShow, 'nic nie czeka na zamknięcie tamtego');
+  assert.equal((p1.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup').length, 0);
+  assert.ok(!p1._dysk.state.scenarios['preferencja-2'].freq.a2, 'częstotliwość oddana');
+  zajety.on = false;
+  p1.dataLayer.push(unitOpen('A_4'));
+  await p1.gotowe();
+  assert.deepEqual(p1.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'ekran wolny - następne obejrzenie pokazuje');
+  assert.equal(p1.zdarzenia['ma:action'].filter((a) => a.do === 'popup').length, 1);
 });
 
 test('popup nie promuje sprzedanego lokalu (świeży status z mapy)', async () => {
@@ -2351,6 +2407,37 @@ test('#5: popup ze scenariusza czeka, aż gość zamknie pełnoekranowy dymek ma
   assert.equal(e3.popupy.length, 1, 'bez dymku od razu, jak dotąd');
 });
 
+test('ma.27: telefon — Image Map Pro zostawia is-fullscreen po zamknięciu dymka; ukryty kontener nie wstrzymuje popupu', async () => {
+  const dymek = { open: false, zostawiaKlase: true };
+  const env = await start({ koperta: koperta([POKOJE]), dymek });
+  for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
+  assert.equal(env.popupy.length, 0, 'pół sekundy na otwarcie się dymka');
+  for (let i = 0; i < 3; i++) await env.minie(250);
+  assert.deepEqual(env.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'klasa bez widocznego dymka - nie czeka 5 min');
+
+  // Stuknięcie otwiera dymek chwilę po decyzji o popupie: ukryty kontener w chwili
+  // decyzji nie może przepuścić popupu na dymek klikniętego lokalu.
+  const d3 = { open: false, zostawiaKlase: true };
+  const e3 = await start({ koperta: koperta([POKOJE]), dymek: d3 });
+  for (const id of ['C_1', 'C_2']) { e3.dataLayer.push(unitOpen(id)); await e3.minie(6000); }
+  e3.dataLayer.push(unitOpen('C_3'));
+  await e3.gotowe();
+  d3.open = true;
+  for (let i = 0; i < 4; i++) await e3.minie(250);
+  assert.equal(e3.popupy.length, 0, 'dymek otworzył się po decyzji - popup czeka');
+  d3.open = false;
+  await e3.minie(250);
+  assert.deepEqual(e3.popupy.map((p) => p.name), ['d2-ma-promo-rooms']);
+
+  const d2 = { open: true, zostawiaKlase: true };
+  const e2 = await start({ koperta: koperta([POKOJE]), dymek: d2 });
+  for (const id of ['B_1', 'B_2', 'B_3']) { e2.dataLayer.push(unitOpen(id)); await e2.minie(6000); }
+  assert.equal(e2.popupy.length, 0, 'dymek widoczny - czeka');
+  d2.open = false;
+  for (let i = 0; i < 3; i++) await e2.minie(250);
+  assert.deepEqual(e2.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'zamknięty (klasa została) - pokazuje');
+});
+
 test('#5: zgoda wycofana w czasie czekania na dymek — popup się nie pokazuje', async () => {
   const dymek = { open: true };
   const env = await start({ koperta: koperta([POKOJE], { storage: { consentRequired: true } }), zgoda: { analytics_storage: 'granted' }, dymek });
@@ -2790,6 +2877,66 @@ test('popup promo-filter: search_filter rooms=2 przy pustej historii → wbudowa
   assert.equal(env.ostrzezenia.filter((w) => w.includes('popup failed')).length, 0);
 });
 
+// Mini-DOM nie parsuje innerHTML: wbudowany popup dostaje dzieci z atrybutami, które moduł potem szuka.
+function zParsowaniemPopupu(env) {
+  const doc = env.window.document;
+  const stary = doc.createElement;
+  doc.createElement = (tag) => {
+    const el = stary(tag);
+    let html = '';
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return html; },
+      set(v) {
+        html = String(v);
+        ['d2-ma-heading', 'd2-ma-unitless-text', 'd2-ma-cta'].forEach((a) => {
+          if (html.indexOf(a) >= 0) el.appendChild(element({ [a]: '' }));
+        });
+      },
+    });
+    return el;
+  };
+}
+
+test('ma.29: promo-filter „Szukasz mieszkania N-pokojowego?” dla 1, 2, 5, 12; filtr [2, 3] bierze pierwszą liczbę', async () => {
+  const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const tekst = (env) => {
+    const el = potomkowie(env.window.document.body).find((x) => x.getAttribute && x.getAttribute('d2-ma-unitless-text') !== null);
+    return el ? el.textContent : null;
+  };
+  for (const [pokoje, oczekiwany] of [[[1], '1-pokojowego'], [[2], '2-pokojowego'], [[5], '5-pokojowego'], [[12], '12-pokojowego'], [[2, 3], '2-pokojowego']]) {
+    const env = await start({ koperta: k });
+    zParsowaniemPopupu(env);
+    env.filtr({ rooms: pokoje });
+    await env.minie(600);
+    assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter'], String(pokoje));
+    assert.equal(tekst(env), 'Szukasz mieszkania ' + oczekiwany + '? Pokażemy wolne lokale i aktualne promocje.');
+  }
+  const zero = await start({ koperta: k });
+  zero.filtr({ rooms: [0] });
+  await zero.minie(600);
+  assert.equal(zero.popupy.length, 0, '0 pokoi to nie liczba do zdania — popup pominięty');
+});
+
+test('ma.29: szablon koperty bez {{unit.*}} znika (d2-ma-refresh) między decyzją a renderem — popup pominięty, bez TypeError', async () => {
+  const promo = { templateId: 'promo-bez-lokalu', version: 1, blocks: [{ type: 'title', text: 'Mamy coś dla Ciebie' }, { type: 'cta', label: 'Porozmawiajmy', action: 'contact' }] };
+  const sc = [scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-bez-lokalu', cta: 'contact', frequency: 'once_per_days:0' }])];
+  const k = koperta(sc, { minScript: 'ma.17', templates: { popup: [promo] } });
+  const env = await start({ koperta: k });
+  // Nowa rewizja koperty bez szablonu przychodzi, gdy moduł popupów już szuka instancji.
+  const popups = env.window.digi2.popups;
+  const get = popups.get;
+  popups.get = function (n) {
+    popups.get = get;
+    env.ma.load(koperta(sc, { minScript: 'ma.17' }));
+    return get.call(this, n);
+  };
+  env.filtr({ rooms: [2] });
+  await env.minie(600);
+  await env.gotowe();
+  assert.equal(env.popupy.length, 0, 'bez szablonu i bez tekstu wbudowanego nie ma czego pokazać');
+  assert.equal(env.ostrzezenia.filter((w) => /TypeError|popup failed/.test(w)).length, 0, env.ostrzezenia.join('\n'));
+});
+
 test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na wizytę; gość, który już filtrował — bez zmian', async () => {
   const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
   const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });
@@ -3010,6 +3157,15 @@ test('ma.19: item_list_sort — price_asc jest; custom (nasz setProductOrder) ni
   env.sortuj('custom', 'asc', { source: 'user' });
   await env.minie(600);
   assert.equal(dlZdarzenia(env, 'view_item_list').pop().item_list_sort, undefined, 'lista ułożona custom (nasz setProductOrder) — bez item_list_sort');
+});
+
+test('ma.28: digi2.ma.version = „ma.N” z najwyższego wpisu CHANGELOG — wersję widać w konsoli strony', async () => {
+  const log = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
+  const top = /^## v\d+\.\d+\.\d+-(ma\.\d+)/m.exec(log)[1];
+  const env = await start({ koperta: koperta([]) });
+  assert.equal(env.ma.version, top);
+  const bez = await start({});
+  assert.equal(bez.ma.version, top, 'także bez koperty i przed zgodą');
 });
 
 test('SCRIPT_VERSION w ma.js = numer najwyższego wpisu v1.9.0-ma.N w CHANGELOG', () => {

@@ -1249,9 +1249,28 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   timer runs it while the page is open, otherwise the next start does. Void 24 h
   after `created` (real time, `timeScale` doesn't shorten it).
 - **Popup conflict:** one popup per event pass; the next one is stored with
-  `afterVisit` and runs on a later visit.
+  `afterVisit` and runs on a later visit. (ma.27) A pass is one interaction,
+  not one `dispatch()`: `handle()` shares it between the visit start
+  (`return_visit` from `touch()`), the event itself and the `runDue()` after
+  it; the page open shares it between the CRM event, the visit, the buffered
+  events and `runDue()`; `simulateReturn()` and the activity listener the same.
+  Before, a click that opened a new visit and also met a view trigger showed
+  two popups.
+- **Popup on screen (ma.27):** the scenario popup opens with
+  `show({ auto: true, park: false })`. If another popup is on screen (or the
+  popups module refused for any other reason), it is not parked — popups.js
+  would otherwise open it ~0.6 s after the other one closes, as a second popup
+  for the same interaction. It counts as skipped: frequency entry undone, no
+  `ma:action`. `ma:action` for a popup fires only when `isVisible` /
+  `_onScreen` is set after `show()`.
 - **Map tooltip (ma.6):** on a phone the first tap on a 2destate unit opens the
-  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`). A
+  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`).
+  (ma.27) Image Map Pro keeps that class on the closed container
+  (`display: none`), so "open" means the container is actually shown —
+  computed `display` / `visibility`, a client rect and a non-zero size. With
+  no such container at all (desktop) the popup opens at once; with one, it
+  first waits 500 ms, because the tooltip opens just after the popup decision
+  made by the same tap. A
   popup due at that moment waits (checked every 250 ms) until the visitor
   closes it, so they see the unit they tapped first. After 5 minutes with the
   tooltip still open (clock time, not ticks — background tabs slow timers)
@@ -1722,8 +1741,13 @@ from the first filter; the first view takes over. `digi2.ma.profile()` gets
 tylko wolne` and `filters` in the JSON.
 
 **Popup `promo-filter`** — built in like `promo-rooms`, but needs **no unit**:
-„Szukasz mieszkania {{pref.roomsLabel}}? Pokażemy wolne lokale i aktualne
-promocje.”, CTA contact. Skipped without `pref.rooms`. A `templates.popup[]`
+„Szukasz mieszkania 2-pokojowego? Pokażemy wolne lokale i aktualne
+promocje.”, CTA contact. The number is `pref.rooms` as an adjective in the
+genitive, `N-pokojowego` for every N ≥ 1 (1-, 5-, 12-pokojowego — the hyphenated
+form has no plural endings to get wrong); before ma.29 it said „2 pokoje”.
+`pref.rooms` is always one number (a filter `[2, 3]` gives 2), so there is no
+„2- lub 3-pokojowego”. Skipped without `pref.rooms` (or with 0). The adjective is
+only for this built-in text — it is not an envelope field like `roomsLabel`. A `templates.popup[]`
 entry with that id wins over the built-in one, and the page's own
 `[d2-ma-popup="promo-filter"]` over both. Any envelope template without
 `{{unit.*}}` now also opens when the path has no unit.
@@ -1761,6 +1785,7 @@ the promo price while a promotion runs.
 ### API
 
 ```js
+digi2.ma.version            // ma.28: "ma.28" — the loaded script (same numbering as the envelope's minScript)
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
 digi2.ma.history()          // views, oldest first
 digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent
