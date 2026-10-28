@@ -1152,6 +1152,7 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td><strong>The visitor</strong> — <code>d2-show-popup</code>, <code>openTriggerSelector</code>, <code>digi2.popups.show()</code>, an intercepted link</td><td><strong>Wins.</strong> What is on screen closes first; this one opens once that close has finished, so the two never overlap even for a frame</td></tr>
     </table>
     <p>An open <a href="#lightbox">lightbox</a> counts as a busy screen too — for automatic opens only. They park and come ~0.6 s after <code>lightbox:close</code>, and a sequence step waits the same way. A popup the visitor asks for (a button inside the gallery, <code>d2-show-popup</code>) still opens over it.</p>
+    <p class="muted">On a page without <code>d2-lightbox</code> nothing waits: popups ask the loader whether the lightbox module is loaded before asking it anything, so the check neither fetches the module nor mistakes the loader’s placeholder for an open gallery (fixed in v1.8.2 — on v1.8.1 automatic popups never opened on such pages).</p>
     <p class="muted">A deferred popup re-runs every check when its turn comes — a dismissal cookie written while it waited, a <a href="#popups-schedule">schedule</a> that has since closed, a <code>canShow()</code> veto. It waits for a free screen; it does not book a guaranteed appearance.</p>
 
     <h3 id="scroll-lock">Shared scroll lock</h3>
