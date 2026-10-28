@@ -2877,6 +2877,46 @@ test('popup promo-filter: search_filter rooms=2 przy pustej historii → wbudowa
   assert.equal(env.ostrzezenia.filter((w) => w.includes('popup failed')).length, 0);
 });
 
+// Mini-DOM nie parsuje innerHTML: wbudowany popup dostaje dzieci z atrybutami, które moduł potem szuka.
+function zParsowaniemPopupu(env) {
+  const doc = env.window.document;
+  const stary = doc.createElement;
+  doc.createElement = (tag) => {
+    const el = stary(tag);
+    let html = '';
+    Object.defineProperty(el, 'innerHTML', {
+      get() { return html; },
+      set(v) {
+        html = String(v);
+        ['d2-ma-heading', 'd2-ma-unitless-text', 'd2-ma-cta'].forEach((a) => {
+          if (html.indexOf(a) >= 0) el.appendChild(element({ [a]: '' }));
+        });
+      },
+    });
+    return el;
+  };
+}
+
+test('ma.29: promo-filter „Szukasz mieszkania N-pokojowego?” dla 1, 2, 5, 12; filtr [2, 3] bierze pierwszą liczbę', async () => {
+  const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const tekst = (env) => {
+    const el = potomkowie(env.window.document.body).find((x) => x.getAttribute && x.getAttribute('d2-ma-unitless-text') !== null);
+    return el ? el.textContent : null;
+  };
+  for (const [pokoje, oczekiwany] of [[[1], '1-pokojowego'], [[2], '2-pokojowego'], [[5], '5-pokojowego'], [[12], '12-pokojowego'], [[2, 3], '2-pokojowego']]) {
+    const env = await start({ koperta: k });
+    zParsowaniemPopupu(env);
+    env.filtr({ rooms: pokoje });
+    await env.minie(600);
+    assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter'], String(pokoje));
+    assert.equal(tekst(env), 'Szukasz mieszkania ' + oczekiwany + '? Pokażemy wolne lokale i aktualne promocje.');
+  }
+  const zero = await start({ koperta: k });
+  zero.filtr({ rooms: [0] });
+  await zero.minie(600);
+  assert.equal(zero.popupy.length, 0, '0 pokoi to nie liczba do zdania — popup pominięty');
+});
+
 test('prefer_filters: powrót ustawia filtr pokoi z profilu (source api) raz na wizytę; gość, który już filtrował — bez zmian', async () => {
   const k = koperta([scenariusz('pref', { event: 'return_visit', afterHours: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
   const p1 = await start({ koperta: k, imp: { instances: { mapa: {} } } });

@@ -5,6 +5,16 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
+## v1.9.0-ma.29 — 2026-10-28 (przedpremierowa, nie `@latest`; zawiera ma.28–ma.16)
+
+### `d2-ma` — odmiana w popupie `promo-filter`
+
+- Wbudowany popup po filtrze pokoi mówi „Szukasz mieszkania 2-pokojowego?”
+  zamiast „Szukasz mieszkania 2 pokoje?”. Tak samo dla każdej liczby:
+  1-pokojowego, 5-pokojowego, 12-pokojowego. Przy filtrze z kilkoma liczbami
+  (np. 2 i 3) zdanie bierze pierwszą, jak dotąd. Popup własny strony i szablon
+  z koperty o tym id bez zmian.
+
 ## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, nie `@latest`; zawiera ma.27–ma.16)
 
 ### `d2-ma` — numer wersji w konsoli
