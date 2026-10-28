@@ -1098,13 +1098,14 @@ visitor's own browser and runs the scenarios published from digi2.app.
 
 | Loader attribute | Default | Description |
 |---|---|---|
-| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS |
+| `d2-ma="<url>"` | — | Scenario envelope (§13.3). Empty = `digi2.ma.load()` from JS. **ma.23:** only `https://digi2.app/…` or `https://api.2destate.com/…` (no port, no login) — any other address, also in `digi2.ma.load(url)`, is not fetched: `console.warn`, the page runs without MA. A local JSON for tests goes in as an object: `digi2.ma.load({…})` |
 | `d2-ma-consent-required` | required | Fallback when the envelope can't be read; `"true"` forces consent regardless |
 | `d2-ma-consent` | `analytics_storage` | Consent Mode category that unlocks storage |
 | `d2-ma-products-api` | `https://api.2destate.com/api/v1` | Fresh status before a popup |
 | `d2-ma-highlight` | off | Highlight units with the preferred room count on the 2destate map |
 | `d2-ma-refresh="30"` | off | Re-read the envelope every N s (≥ 5) |
 | `d2-ma-context="off"` | on | Switch off the [lead context fields](#lead-context-in-forms-ma16-1313) in forms |
+| `d2-ma-search-events="off"` | on | Switch off the GA4 events of the 2destate search (ma.17) |
 
 The envelope URL is read raw, not through `digi2.attr()`: a query string may
 contain `;` or `@`.
@@ -1248,9 +1249,28 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   timer runs it while the page is open, otherwise the next start does. Void 24 h
   after `created` (real time, `timeScale` doesn't shorten it).
 - **Popup conflict:** one popup per event pass; the next one is stored with
-  `afterVisit` and runs on a later visit.
+  `afterVisit` and runs on a later visit. (ma.27) A pass is one interaction,
+  not one `dispatch()`: `handle()` shares it between the visit start
+  (`return_visit` from `touch()`), the event itself and the `runDue()` after
+  it; the page open shares it between the CRM event, the visit, the buffered
+  events and `runDue()`; `simulateReturn()` and the activity listener the same.
+  Before, a click that opened a new visit and also met a view trigger showed
+  two popups.
+- **Popup on screen (ma.27):** the scenario popup opens with
+  `show({ auto: true, park: false })`. If another popup is on screen (or the
+  popups module refused for any other reason), it is not parked — popups.js
+  would otherwise open it ~0.6 s after the other one closes, as a second popup
+  for the same interaction. It counts as skipped: frequency entry undone, no
+  `ma:action`. `ma:action` for a popup fires only when `isVisible` /
+  `_onScreen` is set after `show()`.
 - **Map tooltip (ma.6):** on a phone the first tap on a 2destate unit opens the
-  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`). A
+  map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`).
+  (ma.27) Image Map Pro keeps that class on the closed container
+  (`display: none`), so "open" means the container is actually shown —
+  computed `display` / `visibility`, a client rect and a non-zero size. With
+  no such container at all (desktop) the popup opens at once; with one, it
+  first waits 500 ms, because the tooltip opens just after the popup decision
+  made by the same tap. A
   popup due at that moment waits (checked every 250 ms) until the visitor
   closes it, so they see the unit they tapped first. After 5 minutes with the
   tooltip still open (clock time, not ticks — background tabs slow timers)
@@ -1454,6 +1474,60 @@ nodes gets no extra listener. Before consent nothing is collected.
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
 
+### Hot lead comes back (ma.12, MA-D38 stage 1, variant D′)
+
+Demo and agency test leads only (Piotr, 21.10.2026). Engine spec:
+`docs/architecture/ma-hot-lead-2destate.md` §6.2. Opt-in with
+`d2-ma-hot-lead` on the loader tag; its value is the 2destate API base, empty =
+`https://api.2destate.com/api/v1`. **ma.23:** only `https://api.2destate.com/…` —
+any other host (there is no 2destate staging with `/public/ma/*`), `http`, a port or a
+login means no `/visit` and no `/revoke` request at all, with one `console.warn`
+(ma.13 fell back to production instead).
+
+- **Link:** instead of a signed lead token, 2destate gets the `d2ma`
+  `visitorId` with the form, field `d2ma_visitor_id`. The page takes it from
+  `digi2.ma.visitorId()` or from a hidden `input[d2-ma-visitor-id]`, which the
+  module fills on `submit` in the capture phase (before the page's handler).
+  Without consent, or without the attribute, it is `null` / empty. The module
+  never submits or blocks the form.
+- **MA-D30:** the browser is linked only when, **in the same visit**, the id
+  was handed out *and* a lead was recorded (`generate_lead`, the 3D Estate
+  inquiry, `digi2.ma.lead()`), in either order. A failed submit with no lead
+  links nothing, so a visitor 2destate doesn't know never sends signals.
+- **Visit signal:** `POST {api}/public/ma/visit` with
+  `{ visitorId, units, pageviews, source: "return_visit" }` — up to 20
+  unique 2destate unit ids (UUID) viewed this visit (ma.24: always sent, `[]`
+  when none — the 2destate server requires the field and answers 422 without it),
+  page views of the visit (1–50). Once per visit, then only when new units
+  were viewed and at most every 5 minutes. Never in the form's visit. No form
+  data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+- **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
+  dropped; 403 (Origin off the project's list or lead not eligible — one code
+  for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
+  404 (route not live) → paused 24 h, so an undeployed route isn't hit every
+  5 minutes; 413 / 422 → no more signals this visit; 429 / 503 → wait
+  `Retry-After` (1 h default); anything else → console warning.
+- **"Clear" and consent withdrawn:** `POST {api}/public/ma/revoke
+  {visitorId}` first, then the profile goes locally whatever the answer.
+  Sent whenever the id was ever handed out (`idShared`), not only for a
+  locally linked profile: 2destate links on `d2ma_visitor_id` alone, even
+  when the page never saw the lead, and `/revoke` answers 204 for an unknown
+  id, so it reveals nothing. Consent withdrawn between visits is found in
+  `decide()` before the store is open: `wipe()` then reads only the `state`
+  record of `d2ma` (`peekState()`), only to take the `visitorId` for
+  `/revoke`, and clears it right after. A browser with no `d2ma` yet gets
+  none: `peekState()` aborts `onupgradeneeded` instead of creating it (ma.15).
+- **Attribute value:** anything that isn't `https://…` (a typo,
+  `http://localhost`) logs a warning and falls back to production — on
+  purpose, so a broken value never sends to an unchecked host.
+- **Pinning:** load MA from a tag, `@v1.9.0-ma.N/dist/digi2-loader.min.js`,
+  never `@latest`. jsDelivr resolves `@latest` per file: `dist/modules/ma.min.js`
+  is missing from the latest stable tag, so `@latest` serves the newest tag that
+  has it. Loader 1.8.0 doesn't know d2-ma and never asks for it.
+- **Envelope from 2destate:** `d2-ma` already takes any URL, so switching the
+  source is `d2-ma="https://api.2destate.com/api/v1/public/ma/scenario/<site>.json"`
+  — same v0 shape, no code change.
+
 ### Page conditions (ma.5, §13.11.2a)
 
 Personalisation decided in the browser from the `d2ma` profile, with attributes
@@ -1567,7 +1641,9 @@ JSON would be noise; the 2destate webhook wants it) also gets
 | Case | Behaviour |
 |---|---|
 | Consent and a profile | Both values rebuilt at every submit from the profile (§13.2): visit starts (`visitLog`), views grouped per unit (newest data of the unit, count, last view), `pref`, segments, last unit, lead flag, this visit's UTM |
-| No consent, or no profile yet | `d2ma_context` = `brak kontekstu (brak zgody)`; `d2ma_context_json` is not added (a page's own field of that name is emptied) |
+| No consent, or no profile yet | `d2ma_context` = `brak kontekstu (brak zgody)`; `d2ma_context_json` is not added (on a `d2-ma-context="json"` form a page's own field of that name is emptied) |
+| Form without `d2-ma-context="json"` | A page's own `d2ma_context_json` field is neither filled nor emptied |
+| `d2ma_consent` (ma.18) | `1` on every submit while the profile is active (same gate as `d2ma_context`) — the 2destate server stores the context only with it. Without consent the field is not added and a page's own field of that name is emptied |
 | The form already has a field of that name | Its value is overwritten — never a second input |
 | Too long | Text drops the oldest visit dates first (`…, 20.10, 21.10`), then the oldest units from the list; counts stay true. JSON drops the oldest visits, then the oldest units (keeps the 30 most recent units, 60 visits at most) |
 | `path` | Known only for the current page (`location.pathname`) on the last visit entry — the module does not store page paths of earlier visits |
@@ -1632,6 +1708,66 @@ action carries `fields_touched` next to `form_id`.
   value outside these rules makes the node invalid with `console.warn`. "Clear"
   and a consent wipe put the slot's original children / `src` back.
 
+### 2destate search: filters, sort, `prefer_filters` (ma.17, §13.14)
+
+Needs 2destate core 1.7.0 (`onFilterChange`, `onSortChange`, `setFilters`,
+`setProductOrder` on the result list). An older package simply has none of it —
+nothing breaks, the new nodes are skipped.
+
+| From core | d2-ma does |
+|---|---|
+| `onFilterChange({ mapName, filters: { rooms[], floor[], areaMin/Max, priceMin/Max, status[], building[] }, resultCount, resultIds, source })` | `source: "user"` only: profile state `filters` (last user filter), `filterLog` (≤ 50), event `search_filter`, GA4 `view_item_list`. `source: "api"` (a script, e.g. our `prefer_filters`) is ignored |
+| `onSortChange({ mapName, sort: { by, dir }, source })` | A user sort (not `api`, not `by: "custom"` — that is our own `setProductOrder`) wins over the profile until the visit ends: `map_order` is skipped. GA4 `view_item_list` |
+| `onProductClick(product, { mapName, source })` | As before (`unit_view`), plus GA4 `view_flat`; with `source: "list"` also `select_item` |
+
+**Nodes**
+
+- trigger `search_filter` — `when: { rooms?, floor?, minCount? }` (keys as
+  `type_view`): the visitor's filter includes that room count / floor; no key =
+  any filter. `minCount` counts matching filter changes after the previous step.
+  There is no sort trigger.
+- action `prefer_filters` — `by: rooms | floor | both`: `setFilters(map,
+  { rooms: [pref.rooms], floor: [pref.floor] }, { source: "api" })`, once a visit
+  by default. Skipped (without using its frequency) when the visitor already
+  filtered in this visit or the profile has no preference; core does not
+  overwrite a field the visitor touched. Waits for the map if it is not loaded yet.
+- `map_order` — unchanged, now also orders the result list (core 1.7.0); skipped
+  after a user sort in the visit.
+
+**Profile:** `pref.rooms` / `pref.floor` fall back to the last user filter
+**only while no unit has been viewed** — so a `{{pref.roomsLabel}}` popup works
+from the first filter; the first view takes over. `digi2.ma.profile()` gets
+`filters` and `sort`. The lead context gets `filtrował: 2–3 pokoje, do 700 000 zł,
+tylko wolne` and `filters` in the JSON.
+
+**Popup `promo-filter`** — built in like `promo-rooms`, but needs **no unit**:
+„Szukasz mieszkania 2-pokojowego? Pokażemy wolne lokale i aktualne
+promocje.”, CTA contact. The number is `pref.rooms` as an adjective in the
+genitive, `N-pokojowego` for every N ≥ 1 (1-, 5-, 12-pokojowego — the hyphenated
+form has no plural endings to get wrong); before ma.29 it said „2 pokoje”.
+`pref.rooms` is always one number (a filter `[2, 3]` gives 2), so there is no
+„2- lub 3-pokojowego”. Skipped without `pref.rooms` (or with 0). The adjective is
+only for this built-in text — it is not an envelope field like `roomsLabel`. A `templates.popup[]`
+entry with that id wins over the built-in one, and the page's own
+`[d2-ma-popup="promo-filter"]` over both. Any envelope template without
+`{{unit.*}}` now also opens when the path has no unit.
+
+**GA4 events** (dataLayer, no visitor data, independent of the d2-ma profile
+consent — GA4 consent is Consent Mode's job; `d2-ma-search-events="off"` on the
+loader tag switches them off):
+
+```js
+{ event: 'view_item_list', item_list_name: 'wyszukiwarka',
+  filters: 'rooms=2|3;floor=1;area=40-60;price=-700000;status=available;building=B',
+  filter_count: 6, matching: 5, total: 120, item_list_sort: 'price_asc' }   // user filter/sort, debounced 500 ms
+{ event: 'select_item', item_list_name: 'wyszukiwarka', item_id, item_name } // click in the result list
+{ event: 'view_flat', flat_id, flat_name, flat_rooms, flat_rooms_group /* 1…4, 5+ */, flat_floor, flat_area,
+  flat_type, flat_building, flat_availability, flat_price, flat_isPromo, view_source: 'wyszukiwarka' | 'mapa' }
+```
+
+Every contract key is in every push; a missing value is sent as `undefined`, not left out (ma.21) — a GTM Data Layer Variable reads the data model, so a missing key would keep the previous push's value. `item_list_sort` only for `price`, `area`, `floor` × `asc` / `desc` (ma.18) — for `rooms`, `name`, `custom` it is left out. A filter change reaches the profile and the scenarios once, after 500 ms of quiet (ma.18: a price slider is one `search_filter`, not ten). Only `source: "user"` counts — a missing `source` does not. A change still waiting for those 500 ms is written at once on form submit (so it is in the lead context — `search_filter` scenario actions may run at that moment), with the time of the last change (ma.19). On `pagehide` only the fact is stored in `d2ma` (ma.20): no scenario action at exit — no dataLayer push, webhook or popup, like form exits — and the trigger is not replayed on the next page; the filter stays in the profile, the lead context and `filterLog`. A list ordered `custom` (our own `setProductOrder`) sends no `view_item_list`, and the next list event has no `item_list_sort`. `digi2.ma.clear()` also resets the search: `setFilters(map, { rooms: null, floor: null, areaMin: null, areaMax: null, priceMin: null, priceMax: null, status: null, building: null }, { source: 'api' })` — explicit nulls, because core 1.7.0 merges filters and `{}` would change nothing; fields the visitor touched stay (ma.26). `prefer_filters` reads the `{ applied, skipped }` result: when nothing was applied (a touched field, no search panel) it does not count as done and tries again next visit (ma.26). `total` is `getProducts().length`; `flat_price` is
+the promo price while a promotion runs.
+
 ### State actions: `every_time`, `map_order` (ma.5)
 
 - **`frequency: "every_time"`** — only for `content`, `map_mark` and
@@ -1649,13 +1785,15 @@ action carries `fields_touched` next to `form_id`.
 ### API
 
 ```js
+digi2.ma.version            // ma.28: "ma.28" — the loaded script (same numbering as the envelope's minScript)
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
 digi2.ma.history()          // views, oldest first
 digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent
 digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
-digi2.ma.load(urlOrObject)  // read an envelope
+digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
+digi2.ma.load(urlOrObject)  // read an envelope (URL only from digi2.app / api.2destate.com, ma.23)
 digi2.ma.reload()
 digi2.ma.simulateReturn()
 digi2.ma.clear()            // Promise
@@ -1683,7 +1821,7 @@ tracking still on.
 
 ### Sandbox
 
-`sandbox/ma.html` + `sandbox/ma-koperta.json`: fake units, both search engines
+`sandbox/ma.html` + `sandbox/ma-koperta.json` (loaded as an object with `digi2.ma.load(k)`, since ma.23 a relative URL is not fetched): fake units, both search engines
 simulated, a lead button (no form), "phone result" buttons acting as the panel,
 and a webhook that never leaves the browser.
 

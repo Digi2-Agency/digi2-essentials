@@ -5,7 +5,191 @@ więc wydanie = tag + purge (patrz [CLAUDE.md](CLAUDE.md#wydanie)).
 
 Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 
-## v1.9.0-ma.16 — 2026-10-21 (przedpremierowa, nie `@latest`; ma.15 zajął tag na gałęzi hot lead, PR #17)
+**Wersje przedpremierowe `v1.9.0-ma.N` a `@latest`.** `@latest` na jsDelivr
+pomija tagi z sufiksem, więc pliki z wersji stabilnych idą z najnowszej stabilnej
+1.8.x (dziś 1.8.2). Pliku, którego nie ma w żadnej wersji stabilnej
+(`dist/modules/ma.min.js`), jsDelivr szuka jednak w najnowszym tagu, który go ma —
+także przedpremierowym, także na gałęzi spoza `main`. Strona z `d2-ma` na
+`@latest` dostaje więc najnowszy `ma.N` zaraz po tagu (cache CDN do 12 h; purge
+czyści tylko CDN, przeglądarki trzymają plik do 7 dni), a loader 1.8.x zamienia
+każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
+przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
+tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
+
+## v1.9.0-ma.29 — 2026-10-28 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.28–ma.16)
+
+### `d2-ma` — odmiana w popupie `promo-filter`
+
+- Wbudowany popup po filtrze pokoi mówi „Szukasz mieszkania 2-pokojowego?”
+  zamiast „Szukasz mieszkania 2 pokoje?”. Tak samo dla każdej liczby:
+  1-pokojowego, 5-pokojowego, 12-pokojowego. Przy filtrze z kilkoma liczbami
+  (np. 2 i 3) zdanie bierze pierwszą, jak dotąd. Popup własny strony i szablon
+  z koperty o tym id bez zmian.
+- Zmiana zachowania: filtr z liczbą pokoi 0 dawał wcześniej popup „Szukasz
+  mieszkania 0 pokoi?”. Teraz popup jest wtedy pomijany, tak jak bez liczby
+  pokoi w filtrze.
+
+## v1.9.0-ma.28 — 2026-10-22 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.27–ma.16)
+
+### `d2-ma` — numer wersji w konsoli
+
+- `digi2.ma.version` podaje wersję skryptu załadowaną na stronie, np. `"ma.28"`.
+  Po podmianie tagu w Webflow wystarczy wpisać to w konsoli, zamiast szukać
+  adresu pliku w zakładce Sieć. Format jest ten sam co `minScript` w kopercie.
+
+## v1.9.0-ma.27 — 2026-10-22 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.26–ma.16)
+
+### `d2-ma` — jeden popup na interakcję, popupy na telefonie
+
+- Jedno kliknięcie lokalu daje najwyżej jeden popup ze scenariuszy. Gdy to
+  kliknięcie otwierało nową wizytę (`return_visit`) i jednocześnie spełniało
+  inny wyzwalacz (np. trzeci 2-pokojowy), pokazywały się dwa popupy: drugi
+  ok. 1 s po zamknięciu pierwszego. Teraz drugi czeka do następnej wizyty,
+  jak przy zwykłym konflikcie. To samo przy otwarciu strony (CRM, wizyta,
+  odłożone akcje) i przy `digi2.ma.simulateReturn()`.
+- Popup ze scenariusza nie czeka za innym popupem na ekranie (np. formularzem,
+  który gość otworzył sam). Jest pomijany i nie zużywa częstotliwości, więc
+  może przyjść przy następnym wyzwalaczu.
+- `ma:action` (i dataLayer z niego) dla popupu leci tylko wtedy, gdy popup
+  naprawdę wszedł na ekran.
+- Telefon: popupy znowu się pokazują. Image Map Pro zostawia klasę
+  `is-fullscreen` na zamkniętym dymku mapy, więc moduł uznawał dymek za otwarty
+  i po 5 minutach rezygnował z popupu. Teraz liczy się, czy dymek jest widoczny.
+  Popup czeka pół sekundy na otwarcie się dymka po stuknięciu i pokazuje się
+  po jego zamknięciu.
+
+## v1.9.0-ma.26 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.25–ma.16)
+
+### `d2-ma` — wyszukiwarka z core 2destate 1.7.0
+
+- „Wyczyść” naprawdę zdejmuje filtr ustawiony przez `prefer_filters`. Core
+  scala filtry, więc pusty obiekt niczego nie zmieniał. Teraz moduł wysyła
+  każde pole jako puste. Pola, które ustawił sam gość, zostają.
+- Jeśli core nie przyjął filtra z `prefer_filters` (gość już ruszył to pole
+  albo strona nie ma panelu wyszukiwarki), akcja nie liczy się jako wykonana.
+  Przy następnej wizycie moduł spróbuje ponownie.
+- Strona testowa `sandbox/ma.html` ładuje kopertę dopiero po załadowaniu
+  modułów.
+
+## v1.9.0-ma.25 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.24–ma.16)
+
+### `d2-ma` — poprawki z recenzji ma.23
+
+- Adres koperty spoza listy nie jest zapamiętywany. `digi2.ma.reload()` i
+  `d2-ma-refresh` nie próbują go ponownie, a zły adres w `digi2.ma.load(url)`
+  nie zastępuje wcześniejszego, poprawnego.
+- Strona testowa `sandbox/ma.html` ładuje kopertę jako obiekt, więc działa
+  także po wprowadzeniu listy hostów.
+
+## v1.9.0-ma.24 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.23–ma.16)
+
+### `d2-ma` — gorący lead (poprawki z recenzji ma.22)
+
+- Sygnał powrotu zawsze zawiera listę obejrzanych lokali, także pustą. Serwer
+  2destate wymaga tego pola. Bez niego pierwszy sygnał po powrocie, wysłany
+  przed obejrzeniem lokalu, dostawał odmowę i wyciszał całą wizytę.
+- Pole `[d2-ma-visitor-id]` dostaje identyfikator także przy kliknięciu
+  przycisku wysyłki, a nie tylko przy samym wysłaniu formularza. Działa więc
+  tak samo jak kontekst leadu.
+
+## v1.9.0-ma.23 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.22–ma.16)
+
+### `d2-ma` — dozwolone adresy
+
+- Koperta scenariuszy jest pobierana tylko z `https://digi2.app/…` albo
+  `https://api.2destate.com/…`, zarówno z atrybutu `d2-ma`, jak i z
+  `digi2.ma.load(url)`. Inny adres nie jest pobierany. W konsoli pojawia się
+  ostrzeżenie, a strona działa jak bez MA. Plik lokalny do testów podaje się
+  jako obiekt: `digi2.ma.load({…})`.
+- Gorący lead (`d2-ma-hot-lead`) wysyła `/visit` i `/revoke` tylko do
+  `https://api.2destate.com/…`. Inny host, `http`, port albo login oznaczają, że
+  nie idzie żadne żądanie (wcześniej skrypt przełączał się wtedy na produkcję).
+  Stagingu 2destate z tymi trasami nie ma.
+
+## v1.9.0-ma.22 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.21–ma.16 i gorący lead z ma.15)
+
+### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′) na aktualnej linii
+
+- Gorący lead z gałęzi `feat/d2-ma-12-2destate-visitor` (ma.12, ma.13, ma.15,
+  PR #17) przeniesiony na ma.21: kontekst leadu, wyszukiwarka 2destate,
+  `d2ma_consent` i zapis filtra przy wyjściu działają razem z nim.
+- Zachowanie gorącego leada bez zmian względem ma.15. Opt-in to atrybut
+  `d2-ma-hot-lead` na tagu loadera, tylko dla Osiedla Demo i leadów testowych.
+  Pole `[d2-ma-visitor-id]` albo `digi2.ma.visitorId()` przekazuje identyfikator
+  do formularza 2destate. Sygnał powrotu `POST {api}/public/ma/visit` idzie
+  tylko po oddaniu identyfikatora w wizycie z leadem i tylko po zgodzie, a
+  `/revoke` przy „Wyczyść” i wycofaniu zgody.
+- ma.15 zostaje bez zmian na swojej gałęzi. Strona dema przechodzi na ma.22
+  dopiero po recenzji.
+
+## v1.9.0-ma.21 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.20–ma.16)
+
+### `d2-ma`
+
+- Zdarzenia GA4 wyszukiwarki (`view_item_list`, `select_item`, `view_flat`)
+  zawsze mają wszystkie swoje pola. Brak wartości jest wysyłany jako pusty
+  (`undefined`), a nie pomijany. Dzięki temu zmienna w GTM nie pokaże wartości
+  z poprzedniego zdarzenia, np. ceny innego lokalu albo starego sortowania.
+
+## v1.9.0-ma.20 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.19–ma.16)
+
+### `d2-ma`
+
+- Wyjście ze strony z niezapisaną jeszcze zmianą filtra zapisuje tylko sam
+  filtr w profilu. Nie uruchamia akcji scenariusza: żadnego wpisu w dataLayer,
+  webhooka ani popupu w chwili wyjścia. Przy następnej odsłonie wyzwalacz nie
+  jest odtwarzany, a filtr zostaje w profilu i kontekście leadu.
+- Przy wysyłce formularza zmiana filtra dalej trafia do profilu od razu, więc
+  akcje scenariusza z wyzwalaczem `search_filter` mogą się wtedy wykonać.
+
+## v1.9.0-ma.19 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.18, ma.17, ma.16)
+
+### `d2-ma`
+
+- Filtr zmieniony w wyszukiwarce tuż przed wysłaniem formularza (w ciągu
+  500 ms) trafia już do kontekstu leadu. Zmiana zapisuje się też przy wyjściu
+  ze strony, z czasem ostatniej zmiany, a nie chwilą wysyłki.
+- Lista ułożona przez nas (`custom`) nie daje zdarzenia `view_item_list`, a
+  następne zdarzenie listy idzie bez `item_list_sort`.
+- Skrypt zgłasza wersję równą numerowi tagu (`ma.19`) przy porównaniu z
+  `minScript` koperty. Wcześniej tag ma.18 zgłaszał 17.
+
+## v1.9.0-ma.18 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.17 i ma.16)
+
+### `d2-ma`
+
+- Przy wysyłce formularza z aktywnym profilem moduł dopisuje ukryte pole
+  `d2ma_consent` = `1`. Serwer 2destate zapisuje kontekst leadu tylko z nim.
+  Bez zgody pola nie ma, a własne pole strony o tej nazwie jest opróżniane.
+- Wyszukiwarka (poprawki z recenzji ma.17): seria zmian filtra w ciągu 500 ms
+  (suwak ceny) liczy się jako jedna zmiana w profilu i scenariuszach.
+  `item_list_sort` w GA4 tylko dla sortowania po cenie, metrażu i piętrze.
+  Zmiana bez `source: "user"` nie jest zachowaniem gościa. „Wyczyść”
+  (`digi2.ma.clear()`) zeruje też filtry wyszukiwarki.
+
+## v1.9.0-ma.17 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.16)
+
+### `d2-ma` — wyszukiwarka 2destate (§13.14, wymaga core 1.7.0)
+
+- Nowy wyzwalacz scenariusza `search_filter` (`rooms`, `floor`, `minCount`):
+  gość ustawił w wyszukiwarce filtr z tą liczbą pokoi / piętrem.
+- Nowa akcja `prefer_filters` (`by: rooms | floor | both`): przy powrocie
+  wyszukiwarka sama ustawia filtr z preferencji gościa — raz na wizytę i tylko,
+  jeśli gość jeszcze nie filtrował.
+- `map_order` układa też listę wyników i ustępuje sortowaniu wybranemu przez
+  gościa do końca wizyty.
+- Profil pamięta ostatni filtr; dopóki gość nie obejrzał żadnego lokalu,
+  preferencja pokoi / piętra bierze się z filtra. Kontekst leadu dostaje
+  „filtrował: 2–3 pokoje, do 700 000 zł, tylko wolne”.
+- Wbudowany popup `promo-filter` bez lokalu: „Szukasz mieszkania 2 pokoje?
+  Pokażemy wolne lokale i aktualne promocje.”
+- Zdarzenia GA4 z wyszukiwarki: `view_item_list` (filtry, liczba wyników,
+  sortowanie), `select_item`, `view_flat`. Wyłącznik `d2-ma-search-events="off"`.
+- Bez core 2destate 1.7.0 nic się nie zmienia.
+- Kontekst leadu: formularz bez `d2-ma-context="json"` nie rusza własnego
+  pola `d2ma_context_json` strony (doprecyzowanie z recenzji ma.16).
+
+## v1.9.0-ma.16 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; ma.15 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma` — kontekst leadu w formularzu (§13.13)
 
@@ -23,7 +207,18 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Wyłącznik: `d2-ma-context="off"` na tagu loadera. API: `digi2.ma.context()`,
   `digi2.ma.fillContext(form)`.
 
-## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, nie `@latest`; numer ma.13 zajął tag na gałęzi hot lead, PR #17)
+## v1.9.0-ma.15 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, `@latest`: patrz uwaga na górze)
+
+ma.14 (poprawka #16) + gorący lead z ma.12 / ma.13. **Tę wersję przypina strona dema.**
+
+### `d2-ma`
+
+- Zawiera poprawkę wyścigu popupów #16 z ma.14 i gorący lead (MA-D38 etap 1,
+  wariant D′) z poprawkami z recenzji, czyli wszystko z ma.12 i ma.13.
+- Wycofanie zgody wykryte przy wejściu na stronę, gdy przeglądarka nie ma
+  jeszcze bazy `d2ma`, nie zakłada jej tylko po to, żeby ją skasować.
+
+## v1.9.0-ma.14 — 2026-10-21 (przedpremierowa, `@latest`: patrz uwaga na górze; numer ma.13 zajął tag na gałęzi hot lead, PR #17)
 
 ### `d2-ma`
 
@@ -36,7 +231,42 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Błąd rzucony przez moduł popupów przy wznawianiu odłożonego popupu nie
   zatrzymuje d2-ma (`console.warn` „popups resume failed”).
 
-## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.13 — 2026-10-21 (wydanie gałęzi `feat/d2-ma-12-2destate-visitor` bez poprawki #16 — **nie używać**, zamiast niego ma.15)
+
+Tag `v1.9.0-ma.13` powstał na gałęzi gorącego leada, zanim poprawka #16 (#18) trafiła na main, która
+zapowiadała ją jako ma.13; poprawka #16 ostatecznie wyszła jako ma.14. Ten tag ma błąd wyścigu popupów (#16).
+
+### `d2-ma` — gorący lead, poprawki z recenzji
+
+- „Wyczyść” i wycofanie zgody odwołują powiązanie w 2destate zawsze, gdy
+  formularz dostał kiedyś `visitorId`, także wtedy, gdy strona nie zobaczyła
+  leada.
+- Zgoda wycofana między wizytami: przy następnej odsłonie moduł najpierw
+  wysyła odwołanie do 2destate, potem kasuje bazę.
+- Gdy adres 2destate jeszcze nie działa (404), sygnały wstrzymują się na dobę.
+  Odrzucona treść (413, 422) wstrzymuje je do końca wizyty.
+- Wartość `d2-ma-hot-lead` bez `https://` daje ostrzeżenie w konsoli.
+- MA przypinaj tagiem `@v1.9.0-ma.N`, nigdy `@latest`.
+
+## v1.9.0-ma.12 — 2026-10-21 (przedpremierowa, tylko gałąź `feat/d2-ma-12-2destate-visitor`, `@latest`: patrz uwaga na górze)
+
+### `d2-ma` — gorący lead wraca (MA-D38 etap 1, wariant D′)
+
+- Nowy atrybut `d2-ma-hot-lead` na tagu loadera, tylko dla strony dema i leadów
+  testowych agencji. Wartość to adres API 2destate; puste pole oznacza
+  `https://api.2destate.com/api/v1`.
+- Formularz dema przekazuje 2destate identyfikator przeglądarki (`visitorId`)
+  w polu `d2ma_visitor_id`. Można go wziąć z `digi2.ma.visitorId()` albo
+  z ukrytego pola z atrybutem `d2-ma-visitor-id`, które moduł wypełnia przy
+  wysyłce. Bez zgody identyfikatora nie ma.
+- Gdy w tej samej wizycie był też lead (`generate_lead`), przy kolejnej wizycie
+  moduł wysyła do 2destate, jakie lokale gość ogląda (bez danych formularza).
+  Bez leada nic nie wychodzi z przeglądarki.
+- „Wyczyść” i wycofanie zgody usuwają powiązanie w 2destate.
+- Bez `d2-ma-hot-lead` strona działa jak dotąd.
+- Scenariusze można czytać z 2destate: wystarczy zmienić adres w `d2-ma`.
+
+## v1.9.0-ma.11 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-popups`
 
@@ -45,7 +275,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   fokus, który strona wyniesie poza okno, wraca do popupu. Fokus w lightboxie
   albo w innym oknie modalnym zostaje tam, gdzie jest.
 
-## v1.9.0-ma.10 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.10 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-popups`
 
@@ -55,7 +285,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Esc nie zatrzymuje już propagacji zdarzenia (`preventDefault` wystarcza),
   więc inne skrypty strony dalej je widzą.
 
-## v1.9.0-ma.8 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.8 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-popups` — dostępność (wszystkie popupy)
 
@@ -85,7 +315,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Zmieniony szablon popupu w nowej rewizji koperty przebudowuje popup przy
   następnym pokazie.
 
-## v1.9.0-ma.7 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.7 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — popup z szablonu panelu (§13.9)
 
@@ -100,7 +330,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Popup czekający na zamknięcie dymku mapy, zastąpiony popupem z innego
   scenariusza, nie zużywa swojej częstotliwości. Pokaże się następnym razem.
 
-## v1.9.0-ma.6 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.6 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — popup nie zasłania dymku mapy
 
@@ -110,7 +340,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
   minut, popup przepada i może pojawić się następnym razem. Obejście z
   `z-index` na stronie demo można zostawić, nie przeszkadza.
 
-## v1.9.0-ma.5 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.5 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — warunki na stronie (kontrakt §13.11, wariant B)
 
@@ -158,7 +388,7 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Nakładka z atrybutem `d2-ma-show-*` / `d2-ma-hide-*` czeka z otwarciem na
   warunek d2-ma. Strony bez d2-ma bez zmian.
 
-## v1.9.0-ma.4 — 2026-10-20 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.4 — 2026-10-20 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — nowe wyzwalacze i akcje (kontrakt §13.8)
 
@@ -193,7 +423,7 @@ nie dostaje też żadnego nowego nasłuchu.
 - **`cooldownMinutes`** na akcji: najmniejszy odstęp między jej wykonaniami,
   także między wizytami.
 
-## v1.9.0-ma.3 — 2026-10-19 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.3 — 2026-10-19 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — zdarzenie przy wycofaniu zgody
 
@@ -203,7 +433,7 @@ nie dostaje też żadnego nowego nasłuchu.
   strona” może na nim pokazać stan „brak zgody”. Wcześniej pola
   `[d2-ma-profile]` czyściły się bez żadnego zdarzenia.
 
-## v1.9.0-ma.2 — 2026-10-19 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.2 — 2026-10-19 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### `d2-ma` — pola rejestru 2destate
 
@@ -223,7 +453,7 @@ nie dostaje też żadnego nowego nasłuchu.
   podświetlenia tego kształtu. Pominięte kształty z powtórzonym tytułem widać
   w logu (`d2-debug`).
 
-## v1.9.0-ma.1 — 2026-10-19 (przedpremierowa, nie `@latest`)
+## v1.9.0-ma.1 — 2026-10-19 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 ### Nowy moduł `d2-ma` — marketing automation na stronie (demo, kontrakt v0)
 
