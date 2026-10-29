@@ -158,6 +158,8 @@ function strona(opts) {
         // (z park: false też nie czeka); park zapisany, by test widział, o co prosił moduł.
         show(x) {
           if (o.zajety && o.zajety.on && x && x.auto) { zablokowane.push({ name: n, park: x.park }); if (x.park !== false) this.pendingShow = true; return; }
+          // Jak popups.js: popup już widoczny - show() nic nie robi.
+          if (this.isVisible) return;
           popupy.push({ name: n, auto: x && x.auto });
           this.isVisible = true;
         },
@@ -1134,6 +1136,7 @@ test('reguła 6: akcja pominięta przez frequency nie kończy gałęzi', async (
   for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
   assert.equal(env.segmenty().length, 1);
   assert.equal(env.popupy.length, 1);
+  env.window.digi2.popups.get('d2-ma-promo-rooms').hide(); // gość zamknął popup (ma.32: widoczny nie pokazuje się drugi raz)
   env.dataLayer.push(unitOpen('A_4'));
   await env.gotowe();
   assert.equal(env.segmenty().length, 1, 'segment pominięty (7 dni)');
@@ -1144,6 +1147,7 @@ test('timeScale skraca once_per_days', async () => {
   const env = await start({ koperta: koperta([POKOJE], { demoState: { timeScale: 60 } }) });
   for (const id of ['A_1', 'A_2', 'A_3']) { env.dataLayer.push(unitOpen(id)); await env.minie(6000); }
   assert.equal(env.popupy.length, 1);
+  env.window.digi2.popups.get('d2-ma-promo-rooms').hide();
   await env.minie(3 * 24 * H / 60);
   env.dataLayer.push(unitOpen('A_4'));
   await env.gotowe();
@@ -1186,6 +1190,49 @@ test('ma.27: jedno kliknięcie, które otwiera wizytę (return_visit) i liczy si
   assert.deepEqual(p2.popupy.map((p) => p.name), ['d2-ma-last-unit']);
   const p3 = await powrot(p2, 2 * H);
   assert.deepEqual(p3.popupy.map((p) => p.name), ['d2-ma-promo-rooms'], 'odłożony popup, gdy nic go nie wyprzedza');
+});
+
+test('ma.32: ten sam popup już na ekranie albo w trakcie zamykania — pominięty, treść bez zmian, bez ma:action (recenzja #32)', async () => {
+  const pola = {};
+  const lista = ['name'].map((k) => (pola[k] = element({ 'd2-ma-field': k })));
+  const s = element({ 'd2-ma-popup': 'last-unit' });
+  s.querySelectorAll = (sel) => (sel.indexOf('d2-ma-field') >= 0 ? lista : []);
+  const k = koperta([scenariusz('kazdy', { event: 'unit_view' }, [{ do: 'popup', template: 'last-unit', cta: 'open_unit', frequency: 'once_per_days:0' }])]);
+  const env = await start({ koperta: k, szablon: s });
+  const akcje = () => (env.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup').length;
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.minie(6000);
+  assert.equal(env.popupy.length, 1);
+  assert.equal(pola.name.textContent, '1');
+  // (a) popup A_1 wciąż na ekranie, gość klika A_2.
+  env.dataLayer.push(unitOpen('A_2'));
+  await env.minie(6000);
+  assert.equal(pola.name.textContent, '1', 'treść widocznego popupu nie jest podmieniana');
+  assert.equal(akcje(), 1, 'bez ma:action dla niepokazanego');
+  // (b) popup się zamyka: isVisible już false, element jeszcze na ekranie.
+  const inst = env.window.digi2.popups.get('d2-ma-last-unit');
+  inst.isVisible = false;
+  inst._onScreen = true;
+  env.dataLayer.push(unitOpen('A_3'));
+  await env.minie(6000);
+  assert.equal(pola.name.textContent, '1');
+  assert.equal(akcje(), 1);
+  // Zamknięty: następne kliknięcie pokazuje popup normalnie.
+  inst._onScreen = false;
+  env.dataLayer.push(unitOpen('A_4'));
+  await env.minie(6000);
+  assert.equal(pola.name.textContent, '4');
+  assert.equal(akcje(), 2);
+});
+
+test('ma.32: otwarcie strony — return_visit i obejrzenie z bufora dzielą jeden popup (recenzja #32)', async () => {
+  const p1 = await start({ koperta: koperta([POWROT, POKOJE]) });
+  for (const id of ['A_1', 'A_2']) { p1.dataLayer.push(unitOpen(id)); await p1.minie(6000); }
+  // Powrót po 2 h: trzecie 2-pokojowe obejrzenie jest w dataLayer, zanim magazyn się otworzy.
+  const p2 = await powrot(p1, 2 * H, { dataLayer: [unitOpen('A_3')] });
+  assert.equal(p2.ma.history().length, 3, 'obejrzenie z bufora zapisane');
+  assert.deepEqual(p2.popupy.map((p) => p.name), ['d2-ma-last-unit'], 'jeden popup na otwarcie strony');
+  assert.deepEqual(p2.segmenty().map((e) => e.segment), ['powrot-do-lokalu', '2-pokoje']);
 });
 
 test('ma.27: inny popup na ekranie — popup ze scenariusza nie parkuje się, jest pominięty (bez ma:action), częstotliwość wraca', async () => {
@@ -2662,6 +2709,7 @@ test('#5: drugi lokal w czasie czekania — jeden czekający popup na szablon; o
   for (let i = 0; i < 4; i++) await env.minie(300);
   assert.equal(env.popupy.length, 1, 'jeden popup, nie dwa');
   assert.deepEqual([...env._dysk.state.scenarios.ogladany.freq.a1.units], ['A_2'], 'A_1 oddany, A_2 został');
+  env.window.digi2.popups.get('d2-ma-last-unit').hide();
   await env.minie(6000);
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();

@@ -1326,14 +1326,18 @@ segment }` in `state.scenarios[scenarioId].nodes`.
   it; the page open shares it between the CRM event, the visit, the buffered
   events and `runDue()`; `simulateReturn()` and the activity listener the same.
   Before, a click that opened a new visit and also met a view trigger showed
-  two popups.
+  two popups. `pass.popup` is set when the popup is *decided*, not when it is
+  shown: a popup skipped later (unit sold, popup on screen) still sends a
+  second popup of the same interaction to the next visit.
 - **Popup on screen (ma.27):** the scenario popup opens with
   `show({ auto: true, park: false })`. If another popup is on screen (or the
   popups module refused for any other reason), it is not parked — popups.js
   would otherwise open it ~0.6 s after the other one closes, as a second popup
   for the same interaction. It counts as skipped: frequency entry undone, no
-  `ma:action`. `ma:action` for a popup fires only when `isVisible` /
-  `_onScreen` is set after `show()`.
+  `ma:action`. (ma.32) `ma:action` for a popup fires only when this `show()`
+  turned it from hidden to visible. The same popup already on screen, or still
+  closing (`_onScreen`), is skipped before its content is touched — before,
+  `fill()` swapped the visible popup's unit and it counted as shown.
 - **Map tooltip (ma.6):** on a phone the first tap on a 2destate unit opens the
   map's full-screen tooltip (`.imp-tooltips-container.is-fullscreen`).
   (ma.27) Image Map Pro keeps that class on the closed container
