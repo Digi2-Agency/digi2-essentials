@@ -36,8 +36,10 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   i przewinięta nie daje drugiego „kliknięcia w reklamę”. Sam identyfikator
   kliknięcia (np. gclid doklejany do linków wewnętrznych) daje nowy wpis tylko
   wtedy, gdy gość przyszedł z innej strony albo bez strony polecającej.
-- Wartość UTM wyglądająca na dane osobowe (z „@” albo z 9 i więcej cyframi
-  z rzędu) nie jest zapisywana. Rodzaje kliknięć to gclid, gbraid, wbraid,
+- Wartość UTM z „@” nie trafia do historii źródeł. W `utm_content`
+  i `utm_term` nie trafia też wartość wyglądająca na numer telefonu.
+  Identyfikatory kampanii (`utm_campaign`, `utm_id`, długie liczby z Google
+  i Meta) zostają. Rodzaje kliknięć to gclid, gbraid, wbraid,
   dclid, fbclid, ttclid i msclkid.
 - Historia trafia do leada w `d2ma_context_json` (`touchpoints: { v: 1, items }`,
   najwyżej 10 ostatnich; przy przekroczeniu 4 kB obcinane jako pierwsze)

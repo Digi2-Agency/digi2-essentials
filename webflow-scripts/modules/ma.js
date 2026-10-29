@@ -2837,8 +2837,8 @@
       if (blocked && tag === 'granted') consentChanged(true);
       else if ((tracking || opening) && tag === 'denied') consentChanged(false);
       else if (holding && googleTagDenied()) consentChanged(false);
-      else if (tracking && !openedWithConsent && tag === 'granted') consentChanged(true);
-      else if (tracking && openedWithConsent && googleTagDenied()) consentChanged(false);
+      // hasConsent(), nie sam tag: zapisana odmowa modułu google wygrywa z default granted.
+      else if (tracking && !openedWithConsent && hasConsent()) consentChanged(true);
     }
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
@@ -2942,8 +2942,8 @@
     var u = {};
     var any = false;
     ['source', 'medium', 'campaign'].forEach(function (k) {
-      var v = utmValue(param('utm_' + k));
-      if (v) { u[k] = v; any = true; }
+      var v = param('utm_' + k);
+      if (v) { u[k] = String(v).slice(0, 100); any = true; }
     });
     return any ? u : null;
   }
@@ -2969,7 +2969,7 @@
     var web = !!u && u.hostname !== 'invalid.local' && (u.protocol === 'https:' || u.protocol === 'http:');
     var q = u ? u.searchParams : null;
     var e = {};
-    TOUCH_UTM.forEach(function (k) { e['utm_' + k] = utmValue(q ? q.get('utm_' + k) : null); });
+    TOUCH_UTM.forEach(function (k) { e['utm_' + k] = utmValue(q ? q.get('utm_' + k) : null, k); });
     e.click_type = 'none';
     for (var i = 0; q && i < TOUCH_CLICK_IDS.length; i++) {
       if (q.get(TOUCH_CLICK_IDS[i])) { e.click_type = TOUCH_CLICK_IDS[i]; break; }
@@ -2989,11 +2989,15 @@
     return String(h || '').toLowerCase().replace(/^www\./, '');
   }
 
-  // Wartość UTM: przycięta, ≤ 100 znaków; wygląda na dane osobowe (e-mail,
-  // ciąg ≥ 9 cyfr - telefon, PESEL) → null (ma.33, decyzja architekt-it).
-  function utmValue(v) {
+  // Wartość UTM: przycięta, ≤ 100 znaków. Dane osobowe → null (ma.33, decyzja
+  // architekt-it po recenzji #42): „@” w każdym polu; wzór telefonu tylko
+  // w utm_content / utm_term - ID kampanii (Google 10-11 cyfr, Meta utm_id
+  // 18-19) w utm_campaign / utm_id nigdy nie są czyszczone z powodu cyfr.
+  var PHONE_RE = /\+\d{2}[\s-]?\d|\d{3}[\s-]\d{3}[\s-]\d{3}|^\d{9}$/;
+  function utmValue(v, field) {
     v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
-    if (!v || v.indexOf('@') >= 0 || /\d{9,}/.test(v)) return null;
+    if (!v || v.indexOf('@') >= 0) return null;
+    if ((field === 'content' || field === 'term') && PHONE_RE.test(v)) return null;
     return v.slice(0, 100);
   }
 
@@ -3031,6 +3035,8 @@
     var last = list.length ? list[list.length - 1] : null;
     if (!newVisit && !newCampaign(pageTouch, last)) return;
     var e = Object.assign({ ts: t }, pageTouch);
+    // Nowa wizyta z linku wewnętrznego z doklejonym gclid (url_passthrough) to nie klik reklamy.
+    if (newVisit && e.referrer_internal) e.click_type = 'none';
     delete e.referrer_internal;
     list.push(e);
     state.touchpoints = list.slice(-TOUCHPOINTS_MAX);
@@ -3987,13 +3993,15 @@
     if (granted && tracking && !openedWithConsent) {
       openedWithConsent = true;
       state.consentAt = now();
-      addTouchpoint(now(), touchVisitPending);
+      // Wizyta zaczęta przed zgodą: wpis z chwilą jej początku, jak w visits.
+      addTouchpoint(touchVisitPending && state.visitStart != null ? state.visitStart : now(), touchVisitPending);
       touchVisitPending = false;
       afterChange();
     }
     // ma.33: odmowa przy niewymaganej zgodzie - baza zostaje, historia źródeł znika.
     if (!granted && tracking && !consentRequired(envelope) && openedWithConsent) {
       openedWithConsent = false;
+      pageTouchUsed = false;
       delete state.consentAt;
       delete state.touchpoints;
       afterChange();
@@ -4422,6 +4430,8 @@
       // Znacznik = ostatnie otwarcie za zgodą; otwarcie bez wymogu go zdejmuje.
       if (openedWithConsent) state.consentAt = now();
       else delete state.consentAt;
+      // ma.33: jawna odmowa przed otwarciem kasuje historię źródeł; nieznana ją zostawia.
+      if (!openedWithConsent && consentState() === 'denied') delete state.touchpoints;
       applyEnvelope(envelope);
       var visitsBefore = state.visits;
       var visit = touch();

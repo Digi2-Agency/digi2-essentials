@@ -1174,13 +1174,49 @@ test('ma.33 touchpoints (decyzja 3): tylko przy wyrażonej zgodzie, także gdy z
   assert.equal(p._dysk.cleared, 1);
 });
 
-test('ma.33 touchpoints (decyzja 4): wartość UTM z „@” albo ≥ 9 cyfr = null (dane osobowe)', async () => {
-  const env = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=newsletter&utm_campaign=jan%40kowalski.pl&utm_term=tel500600700&utm_content=promo-12345678' });
+test('ma.33 touchpoints (decyzja 4, poprawiona w recenzji #42): „@” w każdym polu, wzór telefonu tylko w content/term; ID kampanii zostają', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=newsletter&utm_medium=jan%40kowalski.pl&utm_campaign=21745836102&utm_id=120212345678901234&utm_term=500600700&utm_content=%2B48%20500%20600%20700' });
   const e = env.ma.touchpoints().items[0];
   assert.equal(e.utm_source, 'newsletter');
-  assert.ok(!('utm_campaign' in e) && !('utm_term' in e), 'e-mail i telefon odrzucone');
-  assert.equal(e.utm_content, 'promo-12345678', '8 cyfr zostaje');
-  assert.ok(!JSON.stringify(env._dysk.state).includes('kowalski'));
+  assert.equal(e.utm_campaign, '21745836102', 'ID kampanii Google (11 cyfr) zostaje');
+  assert.equal(e.utm_id, '120212345678901234', 'utm_id Meta (18 cyfr) zostaje');
+  assert.ok(!('utm_medium' in e), 'e-mail odrzucony');
+  assert.ok(!('utm_term' in e) && !('utm_content' in e), 'telefon (9 cyfr, +48 z odstępami) odrzucony');
+  assert.ok(!JSON.stringify(env._dysk.state.touchpoints).includes('kowalski'), 'w historii źródeł nie ma e-maila (state.utm bez zmian od ma.17)');
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/?utm_content=promo-12345678&utm_term=500-600-700').utm_content, 'promo-12345678');
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/?utm_term=500-600-700').utm_term, null);
+  // readUtm jak przed ma.33: scenariusz „z kampanii” widzi ID kampanii.
+  assert.equal(env._dysk.state.utm.campaign, '21745836102');
+});
+
+test('ma.33 touchpoints (recenzja #42): zapisana odmowa modułu google wygrywa z default granted z GTM', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: { analytics_storage: 'denied' }, search: '?utm_source=google',
+    googleTag: { ics: { entries: { analytics_storage: { default: true } } } } });
+  env.dataLayer.push({ event: 'gtm.load' });
+  await env.gotowe();
+  assert.deepEqual(klon(env.ma.touchpoints()), { v: 1, items: [] });
+  assert.ok(!env._dysk.state.touchpoints);
+});
+
+test('ma.33 touchpoints (recenzja #42): odmowa przed otwarciem bazy kasuje starą historię, nieznana ją zostawia', async () => {
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google' });
+  assert.equal(p1._dysk.state.touchpoints.length, 1);
+  await powrot(p1, 2 * H, { zgoda: null, search: '', dataLayer: [] });
+  assert.equal(p1._dysk.state.touchpoints.length, 1, 'nieznana zgoda: historia zostaje (niewidoczna)');
+  await powrot(p1, 2 * H, { zgoda: null, search: '', dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  assert.ok(!p1._dysk.state.touchpoints, 'jawna odmowa: historia skasowana');
+});
+
+test('ma.33 touchpoints (recenzja #42): nowa wizyta z linku wewnętrznego z gclid = click_type none; wpis po zgodzie z początkiem wizyty', async () => {
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&gclid=X' });
+  const p2 = await powrot(p1, 2 * H, { search: '?gclid=X', referrer: 'https://demo.example/a' });
+  assert.deepEqual(klon(p2.ma.touchpoints().items.map((e) => e.click_type)), ['gclid', 'none']);
+  const env = await start({ koperta: koperta([]), search: '?utm_source=meta_ads' });
+  const startWizyty = env.ma.profile().counters.lastVisitAt;
+  await env.minie(3 * MIN);
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await env.gotowe();
+  assert.equal(new Date(env.ma.touchpoints().items[0].ts).getTime(), startWizyty, 'ts = początek wizyty, nie chwila zgody');
 });
 
 test('ma.33 touchpoints (decyzja 6): w JSON-ie leada najwyżej 10 ostatnich, przy przepełnieniu odpadają przed wizytami', async () => {

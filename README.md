@@ -1764,7 +1764,7 @@ Readers (the 2destate validator) must treat an absent key exactly like `null`.
 | Field | Meaning |
 |---|---|
 | `ts` | Start of the touchpoint, ISO 8601 UTC |
-| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** A value that looks like personal data — contains `@` or a run of 9+ digits (phone, PESEL) — is dropped (`null`) |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** Personal data is dropped (`null`): a value with `@` in any field; a phone-like value (`+48…`, digits grouped with spaces or dashes, or exactly 9 digits) only in `utm_content` / `utm_term`. `utm_campaign` and `utm_id` are never cleared for digits — campaign ids are long numbers (Google 10–11, Meta 18–19). The filter applies to touchpoints only; the visit's `source` and the `utm` trigger read the URL as before |
 | `click_type` | `gclid` \| `gbraid` \| `wbraid` \| `dclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). Closed list for v1. The id's value is never read into the profile. Always present |
 | `referrer_host` | Host of `document.referrer`, lower case, only when it is another site — a page of this site (also `www.` ↔ no `www.`) is not a source. Left out when empty |
 | `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters; only for `http(s)` pages |
@@ -1774,9 +1774,11 @@ Readers (the 2destate validator) must treat an absent key exactly like `null`.
 | New entry | Every new visit (30 min without activity, the same gap as `visits`) — also a direct or referral visit, with `click_type: "none"` and no UTM. Inside a visit only a page view with another campaign: `utm_source` / `utm_medium` / `utm_campaign` differ from the last entry, or only the click id differs **and the referrer is another site or empty** (a `gclid` passed along internal links by GTM's `url_passthrough` is not a new ad click) |
 | Once per page load | A page's source is considered once. A second visit within the same page load (tab left open 2 h, then a scroll) adds no entry — the URL still carries the old ad |
 | Direct | A page view without UTM or click id inside a visit adds nothing — direct never overwrites the source |
+| Internal link with a click id | A new visit that starts from a page of this site with a `gclid` passed along gets `click_type: "none"` |
+| Known blind spot | A second ad click of the same platform inside a visit, with no UTM and the same click id kind, is not visible as a new entry |
 | Limit | The 20 most recent entries; older ones drop off |
 | Retention | Like the profile (`storage.retentionDays`, 90): older entries are pruned; a profile not seen for longer starts over |
-| Consent | Only with **expressed** consent — also when the envelope doesn't require consent, since this is profiling (architekt-it's decision on #42). Without it `digi2.ma.touchpoints()` is `{ v: 1, items: [] }` and nothing is recorded; consent given later on the page adds this page's entry. A refusal deletes the history: with consent required the whole database goes (§13.2), without the requirement only `touchpoints` (and the consent marker) go and the rest of the profile stays |
+| Consent | Only with **expressed** consent — also when the envelope doesn't require consent, since this is profiling (architekt-it's decision on #42). Without it `digi2.ma.touchpoints()` is `{ v: 1, items: [] }` and nothing is recorded; consent given later on the page adds this page's entry. A refusal deletes the history: with consent required the whole database goes (§13.2), without the requirement only `touchpoints` (and the consent marker) go and the rest of the profile stays. A refusal known before the database opens deletes the stored history too; consent not known yet leaves it (hidden). What already left the browser — a sent lead, a copy in the chat — does not disappear on refusal |
 | Classification | The module records facts only. Telling organic from social, or a campaign from a referrer, is the reader's job (2destate keeps the dictionary); the module never guesses a campaign |
 
 Where it goes:
