@@ -72,7 +72,8 @@
  *     d2ma_context_json   compact JSON ≤ 4 kB: { v:1, visits:[{t,path}],
  *                         units:[{id,name,rooms,floor,area,price,views,last}],
  *                         pref:{rooms,floor}, segments:[], last_unit, lead,
- *                         source:{utm_source,utm_medium,utm_campaign} }
+ *                         source:{utm_source,utm_medium,utm_campaign},
+ *                         touchpoints:{v:1,items:[…]} }   (ma.33, README „Touchpoints”)
  *   Only with consent (the profile's own gate). Without it d2ma_context is
  *   "brak kontekstu (brak zgody)" and the JSON field is left out. Only this
  *   site's behaviour — never other forms' values, IP, UA or location.
@@ -163,6 +164,8 @@
  *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
+ *   digi2.ma.touchpoints()        ma.33: { v:1, items } — source of every visit; items [] without consent
+ *   digi2.ma.parseTouchpoint(h,r) ma.33: one entry, no storage, no consent needed
  *   digi2.ma.simulateReturn()     Same as the [d2-ma-simulate-return] button
  *   digi2.ma.clear()              Delete the whole d2ma database (Promise)
  *   digi2.ma.highlight()          Re-apply the map highlight
@@ -227,7 +230,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 32;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 33;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -321,6 +324,9 @@
   var holding = false;       // ma.31: zgoda nieznana - czekamy, bazy nie ruszamy
   var openedWithConsent = false; // ma.31: magazyn otwarty za zgodą (nie tylko bez wymogu)
   var pageUtm = null;        // utm_source / utm_medium / utm_campaign z adresu tej odsłony
+  var pageTouch = null;      // ma.33: wpis touchpoints tej odsłony (bez ts) - parseTouchpoint()
+  var pageTouchUsed = false; // ma.33: źródło tej odsłony już rozpatrzone (raz na załadowanie strony)
+  var touchVisitPending = false; // ma.33: wizyta zaczęta na tej odsłonie przed zgodą - wpis po zgodzie
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -705,6 +711,8 @@
       state.utm = pageUtm;
       // Początki wizyt dla okna czasu w d2-ma-show-visits="3+/30d" (§13.11.2a).
       state.visitLog = (state.visitLog || []).concat([t]).slice(-200);
+      // ma.33: każda wizyta to wpis historii źródeł, także bez UTM (direct, polecenie).
+      addTouchpoint(t, true);
     }
     state.lastSeen = t;
     return ev;
@@ -2829,6 +2837,8 @@
       if (blocked && tag === 'granted') consentChanged(true);
       else if ((tracking || opening) && tag === 'denied') consentChanged(false);
       else if (holding && googleTagDenied()) consentChanged(false);
+      // hasConsent(), nie sam tag: zapisana odmowa modułu google wygrywa z default granted.
+      else if (tracking && !openedWithConsent && hasConsent()) consentChanged(true);
     }
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
@@ -2936,6 +2946,114 @@
       if (v) { u[k] = String(v).slice(0, 100); any = true; }
     });
     return any ? u : null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Historia źródeł wizyt — touchpoints v1 (ma.33). Jedyna definicja kontraktu:
+  // README „Touchpoints”. Wpis: ts (ISO UTC), utm_source / utm_medium /
+  // utm_campaign / utm_content / utm_term / utm_id (≤ 100 znaków), click_type
+  // (gclid | fbclid | ttclid | msclkid | none — sam rodzaj, nigdy wartość),
+  // referrer_host (sama domena, obca), landing_path (bez query i fragmentu).
+  // ---------------------------------------------------------------------------
+
+  var TOUCH_UTM = ['source', 'medium', 'campaign', 'content', 'term', 'id'];
+  // Kolejność = pierwszeństwo, gdy adres ma kilka (v1: lista zamknięta).
+  var TOUCH_CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'fbclid', 'ttclid', 'msclkid'];
+  var TOUCHPOINTS_MAX = 20;
+
+  // Czysta funkcja: adres strony i referrer → wpis bez ts. Bez zgody i bez
+  // magazynu - może jej użyć inny skrypt (np. widżet czatu) zamiast kopiować logikę.
+  function parseTouchpoint(href, referrer) {
+    var u = null;
+    try { u = new URL(String(href || ''), 'https://invalid.local/'); } catch (e) { u = null; }
+    var web = !!u && u.hostname !== 'invalid.local' && (u.protocol === 'https:' || u.protocol === 'http:');
+    var q = u ? u.searchParams : null;
+    var e = {};
+    TOUCH_UTM.forEach(function (k) { e['utm_' + k] = utmValue(q ? q.get('utm_' + k) : null, k); });
+    e.click_type = 'none';
+    for (var i = 0; q && i < TOUCH_CLICK_IDS.length; i++) {
+      if (q.get(TOUCH_CLICK_IDS[i])) { e.click_type = TOUCH_CLICK_IDS[i]; break; }
+    }
+    var own = web ? siteHost(u.hostname) : null;
+    var ref = null;
+    try { ref = referrer ? new URL(String(referrer)).hostname.toLowerCase() : null; } catch (x) { ref = null; }
+    // Przejście wewnątrz strony (także www. ↔ bez www.) to nie źródło -
+    // referrer_internal odróżnia je od braku referrera (oba dają referrer_host null).
+    e.referrer_internal = !!ref && siteHost(ref) === own;
+    e.referrer_host = ref && !e.referrer_internal ? ref.slice(0, 100) : null;
+    // Ścieżka z „@” (także %40) to zwykle e-mail w adresie (np. /wypisz/jan@x.pl) - null, wpis zostaje.
+    var lp = web ? (u.pathname || '/') : null;
+    e.landing_path = lp && !/@|%40/i.test(lp) ? lp.slice(0, 200) : null;
+    return e;
+  }
+
+  function siteHost(h) {
+    return String(h || '').toLowerCase().replace(/^www\./, '');
+  }
+
+  // Wartość UTM: przycięta, ≤ 100 znaków. Dane osobowe → null (ma.33, decyzja
+  // architekt-it po recenzji #42): „@” w każdym polu; wzór telefonu tylko
+  // w utm_content / utm_term - ID kampanii (Google 10-11 cyfr, Meta utm_id
+  // 18-19) w utm_campaign / utm_id nigdy nie są czyszczone z powodu cyfr.
+  var PHONE_RE = /\+\d{2}[\s-]?\d|\d{3}[\s-]\d{3}[\s-]\d{3}|^\d{9}$/;
+  function utmValue(v, field) {
+    v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
+    if (!v || v.indexOf('@') >= 0) return null;
+    if ((field === 'content' || field === 'term') && PHONE_RE.test(v)) return null;
+    return v.slice(0, 100);
+  }
+
+  function readTouchpoint() {
+    var href = null, ref = null;
+    try { href = window.location && window.location.href; } catch (e) { href = null; }
+    try { ref = document.referrer || null; } catch (e) { ref = null; }
+    return parseTouchpoint(href, ref);
+  }
+
+  function utmKey(e) {
+    return [e.utm_source, e.utm_medium, e.utm_campaign].join('|');
+  }
+
+  // W trakcie wizyty: nowa kampania = inne source / medium / campaign. Sam inny
+  // identyfikator kliknięcia liczy się tylko przy obcym albo pustym referrerze -
+  // gclid doklejany do linków wewnętrznych (url_passthrough w GTM) to nie nowa reklama.
+  function newCampaign(e, last) {
+    var utm = !!(e.utm_source || e.utm_medium || e.utm_campaign);
+    if (utm && (!last || utmKey(last) !== utmKey(e))) return true;
+    if (e.click_type === 'none' || e.referrer_internal) return false;
+    return !last || last.click_type !== e.click_type || utmKey(last) !== utmKey(e);
+  }
+
+  // Źródło tej odsłony rozpatrujemy raz na załadowanie strony: nowa wizyta
+  // dopisuje wpis zawsze (także direct), odsłona w trwającej wizycie tylko przy
+  // nowej kampanii. Kolejna wizyta w tym samym załadowaniu (karta otwarta 2 h,
+  // potem przewinięcie) nie dostaje wpisu - adres strony to wciąż stara reklama.
+  // Tylko przy wyrażonej zgodzie, także gdy zgoda nie jest wymagana (profilowanie).
+  function addTouchpoint(t, newVisit) {
+    if (!pageTouch || !state || pageTouchUsed) return;
+    if (!openedWithConsent) { if (newVisit) touchVisitPending = true; return; }
+    pageTouchUsed = true;
+    var list = state.touchpoints || [];
+    var last = list.length ? list[list.length - 1] : null;
+    if (!newVisit && !newCampaign(pageTouch, last)) return;
+    var e = Object.assign({ ts: t }, pageTouch);
+    // Nowa wizyta z linku wewnętrznego z doklejonym gclid (url_passthrough) to nie klik reklamy.
+    if (newVisit && e.referrer_internal) e.click_type = 'none';
+    delete e.referrer_internal;
+    list.push(e);
+    state.touchpoints = list.slice(-TOUCHPOINTS_MAX);
+  }
+
+  // Kontrakt v1: ts jako ISO UTC, pola bez wartości pominięte (poza click_type).
+  function touchpointsOut(list) {
+    return (list || []).map(function (e) {
+      var o = { ts: ctxIso(e.ts) };
+      TOUCH_UTM.forEach(function (k) { if (e['utm_' + k] != null) o['utm_' + k] = e['utm_' + k]; });
+      o.click_type = e.click_type || 'none';
+      if (e.referrer_host) o.referrer_host = e.referrer_host;
+      if (e.landing_path) o.landing_path = e.landing_path;
+      return o;
+    });
   }
 
   // Każda podana lista musi pasować (I), w liście wystarczy jedna wartość (LUB).
@@ -3872,6 +3990,24 @@
   function consentChanged(granted) {
     if (granted) revoked = false;
     if (granted && blocked) { blocked = false; holding = false; openStore(); }
+    // ma.33: zgoda przyszła, gdy baza była już otwarta bez niej (zgoda niewymagana) -
+    // od teraz zbieramy historię źródeł, z wpisem tej odsłony.
+    if (granted && tracking && !openedWithConsent) {
+      openedWithConsent = true;
+      state.consentAt = now();
+      // Wizyta zaczęta przed zgodą: wpis z chwilą jej początku, jak w visits.
+      addTouchpoint(touchVisitPending && state.visitStart != null ? state.visitStart : now(), touchVisitPending);
+      touchVisitPending = false;
+      afterChange();
+    }
+    // ma.33: odmowa przy niewymaganej zgodzie - baza zostaje, historia źródeł znika.
+    if (!granted && tracking && !consentRequired(envelope) && openedWithConsent) {
+      openedWithConsent = false;
+      pageTouchUsed = false;
+      delete state.consentAt;
+      delete state.touchpoints;
+      afterChange();
+    }
     if (!granted && consentRequired(envelope)) {
       if (tracking) wipe('consent withdrawn');
       else if (opening) revoked = true;
@@ -3889,6 +4025,8 @@
     var hadState = !!state;
     holding = false;
     openedWithConsent = false;
+    pageTouchUsed = false;
+    touchVisitPending = false;
     revokeHotLead();
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
@@ -3937,6 +4075,7 @@
   var CTX_NO_CONSENT = 'brak kontekstu (brak zgody)';
   var CTX_UNITS_MAX = 30;
   var CTX_VISITS_MAX = 60;
+  var CTX_TOUCHPOINTS_MAX = 10;
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function ctxDay(ts) { var d = new Date(ts); return pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1); }
@@ -4001,7 +4140,8 @@
       lead: !!state.lead, leadAt: state.leadAt || null,
       source: utm ? { utm_source: utm.source || null, utm_medium: utm.medium || null, utm_campaign: utm.campaign || null } : null,
       path: path,
-      filters: state.filters ? _clone(state.filters) : null
+      filters: state.filters ? _clone(state.filters) : null,
+      touchpoints: openedWithConsent ? (state.touchpoints || []).slice() : []
     };
   }
 
@@ -4077,6 +4217,14 @@
         parts.push('źródło: ' + [d.source.utm_source, d.source.utm_medium, d.source.utm_campaign]
           .filter(function (x) { return x; }).join(' / '));
       }
+      // ma.33: źródła kolejnych wizyt, najwyżej 5 ostatnich.
+      var tps = (d.touchpoints || []).slice(-5);
+      if (tps.length > 1) {
+        parts.push('źródła wizyt: ' + ((d.touchpoints.length > tps.length) ? '…, ' : '') + tps.map(function (e) {
+          return e.utm_source ? e.utm_source + (e.utm_medium ? '/' + e.utm_medium : '')
+            : e.click_type !== 'none' ? e.click_type : e.referrer_host || 'bezpośrednio';
+        }).join(' → '));
+      }
       var text = parts.join(' · ');
       if (text.length <= CTX_TEXT_MAX) return text;
       if (dates.length > 1) dates.shift();
@@ -4089,6 +4237,10 @@
   function contextJson(d) {
     var units = d.units.slice(0, CTX_UNITS_MAX);
     var visits = d.visits.slice(-CTX_VISITS_MAX);
+    // ma.33: w JSON-ie najwyżej 10 ostatnich (pełne 20 zostaje w profilu);
+    // przy przepełnieniu odpadają przed wizytami - serwer 2destate odrzuca
+    // cały context_json > 4096 B.
+    var touches = (d.touchpoints || []).slice(-CTX_TOUCHPOINTS_MAX);
     for (;;) {
       var o = {
         v: 1,
@@ -4098,6 +4250,7 @@
         }),
         pref: d.pref, segments: d.segments, last_unit: d.lastUnit, lead: d.lead, source: d.source
       };
+      if (touches.length) o.touchpoints = { v: 1, items: touchpointsOut(touches) };
       if (d.filters) {
         var jf = {};
         ['rooms', 'floor', 'areaMin', 'areaMax', 'priceMin', 'priceMax', 'status', 'building'].forEach(function (k) {
@@ -4108,7 +4261,8 @@
       }
       var str = JSON.stringify(o);
       if (utf8Len(str) <= CTX_JSON_MAX) return str;
-      if (visits.length > 1) visits.shift();
+      if (touches.length) touches.shift();
+      else if (visits.length > 1) visits.shift();
       else if (units.length) units.pop();
       else return str;
     }
@@ -4278,8 +4432,13 @@
       // Znacznik = ostatnie otwarcie za zgodą; otwarcie bez wymogu go zdejmuje.
       if (openedWithConsent) state.consentAt = now();
       else delete state.consentAt;
+      // ma.33: jawna odmowa przed otwarciem kasuje historię źródeł; nieznana ją zostawia.
+      if (!openedWithConsent && consentState() === 'denied') delete state.touchpoints;
       applyEnvelope(envelope);
+      var visitsBefore = state.visits;
       var visit = touch();
+      // ma.33: odsłona w trwającej wizycie - wpis tylko przy nowej kampanii.
+      if (state.visits === visitsBefore) addTouchpoint(now(), false);
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
       state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
@@ -4330,6 +4489,7 @@
     // Segmenty i początki wizyt mają tę samą retencję co historia.
     Object.keys(state.segments || {}).forEach(function (k) { if (state.segments[k] < limit) delete state.segments[k]; });
     if (state.visitLog) state.visitLog = state.visitLog.filter(function (t) { return t >= limit; });
+    if (state.touchpoints) state.touchpoints = state.touchpoints.filter(function (e) { return e.ts >= limit; });
     var old = views.filter(function (v) { return v.ts < limit; }).map(function (v) { return v.id; });
     if (!old.length) return;
     views = views.filter(function (v) { return v.ts >= limit; });
@@ -4346,6 +4506,7 @@
     deepLinkView();
     hookVisitorIdFields();
     pageUtm = readUtm();
+    pageTouch = readTouchpoint();
     var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     // ma.25: adres spoza listy nie zostaje jako envelopeUrl — reload / d2-ma-refresh go nie ponawiają.
     envelopeUrl = startUrl && allowedUrl(startUrl, ENVELOPE_HOSTS) ? startUrl : null;
@@ -4451,6 +4612,14 @@
       };
     },
     history: function () { return _clone(views); },
+    // ma.33: historia źródeł wizyt (touchpoints v1); bez zgody pusta lista.
+    touchpoints: function () {
+      return { v: 1, items: state && tracking && openedWithConsent ? touchpointsOut(state.touchpoints) : [] };
+    },
+    // ma.33: parser wpisu bez zapisu i bez zgody (adres i referrer domyślnie z tej strony).
+    parseTouchpoint: function (href, referrer) {
+      return arguments.length ? parseTouchpoint(href, referrer) : readTouchpoint();
+    },
     // Kontekst leadu (ma.16): to, co trafia do ukrytych pól formularza.
     context: function () {
       var d = contextData();
