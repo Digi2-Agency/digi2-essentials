@@ -2867,12 +2867,12 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
   { <span class="prop">ts</span>: <span class="string">"2026-10-24T08:05:00.000Z"</span>, <span class="prop">click_type</span>: <span class="string">"none"</span>, <span class="prop">landing_path</span>: <span class="string">"/"</span> } ] }</code></pre>
     <table>
       <tr><th>Field / rule</th><th>Behaviour</th></tr>
-      <tr><td><code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>utm_term</code>, <code>utm_id</code></td><td>From the landing URL, ≤ 100 characters; left out when empty</td></tr>
-      <tr><td><code>click_type</code></td><td><code>gclid</code> | <code>fbclid</code> | <code>ttclid</code> | <code>msclkid</code> | <code>none</code> — only the kind, never the id's value</td></tr>
-      <tr><td><code>referrer_host</code>, <code>landing_path</code></td><td>Referring site's host (not this site); page path without query or fragment</td></tr>
-      <tr><td>New entry</td><td>Every new visit (30 min gap), also direct; inside a visit only a page with another campaign. A page without UTM never overwrites the source</td></tr>
-      <tr><td>Limit, retention</td><td>20 most recent; pruned with the profile retention (90 days)</td></tr>
-      <tr><td>Consent</td><td>Only with d2-ma consent; without it <code>items: []</code> and nothing stored</td></tr>
+      <tr><td><code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>utm_term</code>, <code>utm_id</code></td><td>From the landing URL, ≤ 100 characters; a missing field means empty. A value with <code>@</code> or 9+ digits in a row is dropped (personal data)</td></tr>
+      <tr><td><code>click_type</code></td><td><code>gclid</code> | <code>gbraid</code> | <code>wbraid</code> | <code>dclid</code> | <code>fbclid</code> | <code>ttclid</code> | <code>msclkid</code> | <code>none</code> — only the kind, never the id's value</td></tr>
+      <tr><td><code>referrer_host</code>, <code>landing_path</code></td><td>Referring site's host (not this site, <code>www.</code> or not); page path without query or fragment, http(s) only</td></tr>
+      <tr><td>New entry</td><td>Every new visit (30 min gap), also direct; inside a visit only a page with another campaign — a changed click id alone counts only with a foreign or empty referrer. A page's source is used once per page load. A page without UTM never overwrites the source</td></tr>
+      <tr><td>Limit, retention</td><td>20 most recent in the profile, 10 in the lead JSON (trimmed first when it would pass 4 kB); pruned with the profile retention (90 days)</td></tr>
+      <tr><td>Consent</td><td>Only with expressed consent, also when the envelope doesn't require it; without it <code>items: []</code> and nothing recorded. A refusal deletes the history</td></tr>
     </table>
 <pre><code><span class="fn">digi2.ma.touchpoints</span>();                   <span class="comment">// { v: 1, items } — items: [] without consent</span>
 <span class="fn">digi2.ma.parseTouchpoint</span>(href, referrer);  <span class="comment">// one entry, no ts, nothing stored — no args = this page</span></code></pre>

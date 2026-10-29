@@ -325,6 +325,8 @@
   var openedWithConsent = false; // ma.31: magazyn otwarty za zgodą (nie tylko bez wymogu)
   var pageUtm = null;        // utm_source / utm_medium / utm_campaign z adresu tej odsłony
   var pageTouch = null;      // ma.33: wpis touchpoints tej odsłony (bez ts) - parseTouchpoint()
+  var pageTouchUsed = false; // ma.33: źródło tej odsłony już rozpatrzone (raz na załadowanie strony)
+  var touchVisitPending = false; // ma.33: wizyta zaczęta na tej odsłonie przed zgodą - wpis po zgodzie
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -2835,6 +2837,8 @@
       if (blocked && tag === 'granted') consentChanged(true);
       else if ((tracking || opening) && tag === 'denied') consentChanged(false);
       else if (holding && googleTagDenied()) consentChanged(false);
+      else if (tracking && !openedWithConsent && tag === 'granted') consentChanged(true);
+      else if (tracking && openedWithConsent && googleTagDenied()) consentChanged(false);
     }
     var ev = entry.event;
     if (ev === EVENT_3DE_VIEW) {
@@ -2938,8 +2942,8 @@
     var u = {};
     var any = false;
     ['source', 'medium', 'campaign'].forEach(function (k) {
-      var v = param('utm_' + k);
-      if (v) { u[k] = String(v).slice(0, 100); any = true; }
+      var v = utmValue(param('utm_' + k));
+      if (v) { u[k] = v; any = true; }
     });
     return any ? u : null;
   }
@@ -2953,7 +2957,8 @@
   // ---------------------------------------------------------------------------
 
   var TOUCH_UTM = ['source', 'medium', 'campaign', 'content', 'term', 'id'];
-  var TOUCH_CLICK_IDS = ['gclid', 'fbclid', 'ttclid', 'msclkid'];
+  // Kolejność = pierwszeństwo, gdy adres ma kilka (v1: lista zamknięta).
+  var TOUCH_CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'fbclid', 'ttclid', 'msclkid'];
   var TOUCHPOINTS_MAX = 20;
 
   // Czysta funkcja: adres strony i referrer → wpis bez ts. Bez zgody i bez
@@ -2961,24 +2966,35 @@
   function parseTouchpoint(href, referrer) {
     var u = null;
     try { u = new URL(String(href || ''), 'https://invalid.local/'); } catch (e) { u = null; }
+    var web = !!u && u.hostname !== 'invalid.local' && (u.protocol === 'https:' || u.protocol === 'http:');
     var q = u ? u.searchParams : null;
     var e = {};
-    TOUCH_UTM.forEach(function (k) {
-      var v = q ? q.get('utm_' + k) : null;
-      v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
-      e['utm_' + k] = v ? v.slice(0, 100) : null;
-    });
+    TOUCH_UTM.forEach(function (k) { e['utm_' + k] = utmValue(q ? q.get('utm_' + k) : null); });
     e.click_type = 'none';
     for (var i = 0; q && i < TOUCH_CLICK_IDS.length; i++) {
       if (q.get(TOUCH_CLICK_IDS[i])) { e.click_type = TOUCH_CLICK_IDS[i]; break; }
     }
-    var own = u && u.hostname !== 'invalid.local' ? u.hostname.toLowerCase() : null;
+    var own = web ? siteHost(u.hostname) : null;
     var ref = null;
     try { ref = referrer ? new URL(String(referrer)).hostname.toLowerCase() : null; } catch (x) { ref = null; }
-    // Przejście wewnątrz strony to nie źródło.
-    e.referrer_host = ref && ref !== own ? ref.slice(0, 100) : null;
-    e.landing_path = u && u.hostname !== 'invalid.local' ? (u.pathname || '/').slice(0, 200) : null;
+    // Przejście wewnątrz strony (także www. ↔ bez www.) to nie źródło -
+    // referrer_internal odróżnia je od braku referrera (oba dają referrer_host null).
+    e.referrer_internal = !!ref && siteHost(ref) === own;
+    e.referrer_host = ref && !e.referrer_internal ? ref.slice(0, 100) : null;
+    e.landing_path = web ? (u.pathname || '/').slice(0, 200) : null;
     return e;
+  }
+
+  function siteHost(h) {
+    return String(h || '').toLowerCase().replace(/^www\./, '');
+  }
+
+  // Wartość UTM: przycięta, ≤ 100 znaków; wygląda na dane osobowe (e-mail,
+  // ciąg ≥ 9 cyfr - telefon, PESEL) → null (ma.33, decyzja architekt-it).
+  function utmValue(v) {
+    v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
+    if (!v || v.indexOf('@') >= 0 || /\d{9,}/.test(v)) return null;
+    return v.slice(0, 100);
   }
 
   function readTouchpoint() {
@@ -2988,23 +3004,35 @@
     return parseTouchpoint(href, ref);
   }
 
-  // Sygnał kampanii: source / medium / campaign albo identyfikator kliknięcia.
-  function touchKey(e) {
-    return [e.utm_source, e.utm_medium, e.utm_campaign, e.click_type].join('|');
+  function utmKey(e) {
+    return [e.utm_source, e.utm_medium, e.utm_campaign].join('|');
   }
 
-  function hasCampaign(e) {
-    return !!(e.utm_source || e.utm_medium || e.utm_campaign || e.click_type !== 'none');
+  // W trakcie wizyty: nowa kampania = inne source / medium / campaign. Sam inny
+  // identyfikator kliknięcia liczy się tylko przy obcym albo pustym referrerze -
+  // gclid doklejany do linków wewnętrznych (url_passthrough w GTM) to nie nowa reklama.
+  function newCampaign(e, last) {
+    var utm = !!(e.utm_source || e.utm_medium || e.utm_campaign);
+    if (utm && (!last || utmKey(last) !== utmKey(e))) return true;
+    if (e.click_type === 'none' || e.referrer_internal) return false;
+    return !last || last.click_type !== e.click_type || utmKey(last) !== utmKey(e);
   }
 
-  // Nowa wizyta zawsze dopisuje wpis. W trakcie wizyty tylko odsłona z inną
-  // kampanią - odsłona bez UTM (direct, przejście wewnątrz) niczego nie nadpisuje.
+  // Źródło tej odsłony rozpatrujemy raz na załadowanie strony: nowa wizyta
+  // dopisuje wpis zawsze (także direct), odsłona w trwającej wizycie tylko przy
+  // nowej kampanii. Kolejna wizyta w tym samym załadowaniu (karta otwarta 2 h,
+  // potem przewinięcie) nie dostaje wpisu - adres strony to wciąż stara reklama.
+  // Tylko przy wyrażonej zgodzie, także gdy zgoda nie jest wymagana (profilowanie).
   function addTouchpoint(t, newVisit) {
-    if (!pageTouch || !state) return;
+    if (!pageTouch || !state || pageTouchUsed) return;
+    if (!openedWithConsent) { if (newVisit) touchVisitPending = true; return; }
+    pageTouchUsed = true;
     var list = state.touchpoints || [];
     var last = list.length ? list[list.length - 1] : null;
-    if (!newVisit && (!hasCampaign(pageTouch) || (last && touchKey(last) === touchKey(pageTouch)))) return;
-    list.push(Object.assign({ ts: t }, pageTouch));
+    if (!newVisit && !newCampaign(pageTouch, last)) return;
+    var e = Object.assign({ ts: t }, pageTouch);
+    delete e.referrer_internal;
+    list.push(e);
     state.touchpoints = list.slice(-TOUCHPOINTS_MAX);
   }
 
@@ -3954,6 +3982,22 @@
   function consentChanged(granted) {
     if (granted) revoked = false;
     if (granted && blocked) { blocked = false; holding = false; openStore(); }
+    // ma.33: zgoda przyszła, gdy baza była już otwarta bez niej (zgoda niewymagana) -
+    // od teraz zbieramy historię źródeł, z wpisem tej odsłony.
+    if (granted && tracking && !openedWithConsent) {
+      openedWithConsent = true;
+      state.consentAt = now();
+      addTouchpoint(now(), touchVisitPending);
+      touchVisitPending = false;
+      afterChange();
+    }
+    // ma.33: odmowa przy niewymaganej zgodzie - baza zostaje, historia źródeł znika.
+    if (!granted && tracking && !consentRequired(envelope) && openedWithConsent) {
+      openedWithConsent = false;
+      delete state.consentAt;
+      delete state.touchpoints;
+      afterChange();
+    }
     if (!granted && consentRequired(envelope)) {
       if (tracking) wipe('consent withdrawn');
       else if (opening) revoked = true;
@@ -3971,6 +4015,8 @@
     var hadState = !!state;
     holding = false;
     openedWithConsent = false;
+    pageTouchUsed = false;
+    touchVisitPending = false;
     revokeHotLead();
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
     tracking = false;
@@ -4019,6 +4065,7 @@
   var CTX_NO_CONSENT = 'brak kontekstu (brak zgody)';
   var CTX_UNITS_MAX = 30;
   var CTX_VISITS_MAX = 60;
+  var CTX_TOUCHPOINTS_MAX = 10;
 
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   function ctxDay(ts) { var d = new Date(ts); return pad2(d.getDate()) + '.' + pad2(d.getMonth() + 1); }
@@ -4084,7 +4131,7 @@
       source: utm ? { utm_source: utm.source || null, utm_medium: utm.medium || null, utm_campaign: utm.campaign || null } : null,
       path: path,
       filters: state.filters ? _clone(state.filters) : null,
-      touchpoints: (state.touchpoints || []).slice()
+      touchpoints: openedWithConsent ? (state.touchpoints || []).slice() : []
     };
   }
 
@@ -4180,7 +4227,10 @@
   function contextJson(d) {
     var units = d.units.slice(0, CTX_UNITS_MAX);
     var visits = d.visits.slice(-CTX_VISITS_MAX);
-    var touches = (d.touchpoints || []).slice();
+    // ma.33: w JSON-ie najwyżej 10 ostatnich (pełne 20 zostaje w profilu);
+    // przy przepełnieniu odpadają przed wizytami - serwer 2destate odrzuca
+    // cały context_json > 4096 B.
+    var touches = (d.touchpoints || []).slice(-CTX_TOUCHPOINTS_MAX);
     for (;;) {
       var o = {
         v: 1,
@@ -4201,8 +4251,8 @@
       }
       var str = JSON.stringify(o);
       if (utf8Len(str) <= CTX_JSON_MAX) return str;
-      if (visits.length > 1) visits.shift();
-      else if (touches.length > 1) touches.shift();
+      if (touches.length) touches.shift();
+      else if (visits.length > 1) visits.shift();
       else if (units.length) units.pop();
       else return str;
     }
@@ -4552,7 +4602,7 @@
     history: function () { return _clone(views); },
     // ma.33: historia źródeł wizyt (touchpoints v1); bez zgody pusta lista.
     touchpoints: function () {
-      return { v: 1, items: state && tracking ? touchpointsOut(state.touchpoints) : [] };
+      return { v: 1, items: state && tracking && openedWithConsent ? touchpointsOut(state.touchpoints) : [] };
     },
     // ma.33: parser wpisu bez zapisu i bez zgody (adres i referrer domyślnie z tej strony).
     parseTouchpoint: function (href, referrer) {

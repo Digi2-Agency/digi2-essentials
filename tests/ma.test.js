@@ -1057,8 +1057,10 @@ test('ma.31: bezpiecznik — ostatnie otwarcie za zgodą starsze niż retencja (
 });
 
 // ma.33: historia źródeł wizyt — touchpoints v1 (zlecenie Piotra 29.10, ramy architekt-it).
+// Tylko przy wyrażonej zgodzie (decyzja architekt-it, recenzja #42) — tu zapis wyboru modułu google.
+const ZGODA = { analytics_storage: 'granted' };
 test('ma.33 touchpoints: każda wizyta to wpis — google, meta_ads, direct; click_type bez wartości, ścieżka bez query', async () => {
-  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien&gclid=SEKRET1', referrer: 'https://www.google.com/search?q=x' });
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien&gclid=SEKRET1', referrer: 'https://www.google.com/search?q=x' });
   const p2 = await powrot(p1, 2 * H, { search: '?utm_source=meta_ads&utm_medium=paid_social&utm_campaign=jesien-fb&fbclid=SEKRET2', referrer: 'https://l.facebook.com/' });
   const p3 = await powrot(p2, 2 * H, { search: '', referrer: '' });
   const t = p3.ma.touchpoints();
@@ -1074,7 +1076,7 @@ test('ma.33 touchpoints: każda wizyta to wpis — google, meta_ads, direct; cli
 });
 
 test('ma.33 touchpoints: w trakcie wizyty wpis tylko przy nowej kampanii; odsłona bez UTM i referrer z tej strony nic nie dodają', async () => {
-  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc' });
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&utm_medium=cpc' });
   const p2 = await powrot(p1, 5 * MIN, { search: '', referrer: 'https://demo.example/oferta' });
   const p3 = await powrot(p2, 5 * MIN, { search: '?utm_source=tiktok&utm_medium=paid&ttclid=1', referrer: 'https://demo.example/' });
   const p4 = await powrot(p3, 5 * MIN, { search: '?utm_source=tiktok&utm_medium=paid&ttclid=1' });
@@ -1087,7 +1089,7 @@ test('ma.33 touchpoints: w trakcie wizyty wpis tylko przy nowej kampanii; odsło
 
 test('ma.33 touchpoints: limit 20, pola ≤ 100 znaków, content/term/id; retencja jak profil', async () => {
   const dlugi = 'x'.repeat(150);
-  let p = await start({ koperta: koperta([]), search: '?utm_source=s0&utm_content=' + dlugi + '&utm_term=klucz&utm_id=123&msclkid=1' });
+  let p = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=s0&utm_content=' + dlugi + '&utm_term=klucz&utm_id=123&msclkid=1' });
   const pierwszy = p.ma.touchpoints().items[0];
   assert.equal(pierwszy.utm_content.length, 100);
   assert.deepEqual([pierwszy.utm_term, pierwszy.utm_id, pierwszy.click_type], ['klucz', '123', 'msclkid']);
@@ -1106,13 +1108,16 @@ test('ma.33 touchpoints: bez zgody pusta lista i nic w bazie; parser działa bez
   assert.ok(!env._dysk.state);
   const e = klon(env.ma.parseTouchpoint('https://inna.pl/a/b?utm_source=s&utm_campaign=c&ttclid=TAJNE#sekcja', 'https://inna.pl/start'));
   assert.deepEqual(e, { utm_source: 's', utm_medium: null, utm_campaign: 'c', utm_content: null, utm_term: null, utm_id: null,
-    click_type: 'ttclid', referrer_host: null, landing_path: '/a/b' });
+    click_type: 'ttclid', referrer_internal: true, referrer_host: null, landing_path: '/a/b' });
+  assert.equal(env.ma.parseTouchpoint('https://www.inna.pl/', 'https://inna.pl/x').referrer_internal, true, 'www. i bez www. to ta sama strona');
+  assert.equal(env.ma.parseTouchpoint('https://inna.pl/', '').referrer_internal, false, 'brak referrera ≠ własna strona');
+  assert.equal(env.ma.parseTouchpoint('ftp://inna.pl/plik?utm_source=s').landing_path, null, 'landing_path tylko http(s)');
   assert.equal(env.ma.parseTouchpoint().utm_source, 'google', 'bez argumentów: ta strona');
   assert.equal(env.ma.parseTouchpoint('nie-adres', 'tez-nie').landing_path, null);
 });
 
 test('ma.33 touchpoints: w context_json (v:1) i w tekście dla handlowca', async () => {
-  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien' });
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien' });
   const p2 = await powrot(p1, 2 * H, { search: '?utm_source=meta_ads&utm_medium=paid_social' });
   const p3 = await powrot(p2, 2 * H, { search: '', referrer: 'https://www.otodom.pl/oferta/1' });
   const c = p3.ma.context();
@@ -1121,6 +1126,81 @@ test('ma.33 touchpoints: w context_json (v:1) i w tekście dla handlowca', async
   assert.deepEqual(j.touchpoints.items.map((e) => e.utm_source || e.referrer_host), ['google', 'meta_ads', 'www.otodom.pl']);
   assert.ok(!('utm_term' in j.touchpoints.items[0]), 'pola bez wartości pominięte');
   assert.ok(c.text.includes('źródła wizyt: google/cpc → meta_ads/paid_social → www.otodom.pl'), c.text);
+});
+
+
+test('ma.33 touchpoints (recenzja #42, bloker 1): kolejna wizyta w tym samym załadowaniu strony nie powtarza źródła reklamy', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&utm_medium=cpc&gclid=X' });
+  await env.minie(31 * MIN);
+  env.dom('scroll', {});
+  env.dataLayer.push(unitOpen('A_1'));
+  await env.gotowe();
+  assert.equal(env.ma.profile().visits, 2, 'nowa wizyta bez przeładowania');
+  assert.deepEqual(klon(env.ma.touchpoints().items.map((e) => e.utm_source)), ['google'], 'bez drugiego google/cpc/gclid');
+});
+
+test('ma.33 touchpoints (recenzja #42, bloker 2): gclid doklejany do linków wewnętrznych nie jest nowym kontaktem z reklamą', async () => {
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=google&utm_medium=cpc&gclid=X' });
+  const p2 = await powrot(p1, 5 * MIN, { search: '?gclid=X', referrer: 'https://www.demo.example/oferta' });
+  const p3 = await powrot(p2, 5 * MIN, { search: '?fbclid=Y', referrer: 'https://demo.example/' });
+  assert.equal(p3.ma.touchpoints().items.length, 1, 'referrer z tej strony: sam click_type nic nie dodaje');
+  const p4 = await powrot(p3, 5 * MIN, { search: '?fbclid=Y', referrer: 'https://l.facebook.com/' });
+  const p5 = await powrot(p4, 5 * MIN, { search: '?gbraid=Z', referrer: '' });
+  assert.deepEqual(klon(p5.ma.touchpoints().items.map((e) => e.click_type)), ['gclid', 'fbclid', 'gbraid'], 'obcy albo pusty referrer: nowy kontakt');
+});
+
+test('ma.33 touchpoints (decyzja 3): tylko przy wyrażonej zgodzie, także gdy zgoda niewymagana; odmowa czyści historię', async () => {
+  // Zgoda niewymagana i nieznana: profil działa, historii źródeł brak.
+  const env = await start({ koperta: koperta([]), search: '?utm_source=google' });
+  assert.equal(env.ma.profile().visits, 1);
+  assert.deepEqual(klon(env.ma.touchpoints()), { v: 1, items: [] });
+  assert.ok(!env._dysk.state.touchpoints);
+  // Zgoda w trakcie tej odsłony: wpis tej wizyty dochodzi.
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await env.gotowe();
+  assert.deepEqual(klon(env.ma.touchpoints().items.map((e) => e.utm_source)), ['google']);
+  // Odmowa przy niewymaganej zgodzie: baza zostaje, historia źródeł znika.
+  env.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await env.gotowe();
+  assert.deepEqual(klon(env.ma.touchpoints()), { v: 1, items: [] });
+  assert.ok(!env._dysk.state.touchpoints, 'historia skasowana w bazie');
+  assert.equal(env.ma.profile().visits, 1, 'profil (zgoda niewymagana) zostaje');
+  // Zgoda wymagana: wycofanie kasuje całą bazę razem z historią.
+  const p = await start({ koperta: koperta([], { storage: { consentRequired: true } }), dataLayer: [gtag('consent', 'update', { analytics_storage: 'granted' })], search: '?utm_source=meta_ads' });
+  assert.equal(p.ma.touchpoints().items.length, 1);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p.gotowe();
+  assert.deepEqual(klon(p.ma.touchpoints()), { v: 1, items: [] });
+  assert.equal(p._dysk.cleared, 1);
+});
+
+test('ma.33 touchpoints (decyzja 4): wartość UTM z „@” albo ≥ 9 cyfr = null (dane osobowe)', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=newsletter&utm_campaign=jan%40kowalski.pl&utm_term=tel500600700&utm_content=promo-12345678' });
+  const e = env.ma.touchpoints().items[0];
+  assert.equal(e.utm_source, 'newsletter');
+  assert.ok(!('utm_campaign' in e) && !('utm_term' in e), 'e-mail i telefon odrzucone');
+  assert.equal(e.utm_content, 'promo-12345678', '8 cyfr zostaje');
+  assert.ok(!JSON.stringify(env._dysk.state).includes('kowalski'));
+});
+
+test('ma.33 touchpoints (decyzja 6): w JSON-ie leada najwyżej 10 ostatnich, przy przepełnieniu odpadają przed wizytami', async () => {
+  let p = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=s0' });
+  for (let i = 1; i <= 14; i++) p = await powrot(p, 2 * H, { search: '?utm_source=s' + i + '&utm_campaign=' + 'k'.repeat(90) + '&utm_content=' + 'c'.repeat(90) });
+  for (let i = 0; i < 10; i++) { p.dataLayer.push(unitOpen('B_' + i)); await p.minie(6000); }
+  assert.equal(p.ma.touchpoints().items.length, 15, 'profil ma wszystkie (≤ 20)');
+  const json = p.ma.context().json;
+  const j = JSON.parse(json);
+  assert.ok(Buffer.byteLength(json, 'utf8') <= 4096, 'JSON ≤ 4096 B');
+  const n = j.touchpoints ? j.touchpoints.items.length : 0;
+  assert.ok(n < 10, 'przy przepełnieniu touchpoints obcięte: ' + n);
+  assert.equal(j.units.length, 10, 'lokale zostały w całości');
+  assert.equal(j.visits.length, 15, 'wizyty zostały w całości');
+  if (n) assert.equal(j.touchpoints.items[n - 1].utm_source, 's14', 'zostają najnowsze');
+  // Bez przepełnienia: 10 ostatnich.
+  let q = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=t0' });
+  for (let i = 1; i <= 12; i++) q = await powrot(q, 2 * H, { search: '?utm_source=t' + i });
+  const jq = JSON.parse(q.ma.context().json);
+  assert.deepEqual(jq.touchpoints.items.map((e) => e.utm_source), ['t3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12']);
 });
 
 // ---------------------------------------------------------------------------

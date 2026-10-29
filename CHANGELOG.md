@@ -29,12 +29,25 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   W trakcie wizyty nowy wpis daje tylko strona z inną kampanią, a strona bez
   UTM niczego nie nadpisuje. Najwyżej 20 ostatnich wpisów, przechowywanych
   tak długo jak profil.
-- Tylko za zgodą d2-ma. Bez zgody lista jest pusta i nic się nie zapisuje.
-- Historia trafia do leada w `d2ma_context_json` (`touchpoints: { v: 1, items }`)
+- Tylko przy wyrażonej zgodzie, także gdy koperta zgody nie wymaga, bo to
+  profilowanie. Bez zgody lista jest pusta. Zgoda dana później na tej samej
+  stronie dopisuje wpis tej wizyty. Odmowa kasuje historię źródeł.
+- Źródło strony liczy się raz na jej załadowanie. Karta otwarta 2 godziny
+  i przewinięta nie daje drugiego „kliknięcia w reklamę”. Sam identyfikator
+  kliknięcia (np. gclid doklejany do linków wewnętrznych) daje nowy wpis tylko
+  wtedy, gdy gość przyszedł z innej strony albo bez strony polecającej.
+- Wartość UTM wyglądająca na dane osobowe (z „@” albo z 9 i więcej cyframi
+  z rzędu) nie jest zapisywana. Rodzaje kliknięć to gclid, gbraid, wbraid,
+  dclid, fbclid, ttclid i msclkid.
+- Historia trafia do leada w `d2ma_context_json` (`touchpoints: { v: 1, items }`,
+  najwyżej 10 ostatnich; przy przekroczeniu 4 kB obcinane jako pierwsze)
   i do tekstu dla handlowca (`źródła wizyt: google/cpc → meta_ads/paid_social → …`).
   Z JS: `digi2.ma.touchpoints()`. Do użycia w innym skrypcie bez zapisu:
   `digi2.ma.parseTouchpoint(href, referrer)`.
-- Jedyna definicja kontraktu jest w README, w sekcji „Touchpoints”.
+- Jedyna definicja kontraktu jest w README, w sekcji „Touchpoints”. Brak
+  pola znaczy pustą wartość.
+- Ten tag zawiera też niewydane ma.32 (#41): popup już otwarty nie dostaje
+  treści nowego lokalu.
 
 ## v1.9.0-ma.32 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.31–ma.16)
 

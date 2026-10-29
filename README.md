@@ -1756,36 +1756,46 @@ architekt-it.
   { "ts": "2026-10-24T08:05:00.000Z", "click_type": "none", "landing_path": "/" } ] }
 ```
 
+**A missing field means an empty value** (`null`): empty `utm_*` and
+`referrer_host` are left out to save bytes in the 4 kB lead JSON; `ts` and
+`click_type` are always there, `landing_path` whenever the page URL parses.
+Readers (the 2destate validator) must treat an absent key exactly like `null`.
+
 | Field | Meaning |
 |---|---|
 | `ts` | Start of the touchpoint, ISO 8601 UTC |
-| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty** |
-| `click_type` | `gclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). The id's value is never read into the profile. Always present |
-| `referrer_host` | Host of `document.referrer`, lower case, only when it is another site (a page of this site is not a source). Left out when empty |
-| `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** A value that looks like personal data — contains `@` or a run of 9+ digits (phone, PESEL) — is dropped (`null`) |
+| `click_type` | `gclid` \| `gbraid` \| `wbraid` \| `dclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). Closed list for v1. The id's value is never read into the profile. Always present |
+| `referrer_host` | Host of `document.referrer`, lower case, only when it is another site — a page of this site (also `www.` ↔ no `www.`) is not a source. Left out when empty |
+| `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters; only for `http(s)` pages |
 
 | Rule | Behaviour |
 |---|---|
-| New entry | Every new visit (30 min without activity, the same gap as `visits`) — also a direct or referral visit, with `click_type: "none"` and no UTM. Inside a visit only a page view with another campaign: `utm_source` / `utm_medium` / `utm_campaign` / `click_type` differ from the last entry |
+| New entry | Every new visit (30 min without activity, the same gap as `visits`) — also a direct or referral visit, with `click_type: "none"` and no UTM. Inside a visit only a page view with another campaign: `utm_source` / `utm_medium` / `utm_campaign` differ from the last entry, or only the click id differs **and the referrer is another site or empty** (a `gclid` passed along internal links by GTM's `url_passthrough` is not a new ad click) |
+| Once per page load | A page's source is considered once. A second visit within the same page load (tab left open 2 h, then a scroll) adds no entry — the URL still carries the old ad |
 | Direct | A page view without UTM or click id inside a visit adds nothing — direct never overwrites the source |
 | Limit | The 20 most recent entries; older ones drop off |
 | Retention | Like the profile (`storage.retentionDays`, 90): older entries are pruned; a profile not seen for longer starts over |
-| Consent | Only with d2-ma consent (§13.2). Without it `digi2.ma.touchpoints()` is `{ v: 1, items: [] }` and nothing is stored |
+| Consent | Only with **expressed** consent — also when the envelope doesn't require consent, since this is profiling (architekt-it's decision on #42). Without it `digi2.ma.touchpoints()` is `{ v: 1, items: [] }` and nothing is recorded; consent given later on the page adds this page's entry. A refusal deletes the history: with consent required the whole database goes (§13.2), without the requirement only `touchpoints` (and the consent marker) go and the rest of the profile stays |
 | Classification | The module records facts only. Telling organic from social, or a campaign from a referrer, is the reader's job (2destate keeps the dictionary); the module never guesses a campaign |
 
 Where it goes:
 
 - **Lead:** `d2ma_context_json` gets `touchpoints: { v: 1, items }` next to
-  `visits`, `units`, `pref`… When the JSON is over 4 kB the oldest visits go
-  first, then the oldest touchpoints, then units. `d2ma_context` (text) adds
+  `visits`, `units`, `pref`… — at most the **10** most recent (the profile keeps
+  20). When the JSON is over 4 kB the oldest touchpoints go first, then the
+  oldest visits, then units: the 2destate server drops the whole
+  `context_json` above 4096 B. `d2ma_context` (text) adds
   `źródła wizyt: google/cpc → meta_ads/paid_social → www.otodom.pl` (5 most
   recent; a visit without UTM shows its click id, referrer host or
   `bezpośrednio`).
 - **JS:** `digi2.ma.touchpoints()` → `{ v, items }` — e.g. for the 2destate
   chat widget on a page with d2-ma.
 - **Parser without storage:** `digi2.ma.parseTouchpoint(href, referrer)` →
-  one entry without `ts` (all keys, `null` when empty); with no arguments it
-  reads this page. Pure: no consent needed, nothing stored — for a script that
+  one entry without `ts` (all keys, `null` when empty, plus
+  `referrer_internal: true|false` — a page of this site vs. no referrer, which
+  both give `referrer_host: null`; this key is never stored or sent); with no
+  arguments it reads this page. Pure: no consent needed, nothing stored — for a script that
   needs the same rules (chat widget, path C) instead of a copy.
 
 ### Form field analytics (ma.5, MA-D13)
