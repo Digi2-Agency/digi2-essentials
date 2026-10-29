@@ -1189,6 +1189,15 @@ test('ma.33 touchpoints (decyzja 4, poprawiona w recenzji #42): „@” w każdy
   assert.equal(env._dysk.state.utm.campaign, '21745836102');
 });
 
+test('ma.33 touchpoints (recenzja 2destate #271): landing_path z „@” = brak pola, wpis zostaje', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=newsletter' });
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/wypisz/jan@x.pl?utm_source=s').landing_path, null);
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/wypisz/jan%40x.pl').landing_path, null);
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/oferta/m12').landing_path, '/oferta/m12');
+  const e = klon(env.ma.parseTouchpoint('https://x.pl/wypisz/jan@x.pl?utm_source=s'));
+  assert.equal(e.utm_source, 's', 'reszta wpisu zostaje');
+});
+
 test('ma.33 touchpoints (recenzja #42): zapisana odmowa modułu google wygrywa z default granted z GTM', async () => {
   const env = await start({ koperta: koperta([]), zgoda: { analytics_storage: 'denied' }, search: '?utm_source=google',
     googleTag: { ics: { entries: { analytics_storage: { default: true } } } } });

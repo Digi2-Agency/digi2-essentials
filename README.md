@@ -1767,7 +1767,7 @@ Readers (the 2destate validator) must treat an absent key exactly like `null`.
 | `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** Personal data is dropped (`null`): a value with `@` in any field; a phone-like value (`+48…`, digits grouped with spaces or dashes, or exactly 9 digits) only in `utm_content` / `utm_term`. `utm_campaign` and `utm_id` are never cleared for digits — campaign ids are long numbers (Google 10–11, Meta 18–19). The filter applies to touchpoints only; the visit's `source` and the `utm` trigger read the URL as before |
 | `click_type` | `gclid` \| `gbraid` \| `wbraid` \| `dclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). Closed list for v1. The id's value is never read into the profile. Always present |
 | `referrer_host` | Host of `document.referrer`, lower case, only when it is another site — a page of this site (also `www.` ↔ no `www.`) is not a source. Left out when empty |
-| `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters; only for `http(s)` pages |
+| `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters; only for `http(s)` pages. A path with `@` (also `%40`), e.g. `/wypisz/jan@x.pl`, gives `null` — the entry stays (same rule in 2destate, review #271) |
 
 | Rule | Behaviour |
 |---|---|

@@ -2981,7 +2981,9 @@
     // referrer_internal odróżnia je od braku referrera (oba dają referrer_host null).
     e.referrer_internal = !!ref && siteHost(ref) === own;
     e.referrer_host = ref && !e.referrer_internal ? ref.slice(0, 100) : null;
-    e.landing_path = web ? (u.pathname || '/').slice(0, 200) : null;
+    // Ścieżka z „@” (także %40) to zwykle e-mail w adresie (np. /wypisz/jan@x.pl) - null, wpis zostaje.
+    var lp = web ? (u.pathname || '/') : null;
+    e.landing_path = lp && !/@|%40/i.test(lp) ? lp.slice(0, 200) : null;
     return e;
   }
 

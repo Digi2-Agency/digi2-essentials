@@ -36,6 +36,8 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   i przewinięta nie daje drugiego „kliknięcia w reklamę”. Sam identyfikator
   kliknięcia (np. gclid doklejany do linków wewnętrznych) daje nowy wpis tylko
   wtedy, gdy gość przyszedł z innej strony albo bez strony polecającej.
+- Strona wejścia z „@” w ścieżce (np. `/wypisz/jan@x.pl`) nie jest zapisywana,
+  wpis zostaje bez niej.
 - Wartość UTM z „@” nie trafia do historii źródeł. W `utm_content`
   i `utm_term` nie trafia też wartość wyglądająca na numer telefonu.
   Identyfikatory kampanii (`utm_campaign`, `utm_id`, długie liczby z Google
