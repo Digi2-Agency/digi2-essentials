@@ -98,6 +98,7 @@ function element(attrs, tagName) {
  *   koperta   obiekt koperty (fetch go zwraca) albo null = 404
  *   cfg       atrybuty tagu loadera
  *   search    location.search
+ *   referrer  document.referrer (ma.33)
  *   zgoda     stan Consent Mode w localStorage
  *   googleTag window.google_tag_data (stan zgody tagu Google / szablonu CMP)
  *   produkty  wynik d2estate.getProducts()
@@ -173,6 +174,7 @@ function strona(opts) {
   const document = {
     readyState: 'complete',
     visibilityState: 'visible',
+    referrer: o.referrer || '',
     body: element(),
     documentElement: { scrollHeight: 3000, clientHeight: 1000, scrollTop: 0 },
     addEventListener(n, f) { (naDokumencie[n] = naDokumencie[n] || []).push(f); },
@@ -1052,6 +1054,73 @@ test('ma.31: bezpiecznik — ostatnie otwarcie za zgodą starsze niż retencja (
   const p2 = await profilZeZgoda();
   await powrot(p2, 91 * 24 * H, { dataLayer: [] });
   assert.equal(p2._dysk.cleared, 1, '91 dni: kasowana');
+});
+
+// ma.33: historia źródeł wizyt — touchpoints v1 (zlecenie Piotra 29.10, ramy architekt-it).
+test('ma.33 touchpoints: każda wizyta to wpis — google, meta_ads, direct; click_type bez wartości, ścieżka bez query', async () => {
+  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien&gclid=SEKRET1', referrer: 'https://www.google.com/search?q=x' });
+  const p2 = await powrot(p1, 2 * H, { search: '?utm_source=meta_ads&utm_medium=paid_social&utm_campaign=jesien-fb&fbclid=SEKRET2', referrer: 'https://l.facebook.com/' });
+  const p3 = await powrot(p2, 2 * H, { search: '', referrer: '' });
+  const t = p3.ma.touchpoints();
+  assert.equal(t.v, 1);
+  assert.deepEqual(t.items.map((e) => [e.utm_source || null, e.utm_medium || null, e.utm_campaign || null, e.click_type, e.referrer_host || null]), [
+    ['google', 'cpc', 'jesien', 'gclid', 'www.google.com'],
+    ['meta_ads', 'paid_social', 'jesien-fb', 'fbclid', 'l.facebook.com'],
+    [null, null, null, 'none', null],
+  ]);
+  assert.ok(t.items.every((e) => e.landing_path === '/oferta' && /^2026-10-2\dT.*Z$/.test(e.ts)));
+  assert.ok(!JSON.stringify(p3._dysk.state).includes('SEKRET'), 'wartość identyfikatora kliknięcia nigdy nie jest zapisywana');
+  assert.equal(new Date(t.items[1].ts) - new Date(t.items[0].ts), 2 * H);
+});
+
+test('ma.33 touchpoints: w trakcie wizyty wpis tylko przy nowej kampanii; odsłona bez UTM i referrer z tej strony nic nie dodają', async () => {
+  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc' });
+  const p2 = await powrot(p1, 5 * MIN, { search: '', referrer: 'https://demo.example/oferta' });
+  const p3 = await powrot(p2, 5 * MIN, { search: '?utm_source=tiktok&utm_medium=paid&ttclid=1', referrer: 'https://demo.example/' });
+  const p4 = await powrot(p3, 5 * MIN, { search: '?utm_source=tiktok&utm_medium=paid&ttclid=1' });
+  const items = p4.ma.touchpoints().items;
+  assert.equal(p4.ma.profile().visits, 1);
+  assert.deepEqual(items.map((e) => e.utm_source), ['google', 'tiktok']);
+  assert.equal(items[1].referrer_host, undefined, 'przejście wewnątrz strony to nie źródło');
+  assert.equal(items[1].click_type, 'ttclid');
+});
+
+test('ma.33 touchpoints: limit 20, pola ≤ 100 znaków, content/term/id; retencja jak profil', async () => {
+  const dlugi = 'x'.repeat(150);
+  let p = await start({ koperta: koperta([]), search: '?utm_source=s0&utm_content=' + dlugi + '&utm_term=klucz&utm_id=123&msclkid=1' });
+  const pierwszy = p.ma.touchpoints().items[0];
+  assert.equal(pierwszy.utm_content.length, 100);
+  assert.deepEqual([pierwszy.utm_term, pierwszy.utm_id, pierwszy.click_type], ['klucz', '123', 'msclkid']);
+  for (let i = 1; i <= 21; i++) p = await powrot(p, 2 * H, { search: '?utm_source=s' + i });
+  const items = p.ma.touchpoints().items;
+  assert.equal(items.length, 20);
+  assert.equal(items[0].utm_source, 's2', 'najstarsze odpadają');
+  // 91 dni bez wizyty: profil zaczyna od nowa, historia źródeł też.
+  const p2 = await powrot(p, 91 * 24 * H, { search: '?utm_source=nowy' });
+  assert.deepEqual(klon(p2.ma.touchpoints().items.map((e) => e.utm_source)), ['nowy']);
+});
+
+test('ma.33 touchpoints: bez zgody pusta lista i nic w bazie; parser działa bez zgody', async () => {
+  const env = await start({ koperta: koperta([], { storage: { consentRequired: true } }), search: '?utm_source=google' });
+  assert.deepEqual(klon(env.ma.touchpoints()), { v: 1, items: [] });
+  assert.ok(!env._dysk.state);
+  const e = klon(env.ma.parseTouchpoint('https://inna.pl/a/b?utm_source=s&utm_campaign=c&ttclid=TAJNE#sekcja', 'https://inna.pl/start'));
+  assert.deepEqual(e, { utm_source: 's', utm_medium: null, utm_campaign: 'c', utm_content: null, utm_term: null, utm_id: null,
+    click_type: 'ttclid', referrer_host: null, landing_path: '/a/b' });
+  assert.equal(env.ma.parseTouchpoint().utm_source, 'google', 'bez argumentów: ta strona');
+  assert.equal(env.ma.parseTouchpoint('nie-adres', 'tez-nie').landing_path, null);
+});
+
+test('ma.33 touchpoints: w context_json (v:1) i w tekście dla handlowca', async () => {
+  const p1 = await start({ koperta: koperta([]), search: '?utm_source=google&utm_medium=cpc&utm_campaign=jesien' });
+  const p2 = await powrot(p1, 2 * H, { search: '?utm_source=meta_ads&utm_medium=paid_social' });
+  const p3 = await powrot(p2, 2 * H, { search: '', referrer: 'https://www.otodom.pl/oferta/1' });
+  const c = p3.ma.context();
+  const j = JSON.parse(c.json);
+  assert.equal(j.touchpoints.v, 1);
+  assert.deepEqual(j.touchpoints.items.map((e) => e.utm_source || e.referrer_host), ['google', 'meta_ads', 'www.otodom.pl']);
+  assert.ok(!('utm_term' in j.touchpoints.items[0]), 'pola bez wartości pominięte');
+  assert.ok(c.text.includes('źródła wizyt: google/cpc → meta_ads/paid_social → www.otodom.pl'), c.text);
 });
 
 // ---------------------------------------------------------------------------

@@ -785,6 +785,7 @@
       <a href="#ma-scenarios">Scenarios &amp; Rules</a>
       <a href="#ma-v1">Exit, Engagement, Forms, Content, Map</a>
       <a href="#ma-lead-context">Lead Context in Forms</a>
+      <a href="#ma-touchpoints">Touchpoints (visit sources)</a>
       <a href="#ma-search">Search: Filters &amp; Sort</a>
       <a href="#ma-conditions">Page Conditions</a>
       <a href="#ma-webflow">Webflow Setup</a>
@@ -2827,7 +2828,8 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
 { <span class="prop">v</span>: <span class="num">1</span>, <span class="prop">visits</span>: [{ <span class="prop">t</span>: <span class="string">"2026-10-21T12:02:11.000Z"</span>, <span class="prop">path</span>: <span class="string">"/mieszkania/m12"</span> }],
   <span class="prop">units</span>: [{ <span class="prop">id</span>, <span class="prop">name</span>, <span class="prop">rooms</span>, <span class="prop">floor</span>, <span class="prop">area</span>, <span class="prop">price</span>, <span class="prop">views</span>, <span class="prop">last</span> }],
   <span class="prop">pref</span>: { <span class="prop">rooms</span>, <span class="prop">floor</span> }, <span class="prop">segments</span>: [], <span class="prop">last_unit</span>: { <span class="prop">id</span>, <span class="prop">name</span> }, <span class="prop">lead</span>: <span class="keyword">true</span>,
-  <span class="prop">source</span>: { <span class="prop">utm_source</span>, <span class="prop">utm_medium</span>, <span class="prop">utm_campaign</span> } }</code></pre>
+  <span class="prop">source</span>: { <span class="prop">utm_source</span>, <span class="prop">utm_medium</span>, <span class="prop">utm_campaign</span> },
+  <span class="prop">touchpoints</span>: { <span class="prop">v</span>: <span class="num">1</span>, <span class="prop">items</span>: [] } }  <span class="comment">// ma.33, see Touchpoints</span></code></pre>
     <table>
       <tr><th>Case</th><th>Behaviour</th></tr>
       <tr><td>Consent and a profile</td><td>Both values rebuilt at every submit from the profile: visit starts, views grouped per unit (newest unit data, count, last view), preference, segments, last unit, lead flag, this visit's UTM</td></tr>
@@ -2854,6 +2856,26 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
         </div>
       </div>
     </div>
+  </section>
+
+  <section id="ma-touchpoints">
+    <h2>d2-ma: Touchpoints — Visit Source History (ma.33)</h2>
+    <p>Every visit leaves an entry with where it came from: the UTM tags, which click id the link had, the referring site and the landing page. The list goes to the lead (<code>d2ma_context_json</code>) and to <code>digi2.ma.touchpoints()</code>. Contract <code>v: 1</code>; the README section “Touchpoints” is its only definition.</p>
+<pre><code>{ <span class="prop">v</span>: <span class="num">1</span>, <span class="prop">items</span>: [
+  { <span class="prop">ts</span>: <span class="string">"2026-10-20T10:00:00.000Z"</span>, <span class="prop">utm_source</span>: <span class="string">"google"</span>, <span class="prop">utm_medium</span>: <span class="string">"cpc"</span>, <span class="prop">utm_campaign</span>: <span class="string">"jesien"</span>,
+    <span class="prop">click_type</span>: <span class="string">"gclid"</span>, <span class="prop">referrer_host</span>: <span class="string">"www.google.com"</span>, <span class="prop">landing_path</span>: <span class="string">"/oferta"</span> },
+  { <span class="prop">ts</span>: <span class="string">"2026-10-24T08:05:00.000Z"</span>, <span class="prop">click_type</span>: <span class="string">"none"</span>, <span class="prop">landing_path</span>: <span class="string">"/"</span> } ] }</code></pre>
+    <table>
+      <tr><th>Field / rule</th><th>Behaviour</th></tr>
+      <tr><td><code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, <code>utm_term</code>, <code>utm_id</code></td><td>From the landing URL, ≤ 100 characters; left out when empty</td></tr>
+      <tr><td><code>click_type</code></td><td><code>gclid</code> | <code>fbclid</code> | <code>ttclid</code> | <code>msclkid</code> | <code>none</code> — only the kind, never the id's value</td></tr>
+      <tr><td><code>referrer_host</code>, <code>landing_path</code></td><td>Referring site's host (not this site); page path without query or fragment</td></tr>
+      <tr><td>New entry</td><td>Every new visit (30 min gap), also direct; inside a visit only a page with another campaign. A page without UTM never overwrites the source</td></tr>
+      <tr><td>Limit, retention</td><td>20 most recent; pruned with the profile retention (90 days)</td></tr>
+      <tr><td>Consent</td><td>Only with d2-ma consent; without it <code>items: []</code> and nothing stored</td></tr>
+    </table>
+<pre><code><span class="fn">digi2.ma.touchpoints</span>();                   <span class="comment">// { v: 1, items } — items: [] without consent</span>
+<span class="fn">digi2.ma.parseTouchpoint</span>(href, referrer);  <span class="comment">// one entry, no ts, nothing stored — no args = this page</span></code></pre>
   </section>
 
   <section id="ma-search">

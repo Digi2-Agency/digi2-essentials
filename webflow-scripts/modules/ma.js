@@ -72,7 +72,8 @@
  *     d2ma_context_json   compact JSON ≤ 4 kB: { v:1, visits:[{t,path}],
  *                         units:[{id,name,rooms,floor,area,price,views,last}],
  *                         pref:{rooms,floor}, segments:[], last_unit, lead,
- *                         source:{utm_source,utm_medium,utm_campaign} }
+ *                         source:{utm_source,utm_medium,utm_campaign},
+ *                         touchpoints:{v:1,items:[…]} }   (ma.33, README „Touchpoints”)
  *   Only with consent (the profile's own gate). Without it d2ma_context is
  *   "brak kontekstu (brak zgody)" and the JSON field is left out. Only this
  *   site's behaviour — never other forms' values, IP, UA or location.
@@ -163,6 +164,8 @@
  *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
+ *   digi2.ma.touchpoints()        ma.33: { v:1, items } — source of every visit; items [] without consent
+ *   digi2.ma.parseTouchpoint(h,r) ma.33: one entry, no storage, no consent needed
  *   digi2.ma.simulateReturn()     Same as the [d2-ma-simulate-return] button
  *   digi2.ma.clear()              Delete the whole d2ma database (Promise)
  *   digi2.ma.highlight()          Re-apply the map highlight
@@ -227,7 +230,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 32;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 33;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -321,6 +324,7 @@
   var holding = false;       // ma.31: zgoda nieznana - czekamy, bazy nie ruszamy
   var openedWithConsent = false; // ma.31: magazyn otwarty za zgodą (nie tylko bez wymogu)
   var pageUtm = null;        // utm_source / utm_medium / utm_campaign z adresu tej odsłony
+  var pageTouch = null;      // ma.33: wpis touchpoints tej odsłony (bez ts) - parseTouchpoint()
 
   function now() {
     return Date.now() + ((state && state.shift) || 0);
@@ -705,6 +709,8 @@
       state.utm = pageUtm;
       // Początki wizyt dla okna czasu w d2-ma-show-visits="3+/30d" (§13.11.2a).
       state.visitLog = (state.visitLog || []).concat([t]).slice(-200);
+      // ma.33: każda wizyta to wpis historii źródeł, także bez UTM (direct, polecenie).
+      addTouchpoint(t, true);
     }
     state.lastSeen = t;
     return ev;
@@ -2938,6 +2944,82 @@
     return any ? u : null;
   }
 
+  // ---------------------------------------------------------------------------
+  // Historia źródeł wizyt — touchpoints v1 (ma.33). Jedyna definicja kontraktu:
+  // README „Touchpoints”. Wpis: ts (ISO UTC), utm_source / utm_medium /
+  // utm_campaign / utm_content / utm_term / utm_id (≤ 100 znaków), click_type
+  // (gclid | fbclid | ttclid | msclkid | none — sam rodzaj, nigdy wartość),
+  // referrer_host (sama domena, obca), landing_path (bez query i fragmentu).
+  // ---------------------------------------------------------------------------
+
+  var TOUCH_UTM = ['source', 'medium', 'campaign', 'content', 'term', 'id'];
+  var TOUCH_CLICK_IDS = ['gclid', 'fbclid', 'ttclid', 'msclkid'];
+  var TOUCHPOINTS_MAX = 20;
+
+  // Czysta funkcja: adres strony i referrer → wpis bez ts. Bez zgody i bez
+  // magazynu - może jej użyć inny skrypt (np. widżet czatu) zamiast kopiować logikę.
+  function parseTouchpoint(href, referrer) {
+    var u = null;
+    try { u = new URL(String(href || ''), 'https://invalid.local/'); } catch (e) { u = null; }
+    var q = u ? u.searchParams : null;
+    var e = {};
+    TOUCH_UTM.forEach(function (k) {
+      var v = q ? q.get('utm_' + k) : null;
+      v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
+      e['utm_' + k] = v ? v.slice(0, 100) : null;
+    });
+    e.click_type = 'none';
+    for (var i = 0; q && i < TOUCH_CLICK_IDS.length; i++) {
+      if (q.get(TOUCH_CLICK_IDS[i])) { e.click_type = TOUCH_CLICK_IDS[i]; break; }
+    }
+    var own = u && u.hostname !== 'invalid.local' ? u.hostname.toLowerCase() : null;
+    var ref = null;
+    try { ref = referrer ? new URL(String(referrer)).hostname.toLowerCase() : null; } catch (x) { ref = null; }
+    // Przejście wewnątrz strony to nie źródło.
+    e.referrer_host = ref && ref !== own ? ref.slice(0, 100) : null;
+    e.landing_path = u && u.hostname !== 'invalid.local' ? (u.pathname || '/').slice(0, 200) : null;
+    return e;
+  }
+
+  function readTouchpoint() {
+    var href = null, ref = null;
+    try { href = window.location && window.location.href; } catch (e) { href = null; }
+    try { ref = document.referrer || null; } catch (e) { ref = null; }
+    return parseTouchpoint(href, ref);
+  }
+
+  // Sygnał kampanii: source / medium / campaign albo identyfikator kliknięcia.
+  function touchKey(e) {
+    return [e.utm_source, e.utm_medium, e.utm_campaign, e.click_type].join('|');
+  }
+
+  function hasCampaign(e) {
+    return !!(e.utm_source || e.utm_medium || e.utm_campaign || e.click_type !== 'none');
+  }
+
+  // Nowa wizyta zawsze dopisuje wpis. W trakcie wizyty tylko odsłona z inną
+  // kampanią - odsłona bez UTM (direct, przejście wewnątrz) niczego nie nadpisuje.
+  function addTouchpoint(t, newVisit) {
+    if (!pageTouch || !state) return;
+    var list = state.touchpoints || [];
+    var last = list.length ? list[list.length - 1] : null;
+    if (!newVisit && (!hasCampaign(pageTouch) || (last && touchKey(last) === touchKey(pageTouch)))) return;
+    list.push(Object.assign({ ts: t }, pageTouch));
+    state.touchpoints = list.slice(-TOUCHPOINTS_MAX);
+  }
+
+  // Kontrakt v1: ts jako ISO UTC, pola bez wartości pominięte (poza click_type).
+  function touchpointsOut(list) {
+    return (list || []).map(function (e) {
+      var o = { ts: ctxIso(e.ts) };
+      TOUCH_UTM.forEach(function (k) { if (e['utm_' + k] != null) o['utm_' + k] = e['utm_' + k]; });
+      o.click_type = e.click_type || 'none';
+      if (e.referrer_host) o.referrer_host = e.referrer_host;
+      if (e.landing_path) o.landing_path = e.landing_path;
+      return o;
+    });
+  }
+
   // Każda podana lista musi pasować (I), w liście wystarczy jedna wartość (LUB).
   function utmMatches(f) {
     if (!f || typeof f !== 'object') return true;
@@ -4001,7 +4083,8 @@
       lead: !!state.lead, leadAt: state.leadAt || null,
       source: utm ? { utm_source: utm.source || null, utm_medium: utm.medium || null, utm_campaign: utm.campaign || null } : null,
       path: path,
-      filters: state.filters ? _clone(state.filters) : null
+      filters: state.filters ? _clone(state.filters) : null,
+      touchpoints: (state.touchpoints || []).slice()
     };
   }
 
@@ -4077,6 +4160,14 @@
         parts.push('źródło: ' + [d.source.utm_source, d.source.utm_medium, d.source.utm_campaign]
           .filter(function (x) { return x; }).join(' / '));
       }
+      // ma.33: źródła kolejnych wizyt, najwyżej 5 ostatnich.
+      var tps = (d.touchpoints || []).slice(-5);
+      if (tps.length > 1) {
+        parts.push('źródła wizyt: ' + ((d.touchpoints.length > tps.length) ? '…, ' : '') + tps.map(function (e) {
+          return e.utm_source ? e.utm_source + (e.utm_medium ? '/' + e.utm_medium : '')
+            : e.click_type !== 'none' ? e.click_type : e.referrer_host || 'bezpośrednio';
+        }).join(' → '));
+      }
       var text = parts.join(' · ');
       if (text.length <= CTX_TEXT_MAX) return text;
       if (dates.length > 1) dates.shift();
@@ -4089,6 +4180,7 @@
   function contextJson(d) {
     var units = d.units.slice(0, CTX_UNITS_MAX);
     var visits = d.visits.slice(-CTX_VISITS_MAX);
+    var touches = (d.touchpoints || []).slice();
     for (;;) {
       var o = {
         v: 1,
@@ -4098,6 +4190,7 @@
         }),
         pref: d.pref, segments: d.segments, last_unit: d.lastUnit, lead: d.lead, source: d.source
       };
+      if (touches.length) o.touchpoints = { v: 1, items: touchpointsOut(touches) };
       if (d.filters) {
         var jf = {};
         ['rooms', 'floor', 'areaMin', 'areaMax', 'priceMin', 'priceMax', 'status', 'building'].forEach(function (k) {
@@ -4109,6 +4202,7 @@
       var str = JSON.stringify(o);
       if (utf8Len(str) <= CTX_JSON_MAX) return str;
       if (visits.length > 1) visits.shift();
+      else if (touches.length > 1) touches.shift();
       else if (units.length) units.pop();
       else return str;
     }
@@ -4279,7 +4373,10 @@
       if (openedWithConsent) state.consentAt = now();
       else delete state.consentAt;
       applyEnvelope(envelope);
+      var visitsBefore = state.visits;
       var visit = touch();
+      // ma.33: odsłona w trwającej wizycie - wpis tylko przy nowej kampanii.
+      if (state.visits === visitsBefore) addTouchpoint(now(), false);
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.
       state.visitPageviews = visit || state.visitPageviews == null ? 1 : state.visitPageviews + 1;
       var crm = crmEvent(true);
@@ -4330,6 +4427,7 @@
     // Segmenty i początki wizyt mają tę samą retencję co historia.
     Object.keys(state.segments || {}).forEach(function (k) { if (state.segments[k] < limit) delete state.segments[k]; });
     if (state.visitLog) state.visitLog = state.visitLog.filter(function (t) { return t >= limit; });
+    if (state.touchpoints) state.touchpoints = state.touchpoints.filter(function (e) { return e.ts >= limit; });
     var old = views.filter(function (v) { return v.ts < limit; }).map(function (v) { return v.id; });
     if (!old.length) return;
     views = views.filter(function (v) { return v.ts >= limit; });
@@ -4346,6 +4444,7 @@
     deepLinkView();
     hookVisitorIdFields();
     pageUtm = readUtm();
+    pageTouch = readTouchpoint();
     var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
     // ma.25: adres spoza listy nie zostaje jako envelopeUrl — reload / d2-ma-refresh go nie ponawiają.
     envelopeUrl = startUrl && allowedUrl(startUrl, ENVELOPE_HOSTS) ? startUrl : null;
@@ -4451,6 +4550,14 @@
       };
     },
     history: function () { return _clone(views); },
+    // ma.33: historia źródeł wizyt (touchpoints v1); bez zgody pusta lista.
+    touchpoints: function () {
+      return { v: 1, items: state && tracking ? touchpointsOut(state.touchpoints) : [] };
+    },
+    // ma.33: parser wpisu bez zapisu i bez zgody (adres i referrer domyślnie z tej strony).
+    parseTouchpoint: function (href, referrer) {
+      return arguments.length ? parseTouchpoint(href, referrer) : readTouchpoint();
+    },
     // Kontekst leadu (ma.16): to, co trafia do ukrytych pól formularza.
     context: function () {
       var d = contextData();

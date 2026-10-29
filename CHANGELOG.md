@@ -16,6 +16,26 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.33 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.32–ma.16)
+
+### `d2-ma` — historia źródeł wizyt (touchpoints v1)
+
+- Każda wizyta zapisuje, skąd gość przyszedł: tagi UTM (source, medium,
+  campaign, content, term, id), rodzaj identyfikatora kliknięcia (gclid,
+  fbclid, ttclid, msclkid, bez jego wartości), domenę strony polecającej
+  i stronę wejścia. Przykład: pierwszy raz google, potem meta_ads, potem
+  tiktok. Zlecenie Piotra z 29.10.2026.
+- Wizyta bez UTM też jest zapisywana (wejście bezpośrednie albo z polecenia).
+  W trakcie wizyty nowy wpis daje tylko strona z inną kampanią, a strona bez
+  UTM niczego nie nadpisuje. Najwyżej 20 ostatnich wpisów, przechowywanych
+  tak długo jak profil.
+- Tylko za zgodą d2-ma. Bez zgody lista jest pusta i nic się nie zapisuje.
+- Historia trafia do leada w `d2ma_context_json` (`touchpoints: { v: 1, items }`)
+  i do tekstu dla handlowca (`źródła wizyt: google/cpc → meta_ads/paid_social → …`).
+  Z JS: `digi2.ma.touchpoints()`. Do użycia w innym skrypcie bez zapisu:
+  `digi2.ma.parseTouchpoint(href, referrer)`.
+- Jedyna definicja kontraktu jest w README, w sekcji „Touchpoints”.
+
 ## v1.9.0-ma.32 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.31–ma.16)
 
 ### `d2-ma` — popup, który już jest na ekranie

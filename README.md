@@ -1710,8 +1710,12 @@ JSON would be noise; the 2destate webhook wants it) also gets
   "units": [{ "id": "A_M12", "name": "M12", "rooms": 3, "floor": 2, "area": 64, "price": 689000, "views": 3, "last": "2026-10-21T12:02:11.000Z" }],
   "pref": { "rooms": 3, "floor": 2 }, "segments": ["powrot-do-lokalu"],
   "last_unit": { "id": "A_M12", "name": "M12" }, "lead": true,
-  "source": { "utm_source": "meta", "utm_medium": "cpc", "utm_campaign": "jesien" } }
+  "source": { "utm_source": "meta", "utm_medium": "cpc", "utm_campaign": "jesien" },
+  "touchpoints": { "v": 1, "items": [ … ] } }
 ```
+
+`touchpoints` (ma.33): visit source history, defined in
+[Touchpoints](#touchpoints--visit-source-history-ma33-contract-v1).
 
 | Case | Behaviour |
 |---|---|
@@ -1732,6 +1736,57 @@ a script that lists fields explicitly must add them. `digi2.ma.context()`
 returns `{ text, json }` (`null` without consent) and
 `digi2.ma.fillContext(form)` fills a form by hand, e.g. before building a
 webhook body.
+
+### Touchpoints — visit source history (ma.33, contract v1)
+
+**This section is the only definition of `touchpoints` v1.** Other repos (the
+2destate validator, lead card, chat preview, audiences tab) link here. Commission:
+Piotr, 29.10.2026 — *„zapisywać, że ktoś raz wszedł z utm_source=google drugi
+raz z utm_source=meta_ads trzeci raz z utm_source=tiktok itd. łącznie z
+utm_campaign i wszystkimi innymi utm-ami po to żeby była historia”*; frame from
+architekt-it.
+
+```json
+{ "v": 1, "items": [
+  { "ts": "2026-10-20T10:00:00.000Z", "utm_source": "google", "utm_medium": "cpc",
+    "utm_campaign": "jesien", "click_type": "gclid", "referrer_host": "www.google.com",
+    "landing_path": "/oferta" },
+  { "ts": "2026-10-22T18:30:00.000Z", "utm_source": "meta_ads", "utm_medium": "paid_social",
+    "click_type": "fbclid", "referrer_host": "l.facebook.com", "landing_path": "/oferta" },
+  { "ts": "2026-10-24T08:05:00.000Z", "click_type": "none", "landing_path": "/" } ] }
+```
+
+| Field | Meaning |
+|---|---|
+| `ts` | Start of the touchpoint, ISO 8601 UTC |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty** |
+| `click_type` | `gclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). The id's value is never read into the profile. Always present |
+| `referrer_host` | Host of `document.referrer`, lower case, only when it is another site (a page of this site is not a source). Left out when empty |
+| `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters |
+
+| Rule | Behaviour |
+|---|---|
+| New entry | Every new visit (30 min without activity, the same gap as `visits`) — also a direct or referral visit, with `click_type: "none"` and no UTM. Inside a visit only a page view with another campaign: `utm_source` / `utm_medium` / `utm_campaign` / `click_type` differ from the last entry |
+| Direct | A page view without UTM or click id inside a visit adds nothing — direct never overwrites the source |
+| Limit | The 20 most recent entries; older ones drop off |
+| Retention | Like the profile (`storage.retentionDays`, 90): older entries are pruned; a profile not seen for longer starts over |
+| Consent | Only with d2-ma consent (§13.2). Without it `digi2.ma.touchpoints()` is `{ v: 1, items: [] }` and nothing is stored |
+| Classification | The module records facts only. Telling organic from social, or a campaign from a referrer, is the reader's job (2destate keeps the dictionary); the module never guesses a campaign |
+
+Where it goes:
+
+- **Lead:** `d2ma_context_json` gets `touchpoints: { v: 1, items }` next to
+  `visits`, `units`, `pref`… When the JSON is over 4 kB the oldest visits go
+  first, then the oldest touchpoints, then units. `d2ma_context` (text) adds
+  `źródła wizyt: google/cpc → meta_ads/paid_social → www.otodom.pl` (5 most
+  recent; a visit without UTM shows its click id, referrer host or
+  `bezpośrednio`).
+- **JS:** `digi2.ma.touchpoints()` → `{ v, items }` — e.g. for the 2destate
+  chat widget on a page with d2-ma.
+- **Parser without storage:** `digi2.ma.parseTouchpoint(href, referrer)` →
+  one entry without `ts` (all keys, `null` when empty); with no arguments it
+  reads this page. Pure: no consent needed, nothing stored — for a script that
+  needs the same rules (chat widget, path C) instead of a copy.
 
 ### Form field analytics (ma.5, MA-D13)
 
