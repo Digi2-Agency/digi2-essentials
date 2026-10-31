@@ -4035,10 +4035,13 @@ do not tag. `scripts/release.sh vX.Y.Z "…"` runs it first and stops on red.
 | `npm test` | any node:test suite fails |
 | browser gate | `npx playwright test --update-snapshots=none` fails — see below — or a screenshot baseline changed / appeared during the run |
 
-**Only a checked commit can be tagged.** On green with a clean working tree
-the gate writes `.git/release-gate/<sha>`. The `pre-push` hook
-(`.githooks/pre-push`) refuses to push a `v*` tag whose commit has no such
-marker, so a hand-made `git tag` or `npm version` stops at the push.
+**Only a commit checked for that version can be tagged.** On green, with a
+version argument and a clean working tree, the gate appends
+`<date> green vX.Y.Z` to `.git/release-gate/<sha>`. The `pre-push` hook
+(`.githooks/pre-push`) pushes a `v*` tag only if its commit has a line for
+exactly that version — a run without a version, or for another one, does not
+count, because the version checks (CHANGELOG, branch, tag free) did not run for
+it. A hand-made `git tag` or `npm version` stops at the push.
 `npm install` enables the hook (`core.hooksPath .githooks`), and so does
 `scripts/release.sh`. `git push --no-verify` still gets past it — without CI
 that cannot be closed, but skipping the gate is now a deliberate act.
