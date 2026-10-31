@@ -74,14 +74,29 @@ opcji modułu w `webflow-scripts/digi2-loader.js`, jeśli doszła opcja JS.
 ## Wydanie
 
 `@latest` na jsDelivr wskazuje **najnowszy tag semver**, więc sam push niczego
-nie zmienia dla stron klientów:
+nie zmienia dla stron klientów.
+
+**Jedyna droga wydania to `scripts/release.sh`** (decyzja Piotra, 2026-10-31):
 
 ```bash
-npm run build && npm test
-# wpis w CHANGELOG.md pod nowym numerem — przed tagiem, nie po
-git tag -a v1.3.8 -m "opis" && git push origin v1.3.8
-curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/<moduł>.min.js"
+# wpis w CHANGELOG.md pod nowym numerem, zacommitowany — przed wydaniem, nie po
+scripts/release.sh v1.3.8 "opis"
 ```
+
+Skrypt uruchamia bramkę (`npm run release:check -- v1.3.8`: build, `dist/`
+zgodny z commitem, `npm test`, Playwright na `sandbox/gate-*.html`). Na
+czerwonym zatrzymuje się przed tagiem, a na zielonym robi tag, push tagu i
+purge zmienionych plików `dist/`. Tag stabilny powstaje tylko z `main` albo
+z `release/vX.Y.Z` (poprawka od poprzedniego stabilnego tagu, jak v1.8.2 i
+v1.8.3). Szczegóły: README → Build → Release gate.
+
+- Ręczne `git tag` / `npm version` + push to **złamanie procedury**. Hook
+  `pre-push` (`.githooks/`, włącza go `npm install`) odrzuci tag, którego commit
+  nie przeszedł bramki dla tej wersji.
+- `git push --no-verify` omija hook. To **świadome obejście bramki**, a nie
+  sposób na jej awarię: wolno tylko za zgodą Piotra na to jedno wydanie.
+- Czerwona bramka to stop, nie przeszkoda: popraw kod albo wzorzec zrzutu
+  (po obejrzeniu PNG), zacommituj i uruchom ponownie.
 
 Dwie pułapki jsDelivr, sprawdzone 2026-10-21:
 
