@@ -7,10 +7,12 @@
 # Steps: build → dist/ committed → node tests → browser gate (Playwright,
 # Chromium headless, sandbox/gate-*.html on 127.0.0.1, dist/ files only).
 #
-# On green with a clean tree it writes <git-common-dir>/release-gate/<HEAD sha>.
-# The pre-push hook (.githooks/pre-push) refuses to push a v* tag whose commit
-# has no such marker, so a hand-made `git tag` / `npm version` cannot skip
-# this. scripts/release.sh runs it first and stops on red.
+# On green, with a version argument and a clean tree, it appends
+# "<date> green <version>" to <git-common-dir>/release-gate/<HEAD sha>. The
+# pre-push hook (.githooks/pre-push) pushes a v* tag only if its commit has a
+# line for exactly that version — so the version checks (CHANGELOG, branch,
+# tag free) ran for it, and a hand-made `git tag` / `npm version` cannot skip
+# them. scripts/release.sh runs this first and stops on red.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -80,14 +82,17 @@ if [ -n "$(git status --porcelain -- tests/browser/__screenshots__)" ]; then
 fi
 
 MSG="RELEASE GATE: GREEN in $(( $(date +%s) - START ))s"
-if [ -z "$(git status --porcelain)" ]; then
+if [ -z "$VERSION" ]; then
+  green "$MSG"
+  echo "no version given: no release marker written — to tag, run with the version (or use scripts/release.sh)"
+elif [ -n "$(git status --porcelain)" ]; then
+  green "$MSG"
+  red "working tree not clean: no release marker written (the pre-push hook will refuse $VERSION)"
+  git status --porcelain
+else
   MARKS="$(git rev-parse --git-common-dir)/release-gate"
   mkdir -p "$MARKS"
   SHA=$(git rev-parse HEAD)
-  printf '%s green %s\n' "$(date -Is)" "${VERSION:-}" > "$MARKS/$SHA"
-  green "$MSG — ${SHA:0:7} may be tagged${VERSION:+ as $VERSION}"
-else
-  green "$MSG"
-  red "working tree not clean: no release marker written (the pre-push hook will refuse a tag here)"
-  git status --porcelain
+  printf '%s green %s\n' "$(date -Is)" "$VERSION" >> "$MARKS/$SHA"
+  green "$MSG — ${SHA:0:7} may be tagged as $VERSION"
 fi
