@@ -120,3 +120,102 @@ test('the locked width is re-measured when the breakpoint bucket flips', () => {
   assert.equal(el.style.minWidth, '100px', 'a desktop lock does not cage the mobile layout');
   assert.equal(el.style.textAlign, 'right', 'and the anchor follows the new breakpoint');
 });
+// A module that throws while it loads never replaces its proxy. The proxy used
+// to replay the call on whatever sat on digi2.<ns> after loading — itself — and
+// every replay resolved at once, so the page spun in microtasks forever: the
+// whole tab froze, `load` never fired. Reproduced in Chromium on
+// digi2.popups.create() inside digi2.onReady() with a throwing popups module.
+function loadLoaderWithScripts(scriptAttrs, { noProxy = false } = {}) {
+  const appended = [];
+  const src = 'https://cdn.test/dist/digi2-loader.min.js';
+  const script = {
+    src,
+    getAttribute: (n) => (n === 'src' ? src : Object.prototype.hasOwnProperty.call(scriptAttrs, n) ? scriptAttrs[n] : null),
+    hasAttribute: (n) => Object.prototype.hasOwnProperty.call(scriptAttrs, n),
+    attributes: Object.keys(scriptAttrs).map((name) => ({ name })),
+  };
+  const errors = [];
+  const window = {
+    innerWidth: 1200,
+    addEventListener() {},
+    getComputedStyle: () => ({ display: 'block' }),
+    location: { href: 'https://example.com/' },
+    requestAnimationFrame: (cb) => { cb(); return 1; },
+  };
+  const document = {
+    readyState: 'complete',
+    addEventListener() {},
+    querySelectorAll: () => [],
+    querySelector: () => null,
+    currentScript: script,
+    head: { appendChild(el) { appended.push(el); } },
+    body: { appendChild() {} },
+    documentElement: {},
+    createElement: () => ({ setAttribute() {}, addEventListener() {} }),
+  };
+  window.document = document;
+  const quietConsole = Object.assign({}, console, {
+    error: (...a) => errors.push(a.join(' ')),
+    warn() {}, log() {},
+  });
+  const globals = {
+    window, document, console: quietConsole, navigator: { userAgent: 'node-test' },
+    setTimeout, MutationObserver: class { observe() {} },
+  };
+  // A browser without Proxy gets the loader's fallback object instead.
+  if (noProxy) globals.Proxy = undefined;
+  const context = vm.createContext(globals);
+  vm.runInContext(fs.readFileSync(loaderPath, 'utf8'), context, { filename: loaderPath });
+  return { window, appended, errors };
+}
+
+for (const useProxy of [true, false]) {
+  test('a module that throws on load: a call through its ' + (useProxy ? 'Proxy' : 'fallback object')
+    + ' is not replayed forever', async () => {
+    const env = loadLoaderWithScripts({ 'd2-popups': '' }, { noProxy: !useProxy });
+    const d2 = env.window.digi2;
+
+    // Count the proxy round-trips; past a sane number the old loop is back.
+    // Throwing from the log call breaks the loop so the test ends red, not hung.
+    let replays = 0;
+    const log = d2.log;
+    d2.log = function (scope, msg) {
+      if (scope === 'loader' && /^auto-require "popups"/.test(String(msg)) && ++replays > 50) {
+        throw new Error('proxy replayed ' + replays + ' times — infinite loop');
+      }
+      return log.apply(this, arguments);
+    };
+
+    const moduleErrors = [];
+    d2.on('module:error', (name) => moduleErrors.push(name));
+
+    const call = d2.popups.create('promo', {});
+    // The module "loads" but throws before registering: the browser still
+    // fires onload, digi2.popups is still the proxy.
+    const tag = env.appended.find((el) => /modules\/popups\.min\.js$/.test(el.src));
+    assert.ok(tag, 'the popups module was requested');
+    tag.onload();
+
+    const outcome = await call.then(() => 'settled', (e) => 'rejected: ' + e.message);
+    assert.ok(replays <= 2, 'the call reached the proxy ' + replays + ' times (' + outcome + ')');
+    assert.match(outcome, /^rejected: .*did not register digi2\.popups/, 'the caller learns the call did not run');
+    assert.ok(env.errors.some((m) => /"popups"/.test(m) && /did not register/.test(m)),
+      'the failure is reported on the console: ' + JSON.stringify(env.errors));
+    assert.deepEqual(moduleErrors, ['popups'], 'module:error, not module:loaded');
+    assert.notEqual(d2._loaded.popups, true, 'not marked as loaded');
+  });
+}
+
+test('a module that registers itself: the proxied call is replayed once on the real module', async () => {
+  const env = loadLoaderWithScripts({ 'd2-popups': '' });
+  const d2 = env.window.digi2;
+  const call = d2.popups.create('promo', { a: 1 });
+  const tag = env.appended.find((el) => /modules\/popups\.min\.js$/.test(el.src));
+  const seen = [];
+  d2.popups = { create: (name, opts) => { seen.push([name, opts.a]); return 'instance'; } };
+  tag.onload();
+  assert.equal(await call, 'instance');
+  assert.deepEqual(seen, [['promo', 1]]);
+  assert.equal(d2._loaded.popups, true);
+  assert.deepEqual(env.errors, []);
+});

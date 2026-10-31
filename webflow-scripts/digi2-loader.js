@@ -135,7 +135,8 @@
  *
  *   digi2.on('loaded', fn)              All modules loaded
  *   digi2.on('module:loaded', fn)       Single module loaded (receives name)
- *   digi2.on('module:error', fn)        Module failed (receives name)
+ *   digi2.on('module:error', fn)        Module failed (receives name): not found, or it ran but
+ *                                       threw before registering digi2.<namespace>
  *   digi2.on('consent:updated', fn)     Consent state changed (receives state)
  *   digi2.off('loaded', fn)             Remove listener
  *   digi2.emit('custom', data)          Emit custom event
@@ -426,6 +427,17 @@
       var script = document.createElement('script');
       script.src = url;
       script.onload = function () {
+        // A script that throws while running still fires onload. If the module
+        // never replaced the loader's stub on digi2.<namespace>, it did not
+        // start: report it as a failed load, not a loaded one.
+        var ns = _namespaceOf(moduleName);
+        if (ns && _stubs[ns] && window.digi2[ns] === _stubs[ns]) {
+          console.error('[digi2] Module "' + moduleName + '" loaded from ' + url
+            + ' but did not register digi2.' + ns + ' (it probably threw while running — see the error above).');
+          window.digi2.emit('module:error', moduleName);
+          reject(new Error('[digi2] Module "' + moduleName + '" did not register digi2.' + ns));
+          return;
+        }
         window.digi2._loaded[moduleName] = true;
         window.digi2.log('loader', 'module loaded ✓ ' + moduleName);
         window.digi2.emit('module:loaded', moduleName);
@@ -513,33 +525,59 @@
     promo: 'promo',
   };
 
+  // The stub (Proxy or fallback object) each namespace holds until its module
+  // replaces it — how onload and the replay tell "module ran" from "it threw".
+  var _stubs = {};
+
+  function _namespaceOf(moduleName) {
+    for (var key in MODULE_MAP) {
+      if (MODULE_MAP.hasOwnProperty(key) && MODULE_MAP[key] === moduleName) return key;
+    }
+    return null;
+  }
+
   function createProxy(namespace, moduleName) {
     // Don't overwrite if the real module already loaded
     if (window.digi2[namespace] && window.digi2._loaded[moduleName]) return;
 
-    var queue = [];
+    var stub; // what sits on digi2[namespace] until the real module replaces it
+
+    // Replay the call on the real module. If the module loaded but never
+    // replaced the stub (it threw while running), digi2[namespace] is still
+    // the stub: replaying on it would call loadModule() again, resolve at
+    // once and replay again — an endless microtask loop that freezes the
+    // whole tab. Report it and stop instead.
+    function replay(method, args) {
+      return loadModule(moduleName).then(function () {
+        var real = window.digi2[namespace];
+        if (!real || real === stub) {
+          // onload already rejects this case; kept as a second line of defence
+          // so a replay can never land on the stub again.
+          throw new Error('[digi2] ' + namespace + '.' + method + '() was not run: module "'
+            + moduleName + '" did not register digi2.' + namespace);
+        }
+        if (typeof real[method] === 'function') {
+          return real[method].apply(real, args);
+        }
+        console.error('[digi2] ' + namespace + '.' + method + ' not found after loading module.');
+      });
+    }
 
     var handler = {
       get: function (_target, method) {
         return function () {
           var args = Array.prototype.slice.call(arguments);
           window.digi2.log('loader', 'auto-require "' + moduleName + '" for ' + namespace + '.' + method + '()');
-
-          return loadModule(moduleName).then(function () {
-            var real = window.digi2[namespace];
-            if (real && typeof real[method] === 'function') {
-              return real[method].apply(real, args);
-            } else {
-              console.error('[digi2] ' + namespace + '.' + method + ' not found after loading module.');
-            }
-          });
+          return replay(method, args);
         };
       },
     };
 
     // Use Proxy if available (all modern browsers), fallback to a simple object
     if (typeof Proxy !== 'undefined') {
-      window.digi2[namespace] = new Proxy({}, handler);
+      stub = new Proxy({}, handler);
+      _stubs[namespace] = stub;
+      window.digi2[namespace] = stub;
     } else {
       // Basic fallback — cover the most common methods
       var fallback = {};
@@ -548,14 +586,11 @@
         fallback[method] = function () {
           var args = Array.prototype.slice.call(arguments);
           window.digi2.log('loader', 'auto-require "' + moduleName + '" for ' + namespace + '.' + method + '()');
-          return loadModule(moduleName).then(function () {
-            var real = window.digi2[namespace];
-            if (real && typeof real[method] === 'function') {
-              return real[method].apply(real, args);
-            }
-          });
+          return replay(method, args);
         };
       });
+      stub = fallback;
+      _stubs[namespace] = fallback;
       window.digi2[namespace] = fallback;
     }
   }

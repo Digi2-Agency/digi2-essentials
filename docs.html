@@ -2619,6 +2619,14 @@ digi2.<span class="fn">signalled</span>(<span class="string">'intro:done'</span>
 digi2.modules.<span class="fn">list</span>()                              <span class="comment">// ['popups', 'cookies']</span>
 <span class="keyword">await</span> digi2.modules.<span class="fn">require</span>(<span class="string">'forms'</span>)              <span class="comment">// load on demand</span>
 <span class="keyword">await</span> digi2.modules.<span class="fn">requireAll</span>([<span class="string">'cookies'</span>, <span class="string">'forms'</span>])</code></pre>
+    <p>Until a module arrives, <code>digi2.popups</code>, <code>digi2.forms</code>, … are the loader's stubs: each method loads the module, then runs the call and returns a Promise of the result.</p>
+    <table>
+      <tr><th>Module file</th><th>What happens to a call made through the stub</th></tr>
+      <tr><td>loads and registers <code>digi2.&lt;namespace&gt;</code></td><td>Runs once on the real module; the Promise resolves with its result</td></tr>
+      <tr><td>loads but throws first (broken build, old browser, script clash)</td><td><code>console.error</code>, <code>module:error</code>, <code>digi2.modules.check()</code> stays <code>false</code>; the Promise is rejected and the call is not run. <code>onReady</code> still fires</td></tr>
+      <tr><td>fails to download</td><td>Same as above (<code>module:error</code>, rejected)</td></tr>
+    </table>
+    <p class="muted">Before 1.8.3 a module that threw made the stub replay the call on itself forever — the whole tab froze.</p>
     <h3>Live Status</h3>
     <div class="demo-box" id="module-status"></div>
   </section>
