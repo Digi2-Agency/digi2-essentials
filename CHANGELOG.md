@@ -16,6 +16,19 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## Bez wydania — bramka przed tagiem (bez zmian w `dist/`)
+
+Nic się nie zmienia na stronach klientów. Nowe dla osoby, która wydaje:
+
+- `scripts/release.sh vX.Y.Z "opis"` — bramka → tag → push tagu → purge
+  zmienionych plików `dist/`. Gdy bramka jest czerwona, zatrzymuje się przed
+  `git tag`.
+- `npm run release:check [-- vX.Y.Z]` — sama bramka: build, `dist/` zgodny z
+  commitem, `npm test` i kontrola w przeglądarce (Playwright, Chromium bez
+  okna) dla forms, popups i datalayer na `sandbox/gate-*.html`, ze zrzutami
+  porównywanymi z wzorcem. Ładuje pliki z `dist/`, nic nie wychodzi poza
+  localhost. Około 10 s. Szczegóły: README → Build → Release gate.
+
 ## v1.9.0-ma.33 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.32–ma.16)
 
 ### `d2-ma` — historia źródeł wizyt (touchpoints v1)

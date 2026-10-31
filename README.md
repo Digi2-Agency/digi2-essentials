@@ -60,7 +60,12 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 >
 > **Releasing:**
 > ```bash
-> npm run build && npm test
+> scripts/release.sh v1.1.0 "…"   # gate → tag → push tag → purge changed dist/ files
+> ```
+> The script stops before `git tag` when the [release gate](#release-gate) is
+> red. By hand it is the same steps:
+> ```bash
+> npm run release:check -- v1.1.0   # build, dist/ committed, npm test, browser gate
 > git tag -a v1.1.0 -m "…" && git push origin v1.1.0
 > # then flush the CDN for every file you changed:
 > curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/popups.min.js"
@@ -4018,6 +4023,45 @@ npm run build          # webflow-scripts/ → dist/ (minified)
 npm run build:watch    # watch mode
 ```
 
+### Release gate
+
+`npm run release:check [-- vX.Y.Z]` — run before every tag; exit code ≠ 0 means
+do not tag. `scripts/release.sh` runs it first and stops on red.
+
+| Step | Fails when |
+|---|---|
+| version (only with an argument) | not `vX.Y.Z[-pre]`, tag already exists locally or on origin, no `## vX.Y.Z` heading in `CHANGELOG.md` |
+| build | terser fails, or `dist/` differs from the committed build (the tag would ship something nobody tested) |
+| `npm test` | any node:test suite fails |
+| browser gate | `npx playwright test` — see below |
+
+The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
+opens `sandbox/gate-forms.html` and `sandbox/gate-popups.html` from a local
+server (`tests/browser/serve.js`, 127.0.0.1:5179). Both load
+`dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
+jsDelivr serves after the tag. It checks, in a real browser:
+
+- **forms** — an empty submit is blocked (`form_error`, no `form_submit` /
+  `generate_lead`); a valid one gets the hidden fields (`UTM_*`, `PAGE_URL`),
+  pushes `form_submit` → `generate_lead` → `form_submit_success`, and nothing
+  typed reaches the dataLayer. Webflow's own submit is a stub in the page
+  (hides the form, shows `.w-form-done`); `action="#"`.
+- **popups** — `d2-show-popup` opens, the close button and Esc close;
+  `view_promotion` / `close_promotion` are pushed.
+- **datalayer** — the pushes above, through the real bus.
+- **screenshots** — compared with `tests/browser/__screenshots__/` (at most
+  30 differing pixels). After a deliberate visual change:
+  `npm run test:browser -- --update-snapshots`, look at the new PNGs, commit them.
+- **every test** — fails on any request outside localhost (aborted, never
+  sent: no client form is ever touched), any `pageerror` / `console.error`,
+  and any HTTP ≥ 400 (a module missing from `dist/`).
+
+Runs in ~10 s (browser part ~3 s). On this low-RAM machine the script caps the
+browser with `systemd-run --user --scope -p MemoryMax=4G` when available.
+First time on a machine: `npm install && npx playwright install --only-shell chromium`.
+Open the pages by hand with `npm run sandbox`. Failure screenshots and diffs
+land in `tests/browser/.results/` (git-ignored).
+
 ---
 
 ## Project Structure
@@ -4033,6 +4077,10 @@ webflow-scripts/              ← source files
     copy.js, interactions.js
 
 tests/                        ← node:test suites (node --test tests/)
+  browser/                    ← release gate: Playwright spec, screenshots, static server
+
+sandbox/                      ← local test pages (gate-*.html = release gate)
+scripts/                      ← release-check.sh, release.sh
 
 dist/                         ← production (minified only)
   digi2-loader.min.js
