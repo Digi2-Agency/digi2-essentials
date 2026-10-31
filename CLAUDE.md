@@ -74,14 +74,49 @@ opcji modułu w `webflow-scripts/digi2-loader.js`, jeśli doszła opcja JS.
 ## Wydanie
 
 `@latest` na jsDelivr wskazuje **najnowszy tag semver**, więc sam push niczego
-nie zmienia dla stron klientów:
+nie zmienia dla stron klientów.
+
+**Jedyna droga wydania to `scripts/release.sh`** (decyzja Piotra, 2026-10-31):
 
 ```bash
-npm run build && npm test
-# wpis w CHANGELOG.md pod nowym numerem — przed tagiem, nie po
-git tag -a v1.3.8 -m "opis" && git push origin v1.3.8
-curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/<moduł>.min.js"
+# wpis w CHANGELOG.md pod nowym numerem, zacommitowany — przed wydaniem, nie po
+scripts/release.sh v1.3.8 "opis"
 ```
+
+Skrypt uruchamia bramkę (`npm run release:check -- v1.3.8`: build, `dist/`
+zgodny z commitem, `npm test`, Playwright na `sandbox/gate-*.html`). Na
+czerwonym zatrzymuje się przed tagiem, a na zielonym robi tag, push tagu i
+purge zmienionych plików `dist/`. Tag stabilny powstaje tylko z `main` albo
+z `release/vX.Y.Z` (poprawka od poprzedniego stabilnego tagu, jak v1.8.2 i
+v1.8.3). Szczegóły: README → Build → Release gate.
+
+- Ręczne `git tag` / `npm version` + push to **złamanie procedury**. Hook
+  `pre-push` (`.githooks/`, włącza go `npm install`) odrzuci tag, którego commit
+  nie przeszedł bramki dla tej wersji.
+- `git push --no-verify` omija hook. To **świadome obejście bramki**, a nie
+  sposób na jej awarię: wolno tylko za zgodą Piotra na to jedno wydanie.
+- Czerwona bramka to stop, nie przeszkoda: popraw kod albo wzorzec zrzutu
+  (po obejrzeniu PNG), zacommituj i uruchom ponownie.
+
+Dwie pułapki jsDelivr, sprawdzone 2026-10-21:
+
+- **Plik, którego nie ma w najnowszym stabilnym tagu, `@latest` bierze z
+  najnowszego tagu, który go ma — także przedpremierowego.** Dopóki moduł
+  istnieje tylko w linii `v1.9.0-ma.N`, `@latest/dist/modules/ma.min.js` serwuje
+  kod gałęzi prerelease (nawet niescalonej), z cache 12 h na CDN i 7 dni w
+  przeglądarce. Loader 1.8.0 zamienia każdy nieznany atrybut `d2-x` na moduł
+  `x`, więc strona z `@latest` i `d2-ma` **uruchomiłaby** ten kod. Strona na
+  `@latest` nie dostaje atrybutu nowego modułu, dopóki nie wyjdzie stabilny tag
+  z tym plikiem. Purge tego nie naprawia: po nim `@latest` przelicza się na
+  najnowszy prerelease z tym plikiem.
+- **Strona przypięta do `@main` (gałęzi) dostaje każdy merge do main od razu**,
+  z pominięciem tagów i `@latest`. Przed scaleniem zmian, które mają czekać na
+  wydanie, sprawdź, czy żadna strona nie ładuje `@main`.
+- **Tagi `ma.N` bywają kładzione na gałęziach spoza main** (drugi zespół).
+  Wolny numer sprawdzaj `git ls-remote --tags origin 'v1.9.0-ma.*'`, nie po
+  stanie main; cudzego tagu nie przesuwaj, bierz następny numer. Pierwsze
+  żądanie pliku ze świeżego tagu może dostać 404 z cache — purge tego jednego
+  adresu z tagiem (nie `@latest`) je czyści.
 
 Purge czyści CDN, ale **nie** przeglądarkę odwiedzającego: jsDelivr wysyła
 `max-age=604800`, więc powracający użytkownik trzyma stary plik nawet tydzień.
