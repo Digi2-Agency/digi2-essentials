@@ -60,7 +60,12 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 >
 > **Releasing:**
 > ```bash
-> npm run build && npm test
+> scripts/release.sh v1.1.0 "…"   # gate → tag → push tag → purge changed dist/ files
+> ```
+> The script stops before `git tag` when the [release gate](#release-gate) is
+> red. By hand it is the same steps:
+> ```bash
+> npm run release:check -- v1.1.0   # build, dist/ committed, npm test, browser gate
 > git tag -a v1.1.0 -m "…" && git push origin v1.1.0
 > # then flush the CDN for every file you changed:
 > curl -s "https://purge.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/modules/popups.min.js"
@@ -4039,6 +4044,78 @@ npm run build          # webflow-scripts/ → dist/ (minified)
 npm run build:watch    # watch mode
 ```
 
+### Release gate
+
+`npm run release:check [-- vX.Y.Z]` — run before every tag; exit code ≠ 0 means
+do not tag. `scripts/release.sh vX.Y.Z "…"` runs it first and stops on red.
+
+| Step | Fails when |
+|---|---|
+| version (only with an argument) | not `vX.Y.Z[-pre]`; tag already exists locally or on origin; origin cannot be asked; no `## vX.Y.Z` heading in `CHANGELOG.md`; for a stable tag: HEAD is neither on `origin/main` nor the tip of `origin/release/vX.Y.Z` |
+| build | terser fails, or `dist/` differs from the committed build (the tag would ship something nobody tested) |
+| `npm test` | any node:test suite fails |
+| browser gate | `npx playwright test --update-snapshots=none` fails — see below — or a screenshot baseline changed / appeared during the run |
+
+**Only a commit checked for that version can be tagged.** On green, with a
+version argument and a clean working tree, the gate appends
+`<date> green vX.Y.Z` to `.git/release-gate/<sha>`. The `pre-push` hook
+(`.githooks/pre-push`) pushes a `v*` tag only if its commit has a line for
+exactly that version — a run without a version, or for another one, does not
+count, because the version checks (CHANGELOG, branch, tag free) did not run for
+it. A hand-made `git tag` or `npm version` stops at the push.
+`npm install` enables the hook (`core.hooksPath .githooks`), and so does
+`scripts/release.sh`. `git push --no-verify` still gets past it — without CI
+that cannot be closed, but skipping the gate is now a deliberate act.
+
+`scripts/release.sh` also refuses a dirty tree, untracked files included, and
+cuts stable tags only from `main` or `release/vX.Y.Z` (a patch from the
+previous stable tag, as with v1.8.2 / v1.8.3). It exits non-zero when a
+jsDelivr purge does not answer `"status": "finished"` (the tag is pushed by
+then: repeat the purge by hand).
+
+The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
+opens `sandbox/gate-forms.html` and `sandbox/gate-popups.html` from a local
+server (`tests/browser/serve.js`, 127.0.0.1:5179). Both load
+`dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
+jsDelivr serves after the tag. It checks, in a real browser:
+
+- **forms** — an empty submit is blocked (`form_error`, no `form_submit` /
+  `generate_lead`); a valid one gets the hidden fields (`UTM_*`, `PAGE_URL`),
+  pushes `form_submit` → `generate_lead` → `form_submit_success`, and nothing
+  typed reaches the dataLayer. Webflow's own submit is a stub in the page
+  (hides the form, shows `.w-form-done`); `action="#"`.
+- **popups** — `d2-show-popup` opens, the close button and Esc close;
+  `view_promotion` / `close_promotion` are pushed.
+- **datalayer** — the pushes above, through the real bus.
+- **screenshots** — compared with `tests/browser/__screenshots__/` (at most
+  30 differing pixels). A missing baseline fails; it is never written by the
+  gate. After a deliberate visual change:
+  `npm run test:browser -- --update-snapshots`, look at the new PNGs, commit
+  them. Baselines exist for Linux only (`-linux.png`) and use the system
+  font, so the gate is meant to run on this machine.
+- **every test** — fails on any `pageerror` / `console.error`, any HTTP ≥ 400
+  (a module missing from `dist/`) and any request outside localhost.
+
+**Nothing leaves the machine.** `context.route` aborts (and reports) every
+non-local request of the whole browser context — every page, popup window and
+worker; service workers are blocked; and Chromium starts with
+`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost`,
+so no other host resolves at all (WebSockets and `sendBeacon` included). No
+client form is ever reached.
+
+**Coverage.** Only forms, popups and datalayer are exercised — 3 of ~24
+modules. The others are covered by `npm test` (mini-DOM, no browser). Next
+step worth taking: one test per `dist/modules/*.min.js` that loads it through
+the loader and fails on any `pageerror`.
+
+Runs in ~10 s (browser part ~3 s) on an idle machine; `globalTimeout` fails a
+browser run over 2 minutes. On this low-RAM machine the script caps the
+browser with `systemd-run --user --scope -p MemoryMax=4G` when available, and
+warns when it runs without the cap.
+First time on a machine: `npm install && npx playwright install --only-shell chromium`.
+Open the pages by hand with `npm run sandbox`. Failure screenshots and diffs
+land in `tests/browser/.results/` (git-ignored).
+
 ---
 
 ## Project Structure
@@ -4054,6 +4131,10 @@ webflow-scripts/              ← source files
     copy.js, interactions.js
 
 tests/                        ← node:test suites (node --test tests/)
+  browser/                    ← release gate: Playwright spec, screenshots, static server
+
+sandbox/                      ← local test pages (gate-*.html = release gate)
+scripts/                      ← release-check.sh, release.sh
 
 dist/                         ← production (minified only)
   digi2-loader.min.js
