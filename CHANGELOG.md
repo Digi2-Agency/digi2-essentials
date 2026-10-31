@@ -32,6 +32,33 @@ Nic się nie zmienia na stronach klientów. Nowe dla osoby, która wydaje:
   `v*` na commit, który nie przeszedł bramki. Ręczne `git tag` i `npm version`
   nie omijają jej już przypadkiem.
 
+## v1.8.3 — 2026-10-31 (poprawka loadera; wydana od v1.8.2, bez linii `ma.N`)
+
+- **Moduł, który rzuci wyjątkiem przy ładowaniu, nie zamraża już strony.** Do
+  tej pory wywołanie przez zaślepkę loadera (np. `digi2.popups.create()` w
+  `digi2.onReady`, jak w dokumentacji) przy takim module powtarzało się samo w
+  nieskończonej pętli: cała karta przestawała odpowiadać, `load` nie
+  przychodził. Błąd był od marca (322e618), także w 1.8.2. Wyjątek mógł pochodzić
+  z zepsutego wydania, ze starej przeglądarki odwiedzającego albo z konfliktu z
+  innym skryptem.
+- Teraz taki moduł daje `console.error` z jego nazwą i `module:error`, a
+  `digi2.modules.check()` zwraca `false`. Wywołanie się nie wykonuje, a jego
+  Promise jest odrzucony. `onReady` rusza dla reszty strony jak dotąd.
+- Dwie rzeczy, o których warto wiedzieć, tak samo jak przy module, którego
+  nie udało się pobrać:
+  - `onReady` przychodzi wtedy **wcześniej**, bo nie czeka na moduły, które
+    jeszcze się pobierają. Wywołanie innego modułu w callbacku działa, bo
+    zaślepka najpierw go dociągnie. Kod, który od razu czyta stan innego
+    modułu albo `digi2.modules.check()`, może jednak trafić przed jego
+    załadowaniem.
+  - **Nie ma ponownej próby.** Kolejne wywołania tego modułu są od razu
+    odrzucane, aż do przeładowania strony.
+- Do zrobienia na stronie: nic. Kto łapał wynik `digi2.<moduł>.metoda()` przez
+  `.then`, przy zepsutym module dostanie teraz odrzucenie zamiast wiecznie
+  wiszącej obietnicy.
+- `v1.8.3` jest zbudowana od `v1.8.2` i zawiera tylko tę poprawkę. Zmiany w
+  `popups.js` i `lightbox.js` z linii `v1.9.0-ma.N` dalej nie idą na `@latest`.
+
 ## v1.9.0-ma.33 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.32–ma.16)
 
 ### `d2-ma` — historia źródeł wizyt (touchpoints v1)
