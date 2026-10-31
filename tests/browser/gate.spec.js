@@ -144,6 +144,10 @@ test.describe('popups + datalayer', () => {
   });
 
   test('Esc closes the popup', async ({ page }) => {
+    // closeOnEsc arrived after v1.8.2; a release/v1.8.x patch branch runs this
+    // same spec without it. Where the option exists, Esc must work.
+    const hasEsc = await page.evaluate(() => 'closeOnEsc' in (window.digi2.popups.get('promo').options || {}));
+    test.skip(!hasEsc, 'this build has no closeOnEsc option');
     await page.click('#otworz');
     await expect(page.locator('#promo')).toBeVisible();
     await page.keyboard.press('Escape');
