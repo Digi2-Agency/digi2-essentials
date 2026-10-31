@@ -3930,7 +3930,14 @@ loader reports it as a failed load:
 
 - `console.error` naming the module, `module:error` on the bus, `digi2.modules.check()` stays `false`;
 - the call's Promise is **rejected** and the call is not run;
-- `onReady` / `loaded` still fire for the rest of the page.
+- `onReady` / `loaded` still fire for the rest of the page — but **early**:
+  as soon as one requested module fails, without waiting for the others still
+  downloading. A callback that calls another module through its stub still
+  works (the stub loads it first); one that reads `digi2.modules.check()` or a
+  module's state directly may run before that module has arrived;
+- **no retry**: the failed load is remembered, so every later call to that
+  module (and `digi2.modules.require()`) is rejected at once until the page
+  is reloaded.
 
 Before 1.8.3 the stub replayed the call on itself forever — an endless
 microtask loop that froze the whole tab (`load` never fired).

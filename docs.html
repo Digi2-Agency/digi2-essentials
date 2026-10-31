@@ -3081,8 +3081,8 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     <table>
       <tr><th>Module file</th><th>What happens to a call made through the stub</th></tr>
       <tr><td>loads and registers <code>digi2.&lt;namespace&gt;</code></td><td>Runs once on the real module; the Promise resolves with its result</td></tr>
-      <tr><td>loads but throws first (broken build, old browser, script clash)</td><td><code>console.error</code>, <code>module:error</code>, <code>digi2.modules.check()</code> stays <code>false</code>; the Promise is rejected and the call is not run. <code>onReady</code> still fires</td></tr>
-      <tr><td>fails to download</td><td>Same as above (<code>module:error</code>, rejected)</td></tr>
+      <tr><td>loads but throws first (broken build, old browser, script clash)</td><td><code>console.error</code>, <code>module:error</code>, <code>digi2.modules.check()</code> stays <code>false</code>; the Promise is rejected and the call is not run. <code>onReady</code> still fires — early, without waiting for modules still downloading. No retry: later calls to that module are rejected at once until a reload</td></tr>
+      <tr><td>fails to download</td><td>Same as above (<code>module:error</code>, rejected, early <code>onReady</code>, no retry)</td></tr>
     </table>
     <p class="muted">Before 1.8.3 a module that threw made the stub replay the call on itself forever — the whole tab froze.</p>
     <h3>Live Status</h3>
