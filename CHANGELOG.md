@@ -28,6 +28,9 @@ Nic się nie zmienia na stronach klientów. Nowe dla osoby, która wydaje:
   okna) dla forms, popups i datalayer na `sandbox/gate-*.html`, ze zrzutami
   porównywanymi z wzorcem. Ładuje pliki z `dist/`, nic nie wychodzi poza
   localhost. Około 10 s. Szczegóły: README → Build → Release gate.
+- Hook `pre-push` (`.githooks/`, włącza go `npm install`) odrzuca push tagu
+  `v*` na commit, który nie przeszedł bramki. Ręczne `git tag` i `npm version`
+  nie omijają jej już przypadkiem.
 
 ## v1.9.0-ma.33 — 2026-10-29 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.32–ma.16)
 

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Refuse to push a v* tag whose commit has not passed the release gate.
+#
+# scripts/release-check.sh writes <git-common-dir>/release-gate/<sha> on green
+# with a clean tree; scripts/release.sh runs it before tagging. A tag made by
+# hand (`git tag`, `npm version`) on an unchecked commit stops here.
+#
+# Enabled per clone: git config core.hooksPath .githooks (npm install does it,
+# scripts/release.sh too). `git push --no-verify` skips every hook — that is a
+# deliberate bypass of the release procedure, not a way around this check.
+set -euo pipefail
+
+MARKS="$(git rev-parse --git-common-dir)/release-gate"
+ZERO=0000000000000000000000000000000000000000
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/tags/v*) ;;
+    *) continue ;;
+  esac
+  [ "$local_sha" = "$ZERO" ] && continue            # deleting a tag
+  commit=$(git rev-parse "$local_sha^{commit}")      # annotated tag → its commit
+  if [ ! -f "$MARKS/$commit" ]; then
+    echo "pre-push: ${remote_ref#refs/tags/} → ${commit:0:7} has not passed the release gate." >&2
+    echo "          Release with: scripts/release.sh ${remote_ref#refs/tags/} \"…\"" >&2
+    status=1
+  fi
+done
+
+exit $status

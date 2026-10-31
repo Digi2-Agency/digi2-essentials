@@ -4026,14 +4026,28 @@ npm run build:watch    # watch mode
 ### Release gate
 
 `npm run release:check [-- vX.Y.Z]` — run before every tag; exit code ≠ 0 means
-do not tag. `scripts/release.sh` runs it first and stops on red.
+do not tag. `scripts/release.sh vX.Y.Z "…"` runs it first and stops on red.
 
 | Step | Fails when |
 |---|---|
-| version (only with an argument) | not `vX.Y.Z[-pre]`, tag already exists locally or on origin, no `## vX.Y.Z` heading in `CHANGELOG.md` |
+| version (only with an argument) | not `vX.Y.Z[-pre]`; tag already exists locally or on origin; origin cannot be asked; no `## vX.Y.Z` heading in `CHANGELOG.md`; for a stable tag: HEAD is neither on `origin/main` nor the tip of `origin/release/vX.Y.Z` |
 | build | terser fails, or `dist/` differs from the committed build (the tag would ship something nobody tested) |
 | `npm test` | any node:test suite fails |
-| browser gate | `npx playwright test` — see below |
+| browser gate | `npx playwright test --update-snapshots=none` fails — see below — or a screenshot baseline changed / appeared during the run |
+
+**Only a checked commit can be tagged.** On green with a clean working tree
+the gate writes `.git/release-gate/<sha>`. The `pre-push` hook
+(`.githooks/pre-push`) refuses to push a `v*` tag whose commit has no such
+marker, so a hand-made `git tag` or `npm version` stops at the push.
+`npm install` enables the hook (`core.hooksPath .githooks`), and so does
+`scripts/release.sh`. `git push --no-verify` still gets past it — without CI
+that cannot be closed, but skipping the gate is now a deliberate act.
+
+`scripts/release.sh` also refuses a dirty tree, untracked files included, and
+cuts stable tags only from `main` or `release/vX.Y.Z` (a patch from the
+previous stable tag, as with v1.8.2 / v1.8.3). It exits non-zero when a
+jsDelivr purge does not answer `"status": "finished"` (the tag is pushed by
+then: repeat the purge by hand).
 
 The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
 opens `sandbox/gate-forms.html` and `sandbox/gate-popups.html` from a local
@@ -4050,14 +4064,30 @@ jsDelivr serves after the tag. It checks, in a real browser:
   `view_promotion` / `close_promotion` are pushed.
 - **datalayer** — the pushes above, through the real bus.
 - **screenshots** — compared with `tests/browser/__screenshots__/` (at most
-  30 differing pixels). After a deliberate visual change:
-  `npm run test:browser -- --update-snapshots`, look at the new PNGs, commit them.
-- **every test** — fails on any request outside localhost (aborted, never
-  sent: no client form is ever touched), any `pageerror` / `console.error`,
-  and any HTTP ≥ 400 (a module missing from `dist/`).
+  30 differing pixels). A missing baseline fails; it is never written by the
+  gate. After a deliberate visual change:
+  `npm run test:browser -- --update-snapshots`, look at the new PNGs, commit
+  them. Baselines exist for Linux only (`-linux.png`) and use the system
+  font, so the gate is meant to run on this machine.
+- **every test** — fails on any `pageerror` / `console.error`, any HTTP ≥ 400
+  (a module missing from `dist/`) and any request outside localhost.
 
-Runs in ~10 s (browser part ~3 s). On this low-RAM machine the script caps the
-browser with `systemd-run --user --scope -p MemoryMax=4G` when available.
+**Nothing leaves the machine.** `context.route` aborts (and reports) every
+non-local request of the whole browser context — every page, popup window and
+worker; service workers are blocked; and Chromium starts with
+`--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost`,
+so no other host resolves at all (WebSockets and `sendBeacon` included). No
+client form is ever reached.
+
+**Coverage.** Only forms, popups and datalayer are exercised — 3 of ~24
+modules. The others are covered by `npm test` (mini-DOM, no browser). Next
+step worth taking: one test per `dist/modules/*.min.js` that loads it through
+the loader and fails on any `pageerror`.
+
+Runs in ~10 s (browser part ~3 s) on an idle machine; `globalTimeout` fails a
+browser run over 2 minutes. On this low-RAM machine the script caps the
+browser with `systemd-run --user --scope -p MemoryMax=4G` when available, and
+warns when it runs without the cap.
 First time on a machine: `npm install && npx playwright install --only-shell chromium`.
 Open the pages by hand with `npm run sandbox`. Failure screenshots and diffs
 land in `tests/browser/.results/` (git-ignored).

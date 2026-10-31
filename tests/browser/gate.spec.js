@@ -1,14 +1,16 @@
 // Browser gate before a release: forms, popups and datalayer from dist/, in a
-// real Chromium, on the local sandbox pages only. Nothing leaves localhost —
-// every other request is aborted and fails the test (no client forms, ever).
+// real Chromium, on the local sandbox pages only. Nothing leaves localhost:
+// every other request in the browser context (all pages, popups, workers) is
+// aborted and fails the test, and the browser cannot resolve any other host
+// (playwright.config.js) — no client form is ever reached.
 const { test, expect } = require('@playwright/test');
 
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//;
 
-test.beforeEach(async ({ page }, testInfo) => {
+test.beforeEach(async ({ context, page }, testInfo) => {
   const outside = [];
   const errors = [];
-  await page.route('**/*', (route) => {
+  await context.route('**/*', (route) => {
     const url = route.request().url();
     if (LOCAL.test(url) || url.startsWith('data:')) return route.continue();
     outside.push(url);
@@ -51,10 +53,10 @@ async function pushed(page, event) {
   return (await events(page)).find((e) => e.event === event);
 }
 
-// Short timeout: a module that throws on load never appears, and the gate
-// should say so in seconds, not wait out the whole test timeout.
+// Own timeout: a module that throws on load never appears, and the gate
+// should say so without waiting out the whole test timeout.
 async function ready(page, mod) {
-  await page.waitForFunction((m) => !!(window.digi2 && window.digi2[m] && window.digi2.datalayer), mod, { timeout: 5000 });
+  await page.waitForFunction((m) => !!(window.digi2 && window.digi2[m] && window.digi2.datalayer), mod, { timeout: 10000 });
 }
 
 // ---- forms ----------------------------------------------------------------
@@ -63,7 +65,7 @@ test.describe('forms + datalayer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/sandbox/gate-forms.html?utm_source=gate&utm_medium=sandbox');
     await ready(page, 'forms');
-    await page.waitForFunction(() => !!window.digi2.forms.get('kontakt'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !!window.digi2.forms.get('kontakt'), null, { timeout: 10000 });
   });
 
   test('empty submit is blocked: form_error, errors shown, no lead', async ({ page }) => {
@@ -120,7 +122,7 @@ test.describe('popups + datalayer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/sandbox/gate-popups.html');
     await ready(page, 'popups');
-    await page.waitForFunction(() => !!window.digi2.popups.get('promo'), null, { timeout: 5000 });
+    await page.waitForFunction(() => !!window.digi2.popups.get('promo'), null, { timeout: 10000 });
   });
 
   test('d2-show-popup opens, close button closes, both reported', async ({ page }) => {
