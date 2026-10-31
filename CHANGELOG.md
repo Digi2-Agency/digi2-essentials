@@ -17,6 +17,15 @@ Format: co się zmieniło z punktu widzenia osoby budującej stronę.
 - Teraz taki moduł daje `console.error` z jego nazwą i `module:error`, a
   `digi2.modules.check()` zwraca `false`. Wywołanie się nie wykonuje, a jego
   Promise jest odrzucony. `onReady` rusza dla reszty strony jak dotąd.
+- Dwie rzeczy, o których warto wiedzieć, tak samo jak przy module, którego
+  nie udało się pobrać:
+  - `onReady` przychodzi wtedy **wcześniej**, bo nie czeka na moduły, które
+    jeszcze się pobierają. Wywołanie innego modułu w callbacku działa, bo
+    zaślepka najpierw go dociągnie. Kod, który od razu czyta stan innego
+    modułu albo `digi2.modules.check()`, może jednak trafić przed jego
+    załadowaniem.
+  - **Nie ma ponownej próby.** Kolejne wywołania tego modułu są od razu
+    odrzucane, aż do przeładowania strony.
 - Do zrobienia na stronie: nic. Kto łapał wynik `digi2.<moduł>.metoda()` przez
   `.then`, przy zepsutym module dostanie teraz odrzucenie zamiast wiecznie
   wiszącej obietnicy.
