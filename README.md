@@ -1581,6 +1581,24 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   page views of the visit (1–50). Once per visit, then only when new units
   were viewed and at most every 5 minutes. Never in the form's visit. No form
   data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+- **Behaviour events (ma.34):** every `/visit` also carries `visitNo`
+  (`state.visits`) and `time_on_site_s` (0–14400, this visit, tab visible and
+  activity in the last 5 minutes), plus `events` when anything happened:
+  `{ list_view: {n}, map_view: {n}, price_history_view: {n, units?},
+  card_download: {n, units?}, plan_dwell: {n, units, dwell_s: {id: s}} }`. `n` is
+  capped at 50, lists at the 20 newest UUIDs, `dwell_s` at 3600. Each send is the
+  **state of the whole visit**, not a delta; the server merges by
+  `(visitorId, visitNo)`, taking the max per field, so a duplicate or lost send
+  does no harm. Sources: `[d2-ma-event="map_view|list_view"]` in view for about
+  1 s, once per visit; a click on `[d2-ma-event="card_download|price_history_view"]`
+  with `d2-ma-unit="<uuid>"`; time in view of `[d2-ma-dwell][d2-ma-unit]`; a
+  visitor's filter change (`list_view`); `digi2.ma.event(key, { unitId, seconds })`
+  from a widget. Counted only for a linked lead on a return visit, with consent,
+  because `/visit` is the only sender; behaviour before the lead doesn't reach the
+  server. New events follow the 5-minute limit and leave at once when the tab is
+  hidden or the page closes; time alone leaves only then, after growing by 30 s.
+  **Deploy the server first:** without the new fields it answers 422 and the
+  module mutes the visit. An old visit's unsent last counters are dropped.
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
   dropped; 403 (Origin off the project's list or lead not eligible — one code
   for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
@@ -1939,6 +1957,7 @@ digi2.ma.context()          // ma.16: { text, json } for the lead context fields
 digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
+digi2.ma.event('card_download', { unitId }) // ma.34, d2-ma-hot-lead: behaviour event, false if not accepted
 digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
 digi2.ma.load(urlOrObject)  // read an envelope (URL only from digi2.app / api.2destate.com, ma.23)
 digi2.ma.reload()

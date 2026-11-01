@@ -37,6 +37,15 @@
  *                                 https://api.2destate.com/api/v1; (ma.23) any other host or
  *                                 not https = no request at all. Pin MA with @v1.9.0-ma.N.
  *
+ * ─── Behaviour events in /visit (ma.34) ─────────────────────────────────────
+ *
+ *   Counted only for a linked lead on a return visit, with consent. Sent with
+ *   /visit as the state of the whole visit: visitNo, time_on_site_s, events.
+ *   [d2-ma-event="map_view|list_view"]   In view for about 1 s, once per visit
+ *   [d2-ma-event="card_download|price_history_view"]   Click; d2-ma-unit="<uuid>"
+ *   [d2-ma-dwell] d2-ma-unit="<uuid>"    Time in view of a plan or card (plan_dwell)
+ *   digi2.ma.event(key, { unitId, seconds })   Same from a widget; seconds only for plan_dwell
+ *
  * ─── Sources of unit_view (§13.1) ───────────────────────────────────────────
  *
  *   3D Estate   dataLayer event "oa3de__unit-open" (the duplicate
@@ -164,6 +173,7 @@
  *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
+ *   digi2.ma.event(key, opts)     ma.34, d2-ma-hot-lead: behaviour event of a returning lead (see below)
  *   digi2.ma.touchpoints()        ma.33: { v:1, items } — source of every visit; items [] without consent
  *   digi2.ma.parseTouchpoint(h,r) ma.33: one entry, no storage, no consent needed
  *   digi2.ma.simulateReturn()     Same as the [d2-ma-simulate-return] button
@@ -230,7 +240,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 33;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 34;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -1952,6 +1962,7 @@
     search.matching = num(p.resultCount);
     search.mapName = p.mapName ? String(p.mapName) : search.mapName;
     if (user) {
+      behEvent('list_view');
       scheduleListEvent();
       // Suwak ceny daje serię zmian: do profilu i scenariuszy idzie jedna, ostatnia
       // po 500 ms ciszy — inaczej minCount nabija się jednym ruchem, a filterLog puchnie.
@@ -3422,6 +3433,7 @@
     delete state.hotLead;
     delete state.hotLeadSent;
     delete state.hotLeadRetryAt;
+    delete state.beh;
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
   }
 
@@ -3442,31 +3454,226 @@
     return Date.now() + (isFinite(s) && s > 0 ? s : fallbackS) * 1000;
   }
 
-  // Sygnał raz na wizytę powrotu, potem przyrost lokali najwyżej co 5 minut.
-  function sendVisitSignal() {
+  // ---- Zdarzenia zachowania w /visit (ma.34) ---------------------------------
+  // Liczone tylko dla powiązanego leada w wizycie powrotu - tylko tam jest nadawca,
+  // więc nie trzymamy danych, których nikt nie odbierze. Czas: widoczna karta i
+  // aktywność w ostatnich 5 minutach (karta zostawiona na noc to nie zainteresowanie).
+  var BEH_TICK_MS = 1000;
+  var BEH_IDLE_MS = 5 * 60 * 1000;
+  var BEH_MAX_N = 50;
+  var BEH_MAX_TIME_S = 14400;
+  var BEH_MAX_DWELL_S = 3600;
+  var BEH_EXIT_TIME_S = 30;        // sam czas: wysyłka przy wyjściu, gdy urósł o tyle
+  var BEH_ONCE = { list_view: 1, map_view: 1 };
+  var BEH_CLICK = { card_download: 1, price_history_view: 1 };
+  var BEH_SEL = '[d2-ma-event], [data-d2-ma-event], [d2-ma-dwell], [data-d2-ma-dwell]';
+  var behTimer = null;
+  var behLast = 0;
+  var behActiveAt = 0;
+  var behTicks = 0;
+  var behHooked = false;
+
+  function behOn() {
+    return hotLeadOn() && tracking && state && state.hotLead && state.visits > state.hotLead.visit;
+  }
+
+  function behState() {
+    if (!state.beh || state.beh.visit !== state.visits) state.beh = { visit: state.visits, activeMs: 0, ev: {} };
+    return state.beh;
+  }
+
+  function behAttr(el, name) {
+    var v = el.getAttribute(name);
+    return v != null ? v : el.getAttribute('data-' + name);
+  }
+
+  function behUnit(id) {
+    return typeof id === 'string' && UUID_RE.test(id) ? id : null;
+  }
+
+  // Najnowsze lokale na końcu; limit kontraktu tnie najstarsze.
+  function behCount(key, unitId) {
+    var ev = behState().ev;
+    var e = ev[key] || (ev[key] = { n: 0 });
+    if (BEH_ONCE[key]) {
+      if (e.n) return false;
+      e.n = 1;
+      return true;
+    }
+    e.n = Math.min(e.n + 1, BEH_MAX_N);
+    if (unitId) {
+      var units = (e.units || []).filter(function (u) { return u !== unitId; });
+      units.push(unitId);
+      e.units = units.slice(-MAX_SIGNAL_UNITS);
+    }
+    return true;
+  }
+
+  function behDwell(unitId, ms) {
+    var ev = behState().ev;
+    var d = (ev.plan_dwell || (ev.plan_dwell = { ms: {} })).ms;
+    var total = Math.min((d[unitId] || 0) + ms, BEH_MAX_DWELL_S * 1000);
+    delete d[unitId];
+    d[unitId] = total;
+    var ids = Object.keys(d);
+    if (ids.length > MAX_SIGNAL_UNITS) delete d[ids[0]];
+  }
+
+  function behEvent(key, opts) {
+    if (!behOn()) return false;
+    var unitId = behUnit(opts && opts.unitId);
+    if (key === 'plan_dwell') {
+      var seconds = opts ? Number(opts.seconds) : 0;
+      if (!unitId || !(seconds > 0)) return false;
+      behDwell(unitId, seconds * 1000);
+    } else if (!BEH_ONCE[key] && !BEH_CLICK[key]) {
+      return false;
+    } else if (!behCount(key, unitId)) {
+      return true;
+    }
+    save();
+    sendVisitSignal();
+    return true;
+  }
+
+  // Stan tej wizyty w kształcie /visit; null, gdy nic się nie zdarzyło.
+  function behEvents() {
+    var ev = state.beh && state.beh.visit === state.visits ? state.beh.ev : {};
+    var out = {};
+    Object.keys(ev).forEach(function (key) {
+      if (key !== 'plan_dwell') { out[key] = ev[key]; return; }
+      var dwell = {};
+      var ids = Object.keys(ev[key].ms).filter(function (id) {
+        var sec = Math.floor(ev[key].ms[id] / 1000);
+        if (sec >= 1) dwell[id] = sec;
+        return sec >= 1;
+      });
+      if (ids.length) out[key] = { n: ids.length, units: ids, dwell_s: dwell };
+    });
+    return Object.keys(out).length ? out : null;
+  }
+
+  function behTimeS() {
+    var ms = state.beh && state.beh.visit === state.visits ? state.beh.activeMs : 0;
+    return Math.min(Math.floor(ms / 1000), BEH_MAX_TIME_S);
+  }
+
+  function behInView(el) {
+    if (typeof el.getBoundingClientRect !== 'function') return false;
+    var r = el.getBoundingClientRect();
+    var h = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
+    var w = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < h && r.left < w;
+  }
+
+  // Elementy czytane w każdym ticku, bo lista i mapa dochodzą po starcie strony.
+  function behScan(ms) {
+    if (!document.querySelectorAll) return false;
+    var added = false;
+    var els = document.querySelectorAll(BEH_SEL);
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var seen = behInView(el);
+      var key = behAttr(el, 'd2-ma-event');
+      if (key && BEH_ONCE[key]) {
+        if (seen && el._d2maSeen && behCount(key)) added = true;
+        el._d2maSeen = seen;
+      }
+      var unitId = behUnit(behAttr(el, 'd2-ma-unit'));
+      if (seen && unitId && behAttr(el, 'd2-ma-dwell') != null) {
+        var before = behDwellS(unitId);
+        behDwell(unitId, ms);
+        if (behDwellS(unitId) !== before) added = true;
+      }
+    }
+    return added;
+  }
+
+  function behDwellS(unitId) {
+    var e = behState().ev.plan_dwell;
+    return e && e.ms[unitId] ? Math.floor(e.ms[unitId] / 1000) : 0;
+  }
+
+  function behTick() {
+    behTimer = null;
+    if (!behOn()) return;
+    var t = Date.now();
+    var ms = Math.min(t - behLast, 2 * BEH_TICK_MS);
+    behLast = t;
+    behTimer = setTimeout(behTick, BEH_TICK_MS);
+    if (document.visibilityState === 'hidden' || t - behActiveAt >= BEH_IDLE_MS) return;
+    var b = behState();
+    b.activeMs = Math.min(b.activeMs + ms, BEH_MAX_TIME_S * 1000);
+    var added = behScan(ms);
+    if (++behTicks % 15 === 0 || added) save();
+    if (added) sendVisitSignal();
+  }
+
+  function behExit() {
+    if (!behOn()) return;
+    save();
+    sendVisitSignal(true);
+  }
+
+  function behStart() {
+    if (!behHooked && document.addEventListener) {
+      behHooked = true;
+      var active = function () { behActiveAt = Date.now(); };
+      ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (n) {
+        document.addEventListener(n, active, { passive: true });
+      });
+      document.addEventListener('click', function (e) {
+        var el = e.target && typeof e.target.closest === 'function' ? e.target.closest('[d2-ma-event], [data-d2-ma-event]') : null;
+        if (!el) return;
+        var key = behAttr(el, 'd2-ma-event');
+        if (BEH_CLICK[key]) behEvent(key, { unitId: behAttr(el, 'd2-ma-unit') });
+      }, true);
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') behExit();
+      });
+      window.addEventListener('pagehide', behExit);
+    }
+    if (behTimer) return;
+    behLast = Date.now();
+    if (!behActiveAt) behActiveAt = behLast;
+    behTimer = setTimeout(behTick, BEH_TICK_MS);
+  }
+
+  // Sygnał raz na wizytę powrotu, potem przyrost najwyżej co 5 minut. Przy wyjściu
+  // (exit) bez czekania: ostatni przyrost i czas przepadłyby razem ze stroną.
+  function sendVisitSignal(exit) {
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
+    behStart();
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
     if (state.hotLeadMuteVisit === state.visits) return;
     var units = viewedThisVisit();
     var sent = state.hotLeadSent;
+    var events = behEvents();
+    var evSig = JSON.stringify(events || {});
+    var timeS = behTimeS();
     if (sent && sent.visit === state.visits) {
-      var fresh = units.some(function (u) { return sent.units.indexOf(u) < 0; });
-      if (!fresh) return;
-      var wait = VISIT_RESEND_MS - (nowReal - sent.at);
+      var fresh = evSig !== (sent.ev || '{}') || units.some(function (u) { return sent.units.indexOf(u) < 0; });
+      // Sam czas nie budzi serwera co 5 minut - jedzie przy wyjściu albo z przyrostem.
+      if (!fresh && !(exit && timeS - (sent.time || 0) >= BEH_EXIT_TIME_S)) return;
+      var wait = exit ? 0 : VISIT_RESEND_MS - (nowReal - sent.at);
       if (wait > 0) {
         if (!hotLeadTimer) hotLeadTimer = setTimeout(function () { hotLeadTimer = null; sendVisitSignal(); }, wait + 50);
         return;
       }
     }
     var id = state.visitorId;
-    state.hotLeadSent = { visit: state.visits, units: units, at: nowReal };
+    state.hotLeadSent = { visit: state.visits, units: units, at: nowReal, ev: evSig, time: timeS };
     save();
     var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
       source: 'return_visit' };
     // ma.24: units zawsze, także [] — serwer 2destate #189 wymaga pola (bez niego 422 i wyciszona wizyta).
     body.units = units;
+    // ma.34: stan całej wizyty, serwer łączy po (visitorId, visitNo).
+    body.visitNo = state.visits;
+    body.time_on_site_s = timeS;
+    if (events) body.events = events;
     try {
       var base = hotLeadApi();
       if (!base) return;
@@ -4586,6 +4793,7 @@
       if (!envelopeUrl) return Promise.resolve(false);
       return api.load(envelopeUrl);
     },
+    event: function (key, opts) { return behEvent(key, opts); },
     track: function (unit) {
       if (!unit || unit.unitId == null) return;
       var u = {
