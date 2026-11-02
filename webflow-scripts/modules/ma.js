@@ -3137,6 +3137,16 @@
     state.touchpoints = list.slice(-TOUCHPOINTS_MAX);
   }
 
+  // ma.37: pierwszy wpis historii źródeł z tej wizyty (jej wejście) w kształcie v1,
+  // null bez zgody na historię albo bez wpisu.
+  function visitTouchpoint() {
+    if (!state || !openedWithConsent || !state.touchpoints || state.visitStart == null) return null;
+    for (var i = 0; i < state.touchpoints.length; i++) {
+      if (state.touchpoints[i].ts >= state.visitStart) return touchpointsOut([state.touchpoints[i]])[0];
+    }
+    return null;
+  }
+
   // Kontrakt v1: ts jako ISO UTC, pola bez wartości pominięte (poza click_type).
   function touchpointsOut(list) {
     return (list || []).map(function (e) {
@@ -3871,6 +3881,10 @@
     body.visitNo = state.visits;
     body.time_on_site_s = timeS;
     if (events) body.events = events;
+    // ma.37: źródło wejścia tej wizyty (2destate 4110bf3e). Serwer trzyma wpis
+    // o najwcześniejszym ts, więc ten sam wpis w każdym POST-cie wizyty jest bezpieczny.
+    var tp = visitTouchpoint();
+    if (tp) body.touchpoint = tp;
     try {
       var base = hotLeadApi();
       if (!base) return;

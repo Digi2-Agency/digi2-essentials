@@ -33,6 +33,10 @@ Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
 - Klik przycisku z szablonu (i wbudowanego przycisku `promo-filter`): `dataLayer`
   `ma_popup_cta` `{ action }` i `ma:action` `{ do: "popup_cta", action, template }`.
 - Strona z własnym `[d2-ma-popup]` bez zmian.
+- `/visit` niesie `touchpoint`: wpis historii źródeł (touchpoints v1) wejścia tej
+  wizyty — UTM, `click_type`, ścieżka wejścia. Ten sam w każdym POST-cie wizyty;
+  nowa kampania w trakcie wizyty go nie zmienia. Bez zgody na historię źródeł
+  klucza nie ma. Serwer 2destate przyjmuje pole od 4110bf3e.
 
 ## v1.9.0-ma.36 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.35–ma.16)
 

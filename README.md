@@ -1646,7 +1646,19 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   when none — the 2destate server requires the field and answers 422 without it),
   page views of the visit (1–50). Once per visit, then only when new units
   were viewed and at most every 5 minutes. Never in the form's visit. No form
-  data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+  data; UTM and the landing path only in `touchpoint` (ma.37, below);
+  `credentials: 'omit'`, JSON with a CORS preflight.
+- **Visit source (ma.37, 2destate 4110bf3e):** `/visit` carries `touchpoint`,
+  **one** touchpoints v1 entry (an `items[]` element from the section
+  „Touchpoints — visit source history” below: `ts`, `click_type`, UTMs,
+  `referrer_host`, `landing_path`; no `v` / `items`) — the first entry of
+  this visit, i.e. its way in. Every POST of the visit (same `visitNo`) sends
+  the same entry: the server keeps the one with the earliest `ts`, so a new
+  campaign mid-visit (a second history entry) does not change it. Consent
+  given during the visit: the entry has the visit's start time, like the
+  history. No source history consent (`openedWithConsent`) or no entry for
+  this visit → no `touchpoint` key. The server drops a bad entry and keeps
+  the visit (202).
 - **Behaviour events (ma.34):** every `/visit` also carries `visitNo`
   (`state.visits`) and `time_on_site_s` (0–14400, **active** time of this visit:
   tab visible and activity in the last 5 minutes, so it understates a visitor who

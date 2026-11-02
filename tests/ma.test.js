@@ -3746,7 +3746,8 @@ test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, p
   const p2 = await powrot(p1, 26 * H);
   assert.equal(p2.sygnaly.length, 1);
   assert.equal(p2.sygnaly[0].url, VISIT);
-  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [], visitNo: p2.ma.profile().visits, time_on_site_s: 0 }, 'ma.24: units zawsze, także []');
+  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [], visitNo: p2.ma.profile().visits, time_on_site_s: 0,
+    touchpoint: czyste(p2.ma.touchpoints().items.slice(-1)[0]) }, 'ma.24: units zawsze, także []; ma.37: touchpoint wejścia');
   assert.equal(p2.sygnaly[0].init.credentials, 'omit');
   p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
   await p2.gotowe();
@@ -4831,5 +4832,46 @@ test('ma.37: dwa przyciski w obu kolejnościach — open_unit dostaje adres loka
     const adresy = Object.fromEntries(przyciski(env).map((c) => [c.getAttribute('d2-ma-template-cta'), c.getAttribute('href')]));
     assert.deepEqual(adresy, { open_unit: 'https://demo.example/oferta?sm-unit=A_7', link: 'https://demo.example/cennik' }, kolejnosc.join(' + '));
   }
+});
+
+// ---------------------------------------------------------------------------
+// ma.37: touchpoint wizyty w /visit (2destate 4110bf3e, docs/ma-touchpoints.md)
+// ---------------------------------------------------------------------------
+
+test('ma.37: /visit niesie touchpoint wejścia tej wizyty (UTM, click_type, landing_path) w kształcie v1', async () => {
+  const p1 = await leadDema();
+  const p2 = await powrot(p1, 26 * H, { search: '?utm_source=google&utm_medium=cpc&utm_campaign=12345678901&gclid=abc' });
+  const tp = czyste(p2.sygnaly[0].body.touchpoint);
+  assert.deepEqual(Object.keys(tp).sort(), ['click_type', 'landing_path', 'ts', 'utm_campaign', 'utm_medium', 'utm_source']);
+  assert.equal(tp.utm_source, 'google');
+  assert.equal(tp.utm_campaign, '12345678901');
+  assert.equal(tp.click_type, 'gclid');
+  assert.equal(tp.landing_path, '/oferta');
+  assert.match(tp.ts, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{3})?Z$/);
+  assert.ok(!('v' in tp) && !('items' in tp) && !('referrer_internal' in tp));
+});
+
+test('ma.37: kolejny POST tej samej wizyty niesie ten sam touchpoint wejścia, także po nowej kampanii w trakcie', async () => {
+  const p1 = await leadDema();
+  const p2 = await powrot(p1, 26 * H, { search: '?utm_source=google&utm_medium=cpc' });
+  const pierwszy = czyste(p2.sygnaly[0].body.touchpoint);
+  const p3 = await powrot(p2, 2 * MIN, { search: '?utm_source=meta&utm_medium=paid_social' });
+  p3.ma.track({ unitId: UID(3), name: 'A3', source: '2destate' });
+  await p3.minie(6 * MIN);
+  const ost = p3.sygnaly.filter((x) => x.url === VISIT).slice(-1)[0];
+  assert.equal(ost.body.visitNo, p2.sygnaly[0].body.visitNo, 'ta sama wizyta');
+  assert.deepEqual(czyste(ost.body.touchpoint), pierwszy);
+  assert.equal(p3.ma.touchpoints().items.slice(-1)[0].utm_source, 'meta', 'historia ma nową kampanię, /visit zostaje przy wejściu');
+});
+
+test('ma.37: zgoda w trakcie powrotu (consentRequired:false) — touchpoint z chwili wejścia', async () => {
+  const p1 = await leadDema();
+  const p2 = await powrot(p1, 26 * H, { dataLayer: [], search: '?utm_source=newsletter' });
+  assert.equal(p2.sygnaly.length, 0);
+  p2.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p2.gotowe();
+  const b = p2.sygnaly[0].body;
+  assert.equal(b.touchpoint.utm_source, 'newsletter');
+  assert.equal(Date.parse(b.touchpoint.ts), p2._dysk.state.visitStart);
 });
 
