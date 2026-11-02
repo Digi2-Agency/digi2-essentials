@@ -16,6 +16,20 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.37 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.36–ma.16)
+
+Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
+2destate przyciski w kroku popup”; kształt uzgodniony z 2destate).
+
+- Do 2 bloków `cta` w szablonie; trzeci i kolejne są pomijane z ostrzeżeniem.
+- Nowe akcje: `filter_rooms` (filtr „N pokoi” z profilu w wyszukiwarce 2destate,
+  zamknięcie popupu i przewinięcie do listy; bez preferencji pokoi przycisk się
+  nie pokazuje), `scroll_to` z `target: "#id"`, `close`. `open_unit`, `contact`
+  i `link` bez zmian.
+- Klik przycisku z szablonu: `dataLayer` `ma_popup_cta` `{ action }` i
+  `ma:action` `{ do: "popup_cta", action, template }`.
+- Strona z własnym `[d2-ma-popup]` bez zmian.
+
 ## v1.9.0-ma.36 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.35–ma.16)
 
 Token prawdziwego leada (`ma_token` z 2destate). Tylko strona z `d2-ma-hot-lead`;

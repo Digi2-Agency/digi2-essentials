@@ -1380,6 +1380,26 @@ segment }` in `state.scenarios[scenarioId].nodes`.
     may use the §13.9.2 fields; a field without a value shows `fallback` or
     drops the block — never "null". The popup's CTA behaviour comes from the
     template's `cta` block.
+  - **Buttons with actions (ma.37, contract with 2destate 2.11.2026):** up to
+    **2** `cta` blocks per template; the third and later are dropped with
+    `console.warn` (the panel rejects them on publish). `action` is a closed
+    list: `open_unit`, `contact`, `link` (as above), `filter_rooms`,
+    `scroll_to`, `close`; anything else drops the block. `href` only with
+    `link`, `target` only with `scroll_to` (elsewhere: warning, ignored).
+    - `filter_rooms`: `d2estate.setFilters(map, { rooms: [pref.rooms] })` on
+      every 2destate map, like `prefer_filters by: rooms` but **without**
+      `source: "api"` — it is the visitor's click, so it counts as their
+      filter. Closes the popup and scrolls to the results list
+      (`[data-imp-detached-menu]`). Without `pref.rooms` the button is not
+      rendered.
+    - `scroll_to`: `target` `"#id"` (`#[A-Za-z][\w-]{0,60}`, nothing else);
+      closes the popup and scrolls to the element.
+    - `close`: closes the popup only.
+    - Scrolling waits 450 ms: the popup gives back the page scroll as it
+      closes, and scrolling earlier would be undone.
+    - Every template button click: `ma:action` `{ do: "popup_cta", action,
+      template }` and `dataLayer` `{ event: "ma_popup_cta", action }` — no
+      visitor data; 2destate scoring does not count it.
   - `layout`: `position` `center` | `bottom-right` | `bottom` | `top`, `size`
     `sm` (320 px) | `md` (380) | `lg` (520).
   - `style`: only page tokens, `token:<name>` → `var(--<name>)`: `background`

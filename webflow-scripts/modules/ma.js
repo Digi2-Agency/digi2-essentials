@@ -62,6 +62,7 @@
  *   [d2-ma-popup="last-unit"]     Designer popup for that template (else built-in)
  *     [d2-ma-field="name|price|image|rooms|floor|area|pricePerSqm|building|summary|promoText"]
  *     [d2-ma-cta]                 open_unit → href of the unit; contact → keeps its href
+ *                                 ma.37 template cta: + filter_rooms | scroll_to (#id) | close, ≤ 2 per popup
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
  *   [d2-ma-history]               List of viewed units, newest first
@@ -243,7 +244,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 36;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 37;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -2208,8 +2209,12 @@
     title: { text: 80, fallback: 160 },
     text: { text: 300, fallback: 160 },
     image: { src: 0, alt: 120 },
-    cta: { label: 40, action: 0, href: 0 }
+    cta: { label: 40, action: 0, href: 0, target: 0 }
   };
+  // ma.37: zamknięta lista akcji przycisku szablonu (kontrakt z 2destate 2.11.2026).
+  var TPL_CTA_ACTIONS = { open_unit: 1, contact: 1, link: 1, filter_rooms: 1, scroll_to: 1, close: 1 };
+  var TPL_CTA_MAX = 2;
+  var SCROLL_TARGET_RE = /^#[A-Za-z][\w-]{0,60}$/;
   var TPL_POSITIONS = { center: 'center|center', 'bottom-right': 'flex-end|flex-end', bottom: 'flex-end|center', top: 'flex-start|center' };
   var TPL_SIZES = { sm: 320, md: 380, lg: 520 };
   var TPL_RADIUS = { none: '0', sm: 'var(--radius-sm, 6px)', md: 'var(--radius-md, 14px)', lg: 'var(--radius-lg, 22px)' };
@@ -2251,14 +2256,24 @@
       }
     } else {
       if (typeof b.label !== 'string' || !b.label.length || b.label.length > 40 || !fieldsKnown(b.label)) { _warn(where + ' — cta label missing or > 40, skipped'); return null; }
-      if (b.action !== 'open_unit' && b.action !== 'contact' && b.action !== 'link') { _warn(where + ' — cta action must be open_unit, contact or link, skipped'); return null; }
+      if (!Object.prototype.hasOwnProperty.call(TPL_CTA_ACTIONS, b.action)) {
+        _warn(where + ' — cta action must be one of ' + Object.keys(TPL_CTA_ACTIONS).join(', ') + ', skipped');
+        return null;
+      }
       if (b.action === 'link' && !(typeof b.href === 'string' && safePageLink(b.href))) {
         _warn(where + ' — cta link needs an https href on this site, skipped');
         return null;
       }
+      if (b.action === 'scroll_to' && !(typeof b.target === 'string' && SCROLL_TARGET_RE.test(b.target))) {
+        _warn(where + ' — cta scroll_to needs a target "#id", skipped');
+        return null;
+      }
+      if (b.href != null && b.action !== 'link') _warn(where + ' — href only for link, ignored');
+      if (b.target != null && b.action !== 'scroll_to') _warn(where + ' — target only for scroll_to, ignored');
       out.label = b.label;
       out.action = b.action;
       if (b.action === 'link') out.href = safePageLink(b.href);
+      if (b.action === 'scroll_to') out.target = b.target;
     }
     return out;
   }
@@ -2278,6 +2293,14 @@
       var blocks = (Array.isArray(p.blocks) ? p.blocks.slice(0, 8) : []).map(function (b, i) {
         return tplBlock(b, where + ' block ' + (i + 1));
       }).filter(Boolean);
+      // ma.37: najwyżej 2 przyciski - trzeci i dalsze pomijamy.
+      var ctas = 0;
+      blocks = blocks.filter(function (b) {
+        if (b.type !== 'cta') return true;
+        if (++ctas <= TPL_CTA_MAX) return true;
+        _warn(where + ' — more than ' + TPL_CTA_MAX + ' cta blocks, cta ' + ctas + ' skipped');
+        return false;
+      });
       if (Array.isArray(p.blocks) && p.blocks.length > 8) _warn(where + ' — more than 8 blocks, the rest ignored');
       if (!blocks.length) { _warn(where + ' — no valid block, skipped'); return; }
       var layout = p.layout && typeof p.layout === 'object' ? p.layout : {};
@@ -2360,9 +2383,12 @@
       } else if (b.type === 'cta') {
         var label = contentText({ text: b.label }, unit);
         if (label == null) return;
+        // ma.37: „N pokoi” bez preferencji w profilu nie ma czego ustawić - przycisk ukryty.
+        if (b.action === 'filter_rooms' && prefOf('rooms') == null) return;
         node = document.createElement('a');
         node.setAttribute('d2-ma-cta', '');
         node.setAttribute('d2-ma-template-cta', b.action);
+        if (b.target) node.setAttribute('d2-ma-template-target', b.target);
         node.setAttribute('href', b.action === 'link' ? b.href : '#');
         node.textContent = label;
         node.style.cssText = 'display:block;text-align:center;padding:12px 16px;border-radius:10px;background:#1a1d1c;'
@@ -2498,6 +2524,36 @@
     }
   }
 
+  // ma.37: klik przycisku szablonu - bez danych osobowych, scoring tego nie liczy.
+  function ctaClicked(template, action) {
+    _emit('ma:action', { 'do': 'popup_cta', action: action, template: template });
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({ event: 'ma_popup_cta', action: action });
+  }
+
+  // Popup po zamknięciu oddaje przewinięcie strony - przewijamy po jego animacji.
+  var CTA_SCROLL_DELAY_MS = 450;
+  function scrollLater(el) {
+    if (el && typeof el.scrollIntoView === 'function') setTimeout(function () { el.scrollIntoView({ behavior: 'smooth' }); }, CTA_SCROLL_DELAY_MS);
+  }
+
+  function ctaScroll(target) {
+    if (!target || !SCROLL_TARGET_RE.test(target)) return;
+    scrollLater(document.querySelector(target));   // regex: tylko #id, bezpieczny selektor
+  }
+
+  // „N pokoi” w wyszukiwarce 2destate jak prefer_filters by:rooms, ale to klik gościa,
+  // więc bez source:'api' (liczy się jak jego filtr). Potem lista wyników.
+  function ctaFilterRooms() {
+    var rooms = prefOf('rooms');
+    var api = mapApi();
+    if (rooms == null || !api || typeof api.setFilters !== 'function') return;
+    try {
+      mapNames().forEach(function (m) { api.setFilters(m, { rooms: [rooms] }); });
+    } catch (e) { _warn('filter_rooms failed', e); }
+    scrollLater(document.querySelector('[data-imp-detached-menu]'));
+  }
+
   function wireCta(root, name, unit, cta) {
     var links = root.querySelectorAll('[d2-ma-cta], [data-d2-ma-cta]');
     for (var i = 0; i < links.length; i++) {
@@ -2510,10 +2566,20 @@
       a._d2maBound = true;
       a.addEventListener('click', function (e) {
         var u = this._d2maUnit;
+        var own = this.getAttribute ? this.getAttribute('d2-ma-template-cta') : null;
         // Przycisk „kontakt" z szablonu nie ma własnego adresu - bez skoku na „#".
-        if (this.getAttribute && this.getAttribute('d2-ma-template-cta') === 'contact' && e && e.preventDefault) e.preventDefault();
+        if (own === 'contact' && e && e.preventDefault) e.preventDefault();
         var inst = window.digi2.popups && window.digi2.popups.get && window.digi2.popups.get(name);
-        if (this._d2maCta === 'open_unit' && u && u.source === '2destate' && mapObjectFor(u.unitId)) {
+        // ma.37: przycisk szablonu ma własną akcję (do 2 w jednym popupie).
+        if (own) ctaClicked(String(name).replace(/^d2-ma-/, ''), own);
+        if (own === 'filter_rooms' || own === 'scroll_to' || own === 'close') {
+          if (e && e.preventDefault) e.preventDefault();
+          if (inst) inst.hide();
+          if (own === 'filter_rooms') ctaFilterRooms();
+          if (own === 'scroll_to') ctaScroll(this.getAttribute('d2-ma-template-target'));
+          return;
+        }
+        if ((own || this._d2maCta) === 'open_unit' && u && u.source === '2destate' && mapObjectFor(u.unitId)) {
           e.preventDefault();
           if (inst) inst.hide();
           openOnMap(u.unitId);
