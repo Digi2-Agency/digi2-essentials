@@ -283,7 +283,7 @@ function strona(opts) {
     if (url.indexOf('/public/ma/') >= 0) {
       sygnaly.push({ url, body: JSON.parse(init.body), init });
       const st = (o.statusSygnalu && o.statusSygnalu(url)) || (url.indexOf('/revoke') >= 0 ? 204 : 202);
-      if (st === 0) return Promise.reject(new Error('offline: ' + url));
+      if (st === -1) return Promise.reject(new Error('offline: ' + url));
       return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
     }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
@@ -4141,7 +4141,7 @@ test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane l
   assert.ok(!q._dysk.state || !q._dysk.state.beh, 'w trakcie strony');
 });
 
-for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', 0]]) {
+for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {
   test('ma.34: stan nieprzyjęty (' + nazwa + ') jedzie ponownie przy następnej próbie', async () => {
     let st = 202;
     const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
