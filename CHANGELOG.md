@@ -34,6 +34,9 @@ Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
 - Przez 5 s po kliku przycisku popupu scenariusze nie otwierają kolejnego popupu
   (pominięty nie zużywa częstotliwości) — `filter_rooms` jako filtr gościa nie
   wywoła od razu popupu z wyzwalacza `search_filter`.
+- `contact` w popupie z szablonu panelu zamyka popup i przewija do formularza:
+  pierwszy `[d2-ma-contact]`, a bez niego `#kontakt`; bez żadnego tylko zamyka.
+  Wbudowane popupy i własny `[d2-ma-popup]` strony bez zmian.
 - Klik przycisku z szablonu (i wbudowanego przycisku `promo-filter`): `dataLayer`
   `ma_popup_cta` `{ action }` i `ma:action` `{ do: "popup_cta", action, template }`.
 - Strona z własnym `[d2-ma-popup]` bez zmian.

@@ -1405,8 +1405,11 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       skipped and gives its frequency back): with ImageMapPro ≥ 1.7.1
       `filter_rooms` is the visitor's filter, and a `search_filter` scenario
       would otherwise open another popup 500 ms after this one closed.
-    - `contact` only closes the popup (no address, no scroll); a page that
-      wants a form opens it in its own click handler.
+    - `contact` closes the popup and scrolls to the contact form: the first
+      `[d2-ma-contact]` (alias `data-d2-ma-contact`), else `#kontakt`; with
+      neither it only closes. Only in a popup built from a panel template —
+      the built-in popups and a page's own `[d2-ma-popup]` keep closing only
+      (their page handles the form itself, e.g. the demo footer script).
     - Each button takes its action from its own block: `open_unit` gets the
       unit's address, `link` keeps its `href`, in any order.
     - Scrolling waits 450 ms: the popup gives back the page scroll as it
