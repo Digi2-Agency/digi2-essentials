@@ -3464,8 +3464,9 @@
   var BEH_MAX_TIME_S = 14400;
   var BEH_MAX_DWELL_S = 3600;
   var BEH_EXIT_TIME_S = 30;        // sam czas: wysyłka przy wyjściu, gdy urósł o tyle
-  var BEH_ONCE = { list_view: 1, map_view: 1 };
-  var BEH_CLICK = { card_download: 1, price_history_view: 1 };
+  var BEH_EXIT_MIN_MS = 60 * 1000; // serwer ma 60 żądań na godzinę, a wyjście omija 5 minut
+  var BEH_ONCE = ['list_view', 'map_view'];
+  var BEH_CLICK = ['card_download', 'price_history_view'];
   var BEH_SEL = '[d2-ma-event], [data-d2-ma-event], [d2-ma-dwell], [data-d2-ma-dwell]';
   var behTimer = null;
   var behLast = 0;
@@ -3474,7 +3475,11 @@
   var behHooked = false;
 
   function behOn() {
-    return hotLeadOn() && tracking && state && state.hotLead && state.visits > state.hotLead.visit;
+    if (!hotLeadOn() || !tracking || !state || !state.hotLead || state.visits <= state.hotLead.visit) return false;
+    // Tracking bywa otwarty bez zgody (consentRequired:false) - tu zgoda jest zawsze warunkiem.
+    if (!hasConsent()) return false;
+    // Wstrzymany albo wyciszony sygnał: nie ma czym tego wysłać.
+    return state.hotLeadMuteVisit !== state.visits && !(state.hotLeadRetryAt && Date.now() < state.hotLeadRetryAt);
   }
 
   function behState() {
@@ -3495,7 +3500,7 @@
   function behCount(key, unitId) {
     var ev = behState().ev;
     var e = ev[key] || (ev[key] = { n: 0 });
-    if (BEH_ONCE[key]) {
+    if (BEH_ONCE.indexOf(key) >= 0) {
       if (e.n) return false;
       e.n = 1;
       return true;
@@ -3526,7 +3531,7 @@
       var seconds = opts ? Number(opts.seconds) : 0;
       if (!unitId || !(seconds > 0)) return false;
       behDwell(unitId, seconds * 1000);
-    } else if (!BEH_ONCE[key] && !BEH_CLICK[key]) {
+    } else if (BEH_ONCE.indexOf(key) < 0 && BEH_CLICK.indexOf(key) < 0) {
       return false;
     } else if (!behCount(key, unitId)) {
       return true;
@@ -3558,45 +3563,54 @@
     return Math.min(Math.floor(ms / 1000), BEH_MAX_TIME_S);
   }
 
+  // Widoczna powierzchnia elementu; 0, gdy gość go praktycznie nie widzi.
   function behInView(el) {
-    if (typeof el.getBoundingClientRect !== 'function') return false;
+    if (typeof el.getBoundingClientRect !== 'function') return 0;
     var r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return 0;
+    if (typeof window.getComputedStyle === 'function') {
+      var cs = window.getComputedStyle(el);
+      if (cs && (cs.visibility === 'hidden' || cs.opacity === '0')) return 0;
+    }
     var h = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 0;
     var w = window.innerWidth || (document.documentElement && document.documentElement.clientWidth) || 0;
-    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < h && r.left < w;
+    var area = Math.max(0, Math.min(r.bottom, h) - Math.max(r.top, 0)) * Math.max(0, Math.min(r.right, w) - Math.max(r.left, 0));
+    // Co najmniej połowa elementu albo połowa ekranu (rzut wyższy niż ekran).
+    return area >= Math.min(r.width * r.height, w * h) / 2 ? area : 0;
   }
 
   // Elementy czytane w każdym ticku, bo lista i mapa dochodzą po starcie strony.
   function behScan(ms) {
     if (!document.querySelectorAll) return false;
     var added = false;
+    var bestUnit = null;
+    var bestArea = 0;
     var els = document.querySelectorAll(BEH_SEL);
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
-      var seen = behInView(el);
+      var area = behInView(el);
       var key = behAttr(el, 'd2-ma-event');
-      if (key && BEH_ONCE[key]) {
-        if (seen && el._d2maSeen && behCount(key)) added = true;
-        el._d2maSeen = seen;
+      if (BEH_ONCE.indexOf(key) >= 0) {
+        if (area && el._d2maSeen && behCount(key)) added = true;
+        el._d2maSeen = area > 0;
       }
       var unitId = behUnit(behAttr(el, 'd2-ma-unit'));
-      if (seen && unitId && behAttr(el, 'd2-ma-dwell') != null) {
-        var before = behDwellS(unitId);
-        behDwell(unitId, ms);
-        if (behDwellS(unitId) !== before) added = true;
+      if (area > bestArea && unitId && behAttr(el, 'd2-ma-dwell') != null) {
+        bestArea = area;
+        bestUnit = unitId;
       }
     }
+    // Kilka kart naraz: sekunda idzie tylko na największą, czas nie mnoży się.
+    if (bestUnit) behDwell(bestUnit, ms);
     return added;
-  }
-
-  function behDwellS(unitId) {
-    var e = behState().ev.plan_dwell;
-    return e && e.ms[unitId] ? Math.floor(e.ms[unitId] / 1000) : 0;
   }
 
   function behTick() {
     behTimer = null;
-    if (!behOn()) return;
+    if (!behOn()) {
+      if (state && state.beh && !hasConsent()) { delete state.beh; save(); }
+      return;
+    }
     var t = Date.now();
     var ms = Math.min(t - behLast, 2 * BEH_TICK_MS);
     behLast = t;
@@ -3605,8 +3619,8 @@
     var b = behState();
     b.activeMs = Math.min(b.activeMs + ms, BEH_MAX_TIME_S * 1000);
     var added = behScan(ms);
-    if (++behTicks % 15 === 0 || added) save();
-    if (added) sendVisitSignal();
+    // Czas i dwell zmieniają się co sekundę, więc zapis i próba wysyłki co 15 ticków.
+    if (added || ++behTicks % 15 === 0) { save(); sendVisitSignal(); }
   }
 
   function behExit() {
@@ -3626,7 +3640,7 @@
         var el = e.target && typeof e.target.closest === 'function' ? e.target.closest('[d2-ma-event], [data-d2-ma-event]') : null;
         if (!el) return;
         var key = behAttr(el, 'd2-ma-event');
-        if (BEH_CLICK[key]) behEvent(key, { unitId: behAttr(el, 'd2-ma-unit') });
+        if (BEH_CLICK.indexOf(key) >= 0) behEvent(key, { unitId: behAttr(el, 'd2-ma-unit') });
       }, true);
       document.addEventListener('visibilitychange', function () {
         if (document.visibilityState === 'hidden') behExit();
@@ -3644,19 +3658,22 @@
   function sendVisitSignal(exit) {
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
-    behStart();
+    if (consentState() === 'denied') return;            // jawna odmowa także przy consentRequired:false
+    if (hasConsent()) behStart();
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
     if (state.hotLeadMuteVisit === state.visits) return;
     var units = viewedThisVisit();
     var sent = state.hotLeadSent;
-    var events = behEvents();
+    var withBeh = hasConsent();
+    var events = withBeh ? behEvents() : null;
     var evSig = JSON.stringify(events || {});
-    var timeS = behTimeS();
+    var timeS = withBeh ? behTimeS() : 0;
     if (sent && sent.visit === state.visits) {
       var fresh = evSig !== (sent.ev || '{}') || units.some(function (u) { return sent.units.indexOf(u) < 0; });
       // Sam czas nie budzi serwera co 5 minut - jedzie przy wyjściu albo z przyrostem.
       if (!fresh && !(exit && timeS - (sent.time || 0) >= BEH_EXIT_TIME_S)) return;
+      if (exit && nowReal - sent.at < BEH_EXIT_MIN_MS) return;
       var wait = exit ? 0 : VISIT_RESEND_MS - (nowReal - sent.at);
       if (wait > 0) {
         if (!hotLeadTimer) hotLeadTimer = setTimeout(function () { hotLeadTimer = null; sendVisitSignal(); }, wait + 50);
@@ -3664,7 +3681,12 @@
       }
     }
     var id = state.visitorId;
-    state.hotLeadSent = { visit: state.visits, units: units, at: nowReal, ev: evSig, time: timeS };
+    var mark = { visit: state.visits, units: units, at: nowReal, ev: evSig, time: timeS };
+    state.hotLeadSent = mark;
+    // Nieprzyjęty stan (sieć, 429, 503) nie liczy się jako wysłany - pojedzie ponownie.
+    var unmark = function () {
+      if (state && state.visitorId === id && state.hotLeadSent === mark) { delete mark.ev; delete mark.time; save(); }
+    };
     save();
     var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
       source: 'return_visit' };
@@ -3701,10 +3723,11 @@
           if (same) { state.hotLeadMuteVisit = state.visits; save(); }
         } else if (r.status === 429 || r.status === 503) {
           if (same) { state.hotLeadRetryAt = retryAfter(r, 3600); save(); }
+          unmark();
         } else {
           _warn('visit signal answered ' + r.status);
         }
-      }, function (e) { _log('visit signal failed', e); });
+      }, function (e) { unmark(); _log('visit signal failed', e); });
     } catch (e) {
       _log('visit signal failed', e);
     }

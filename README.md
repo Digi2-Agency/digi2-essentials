@@ -1582,8 +1582,9 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   were viewed and at most every 5 minutes. Never in the form's visit. No form
   data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
 - **Behaviour events (ma.34):** every `/visit` also carries `visitNo`
-  (`state.visits`) and `time_on_site_s` (0–14400, this visit, tab visible and
-  activity in the last 5 minutes), plus `events` when anything happened:
+  (`state.visits`) and `time_on_site_s` (0–14400, **active** time of this visit:
+  tab visible and activity in the last 5 minutes, so it understates a visitor who
+  reads without moving), plus `events` when anything happened:
   `{ list_view: {n}, map_view: {n}, price_history_view: {n, units?},
   card_download: {n, units?}, plan_dwell: {n, units, dwell_s: {id: s}} }`. `n` is
   capped at 50, lists at the 20 newest UUIDs, `dwell_s` at 3600. Each send is the
@@ -1593,10 +1594,15 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   1 s, once per visit; a click on `[d2-ma-event="card_download|price_history_view"]`
   with `d2-ma-unit="<uuid>"`; time in view of `[d2-ma-dwell][d2-ma-unit]`; a
   visitor's filter change (`list_view`); `digi2.ma.event(key, { unitId, seconds })`
-  from a widget. Counted only for a linked lead on a return visit, with consent,
-  because `/visit` is the only sender; behaviour before the lead doesn't reach the
+  from a widget. In view means at least half of the element or half of the screen;
+  with several `d2-ma-dwell` elements in view the second goes to the largest.
+  Counted only for a linked lead on a return visit, with granted consent, also
+  when the envelope says `consentRequired: false`, and not while the signal is
+  paused or muted (403, 404, 422, 429, 503), because `/visit` is the only sender; behaviour before the lead doesn't reach the
   server. New events follow the 5-minute limit and leave at once when the tab is
-  hidden or the page closes; time alone leaves only then, after growing by 30 s.
+  hidden or the page closes, at least 60 s after the last send; time alone leaves
+  only then, after growing by 30 s. A state the server didn't take (network, 429,
+  503) goes again. An explicit refusal stops the whole `/visit` signal.
   **Deploy the server first:** without the new fields it answers 422 and the
   module mutes the visit. An old visit's unsent last counters are dropped.
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link

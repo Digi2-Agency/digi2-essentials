@@ -4073,8 +4073,8 @@ function oznaczony(attrs, widoczny) {
 
 /** Powrót leada; elementy strony podane w opts.elementy. */
 async function powrotLeada(opts) {
-  const p1 = await leadDema();
-  return powrot(p1, 26 * H, opts);
+  const p1 = await leadDema({ dataLayer: zgodaTak() });
+  return powrot(p1, 26 * H, Object.assign({ dataLayer: zgodaTak() }, opts || {}));
 }
 
 /** Czas płynie sekunda po sekundzie, żeby ticki odpaliły się jak w przeglądarce. */
@@ -4092,6 +4092,76 @@ test('ma.34: każdy POST /visit ma visitNo i time_on_site_s, a pusty stan nie wy
   assert.ok(!('events' in b));
 });
 
+test('ma.34: consentRequired:false i jawna odmowa — zero /visit i liczników', async () => {
+  const odmowa = () => [gtag('consent', 'update', { analytics_storage: 'denied' })];
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { dataLayer: odmowa() });
+  assert.equal(p.ma.event('map_view'), false);
+  await sekundy(p, 20);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+  assert.ok(!p._dysk.state || !p._dysk.state.beh);
+});
+
+test('ma.34: consentRequired:false bez decyzji — sygnał powrotu jak dotąd, ale bez zdarzeń i czasu', async () => {
+  const mapa = oznaczony({ 'd2-ma-event': 'map_view' });
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { elementy: [mapa] });
+  assert.equal(p.ma.event('card_download'), false);
+  await sekundy(p, 40);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1);
+  assert.equal(p.sygnaly[0].body.time_on_site_s, 0);
+  assert.ok(!('events' in p.sygnaly[0].body));
+  assert.ok(!p._dysk.state.beh);
+});
+
+test('ma.34: klucze spoza listy, także __proto__, odpadają i nic nie zanieczyszczają', async () => {
+  const p = await powrotLeada();
+  for (const k of ['__proto__', 'constructor', 'toString']) assert.equal(p.ma.event(k), false);
+  assert.equal(({}).n, undefined);
+});
+
+test('ma.34: widoczny d2-ma-dwell nie wysyła ani nie zapisuje co sekundę', async () => {
+  const rzut = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(3) });
+  const p = await powrotLeada({ elementy: [rzut] });
+  await sekundy(p, 120);
+  assert.equal(p.sygnaly.length, 1, 'w ciągu 2 min tylko pierwszy sygnał');
+  await sekundy(p, 200);
+  assert.equal(p.sygnaly.length, 2, 'po 5 min przyrost dwell');
+});
+
+test('ma.34: przy kilku d2-ma-dwell w widoku sekunda idzie na największy; 1 px widoczności się nie liczy', async () => {
+  const duzy = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(1) });
+  const maly = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(2) });
+  maly._rect = { width: 50, height: 50, top: 10, bottom: 60, left: 10, right: 60 };
+  const skrawek = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(4) });
+  skrawek._rect = { width: 500, height: 500, top: 999, bottom: 1499, left: 0, right: 500 };
+  const p = await powrotLeada({ elementy: [maly, duzy, skrawek] });
+  await sekundy(p, 310);
+  assert.deepEqual([...ostatni(p).events.plan_dwell.units], [UID(1)]);
+});
+
+test('ma.34: stan nieprzyjęty (429) jedzie ponownie po Retry-After, po 422 liczniki stają', async () => {
+  let st = 429;
+  const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p.gotowe();
+  assert.equal(p.ma.event('map_view'), false, 'wstrzymane');
+  st = 202;
+  await p.minie(3600 * 1000 + 1000);
+  p.ma.event('card_download', { unitId: UID(1) });
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(ostatni(p).events.card_download.n, 1);
+  st = 422;
+  const q = await powrot(p, 26 * H, { dataLayer: zgodaTak() });
+  await q.gotowe();
+  assert.equal(q.ma.event('map_view'), false, 'wyciszone do końca wizyty');
+});
+
 test('ma.34: bez powiązanego leada nic się nie liczy ani nie wysyła', async () => {
   const env = await start({ koperta: koperta([]), cfg: HOT });
   assert.equal(env.ma.event('map_view'), false);
@@ -4101,7 +4171,7 @@ test('ma.34: bez powiązanego leada nic się nie liczy ani nie wysyła', async (
 });
 
 test('ma.34: w wizycie formularza zdarzenie się nie liczy', async () => {
-  const p1 = await leadDema();
+  const p1 = await leadDema({ dataLayer: zgodaTak() });
   assert.equal(p1.ma.event('card_download', { unitId: UID(1) }), false);
   await p1.gotowe();
   assert.equal(p1.sygnaly.length, 0);
@@ -4172,13 +4242,13 @@ test('ma.34: klik w oznaczony element liczy zdarzenie z lokalem', async () => {
 
 test('ma.34: czas liczy się tylko przy widocznej karcie i bez bezczynności ponad 5 min', async () => {
   const p = await powrotLeada();
-  await sekundy(p, 40);
+  await sekundy(p, 70);
   p.document.visibilityState = 'hidden';
   p.dom('visibilitychange');
   await p.gotowe();
-  assert.equal(p.sygnaly.length, 2, 'ukrycie karty po 40 s wysyła stan');
-  const po40 = ostatni(p).time_on_site_s;
-  assert.ok(po40 >= 39 && po40 <= 41, String(po40));
+  assert.equal(p.sygnaly.length, 2, 'ukrycie karty po 70 s wysyła stan');
+  const po70 = ostatni(p).time_on_site_s;
+  assert.ok(po70 >= 69 && po70 <= 71, String(po70));
   await sekundy(p, 20);
   p.document.visibilityState = 'visible';
   await sekundy(p, 400);
@@ -4209,6 +4279,10 @@ test('ma.34: pagehide wysyła świeże zdarzenie bez czekania 5 minut', async ()
   assert.equal(p.sygnaly.length, 1);
   p.okno('pagehide');
   await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'mniej niż 60 s od ostatniej wysyłki');
+  await p.minie(61000);
+  p.okno('pagehide');
+  await p.gotowe();
   assert.equal(p.sygnaly.length, 2);
   assert.equal(ostatni(p).events.card_download.n, 1);
   assert.equal(p.sygnaly[1].init.keepalive, true);
@@ -4219,13 +4293,14 @@ test('ma.34: nowa wizyta zaczyna liczniki od zera, kolejna odsłona tej samej je
   const nr = p.ma.profile().visits;
   p.ma.event('card_download', { unitId: UID(1) });
   await p.gotowe();
-  const ta = await powrot(p, 3 * MIN);
+  const ta = await powrot(p, 3 * MIN, { dataLayer: zgodaTak() });
   ta.ma.event('card_download', { unitId: UID(2) });
+  await ta.minie(61000);
   ta.okno('pagehide');
   await ta.gotowe();
   assert.equal(ostatni(ta).visitNo, nr);
   assert.equal(ostatni(ta).events.card_download.n, 2, 'stan całej wizyty, nie przyrost');
-  const nowa = await powrot(ta, 26 * H);
+  const nowa = await powrot(ta, 26 * H, { dataLayer: zgodaTak() });
   assert.equal(ostatni(nowa).visitNo, nr + 1);
   assert.ok(!('events' in ostatni(nowa)));
 });
@@ -4243,8 +4318,8 @@ test('ma.34: po clear() zdarzenia się nie liczą i liczniki znikają', async ()
 });
 
 test('ma.34: 401 zrywa powiązanie i kasuje liczniki', async () => {
-  const p1 = await leadDema({ statusSygnalu: () => 401 });
-  const p = await powrot(p1, 26 * H);
+  const p1 = await leadDema({ statusSygnalu: () => 401, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
   await p.gotowe();
   assert.ok(!p._dysk.state.hotLead);
   assert.ok(!p._dysk.state.beh);

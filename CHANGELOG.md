@@ -34,10 +34,14 @@ na umowę.
   tylko dla `plan_dwell`. Zwraca `false`, gdy zdarzenie nie zostało przyjęte.
 - `list_view` liczy też zmiana filtra przez gościa w wyszukiwarce 2destate.
 - `time_on_site_s` liczy sekundy tej wizyty przy widocznej karcie i aktywności w
-  ostatnich 5 minutach.
+  ostatnich 5 minutach. To czas aktywny, więc gość czytający bez ruchu wypada niżej.
+- W widoku znaczy: co najmniej połowa elementu albo połowa ekranu. Przy kilku
+  `d2-ma-dwell` naraz sekunda idzie na największy.
+- **Zmiana zachowania:** jawna odmowa zgody zatrzymuje cały sygnał `/visit`, także
+  przy `consentRequired: false`. Zdarzenia i czas wymagają udzielonej zgody.
 - Każda wysyłka to stan całej wizyty, nie przyrost. Nowe zdarzenia idą najwyżej co
-  5 minut oraz od razu przy ukryciu karty i wyjściu ze strony. Sam czas jedzie
-  tylko przy wyjściu, gdy urósł o co najmniej 30 s.
+  5 minut oraz przy ukryciu karty i wyjściu ze strony, co najmniej 60 s po ostatniej
+  wysyłce. Sam czas jedzie tylko przy wyjściu, gdy urósł o co najmniej 30 s.
 - Do zrobienia na stronie: oznaczyć elementy, inaczej działa tylko `list_view` z
   wyszukiwarki i czas. Strona bez `d2-ma-hot-lead` działa jak dotąd.
 
