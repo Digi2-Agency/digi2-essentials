@@ -16,6 +16,25 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.36 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.35–ma.16)
+
+Token prawdziwego leada (`ma_token` z 2destate). Tylko strona z `d2-ma-hot-lead`;
+na razie wyłącznie Osiedle Demo (Piotr, 2.11.2026, akceptacja w czacie 2destate).
+
+- Nowe API `digi2.ma.leadToken(token)` i zdarzenie `window`
+  `CustomEvent('d2:lead-token', { detail: { token } })`. Skrypt formularza, który
+  sam wysyła zgłoszenie do 2destate (`/webhooks/s/{slug}`), przekazuje tak
+  `ma_token` z odpowiedzi. Nigdy przez `dataLayer`.
+- Token jest przyjmowany tylko za zgodą (także przy `consentRequired: false`).
+  Bez zgody, wygasły, z innego originu niż strona albo w złym formacie: `false`
+  i nic nie trafia do magazynu.
+- Powrót leada wysyła `/visit` z `{ token }` zamiast `{ visitorId }` (nigdy
+  oba). 401 i 403 usuwają token i powiązanie, bez ponawiania.
+- „Wyczyść”, odmowa i wycofanie zgody wysyłają `/revoke { token }`; gdy formularz
+  dostał też `visitorId`, idzie drugi `/revoke { visitorId }`.
+- Pole `d2-ma-visitor-id` działa dalej (leady testowe agencji); 2destate nie wiąże
+  po nim prawdziwego leada.
+
 ## v1.9.0-ma.35 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.34–ma.16)
 
 `visitorId` dla 2destate tylko za zgodą, także przy `consentRequired: false`

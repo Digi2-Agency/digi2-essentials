@@ -172,6 +172,8 @@
  *   digi2.ma.lead()               Mark the visitor as a lead
  *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
  *                                 (ma.35: also with consentRequired:false; refusal → /revoke, link ends)
+ *   digi2.ma.leadToken(token)     ma.36, d2-ma-hot-lead: ma_token of a real 2destate lead (or window
+ *                                 event d2:lead-token); with consent only; /visit then sends { token }
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
  *   digi2.ma.event(key, opts)     ma.34, d2-ma-hot-lead: behaviour event of a returning lead (see below)
@@ -241,7 +243,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 35;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 36;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3433,7 +3435,7 @@
   // ma.35: jawna odmowa przy consentRequired:false - baza zostaje, ale oddany
   // visitorId nie: /revoke w 2destate i koniec powiązania. Nieznana zgoda czeka.
   function idForget() {
-    if (!state || consentState() !== 'denied' || (state.idShared == null && !state.hotLead)) return;
+    if (!state || consentState() !== 'denied' || (state.idShared == null && !state.hotLead && !state.leadToken)) return;
     revokeHotLead();
     dropHotLead();
     delete state.idShared;
@@ -3444,10 +3446,57 @@
   function dropHotLead() {
     if (!state) return;
     delete state.hotLead;
+    delete state.leadToken;
     delete state.hotLeadSent;
     delete state.hotLeadRetryAt;
     delete state.beh;
     if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
+  }
+
+  // ---- ma.36: podpisany token prawdziwego leada (ma_token, 2destate) ----------
+  // Zgłoszenie z przeglądarki do /webhooks/s/{slug} oddaje ma_token; skrypt
+  // formularza woła digi2.ma.leadToken(t) albo wysyła window
+  // CustomEvent('d2:lead-token', { detail: { token } }) - nigdy dataLayer.
+  // Token jest nieprzezroczysty: czytamy tylko exp i site. Bez zgody (także
+  // nieznanej i przy consentRequired:false) odrzucony od razu, bez zapisu.
+  // Prawdziwy lead nie jest wiązany po visitorId - powroty niosą { token }.
+  var LEAD_TOKEN_MAX = 2048;
+
+  function tokenPayload(t) {
+    if (typeof t !== 'string' || t.length > LEAD_TOKEN_MAX || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t)) return null;
+    try {
+      var b = t.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+      while (b.length % 4) b += '=';
+      var p = JSON.parse(window.atob(b));
+      return p && typeof p === 'object' && typeof p.exp === 'number' && typeof p.site === 'string' ? p : null;
+    } catch (e) { return null; }
+  }
+
+  function tokenExpired(lt) {
+    return !lt || !(lt.exp * 1000 > Date.now());
+  }
+
+  function acceptLeadToken(t) {
+    var p = tokenPayload(t);
+    if (!p) { _warn('lead token ignored — not a 2destate ma_token'); return false; }
+    if (!hotLeadOn() || !tracking || !state || !hasConsent()) { _log('lead token dropped — no consent or no d2-ma-hot-lead'); return false; }
+    if (tokenExpired(p)) { _log('lead token dropped — expired'); return false; }
+    var here = window.location && window.location.origin;
+    if (p.site !== here) { _warn('lead token for another site ignored'); return false; }
+    // Lead tej wizyty: powiązanie od nowa, poprzednie (visitorId) ustępuje tokenowi.
+    dropHotLead();
+    state.leadToken = { t: t, exp: p.exp };
+    state.hotLead = { visit: state.visits, at: Date.now(), token: true };
+    save();
+    _log('lead token stored — return visits signal 2destate with the token');
+    return true;
+  }
+
+  var leadTokenHooked = false;
+  function hookLeadToken() {
+    if (leadTokenHooked || !hotLeadOn() || !window.addEventListener) return;
+    leadTokenHooked = true;
+    window.addEventListener('d2:lead-token', function (e) { acceptLeadToken(e && e.detail && e.detail.token); });
   }
 
   function viewedThisVisit() {
@@ -3681,6 +3730,7 @@
   function sendVisitSignal(exit) {
     if (hotLeadOn() && tracking && !consentRequired(envelope)) idForget();   // ma.35: odmowa sprzed tej odsłony
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
+    if (state.leadToken && tokenExpired(state.leadToken)) { dropHotLead(); save(); return; }   // ma.36
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
     // Decyzja Piotra 2.11.2026: sygnał tylko za zgodą, także przy consentRequired:false.
     if (!hasConsent()) { behForget(); return; }
@@ -3705,6 +3755,7 @@
       }
     }
     var id = state.visitorId;
+    var tok = state.leadToken ? state.leadToken.t : null;
     var mark = { visit: state.visits, units: units, at: nowReal, ev: evSig, time: timeS };
     state.hotLeadSent = mark;
     // Nieprzyjęty stan (sieć, 429, 503) nie liczy się jako wysłany - pojedzie ponownie.
@@ -3712,8 +3763,10 @@
       if (state && state.visitorId === id && state.hotLeadSent === mark) { delete mark.ev; delete mark.time; save(); }
     };
     save();
-    var body = { visitorId: id, pageviews: Math.min(Math.max(state.visitPageviews || 1, 1), 50),
-      source: 'return_visit' };
+    // ma.36: dokładnie jedno z token / visitorId (oba naraz = 422).
+    var body = tok ? { token: tok } : { visitorId: id };
+    body.pageviews = Math.min(Math.max(state.visitPageviews || 1, 1), 50);
+    body.source = 'return_visit';
     // ma.24: units zawsze, także [] — serwer 2destate #189 wymaga pola (bez niego 422 i wyciszona wizyta).
     body.units = units;
     // ma.34: stan całej wizyty, serwer łączy po (visitorId, visitNo).
@@ -3728,8 +3781,12 @@
         credentials: 'omit', mode: 'cors', keepalive: true
       }).then(function (r) {
         if (!r || r.ok) return;
-        var same = state && state.visitorId === id;
-        if (r.status === 401) {
+        var same = state && state.visitorId === id && (state.leadToken ? state.leadToken.t : null) === tok;
+        if (tok && (r.status === 401 || r.status === 403)) {
+          // ma.36: token nieznany, wygasły albo z innego originu - usuwamy, bez ponawiania.
+          _log('visit signal refused (' + r.status + ') — lead token dropped');
+          if (same) { dropHotLead(); save(); }
+        } else if (r.status === 401) {
           // Nieznany, odwołany albo wygasły visitorId - powiązania już nie ma.
           _log('visit signal refused (401) — hot lead unbound');
           if (same) { dropHotLead(); save(); }
@@ -3755,23 +3812,29 @@
     } catch (e) {
       _log('visit signal failed', e);
     }
-    _log('visit signal → 2destate', body);
+    _log('visit signal → 2destate', tok ? Object.assign({}, body, { token: '…' }) : body);
   }
 
   // „Wyczyść" i wycofanie zgody: najpierw /revoke w 2destate, potem lokalnie
   // (bez czekania na odpowiedź). Wystarczy oddany visitorId - 2destate wiąże
   // lead po samym d2ma_visitor_id, także gdy strona nie zobaczyła leada;
   // /revoke odpowiada 204 i dla nieznanego id, więc nic nie zdradza.
+  // ma.36: token prawdziwego leada ma własny /revoke { token } (także wygasły -
+  // serwer i tak kasuje historię); oddany visitorId - osobny /revoke { visitorId }.
   function revokeHotLead(st) {
     st = st || state;
-    if (!st || (st.idShared == null && !st.hotLead) || !st.visitorId) return;
-    if (!hotLeadOn() || typeof fetch !== 'function' || !hotLeadApi()) return;
+    if (!st || !hotLeadOn() || typeof fetch !== 'function' || !hotLeadApi()) return;
+    if (st.leadToken && typeof st.leadToken.t === 'string') revokePost({ token: st.leadToken.t });
+    if (st.visitorId && (st.idShared != null || (st.hotLead && !st.hotLead.token))) revokePost({ visitorId: st.visitorId });
+  }
+
+  function revokePost(body) {
     try {
       var rbase = hotLeadApi();
       if (!rbase) return;
       fetch(rbase + '/public/ma/revoke', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorId: st.visitorId }),
+        body: JSON.stringify(body),
         credentials: 'omit', mode: 'cors', keepalive: true
       }).then(null, function (e) { _log('revoke failed', e); });
     } catch (e) { _log('revoke failed', e); }
@@ -4763,6 +4826,7 @@
     bindUi();
     deepLinkView();
     hookVisitorIdFields();
+    hookLeadToken();
     pageUtm = readUtm();
     pageTouch = readTouchpoint();
     var startUrl = window.digi2._maEndpoint || _cfg('d2-ma') || null;
@@ -4860,6 +4924,8 @@
     // visitorId dla zgłoszenia do 2destate (d2-ma-hot-lead). null bez zgody,
     // bez d2-ma-hot-lead albo przed otwarciem magazynu.
     visitorId: function () { return shareVisitorId(); },
+    // ma.36: ma_token z odpowiedzi zgłoszenia 2destate; false = odrzucony (brak zgody, format, exp, site).
+    leadToken: function (t) { return acceptLeadToken(t); },
     profile: function () {
       if (!state) return null;
       return {

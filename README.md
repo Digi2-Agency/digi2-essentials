@@ -1572,6 +1572,23 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   ma.35 also with `consentRequired: false` (consent not known yet counts as no
   consent; until ma.34 the id went out there without consent). The module
   never submits or blocks the form.
+- **Real lead token (ma.36):** a form script that posts the inquiry to 2destate
+  itself (`/webhooks/s/{slug}` from the browser) gets `ma_token` in the
+  response and hands it over with `digi2.ma.leadToken(token)` or a `window`
+  `CustomEvent('d2:lead-token', { detail: { token } })` — never `dataLayer`
+  (the token would reach GTM and third-party tags). The token is opaque; the
+  module reads only `exp` and `site` from its payload. It is kept only with
+  consent (also with `consentRequired: false`; consent not known yet = no):
+  without it, expired, `site` ≠ `location.origin` or not `payload.signature`
+  in base64url (≤ 2048 chars) → `false` and nothing is stored. An accepted
+  token links the browser in this visit (replacing a `visitorId` link), and
+  return visits send `/visit` with `{ token }` instead of `{ visitorId }` —
+  never both (the server answers 422). 401 or 403 drops the token and the
+  link, no retry; a token past `exp` is dropped before sending. "Clear",
+  refusal and withdrawal send `/revoke { token }`, plus `/revoke { visitorId }`
+  when the id also went to a form. The token never shows in `profile()`, and
+  the console log masks it. 2destate never links a real lead on
+  `d2ma_visitor_id` alone, so the field can stay on the form.
 - **Refusal after the id went out (ma.35, `consentRequired: false`):** the
   database stays, but the link does not: `/revoke {visitorId}` and the local
   link (`idShared`, `hotLead`) goes, also when the refusal came between visits
