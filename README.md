@@ -1568,8 +1568,16 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   `visitorId` with the form, field `d2ma_visitor_id`. The page takes it from
   `digi2.ma.visitorId()` or from a hidden `input[d2-ma-visitor-id]`, which the
   module fills on `submit` in the capture phase (before the page's handler).
-  Without consent, or without the attribute, it is `null` / empty. The module
+  Without consent, or without the attribute, it is `null` / empty — since
+  ma.35 also with `consentRequired: false` (consent not known yet counts as no
+  consent; until ma.34 the id went out there without consent). The module
   never submits or blocks the form.
+- **Refusal after the id went out (ma.35, `consentRequired: false`):** the
+  database stays, but the link does not: `/revoke {visitorId}` and the local
+  link (`idShared`, `hotLead`) goes, also when the refusal came between visits
+  (caught on the next page view). Consent given later does not bring it back;
+  only a new form with a lead does. With `consentRequired: true` the refusal
+  deletes the whole database with `/revoke`, as before.
 - **MA-D30:** the browser is linked only when, **in the same visit**, the id
   was handed out *and* a lead was recorded (`generate_lead`, the 3D Estate
   inquiry, `digi2.ma.lead()`), in either order. A failed submit with no lead
