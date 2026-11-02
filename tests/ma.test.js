@@ -3714,12 +3714,13 @@ test('MA-D38 D′: ukryte pole i digi2.ma.visitorId() dostają visitorId tylko z
 });
 
 test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic nie wychodzi (MA-D30)', async () => {
-  const samLead = await start({ koperta: koperta([]), cfg: HOT });
+  // Zgoda jest, więc o braku sygnału decyduje powiązanie, nie bramka zgody.
+  const samLead = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   samLead.dataLayer.push({ event: 'generate_lead' });
   await samLead.gotowe();
   assert.equal((await powrot(samLead, 26 * H)).sygnaly.length, 0, 'lead bez visitorId');
 
-  const samoId = await start({ koperta: koperta([]), cfg: HOT });
+  const samoId = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   samoId.ma.visitorId();
   await samoId.gotowe();
   const p2 = await powrot(samoId, 26 * H);
@@ -3728,7 +3729,7 @@ test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic
   await p2.gotowe();
   assert.equal((await powrot(p2, 26 * H)).sygnaly.length, 0, 'lead w innej wizycie niż oddanie id');
 
-  const wylaczony = await start({ koperta: koperta([]) });
+  const wylaczony = await start({ koperta: koperta([]), dataLayer: zgodaTak() });
   wylaczony.ma.visitorId();
   wylaczony.dataLayer.push({ event: 'generate_lead' });
   await wylaczony.gotowe();
@@ -4183,6 +4184,40 @@ test('ma.34: tick zatrzymany przez 503, potem odmowa — liczniki znikają', asy
   await p.gotowe();
   assert.ok(p._dysk.state, 'baza zostaje');
   assert.equal(p._dysk.state.beh, undefined);
+});
+
+test('ma.34: zgoda w trakcie strony — wizyta formularza nic nie wysyła', async () => {
+  const p = await leadDema({ dataLayer: [] });
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+});
+
+for (const [nazwa, kod] of [['wstrzymany przez 429', 429], ['wyciszony przez 422', 422]]) {
+  test('ma.34: zgoda w trakcie strony — sygnał ' + nazwa + ' nie omija blokady', async () => {
+    const p1 = await leadDema({ statusSygnalu: () => kod });
+    const p2 = await powrot(p1, 26 * H);
+    await p2.gotowe();
+    assert.equal(p2.sygnaly.length, 1);
+    const p3 = await powrot(p2, 3 * MIN, { dataLayer: [] });
+    p3.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+    await p3.gotowe();
+    assert.equal(p3.sygnaly.length, 0);
+  });
+}
+
+test('ma.34: odmowa, potem zgoda na tej samej stronie — jeden sygnał', async () => {
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1);
+  assert.equal(p.sygnaly[0].url, VISIT);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'powtórzona zgoda nie wysyła drugi raz');
 });
 
 for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {
