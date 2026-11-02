@@ -62,7 +62,9 @@
  *   [d2-ma-popup="last-unit"]     Designer popup for that template (else built-in)
  *     [d2-ma-field="name|price|image|rooms|floor|area|pricePerSqm|building|summary|promoText"]
  *     [d2-ma-cta]                 open_unit → href of the unit; contact → keeps its href
- *                                 ma.37 template cta: + filter_rooms | scroll_to (#id) | close, ≤ 2 per popup
+ *                                 ma.37 template cta: + filter_rooms | scroll_to (#id) | close, ≤ 2 per popup;
+ *                                 contact scrolls to [d2-ma-contact], else #kontakt
+ *     [d2-ma-contact]             ma.37: contact form target of a template popup's contact button
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
  *   [d2-ma-history]               List of viewed units, newest first
@@ -2539,6 +2541,7 @@
 
   // Popup po zamknięciu oddaje przewinięcie strony - przewijamy po jego animacji.
   var CTA_SCROLL_DELAY_MS = 450;
+  var CONTACT_TARGET = '[d2-ma-contact], [data-d2-ma-contact]';
   function scrollLater(el) {
     if (el && typeof el.scrollIntoView === 'function') setTimeout(function () { el.scrollIntoView({ behavior: 'smooth' }); }, CTA_SCROLL_DELAY_MS);
   }
@@ -2580,6 +2583,7 @@
       // link zostaje przy swoim href (do 2 przycisków o różnych akcjach).
       var act = (a.getAttribute && a.getAttribute('d2-ma-template-cta')) || cta;
       a._d2maCta = act;
+      a._d2maTemplate = !!(root.getAttribute && root.getAttribute('d2-ma-template') !== null);
       var href = act === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
       if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
@@ -2606,6 +2610,9 @@
           return;
         }
         if (inst) inst.hide();
+        // ma.37: contact z szablonu panelu przewija do formularza ([d2-ma-contact], potem
+        // #kontakt); bez żadnego - tylko zamyka. Wbudowany popup jak dotąd.
+        if (own === 'contact' && this._d2maTemplate) scrollLater(document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt'));
       });
     }
   }

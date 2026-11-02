@@ -4890,3 +4890,44 @@ test('ma.37: po kliku filter_rooms search_filter gościa przez 5 s nie otwiera k
   assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit', 'd2-ma-promo-filter'], 'once_per_visit nie zużyte przez pominięty');
 });
 
+test('ma.37: contact z szablonu zamyka i przewija do [d2-ma-contact], potem #kontakt; bez celu tylko zamyka; popup spoza szablonu bez zmian', async () => {
+  const k = () => koperta([POWROT], { templates: { popup: [zPrzyciskami([{ type: 'cta', label: 'Zapytaj doradcę', action: 'contact' }])] } });
+  const cel = (attrs, id) => { const el = element(attrs || {}); if (id) el.id = id; el.przew = 0; el.scrollIntoView = () => { el.przew++; }; return el; };
+
+  for (const [nazwa, elementy, oczekiwany] of [
+    ['[d2-ma-contact] wygrywa z #kontakt', [cel({ 'd2-ma-contact': '' }), cel({}, 'kontakt')], 0],
+    ['alias data-d2-ma-contact', [cel({ 'data-d2-ma-contact': '' })], 0],
+    ['sam #kontakt', [cel({}, 'kontakt')], 0],
+  ]) {
+    const env = await powrotZPopupem(k());
+    elementy.forEach((el) => env.window.document.body.appendChild(el));
+    const zwykly = env.window.document.querySelector;
+    env.window.document.querySelector = (sel) => (sel === '[d2-ma-contact], [data-d2-ma-contact]'
+      ? elementy.find((x) => x.getAttribute('d2-ma-contact') !== null || x.getAttribute('data-d2-ma-contact') !== null) || null
+      : zwykly(sel));
+    const inst = env.window.digi2.popups.get('d2-ma-last-unit');
+    przyciski(env)[0]._klik({ preventDefault() {} });
+    assert.equal(inst.isVisible, false, nazwa);
+    await env.minie(500);
+    assert.deepEqual(elementy.map((x) => x.przew), elementy.map((_, i) => (i === oczekiwany ? 1 : 0)), nazwa);
+  }
+
+  const bez = await powrotZPopupem(k());
+  przyciski(bez)[0]._klik({ preventDefault() {} });
+  await bez.minie(500);
+  assert.equal(bez.window.digi2.popups.get('d2-ma-last-unit').isVisible, false, 'bez celu tylko zamyka');
+
+  // Popup spoza szablonu (wbudowany ma ten sam znacznik contact; atrapa nie parsuje innerHTML,
+  // więc sprawdzamy na własnym popupie strony z takim samym przyciskiem).
+  const wlasny = element({ 'd2-ma-popup': 'last-unit' });
+  wlasny.id = 'moj';
+  const przycisk = element({ 'd2-ma-cta': '', 'd2-ma-template-cta': 'contact', href: '#' }, 'A');
+  wlasny.appendChild(przycisk);
+  const wb = await powrotZPopupem(k(), { szablon: wlasny });
+  const kontakt = cel({}, 'kontakt');
+  wb.window.document.body.appendChild(kontakt);
+  przycisk._klik({ preventDefault() {} });
+  await wb.minie(500);
+  assert.equal(kontakt.przew, 0, 'popup spoza szablonu panelu nie przewija');
+});
+
