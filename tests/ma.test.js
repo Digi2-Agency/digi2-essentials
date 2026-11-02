@@ -223,8 +223,9 @@ function strona(opts) {
       getItem(k) { return k === 'consentModeV2' && o.zgoda ? JSON.stringify(o.zgoda) : null; },
     },
     crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuidN).padStart(12, '0') },
+    atob: (b) => Buffer.from(b, 'base64').toString('binary'),
     digi2: {
-      log() {},
+      log(...a) { if (o.logi) o.logi.push(JSON.stringify(a)); },
       emit(n, d) {
         (zdarzenia[n] = zdarzenia[n] || []).push(d);
         (sluchacze[n] || []).forEach((f) => f(d));
@@ -4509,3 +4510,169 @@ test('ma.34: 401 zrywa powiązanie i kasuje liczniki', async () => {
   assert.ok(!p._dysk.state.beh);
   assert.equal(p.ma.event('map_view'), false);
 });
+
+// ---------------------------------------------------------------------------
+// ma.36: podpisany token prawdziwego leada (ma_token, 2destate kid=k1)
+// ---------------------------------------------------------------------------
+
+const b64u = (x) => Buffer.from(x).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+/** ma_token jak z 2destate: base64url(payload).base64url(podpis); exp w s od zegara testu. */
+function maToken(env, o) {
+  const p = Object.assign({ v: 1, kid: 'k1', p: 'pseudonim', exp: Math.floor(env.zegar.t / 1000) + 90 * 24 * 3600, site: 'https://demo.example' }, o || {});
+  return b64u(JSON.stringify(p)) + '.' + b64u('podpis-' + JSON.stringify(p).length);
+}
+
+/** Pierwsza wizyta prawdziwego leada: zgoda, formularz oddał ma_token. */
+async function leadTokenu(opts) {
+  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() }, opts || {}));
+  env._token = maToken(env);
+  assert.equal(env.ma.leadToken(env._token), true);
+  await env.gotowe();
+  return env;
+}
+
+test('ma.36: digi2.ma.leadToken — powrót wysyła /visit z { token } zamiast visitorId', async () => {
+  const p1 = await leadTokenu();
+  assert.equal(p1.sygnaly.length, 0, 'wizyta formularza to nie powrót');
+  assert.equal(p1._dysk.state.leadToken.t, p1._token);
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly.length, 1);
+  assert.equal(p2.sygnaly[0].url, VISIT);
+  const b = { ...p2.sygnaly[0].body };
+  assert.equal(b.token, p1._token);
+  assert.ok(!('visitorId' in b), 'dokładnie jedno z token / visitorId');
+  assert.equal(b.source, 'return_visit');
+  assert.equal(b.visitNo, p2.ma.profile().visits);
+  assert.ok(!JSON.stringify(p2.ma.profile()).includes(p1._token), 'profile() nie oddaje tokenu');
+  assert.ok(!JSON.stringify(p2.dataLayer).includes(p1._token), 'token nigdy w dataLayer');
+});
+
+test('ma.36: zdarzenie window d2:lead-token działa jak digi2.ma.leadToken', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
+  const t = maToken(env);
+  env.okno('d2:lead-token', { detail: { token: t } });
+  await env.gotowe();
+  assert.equal(env._dysk.state.leadToken.t, t);
+  const p2 = await powrot(env, 26 * H);
+  assert.equal(p2.sygnaly[0].body.token, t);
+});
+
+test('ma.36: bez zgody (nieznana, odmowa, consentRequired:true) token odrzucony i nie zapisany', async () => {
+  for (const [nazwa, opts] of [
+    ['nieznana zgoda', { dataLayer: [] }],
+    ['jawna odmowa', { dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] }],
+    ['consentRequired:true bez zgody', { dataLayer: [], koperta: koperta([], { storage: { consentRequired: true } }) }],
+  ]) {
+    const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts));
+    assert.equal(env.ma.leadToken(maToken(env)), false, nazwa);
+    env.okno('d2:lead-token', { detail: { token: maToken(env) } });
+    await env.gotowe();
+    assert.ok(!env._dysk.state || !env._dysk.state.leadToken, nazwa + ': nic w magazynie');
+    const p2 = await powrot(env, 26 * H, { dataLayer: zgodaTak() });
+    assert.equal(p2.sygnaly.length, 0, nazwa + ': powrót bez sygnału');
+  }
+});
+
+test('ma.36: token zły, wygasły, z innej strony albo bez d2-ma-hot-lead — odrzucony', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
+  assert.equal(env.ma.leadToken('nie-token'), false);
+  assert.equal(env.ma.leadToken(null), false);
+  assert.equal(env.ma.leadToken(b64u('{"exp":1}') + '.x' + '.y'), false, 'trzy części');
+  assert.equal(env.ma.leadToken('a'.repeat(3000) + '.b'), false, 'za długi');
+  assert.equal(env.ma.leadToken(maToken(env, { exp: Math.floor(env.zegar.t / 1000) - 1 })), false, 'wygasły');
+  assert.equal(env.ma.leadToken(maToken(env, { site: 'https://inna.example' })), false, 'inny site');
+  assert.equal(env.ma.leadToken(maToken(env, { site: undefined })), false, 'bez site');
+  assert.ok(!env._dysk.state.leadToken);
+  const bez = await start({ koperta: koperta([]), dataLayer: zgodaTak() });
+  assert.equal(bez.ma.leadToken(maToken(bez)), false, 'bez d2-ma-hot-lead');
+});
+
+for (const kod of [401, 403]) {
+  test('ma.36: ' + kod + ' na /visit z tokenem — token i powiązanie usunięte, bez ponawiania', async () => {
+    let st = kod;
+    const p1 = await leadTokenu({ statusSygnalu: () => st });
+    const p2 = await powrot(p1, 26 * H);
+    assert.equal(p2.sygnaly.length, 1);
+    await p2.gotowe();
+    assert.equal(p2._dysk.state.leadToken, undefined);
+    assert.equal(p2._dysk.state.hotLead, undefined);
+    st = 202;
+    const p3 = await powrot(p2, 26 * H);
+    assert.equal(p3.sygnaly.length, 0);
+  });
+}
+
+test('ma.36: token wygasły przed powrotem — bez /visit i bez powiązania, ale „Wyczyść” dalej wysyła /revoke { token }', async () => {
+  const p1 = await leadTokenu({ koperta: koperta([], { storage: { retentionDays: 365, consentRequired: false } }) });
+  const p2 = await powrot(p1, 91 * 24 * H);
+  assert.equal(p2.sygnaly.filter((x) => x.url === VISIT).length, 0);
+  assert.equal(p2._dysk.state.hotLead, undefined);
+  assert.equal(p2._dysk.state.leadToken.revokeOnly, true);
+  const p3 = await powrot(p2, 26 * H);
+  assert.equal(p3.sygnaly.length, 0, 'dalej bez /visit');
+  await p3.ma.clear();
+  await p3.gotowe();
+  assert.deepEqual(p3.sygnaly.map((x) => [x.url, { ...x.body }]), [[REVOKE, { token: p1._token }]]);
+});
+
+test('ma.36: token nie trafia do kontekstu leadu, logu debug ani ostrzeżeń; leadToken() przed otwarciem bazy = false', async () => {
+  const logi = [];
+  const p1 = await leadTokenu({ logi });
+  const t = p1._token;
+  assert.ok(!JSON.stringify(p1.ma.context()).includes(t), 'd2ma_context / d2ma_context_json');
+  const form = element({}, 'FORM');
+  p1.ma.fillContext(form);
+  assert.ok(!JSON.stringify(form.children.map((c) => c.value)).includes(t), 'pola formularza');
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly[0].body.token, t, 'sygnał poszedł');
+  assert.ok(logi.length > 0);
+  assert.ok(!logi.some((l) => l.includes(t)), 'log debug maskuje token');
+  assert.ok(!p2.ostrzezenia.some((w) => w.includes(t)));
+
+  const bezKoperty = strona({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
+  assert.equal(bezKoperty.ma.leadToken(maToken(bezKoperty)), false, 'magazyn jeszcze nie otwarty');
+});
+
+test('ma.36: drugi token zastępuje pierwszy bez /revoke; powroty niosą nowszy', async () => {
+  const p1 = await leadTokenu();
+  const t2 = maToken(p1, { p: 'drugi' });
+  assert.equal(p1.ma.leadToken(t2), true);
+  await p1.gotowe();
+  assert.equal(p1.sygnaly.length, 0, 'bez /revoke starego');
+  const p2 = await powrot(p1, 26 * H);
+  assert.equal(p2.sygnaly[0].body.token, t2);
+});
+
+test('ma.36: „Wyczyść” — /revoke { token }, a przy oddanym visitorId także /revoke { visitorId }', async () => {
+  const env = await leadTokenu();
+  await env.ma.clear();
+  await env.gotowe();
+  assert.deepEqual(env.sygnaly.map((x) => [x.url, { ...x.body }]), [[REVOKE, { token: env._token }]]);
+
+  const oba = await leadDema();
+  const id = oba.ma.profile().visitorId;
+  const t = maToken(oba);
+  assert.equal(oba.ma.leadToken(t), true);
+  await oba.ma.clear();
+  await oba.gotowe();
+  assert.deepEqual(oba.sygnaly.map((x) => [x.url, { ...x.body }]), [[REVOKE, { token: t }], [REVOKE, { visitorId: id }]]);
+});
+
+test('ma.36: consentRequired:false, odmowa po tokenie — /revoke { token }, baza zostaje bez tokenu', async () => {
+  const p1 = await leadTokenu();
+  p1.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p1.gotowe();
+  assert.deepEqual(p1.sygnaly.map((x) => [x.url, { ...x.body }]), [[REVOKE, { token: p1._token }]]);
+  assert.ok(p1._dysk.state);
+  assert.equal(p1._dysk.state.leadToken, undefined);
+  assert.equal(p1._dysk.state.hotLead, undefined);
+});
+
+test('ma.36: consentRequired:true, zgoda wycofana między wizytami — /revoke { token }, baza skasowana', async () => {
+  const k = koperta([], { storage: { consentRequired: true } });
+  const p1 = await leadTokenu({ koperta: k, dataLayer: [], zgoda: { analytics_storage: 'granted' } });
+  const p2 = await powrot(p1, 26 * H, { zgoda: { analytics_storage: 'denied' } });
+  assert.deepEqual(p2.sygnaly.map((x) => [x.url, { ...x.body }]), [[REVOKE, { token: p1._token }]]);
+  assert.equal(p2._dysk.state, null);
+});
+

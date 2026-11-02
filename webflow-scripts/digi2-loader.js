@@ -39,6 +39,7 @@
  *                                      the return-visit signal (MA-D38 stage 1, variant D′);
  *                                      ma.34: behaviour events, d2-ma-event / d2-ma-dwell on elements
  *                                      ma.35: visitorId only with consent, also consentRequired:false
+ *                                      ma.36: digi2.ma.leadToken / d2:lead-token for a real lead's ma_token
  *   d2-ma-video-consent="ad_storage …" Extra Consent Mode categories before a YouTube / Vimeo
  *                                      embed (ad_storage is always required, ma.5)
  *
