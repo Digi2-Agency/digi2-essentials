@@ -421,12 +421,17 @@ const LEAD = {
   edges: [['t1', 'a1'], ['a1', 't2'], ['t2', 't3'], ['t3', 'a2'], ['a2', 'a3']],
 };
 
+const isArgs = (x) => Object.prototype.toString.call(x) === '[object Arguments]';
+
 /** Następna odsłona tej samej przeglądarki po `ms`. */
 async function powrot(poprzednia, ms, opts) {
   poprzednia.zegar.t += ms;
-  const env = strona(Object.assign({ dysk: poprzednia._dysk, zegar: poprzednia.zegar }, poprzednia._opts, opts || {}));
+  // Baner przy każdej odsłonie mówi to samo; reszta dataLayer należała do poprzedniej strony.
+  const merged = Object.assign({}, poprzednia._opts, opts || {});
+  if (!(opts && opts.dataLayer) && merged.dataLayer) merged.dataLayer = merged.dataLayer.filter(isArgs);
+  const env = strona(Object.assign({ dysk: poprzednia._dysk, zegar: poprzednia.zegar }, merged));
   env._dysk = poprzednia._dysk;
-  env._opts = Object.assign({}, poprzednia._opts, opts || {});
+  env._opts = merged;
   await env.gotowe();
   return env;
 }
@@ -3678,7 +3683,8 @@ function formularzDema() {
 
 /** Pierwsza wizyta: formularz z visitorId i lead (generate_lead). */
 async function leadDema(opts) {
-  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts || {}));
+  // ma.34: /visit tylko za zgodą, także przy consentRequired:false.
+  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts && opts.zgoda ? {} : { dataLayer: zgodaTak() }, opts || {}));
   const { form, ukryte } = formularzDema();
   env.dom('submit', { target: form });
   env.dataLayer.push({ event: 'generate_lead' });
@@ -4102,21 +4108,25 @@ test('ma.34: consentRequired:false i jawna odmowa — zero /visit i liczników',
   p.okno('pagehide');
   await p.gotowe();
   assert.equal(p.sygnaly.length, 0);
-  assert.ok(!p._dysk.state || !p._dysk.state.beh);
+  assert.ok(p._dysk.state, 'baza zostaje');
+  assert.equal(p._dysk.state.beh, undefined);
 });
 
-test('ma.34: consentRequired:false bez decyzji — sygnał powrotu jak dotąd, ale bez zdarzeń i czasu', async () => {
+test('ma.34: consentRequired:false bez decyzji — zero /visit; sygnał rusza dopiero po zgodzie', async () => {
   const mapa = oznaczony({ 'd2-ma-event': 'map_view' });
   const p1 = await leadDema();
-  const p = await powrot(p1, 26 * H, { elementy: [mapa] });
+  const p = await powrot(p1, 26 * H, { elementy: [mapa], dataLayer: [] });
   assert.equal(p.ma.event('card_download'), false);
   await sekundy(p, 40);
   p.okno('pagehide');
   await p.gotowe();
-  assert.equal(p.sygnaly.length, 1);
-  assert.equal(p.sygnaly[0].body.time_on_site_s, 0);
-  assert.ok(!('events' in p.sygnaly[0].body));
+  assert.equal(p.sygnaly.length, 0, 'bez decyzji gościa nic nie wychodzi');
   assert.ok(!p._dysk.state.beh);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'po zgodzie');
+  assert.equal(p.sygnaly[0].url, VISIT);
+  assert.equal(p.sygnaly[0].body.time_on_site_s, 0, 'czas sprzed zgody się nie liczy');
 });
 
 test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane liczniki; nieznana zgoda nie', async () => {
@@ -4130,7 +4140,8 @@ test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane l
   assert.ok(bezDecyzji._dysk.state.beh, 'nieznana zgoda czeka');
   const zOdmowa = await powrot(bezDecyzji, 3 * MIN, { dataLayer: [odmowa()] });
   await zOdmowa.gotowe();
-  assert.ok(!zOdmowa._dysk.state || !zOdmowa._dysk.state.beh, 'przy starcie');
+  assert.ok(zOdmowa._dysk.state, 'baza zostaje');
+  assert.equal(zOdmowa._dysk.state.beh, undefined, 'przy starcie');
 
   const q = await powrotLeada();
   q.ma.event('card_download', { unitId: UID(1) });
@@ -4138,7 +4149,8 @@ test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane l
   assert.ok(q._dysk.state.beh);
   q.dataLayer.push(odmowa());
   await sekundy(q, 2);
-  assert.ok(!q._dysk.state || !q._dysk.state.beh, 'w trakcie strony');
+  assert.ok(q._dysk.state, 'baza zostaje');
+  assert.equal(q._dysk.state.beh, undefined, 'w trakcie strony');
 });
 
 test('ma.34: start bez decyzji, potem odmowa — liczniki kasuje sama odmowa, bez ticku', async () => {
@@ -4151,7 +4163,8 @@ test('ma.34: start bez decyzji, potem odmowa — liczniki kasuje sama odmowa, be
   assert.ok(bezDecyzji._dysk.state.beh, 'tick nie wystartował, liczniki czekają');
   bezDecyzji.dataLayer.push(odmowa());
   await bezDecyzji.gotowe();
-  assert.ok(!bezDecyzji._dysk.state || !bezDecyzji._dysk.state.beh);
+  assert.ok(bezDecyzji._dysk.state, 'baza zostaje');
+  assert.equal(bezDecyzji._dysk.state.beh, undefined);
 });
 
 test('ma.34: tick zatrzymany przez 503, potem odmowa — liczniki znikają', async () => {
@@ -4168,7 +4181,8 @@ test('ma.34: tick zatrzymany przez 503, potem odmowa — liczniki znikają', asy
   assert.ok(p._dysk.state.beh);
   p.dataLayer.push(odmowa());
   await p.gotowe();
-  assert.ok(!p._dysk.state || !p._dysk.state.beh);
+  assert.ok(p._dysk.state, 'baza zostaje');
+  assert.equal(p._dysk.state.beh, undefined);
 });
 
 for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {

@@ -3663,17 +3663,17 @@
   function sendVisitSignal(exit) {
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
-    if (consentState() === 'denied') { behForget(); return; } // jawna odmowa także przy consentRequired:false
-    if (hasConsent()) behStart();
+    // Decyzja Piotra 2.11.2026: sygnał tylko za zgodą, także przy consentRequired:false.
+    if (!hasConsent()) { behForget(); return; }
+    behStart();
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;
     if (state.hotLeadMuteVisit === state.visits) return;
     var units = viewedThisVisit();
     var sent = state.hotLeadSent;
-    var withBeh = hasConsent();
-    var events = withBeh ? behEvents() : null;
+    var events = behEvents();
     var evSig = JSON.stringify(events || {});
-    var timeS = withBeh ? behTimeS() : 0;
+    var timeS = behTimeS();
     if (sent && sent.visit === state.visits) {
       var fresh = evSig !== (sent.ev || '{}') || units.some(function (u) { return sent.units.indexOf(u) < 0; });
       // Sam czas nie budzi serwera co 5 minut - jedzie przy wyjściu albo z przyrostem.
@@ -4236,6 +4236,7 @@
       addTouchpoint(touchVisitPending && state.visitStart != null ? state.visitStart : now(), touchVisitPending);
       touchVisitPending = false;
       afterChange();
+      sendVisitSignal();   // powrót zaczęty przed zgodą: sygnał czekał na nią
     }
     // ma.33: odmowa przy niewymaganej zgodzie - baza zostaje, historia źródeł znika.
     if (!granted && tracking && !consentRequired(envelope) && openedWithConsent) {

@@ -40,9 +40,10 @@ na umowę.
   ostatnich 5 minutach. To czas aktywny, więc gość czytający bez ruchu wypada niżej.
 - W widoku znaczy: co najmniej połowa elementu albo połowa ekranu. Przy kilku
   `d2-ma-dwell` naraz sekunda idzie na największy.
-- **Zmiana zachowania:** jawna odmowa zgody zatrzymuje cały sygnał `/visit`, także
-  przy `consentRequired: false`, i kasuje liczniki. Zdarzenia i czas wymagają
-  udzielonej zgody.
+- **Zmiana zachowania:** cały sygnał `/visit` wymaga udzielonej zgody, także przy
+  `consentRequired: false` (decyzja Piotra, 2.11.2026). Bez decyzji gościa nic nie
+  wychodzi, a sygnał rusza po zgodzie. Jawna odmowa kasuje też liczniki. `/revoke`
+  działa jak dotąd.
 - Każda wysyłka to stan całej wizyty, nie przyrost. Nowe zdarzenia idą najwyżej co
   5 minut oraz przy ukryciu karty i wyjściu ze strony, co najmniej 60 s po ostatniej
   wysyłce. Sam czas jedzie tylko przy wyjściu, gdy urósł o co najmniej 30 s.

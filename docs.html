@@ -3007,6 +3007,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>d2-ma-history</code> (+ <code>d2-ma-history-limit="10"</code>)</td><td>Viewed units, newest first. A child <code>[d2-ma-history-item]</code> is a row template with <code>[d2-ma-field]</code> inside (plus <code>time</code>)</td></tr>
       <tr><td><code>d2-ma-clear</code> (button)</td><td>Deletes the d2ma database</td></tr>
       <tr><td><code>d2-ma-simulate-return</code> (button)</td><td>Demo: start a return visit now</td></tr>
+      <tr><td><code>/visit</code> and consent</td><td>ma.34: the signal needs granted consent, also with <code>consentRequired: false</code>. Without a decision nothing is sent until consent arrives; an explicit refusal also deletes the counters.</td></tr>
       <tr><td><code>d2-ma-event="map_view|list_view"</code></td><td>ma.34, with <code>d2-ma-hot-lead</code>: element in view for about 1 s, counted once per visit for a linked lead on a return visit, with consent.</td></tr>
       <tr><td><code>d2-ma-event="card_download|price_history_view"</code> + <code>d2-ma-unit="uuid"</code></td><td>ma.34: counted on click, same conditions.</td></tr>
       <tr><td><code>d2-ma-dwell</code> + <code>d2-ma-unit="uuid"</code></td><td>ma.34: time in view of a plan or card, sent as <code>plan_dwell</code> (up to 3600 s per unit), same conditions. Deploy the 2destate server first: without the new <code>/visit</code> fields it answers 422.</td></tr>

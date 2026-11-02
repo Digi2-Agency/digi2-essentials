@@ -1605,10 +1605,11 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   503) isn't retried on its own, and only events and time count as unsent, not the
   unit list: they go with the next send attempt. After a network error that is the
   next check on an open page or the next page view of that visit; after 429 or 503
-  it waits out the block, then goes with the next page view, interaction or leaving
+  it waits out the block, then goes with the next page view, counted event or leaving
   the page. It is lost if the visit ends first. The same goes for a visit shorter than 60 s after the last
-  send: an event right before leaving is lost. An explicit refusal stops the whole
-  `/visit` signal and deletes the counters.
+  send: an event right before leaving is lost. `/visit` needs granted consent, also with
+  `consentRequired: false` (Piotr, 2.11.2026): without a decision nothing is sent
+  until consent arrives, and an explicit refusal also deletes the counters.
   **Deploy the server first:** without the new fields it answers 422 and the
   module mutes the visit. An old visit's unsent last counters are dropped.
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
