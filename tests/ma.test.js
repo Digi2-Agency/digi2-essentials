@@ -4764,7 +4764,7 @@ test('ma.37: do 2 przycisków z akcją w szablonie; trzeci pominięty z ostrzeż
   assert.ok(zle.ostrzezenia.some((w) => /target only for scroll_to/.test(w)));
 });
 
-test('ma.37: filter_rooms — setFilters z pref.rooms jako filtr gościa (bez source:api), zamyka popup, zdarzenia ma:action i ma_popup_cta', async () => {
+test('ma.37: filter_rooms — setFilters z pref.rooms, zamyka popup, zdarzenia ma:action i ma_popup_cta', async () => {
   const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [zPrzyciskami([{ type: 'cta', label: 'Pokaż', action: 'filter_rooms' }])] } }),
     { imp: { instances: { mapa: {} } } });
   const inst = env.window.digi2.popups.get('d2-ma-last-unit');
@@ -4822,5 +4822,14 @@ test('ma.37: scroll_to przewija do #id po zamknięciu popupu; close tylko zamyka
   kontakt._klik({ preventDefault() { zap = true; } });
   assert.ok(zap, 'contact bez skoku na #');
   assert.deepEqual(dwa.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => e.action), ['contact']);
+});
+
+test('ma.37: dwa przyciski w obu kolejnościach — open_unit dostaje adres lokalu, link zostaje przy swoim href', async () => {
+  for (const kolejnosc of [['open_unit', 'link'], ['link', 'open_unit']]) {
+    const bloki = kolejnosc.map((a) => (a === 'link' ? { type: 'cta', label: 'Cennik', action: 'link', href: 'https://demo.example/cennik' } : { type: 'cta', label: 'Lokal', action: 'open_unit' }));
+    const env = await powrotZPopupem(koperta([POWROT], { templates: { popup: [zPrzyciskami(bloki)] } }));
+    const adresy = Object.fromEntries(przyciski(env).map((c) => [c.getAttribute('d2-ma-template-cta'), c.getAttribute('href')]));
+    assert.deepEqual(adresy, { open_unit: 'https://demo.example/oferta?sm-unit=A_7', link: 'https://demo.example/cennik' }, kolejnosc.join(' + '));
+  }
 });
 

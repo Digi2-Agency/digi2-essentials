@@ -25,9 +25,13 @@ Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
 - Nowe akcje: `filter_rooms` (filtr „N pokoi” z profilu w wyszukiwarce 2destate,
   zamknięcie popupu i przewinięcie do listy; bez preferencji pokoi przycisk się
   nie pokazuje), `scroll_to` z `target: "#id"`, `close`. `open_unit`, `contact`
-  i `link` bez zmian.
-- Klik przycisku z szablonu: `dataLayer` `ma_popup_cta` `{ action }` i
-  `ma:action` `{ do: "popup_cta", action, template }`.
+  i `link` bez zmian; każdy przycisk ma własną akcję (link zostaje przy swoim
+  adresie także obok `open_unit`).
+- `filter_rooms` 2destate zapisuje dziś jak zmianę ze skryptu: bez wyzwalacza
+  `search_filter` i bez zdarzeń GA4 wyszukiwarki, a pole pokoi ustawione wcześniej
+  przez gościa zostaje.
+- Klik przycisku z szablonu (i wbudowanego przycisku `promo-filter`): `dataLayer`
+  `ma_popup_cta` `{ action }` i `ma:action` `{ do: "popup_cta", action, template }`.
 - Strona z własnym `[d2-ma-popup]` bez zmian.
 
 ## v1.9.0-ma.36 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.35–ma.16)

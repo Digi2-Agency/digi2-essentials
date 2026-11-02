@@ -2384,7 +2384,7 @@
         var label = contentText({ text: b.label }, unit);
         if (label == null) return;
         // ma.37: „N pokoi” bez preferencji w profilu nie ma czego ustawić - przycisk ukryty.
-        if (b.action === 'filter_rooms' && prefOf('rooms') == null) return;
+        if (b.action === 'filter_rooms' && ctaRooms() == null) return;
         node = document.createElement('a');
         node.setAttribute('d2-ma-cta', '');
         node.setAttribute('d2-ma-template-cta', b.action);
@@ -2542,14 +2542,24 @@
     scrollLater(document.querySelector(target));   // regex: tylko #id, bezpieczny selektor
   }
 
-  // „N pokoi” w wyszukiwarce 2destate jak prefer_filters by:rooms, ale to klik gościa,
-  // więc bez source:'api' (liczy się jak jego filtr). Potem lista wyników.
+  function ctaRooms() {
+    var n = Number(prefOf('rooms'));
+    return isFinite(n) && n >= 1 ? n : null;
+  }
+
+  // „N pokoi” w wyszukiwarce 2destate jak prefer_filters by:rooms, potem lista wyników.
+  // core 2destate (4110bf3e) zapisuje każde setFilters jako source "api" - bez
+  // search_filter i bez GA4 wyszukiwarki; pole dotknięte przez gościa zostaje (skipped).
+  // Lista i tak dostaje przewinięcie: gość kliknął „pokaż”, więc ją zobaczy.
   function ctaFilterRooms() {
-    var rooms = prefOf('rooms');
+    var rooms = ctaRooms();
     var api = mapApi();
     if (rooms == null || !api || typeof api.setFilters !== 'function') return;
     try {
-      mapNames().forEach(function (m) { api.setFilters(m, { rooms: [rooms] }); });
+      mapNames().forEach(function (m) {
+        var r = api.setFilters(m, { rooms: [rooms] });
+        if (r && typeof r === 'object' && Array.isArray(r.applied) && !r.applied.length) _log('filter_rooms — 2destate applied nothing (field touched by the visitor)');
+      });
     } catch (e) { _warn('filter_rooms failed', e); }
     scrollLater(document.querySelector('[data-imp-detached-menu]'));
   }
@@ -2559,8 +2569,11 @@
     for (var i = 0; i < links.length; i++) {
       var a = links[i];
       a._d2maUnit = unit;
-      a._d2maCta = cta;
-      var href = cta === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
+      // ma.37: przycisk szablonu ma własną akcję - adres lokalu tylko na open_unit,
+      // link zostaje przy swoim href (do 2 przycisków o różnych akcjach).
+      var act = (a.getAttribute && a.getAttribute('d2-ma-template-cta')) || cta;
+      a._d2maCta = act;
+      var href = act === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
       if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
       a._d2maBound = true;
