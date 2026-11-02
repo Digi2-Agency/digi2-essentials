@@ -16,6 +16,42 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.34 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.33–ma.16)
+
+Zdarzenia zachowania wracającego leada w `/visit`. Tylko strona z
+`d2-ma-hot-lead`, tylko powiązany lead w wizycie powrotu i tylko przy zgodzie.
+Na razie wyłącznie Osiedle Demo (Piotr, 2.11.2026); na stronach klientów MA czeka
+na umowę.
+
+- **Serwer najpierw.** `/visit` dostaje nowe pola `visitNo` i `time_on_site_s`.
+  Serwer 2destate bez ich obsługi odpowie 422, a moduł wyciszy sygnały do końca
+  wizyty.
+- Nowe atrybuty: `d2-ma-event="map_view|list_view"` (element w widoku około 1 s,
+  raz na wizytę), `d2-ma-event="card_download|price_history_view"` z
+  `d2-ma-unit="<uuid>"` (klik), `d2-ma-dwell` z `d2-ma-unit` (czas widoczności
+  rzutu lub karty, `plan_dwell`).
+- `plan_dwell` wymienia w `units` tylko lokale oglądane co najmniej 180 s; krótsze
+  czasy idą w samym `dwell_s`.
+- `digi2.ma.event(key, { unitId, seconds })` robi to samo z widżetu; `seconds`
+  tylko dla `plan_dwell`. Zwraca `false`, gdy zdarzenie nie zostało przyjęte.
+- `list_view` liczy też zmiana filtra przez gościa w wyszukiwarce 2destate.
+- Stan, którego serwer nie przyjął (sieć, 429, 503), nie jest ponawiany sam: zdarzenia
+  i czas jadą przy następnej próbie, a przepadają, gdy wizyta wcześniej się skończy.
+  Zdarzenie tuż przed wyjściem, mniej niż 60 s po ostatniej wysyłce, też przepada.
+- `time_on_site_s` liczy sekundy tej wizyty przy widocznej karcie i aktywności w
+  ostatnich 5 minutach. To czas aktywny, więc gość czytający bez ruchu wypada niżej.
+- W widoku znaczy: co najmniej połowa elementu albo połowa ekranu. Przy kilku
+  `d2-ma-dwell` naraz sekunda idzie na największy.
+- **Zmiana zachowania:** cały sygnał `/visit` wymaga udzielonej zgody, także przy
+  `consentRequired: false` (decyzja Piotra, 2.11.2026). Bez decyzji gościa nic nie
+  wychodzi, a sygnał rusza po zgodzie. Jawna odmowa kasuje też liczniki. `/revoke`
+  działa jak dotąd.
+- Każda wysyłka to stan całej wizyty, nie przyrost. Nowe zdarzenia idą najwyżej co
+  5 minut oraz przy ukryciu karty i wyjściu ze strony, co najmniej 60 s po ostatniej
+  wysyłce. Sam czas jedzie tylko przy wyjściu, gdy urósł o co najmniej 30 s.
+- Do zrobienia na stronie: oznaczyć elementy, inaczej działa tylko `list_view` z
+  wyszukiwarki i czas. Strona bez `d2-ma-hot-lead` działa jak dotąd.
+
 ## Bez wydania — bramka przed tagiem (bez zmian w `dist/`)
 
 Nic się nie zmienia na stronach klientów. Nowe dla osoby, która wydaje:

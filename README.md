@@ -1581,6 +1581,39 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   page views of the visit (1–50). Once per visit, then only when new units
   were viewed and at most every 5 minutes. Never in the form's visit. No form
   data, UTM or URLs; `credentials: 'omit'`, JSON with a CORS preflight.
+- **Behaviour events (ma.34):** every `/visit` also carries `visitNo`
+  (`state.visits`) and `time_on_site_s` (0–14400, **active** time of this visit:
+  tab visible and activity in the last 5 minutes, so it understates a visitor who
+  reads without moving), plus `events` when anything happened:
+  `{ list_view: {n}, map_view: {n}, price_history_view: {n, units?},
+  card_download: {n, units?}, plan_dwell: {n, units?, dwell_s: {id: s}} }`. In
+  `plan_dwell`, `units` and `n` cover only units at 180 s or more, because the server
+  scores every listed unit at once; shorter times stay in `dwell_s`. `n` is
+  capped at 50, lists at the 20 newest UUIDs, `dwell_s` at 3600. Each send is the
+  **state of the whole visit**, not a delta; the server merges by
+  `(visitorId, visitNo)`, taking the max per field, so a duplicate or lost send
+  does no harm. Sources: `[d2-ma-event="map_view|list_view"]` in view for about
+  1 s, once per visit; a click on `[d2-ma-event="card_download|price_history_view"]`
+  with `d2-ma-unit="<uuid>"`; time in view of `[d2-ma-dwell][d2-ma-unit]`; a
+  visitor's filter change (`list_view`); `digi2.ma.event(key, { unitId, seconds })`
+  from a widget. In view means at least half of the element or half of the screen;
+  with several `d2-ma-dwell` elements in view the second goes to the largest.
+  Counted only for a linked lead on a return visit, with granted consent, also
+  when the envelope says `consentRequired: false`, and not while the signal is
+  paused or muted (403, 404, 422, 429, 503), because `/visit` is the only sender; behaviour before the lead doesn't reach the
+  server. New events follow the 5-minute limit and leave at once when the tab is
+  hidden or the page closes, at least 60 s after the last send; time alone leaves
+  only then, after growing by 30 s. A state the server didn't take (network, 429,
+  503) isn't retried on its own, and only events and time count as unsent, not the
+  unit list: they go with the next send attempt. After a network error that is the
+  next check on an open page or the next page view of that visit; after 429 or 503
+  it waits out the block, then goes with the next page view, counted event or leaving
+  the page. It is lost if the visit ends first. The same goes for a visit shorter than 60 s after the last
+  send: an event right before leaving is lost. `/visit` needs granted consent, also with
+  `consentRequired: false` (Piotr, 2.11.2026): without a decision nothing is sent
+  until consent arrives, and an explicit refusal also deletes the counters.
+  **Deploy the server first:** without the new fields it answers 422 and the
+  module mutes the visit. An old visit's unsent last counters are dropped.
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link
   dropped; 403 (Origin off the project's list or lead not eligible — one code
   for both) → paused 24 h, link kept, since a wrong Origin is a setup error;
@@ -1939,6 +1972,7 @@ digi2.ma.context()          // ma.16: { text, json } for the lead context fields
 digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
+digi2.ma.event('card_download', { unitId }) // ma.34, d2-ma-hot-lead: behaviour event, false if not accepted
 digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
 digi2.ma.load(urlOrObject)  // read an envelope (URL only from digi2.app / api.2destate.com, ma.23)
 digi2.ma.reload()

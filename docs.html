@@ -2688,6 +2688,7 @@ digi2.ma.<span class="fn">profile</span>()          <span class="comment">// { v
 digi2.ma.<span class="fn">history</span>()          <span class="comment">// unit views, oldest first</span>
 digi2.ma.<span class="fn">track</span>(unit)        <span class="comment">// record a view from another source</span>
 digi2.ma.<span class="fn">lead</span>()             <span class="comment">// mark the visitor as a lead</span>
+digi2.ma.<span class="fn">event</span>(<span class="string">'card_download'</span>, { unitId }) <span class="comment">// ma.34, d2-ma-hot-lead: behaviour event, false if not accepted</span>
 digi2.ma.<span class="fn">visitorId</span>()        <span class="comment">// ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent</span>
 digi2.ma.<span class="fn">load</span>(urlOrObject)  <span class="comment">// read an envelope</span>
 digi2.ma.<span class="fn">reload</span>()           <span class="comment">// re-read it: new revision, new CRM call result</span>
@@ -3006,6 +3007,10 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>d2-ma-history</code> (+ <code>d2-ma-history-limit="10"</code>)</td><td>Viewed units, newest first. A child <code>[d2-ma-history-item]</code> is a row template with <code>[d2-ma-field]</code> inside (plus <code>time</code>)</td></tr>
       <tr><td><code>d2-ma-clear</code> (button)</td><td>Deletes the d2ma database</td></tr>
       <tr><td><code>d2-ma-simulate-return</code> (button)</td><td>Demo: start a return visit now</td></tr>
+      <tr><td><code>/visit</code> and consent</td><td>ma.34: the signal needs granted consent, also with <code>consentRequired: false</code>. Without a decision nothing is sent until consent arrives; an explicit refusal also deletes the counters.</td></tr>
+      <tr><td><code>d2-ma-event="map_view|list_view"</code></td><td>ma.34, with <code>d2-ma-hot-lead</code>: element in view for about 1 s, counted once per visit for a linked lead on a return visit, with consent.</td></tr>
+      <tr><td><code>d2-ma-event="card_download|price_history_view"</code> + <code>d2-ma-unit="uuid"</code></td><td>ma.34: counted on click, same conditions.</td></tr>
+      <tr><td><code>d2-ma-dwell</code> + <code>d2-ma-unit="uuid"</code></td><td>ma.34: time in view of a plan or card, sent as <code>plan_dwell</code> (up to 3600 s per unit), same conditions. Deploy the 2destate server first: without the new <code>/visit</code> fields it answers 422.</td></tr>
       <tr><td><code>d2-ma-visitor-id</code> (hidden input)</td><td>ma.12, only with <code>d2-ma-hot-lead</code>: filled with <code>visitorId</code> when the form is submitted or its submit button clicked (ma.24); empty without consent</td></tr>
     </table>
 

@@ -213,6 +213,7 @@ function strona(opts) {
 
   const window = {
     innerHeight: 1000,
+    innerWidth: 1000,
     pageYOffset: 0,
     addEventListener(n, f) { (naOknie[n] = naOknie[n] || []).push(f); },
     document,
@@ -282,6 +283,7 @@ function strona(opts) {
     if (url.indexOf('/public/ma/') >= 0) {
       sygnaly.push({ url, body: JSON.parse(init.body), init });
       const st = (o.statusSygnalu && o.statusSygnalu(url)) || (url.indexOf('/revoke') >= 0 ? 204 : 202);
+      if (st === -1) return Promise.reject(new Error('offline: ' + url));
       return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
     }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
@@ -419,12 +421,17 @@ const LEAD = {
   edges: [['t1', 'a1'], ['a1', 't2'], ['t2', 't3'], ['t3', 'a2'], ['a2', 'a3']],
 };
 
+const isArgs = (x) => Object.prototype.toString.call(x) === '[object Arguments]';
+
 /** Następna odsłona tej samej przeglądarki po `ms`. */
 async function powrot(poprzednia, ms, opts) {
   poprzednia.zegar.t += ms;
-  const env = strona(Object.assign({ dysk: poprzednia._dysk, zegar: poprzednia.zegar }, poprzednia._opts, opts || {}));
+  // Baner przy każdej odsłonie mówi to samo; reszta dataLayer należała do poprzedniej strony.
+  const merged = Object.assign({}, poprzednia._opts, opts || {});
+  if (!(opts && opts.dataLayer) && merged.dataLayer) merged.dataLayer = merged.dataLayer.filter(isArgs);
+  const env = strona(Object.assign({ dysk: poprzednia._dysk, zegar: poprzednia.zegar }, merged));
   env._dysk = poprzednia._dysk;
-  env._opts = Object.assign({}, poprzednia._opts, opts || {});
+  env._opts = merged;
   await env.gotowe();
   return env;
 }
@@ -3676,7 +3683,8 @@ function formularzDema() {
 
 /** Pierwsza wizyta: formularz z visitorId i lead (generate_lead). */
 async function leadDema(opts) {
-  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts || {}));
+  // ma.34: /visit tylko za zgodą, także przy consentRequired:false.
+  const env = await start(Object.assign({ koperta: koperta([]), cfg: HOT }, opts && opts.zgoda ? {} : { dataLayer: zgodaTak() }, opts || {}));
   const { form, ukryte } = formularzDema();
   env.dom('submit', { target: form });
   env.dataLayer.push({ event: 'generate_lead' });
@@ -3706,12 +3714,13 @@ test('MA-D38 D′: ukryte pole i digi2.ma.visitorId() dostają visitorId tylko z
 });
 
 test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic nie wychodzi (MA-D30)', async () => {
-  const samLead = await start({ koperta: koperta([]), cfg: HOT });
+  // Zgoda jest, więc o braku sygnału decyduje powiązanie, nie bramka zgody.
+  const samLead = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   samLead.dataLayer.push({ event: 'generate_lead' });
   await samLead.gotowe();
   assert.equal((await powrot(samLead, 26 * H)).sygnaly.length, 0, 'lead bez visitorId');
 
-  const samoId = await start({ koperta: koperta([]), cfg: HOT });
+  const samoId = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   samoId.ma.visitorId();
   await samoId.gotowe();
   const p2 = await powrot(samoId, 26 * H);
@@ -3720,7 +3729,7 @@ test('MA-D38 D′: bez leada albo bez oddanego visitorId w tej samej wizycie nic
   await p2.gotowe();
   assert.equal((await powrot(p2, 26 * H)).sygnaly.length, 0, 'lead w innej wizycie niż oddanie id');
 
-  const wylaczony = await start({ koperta: koperta([]) });
+  const wylaczony = await start({ koperta: koperta([]), dataLayer: zgodaTak() });
   wylaczony.ma.visitorId();
   wylaczony.dataLayer.push({ event: 'generate_lead' });
   await wylaczony.gotowe();
@@ -3736,7 +3745,7 @@ test('MA-D38 D′: powrót → POST /api/v1/public/ma/visit {visitorId, units, p
   const p2 = await powrot(p1, 26 * H);
   assert.equal(p2.sygnaly.length, 1);
   assert.equal(p2.sygnaly[0].url, VISIT);
-  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [] }, 'ma.24: units zawsze, także []');
+  assert.deepEqual(czyste(p2.sygnaly[0].body), { visitorId: id, pageviews: 1, source: 'return_visit', units: [], visitNo: p2.ma.profile().visits, time_on_site_s: 0 }, 'ma.24: units zawsze, także []');
   assert.equal(p2.sygnaly[0].init.credentials, 'omit');
   p2.ma.track({ unitId: UID(1), name: 'A1', source: '2destate' });
   await p2.gotowe();
@@ -4056,4 +4065,405 @@ test('ma.26: prefer_filters, gdy core nic nie przyjął (pole dotknięte, brak p
     assert.equal(p3.ustawioneFiltry.length, 1, 'następna wizyta próbuje znowu');
     assert.deepEqual(czyste(p3.stanFiltrow.filters), { rooms: [3] });
   }
+});
+
+// ---------------------------------------------------------------------------
+// ma.34: zdarzenia zachowania w /visit
+// ---------------------------------------------------------------------------
+
+/** Element w widoku (albo poza nim) z atrybutami zdarzeń. */
+function oznaczony(attrs, widoczny) {
+  const el = element(attrs);
+  el._rect = widoczny === false ? { width: 0, height: 0, top: 0, bottom: 0, left: 0, right: 0 } : { width: 100, height: 100, top: 10, bottom: 110, left: 10, right: 110 };
+  el.getBoundingClientRect = () => el._rect;
+  return el;
+}
+
+/** Powrót leada; elementy strony podane w opts.elementy. */
+async function powrotLeada(opts) {
+  const p1 = await leadDema({ dataLayer: zgodaTak() });
+  return powrot(p1, 26 * H, Object.assign({ dataLayer: zgodaTak() }, opts || {}));
+}
+
+/** Czas płynie sekunda po sekundzie, żeby ticki odpaliły się jak w przeglądarce. */
+async function sekundy(env, n) {
+  for (let i = 0; i < n; i++) await env.minie(1000);
+}
+
+const ostatni = (env) => env.sygnaly[env.sygnaly.length - 1].body;
+
+test('ma.34: każdy POST /visit ma visitNo i time_on_site_s, a pusty stan nie wysyła events', async () => {
+  const p = await powrotLeada();
+  const b = czyste(p.sygnaly[0].body);
+  assert.equal(b.visitNo, p.ma.profile().visits);
+  assert.equal(b.time_on_site_s, 0);
+  assert.ok(!('events' in b));
+});
+
+test('ma.34: consentRequired:false i jawna odmowa — zero /visit i liczników', async () => {
+  const odmowa = () => [gtag('consent', 'update', { analytics_storage: 'denied' })];
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { dataLayer: odmowa() });
+  assert.equal(p.ma.event('map_view'), false);
+  await sekundy(p, 20);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+  assert.ok(p._dysk.state, 'baza zostaje');
+  assert.equal(p._dysk.state.beh, undefined);
+});
+
+test('ma.34: consentRequired:false bez decyzji — zero /visit; sygnał rusza dopiero po zgodzie', async () => {
+  const mapa = oznaczony({ 'd2-ma-event': 'map_view' });
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { elementy: [mapa], dataLayer: [] });
+  assert.equal(p.ma.event('card_download'), false);
+  await sekundy(p, 40);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0, 'bez decyzji gościa nic nie wychodzi');
+  assert.ok(!p._dysk.state.beh);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'po zgodzie');
+  assert.equal(p.sygnaly[0].url, VISIT);
+  assert.equal(p.sygnaly[0].body.time_on_site_s, 0, 'czas sprzed zgody się nie liczy');
+});
+
+test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane liczniki; nieznana zgoda nie', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  assert.ok(p._dysk.state.beh, 'liczniki zapisane');
+  const bezDecyzji = await powrot(p, 3 * MIN, { dataLayer: [] });
+  await sekundy(bezDecyzji, 2);
+  assert.ok(bezDecyzji._dysk.state.beh, 'nieznana zgoda czeka');
+  const zOdmowa = await powrot(bezDecyzji, 3 * MIN, { dataLayer: [odmowa()] });
+  await zOdmowa.gotowe();
+  assert.ok(zOdmowa._dysk.state, 'baza zostaje');
+  assert.equal(zOdmowa._dysk.state.beh, undefined, 'przy starcie');
+
+  const q = await powrotLeada();
+  q.ma.event('card_download', { unitId: UID(1) });
+  await q.gotowe();
+  assert.ok(q._dysk.state.beh);
+  q.dataLayer.push(odmowa());
+  await sekundy(q, 2);
+  assert.ok(q._dysk.state, 'baza zostaje');
+  assert.equal(q._dysk.state.beh, undefined, 'w trakcie strony');
+});
+
+test('ma.34: start bez decyzji, potem odmowa — liczniki kasuje sama odmowa, bez ticku', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  const bezDecyzji = await powrot(p, 3 * MIN, { dataLayer: [] });
+  await bezDecyzji.gotowe();
+  assert.ok(bezDecyzji._dysk.state.beh, 'tick nie wystartował, liczniki czekają');
+  bezDecyzji.dataLayer.push(odmowa());
+  await bezDecyzji.gotowe();
+  assert.ok(bezDecyzji._dysk.state, 'baza zostaje');
+  assert.equal(bezDecyzji._dysk.state.beh, undefined);
+});
+
+test('ma.34: tick zatrzymany przez 503, potem odmowa — liczniki znikają', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  let st = 202;
+  const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p.gotowe();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.minie(61000);
+  st = 503;
+  p.okno('pagehide');
+  await sekundy(p, 3);
+  assert.ok(p._dysk.state.beh);
+  p.dataLayer.push(odmowa());
+  await p.gotowe();
+  assert.ok(p._dysk.state, 'baza zostaje');
+  assert.equal(p._dysk.state.beh, undefined);
+});
+
+test('ma.34: zgoda w trakcie strony — wizyta formularza nic nie wysyła', async () => {
+  const p = await leadDema({ dataLayer: [] });
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+});
+
+for (const [nazwa, kod] of [['wstrzymany przez 429', 429], ['wyciszony przez 422', 422]]) {
+  test('ma.34: zgoda w trakcie strony — sygnał ' + nazwa + ' nie omija blokady', async () => {
+    const p1 = await leadDema({ statusSygnalu: () => kod });
+    const p2 = await powrot(p1, 26 * H);
+    await p2.gotowe();
+    assert.equal(p2.sygnaly.length, 1);
+    const p3 = await powrot(p2, 3 * MIN, { dataLayer: [] });
+    p3.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+    await p3.gotowe();
+    assert.equal(p3.sygnaly.length, 0);
+  });
+}
+
+test('ma.34: odmowa, potem zgoda na tej samej stronie — jeden sygnał', async () => {
+  const p1 = await leadDema();
+  const p = await powrot(p1, 26 * H, { dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 0);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1);
+  assert.equal(p.sygnaly[0].url, VISIT);
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'powtórzona zgoda nie wysyła drugi raz');
+});
+
+for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {
+  test('ma.34: stan nieprzyjęty (' + nazwa + ') jedzie ponownie przy następnej próbie', async () => {
+    let st = 202;
+    const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+    const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+    await p.gotowe();
+    p.ma.event('card_download', { unitId: UID(1) });
+    await p.minie(61000);
+    st = kod;
+    p.okno('pagehide');
+    await p.gotowe();
+    assert.equal(p.sygnaly.length, 2);
+    st = 202;
+    await p.minie(3600 * 1000 + 1000);
+    p.okno('pagehide');
+    await p.gotowe();
+    assert.equal(p.sygnaly.length, 3, 'ten sam stan, bo poprzedni nie został przyjęty');
+    assert.equal(ostatni(p).events.card_download.n, 1);
+  });
+}
+
+test('ma.34: klucze spoza listy, także __proto__, odpadają i nic nie zanieczyszczają', async () => {
+  const p = await powrotLeada();
+  for (const k of ['__proto__', 'constructor', 'toString']) assert.equal(p.ma.event(k), false);
+  assert.equal(({}).n, undefined);
+});
+
+test('ma.34: widoczny d2-ma-dwell nie wysyła ani nie zapisuje co sekundę', async () => {
+  const rzut = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(3) });
+  const p = await powrotLeada({ elementy: [rzut] });
+  await sekundy(p, 120);
+  assert.equal(p.sygnaly.length, 1, 'w ciągu 2 min tylko pierwszy sygnał');
+  await sekundy(p, 200);
+  assert.equal(p.sygnaly.length, 2, 'po 5 min przyrost dwell');
+});
+
+test('ma.34: przy kilku d2-ma-dwell w widoku sekunda idzie na największy; 1 px widoczności się nie liczy', async () => {
+  const duzy = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(1) });
+  const maly = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(2) });
+  maly._rect = { width: 50, height: 50, top: 10, bottom: 60, left: 10, right: 60 };
+  const skrawek = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(4) });
+  skrawek._rect = { width: 500, height: 500, top: 999, bottom: 1499, left: 0, right: 500 };
+  const p = await powrotLeada({ elementy: [maly, duzy, skrawek] });
+  await sekundy(p, 310);
+  assert.deepEqual([...ostatni(p).events.plan_dwell.units], [UID(1)]);
+});
+
+test('ma.34: stan nieprzyjęty (429) jedzie ponownie po Retry-After, po 422 liczniki stają', async () => {
+  let st = 429;
+  const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p.gotowe();
+  assert.equal(p.ma.event('map_view'), false, 'wstrzymane');
+  st = 202;
+  await p.minie(3600 * 1000 + 1000);
+  p.ma.event('card_download', { unitId: UID(1) });
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(ostatni(p).events.card_download.n, 1);
+  st = 422;
+  const q = await powrot(p, 26 * H, { dataLayer: zgodaTak() });
+  await q.gotowe();
+  assert.equal(q.ma.event('map_view'), false, 'wyciszone do końca wizyty');
+});
+
+test('ma.34: bez powiązanego leada nic się nie liczy ani nie wysyła', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT });
+  assert.equal(env.ma.event('map_view'), false);
+  await env.gotowe();
+  assert.equal(env.sygnaly.length, 0);
+  assert.ok(!env._dysk.state.beh);
+});
+
+test('ma.34: w wizycie formularza zdarzenie się nie liczy', async () => {
+  const p1 = await leadDema({ dataLayer: zgodaTak() });
+  assert.equal(p1.ma.event('card_download', { unitId: UID(1) }), false);
+  await p1.gotowe();
+  assert.equal(p1.sygnaly.length, 0);
+});
+
+test('ma.34: bez d2-ma-hot-lead digi2.ma.event nic nie robi', async () => {
+  const env = await start({ koperta: koperta([]) });
+  assert.equal(env.ma.event('map_view'), false);
+});
+
+test('ma.34: API liczy kliknięcia z lokalami, list_view i map_view raz na wizytę, nieznany klucz odpada', async () => {
+  const p = await powrotLeada();
+  assert.equal(p.ma.event('price_history_view', { unitId: UID(1) }), true);
+  p.ma.event('price_history_view', { unitId: UID(1) });
+  p.ma.event('card_download', { unitId: 'nie-uuid' });
+  p.ma.event('map_view'); p.ma.event('map_view');
+  p.ma.event('list_view'); p.ma.event('list_view');
+  assert.equal(p.ma.event('lead'), false);
+  assert.equal(p.ma.event('return_visit'), false);
+  assert.equal(p.ma.event('plan_dwell', { unitId: 'zly', seconds: 5 }), false);
+  await p.minie(5 * MIN + 100);
+  assert.deepEqual(czyste(ostatni(p).events), {
+    price_history_view: { n: 2, units: [UID(1)] },
+    card_download: { n: 1 },
+    map_view: { n: 1 },
+    list_view: { n: 1 },
+  });
+});
+
+test('ma.34: limity kontraktu — n do 50, 20 najnowszych lokali, dwell do 3600 s', async () => {
+  const p = await powrotLeada();
+  for (let i = 0; i < 60; i++) p.ma.event('card_download', { unitId: UID(i) });
+  for (let i = 0; i < 25; i++) p.ma.event('plan_dwell', { unitId: UID(i), seconds: 99999 });
+  await p.minie(5 * MIN + 100);
+  const e = czyste(ostatni(p).events);
+  assert.equal(e.card_download.n, 50);
+  assert.equal(e.card_download.units.length, 20);
+  assert.equal(e.card_download.units[19], UID(59), 'najnowszy zostaje');
+  assert.equal(e.plan_dwell.units.length, 20);
+  assert.equal(e.plan_dwell.n, 20);
+  assert.ok(!e.plan_dwell.units.includes(UID(0)), 'najstarszy odpada');
+  assert.equal(e.plan_dwell.dwell_s[UID(24)], 3600);
+});
+
+test('ma.34: atrybuty — map_view po około sekundzie w widoku, poza widokiem nie; dwell na lokal', async () => {
+  const mapa = oznaczony({ 'd2-ma-event': 'map_view' });
+  const lista = oznaczony({ 'data-d2-ma-event': 'list_view' }, false);
+  const rzut = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': UID(3) });
+  const zlyRzut = oznaczony({ 'd2-ma-dwell': '', 'd2-ma-unit': 'x' });
+  const p = await powrotLeada({ elementy: [mapa, lista, rzut, zlyRzut] });
+  await sekundy(p, 10);
+  await p.minie(5 * MIN + 100);
+  const e = czyste(ostatni(p).events);
+  assert.deepEqual(e.map_view, { n: 1 });
+  assert.ok(!e.list_view, 'element poza widokiem');
+  assert.equal(e.plan_dwell.units, undefined, 'poniżej 180 s tylko dwell_s');
+  assert.equal(e.plan_dwell.n, 0);
+  assert.ok(e.plan_dwell.dwell_s[UID(3)] >= 10);
+});
+
+test('ma.34: plan_dwell — units i n tylko dla lokali po progu 180 s', async () => {
+  const p = await powrotLeada();
+  p.ma.event('plan_dwell', { unitId: UID(1), seconds: 179 });
+  p.ma.event('plan_dwell', { unitId: UID(2), seconds: 180 });
+  await p.minie(5 * MIN + 100);
+  assert.deepEqual(czyste(ostatni(p).events.plan_dwell), { n: 1, dwell_s: { [UID(1)]: 179, [UID(2)]: 180 }, units: [UID(2)] });
+});
+
+test('ma.34: pageviews nie przekracza 50 — serwer odpowiedziałby 422 i wyciszył moduł', async () => {
+  let p = await powrotLeada();
+  for (let i = 0; i < 55; i++) p = await powrot(p, 1000, { dataLayer: zgodaTak() });
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.minie(61000);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(ostatni(p).pageviews, 50);
+});
+
+test('ma.34: klik w oznaczony element liczy zdarzenie z lokalem', async () => {
+  const karta = oznaczony({ 'd2-ma-event': 'card_download', 'd2-ma-unit': UID(4) });
+  karta.closest = (sel) => (sel.includes('d2-ma-event') ? karta : null);
+  const p = await powrotLeada({ elementy: [karta] });
+  p.dom('click', { target: karta, preventDefault() {}, stopPropagation() {} });
+  await p.minie(5 * MIN + 100);
+  assert.deepEqual(czyste(ostatni(p).events).card_download, { n: 1, units: [UID(4)] });
+});
+
+test('ma.34: czas liczy się tylko przy widocznej karcie i bez bezczynności ponad 5 min', async () => {
+  const p = await powrotLeada();
+  await sekundy(p, 70);
+  p.document.visibilityState = 'hidden';
+  p.dom('visibilitychange');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 2, 'ukrycie karty po 70 s wysyła stan');
+  const po70 = ostatni(p).time_on_site_s;
+  assert.ok(po70 >= 69 && po70 <= 71, String(po70));
+  await sekundy(p, 20);
+  p.document.visibilityState = 'visible';
+  await sekundy(p, 400);
+  p.document.visibilityState = 'hidden';
+  p.dom('visibilitychange');
+  await p.gotowe();
+  const koniec = ostatni(p).time_on_site_s;
+  // 5 min od ostatniej aktywności minus 20 s ukrytej karty.
+  assert.ok(koniec >= 275 && koniec <= 285, 'bezczynność zatrzymuje licznik: ' + koniec);
+});
+
+test('ma.34: sam czas nie wysyła co 5 minut; przy wyjściu poniżej 30 s przyrostu też nie', async () => {
+  const p = await powrotLeada();
+  await sekundy(p, 10);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'przyrost czasu poniżej 30 s');
+  p.dom('mousemove');
+  await sekundy(p, 25);
+  await p.minie(5 * MIN + 100);
+  assert.equal(p.sygnaly.length, 1, 'sam czas nie budzi co 5 min');
+});
+
+test('ma.34: pagehide wysyła świeże zdarzenie bez czekania 5 minut', async () => {
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(7) });
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 1, 'mniej niż 60 s od ostatniej wysyłki');
+  await p.minie(61000);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(p.sygnaly.length, 2);
+  assert.equal(ostatni(p).events.card_download.n, 1);
+  assert.equal(p.sygnaly[1].init.keepalive, true);
+});
+
+test('ma.34: nowa wizyta zaczyna liczniki od zera, kolejna odsłona tej samej je zachowuje', async () => {
+  const p = await powrotLeada();
+  const nr = p.ma.profile().visits;
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  const ta = await powrot(p, 3 * MIN, { dataLayer: zgodaTak() });
+  ta.ma.event('card_download', { unitId: UID(2) });
+  await ta.minie(61000);
+  ta.okno('pagehide');
+  await ta.gotowe();
+  assert.equal(ostatni(ta).visitNo, nr);
+  assert.equal(ostatni(ta).events.card_download.n, 2, 'stan całej wizyty, nie przyrost');
+  const nowa = await powrot(ta, 26 * H, { dataLayer: zgodaTak() });
+  assert.equal(ostatni(nowa).visitNo, nr + 1);
+  assert.ok(!('events' in ostatni(nowa)));
+});
+
+test('ma.34: po clear() zdarzenia się nie liczą i liczniki znikają', async () => {
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  await p.ma.clear();
+  await p.gotowe();
+  const liczba = p.sygnaly.length;
+  assert.equal(p.ma.event('card_download', { unitId: UID(1) }), false);
+  await sekundy(p, 3);
+  assert.equal(p.sygnaly.length, liczba);
+});
+
+test('ma.34: 401 zrywa powiązanie i kasuje liczniki', async () => {
+  const p1 = await leadDema({ statusSygnalu: () => 401, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p.gotowe();
+  assert.ok(!p._dysk.state.hotLead);
+  assert.ok(!p._dysk.state.beh);
+  assert.equal(p.ma.event('map_view'), false);
 });
