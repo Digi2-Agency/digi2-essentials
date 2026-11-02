@@ -4260,7 +4260,64 @@ test('ma.35: consentRequired:false, odmowa po oddaniu id — /revoke i koniec po
   const p2 = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
   await p2.gotowe();
   assert.equal(p2.sygnaly.length, 0, 'bez nowego formularza i leada powrót nie sygnalizuje');
-  assert.equal(p2.ma.profile().visitorId, id, 'ten sam visitorId w bazie');
+  assert.notEqual(p2.ma.profile().visitorId, id, 'ma.36: odwołany id wymieniony na nowy');
+});
+
+test('ma.36: odmowa → zgoda → nowy formularz z leadem — powrót wysyła /visit z NOWYM visitorId', async () => {
+  const p1 = await leadDema();
+  const stary = p1.ma.profile().visitorId;
+  p1.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p1.gotowe();
+  const p2 = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  const nowy = p2.ma.profile().visitorId;
+  assert.notEqual(nowy, stary);
+  const { form, ukryte } = formularzDema();
+  p2.dom('submit', { target: form });
+  p2.dataLayer.push({ event: 'generate_lead' });
+  await p2.gotowe();
+  assert.equal(ukryte.value, nowy, 'formularz dostaje nowy id');
+  const p3 = await powrot(p2, 26 * H, { dataLayer: zgodaTak() });
+  const v = p3.sygnaly.filter((x) => x.url === VISIT);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].body.visitorId, nowy);
+});
+
+test('ma.36: wygasły token (revokeOnly) nie blokuje późniejszego powiązania po visitorId; /revoke dalej niesie oba', async () => {
+  const k = koperta([], { storage: { retentionDays: 365, consentRequired: false } });
+  const p1 = await leadTokenu({ koperta: k });
+  const p2 = await powrot(p1, 91 * 24 * H);
+  assert.equal(p2._dysk.state.leadToken.revokeOnly, true);
+  const id = p2.ma.profile().visitorId;
+  const { form } = formularzDema();
+  p2.dom('submit', { target: form });
+  p2.dataLayer.push({ event: 'generate_lead' });
+  await p2.gotowe();
+  const p3 = await powrot(p2, 26 * H);
+  const v = p3.sygnaly.filter((x) => x.url === VISIT);
+  assert.equal(v.length, 1, 'powrót leada testowego sygnalizuje');
+  assert.equal(v[0].body.visitorId, id);
+  assert.ok(!('token' in v[0].body));
+  assert.ok(p3._dysk.state.hotLead, 'powiązanie zostaje');
+  await p3.ma.clear();
+  await p3.gotowe();
+  assert.deepEqual(p3.sygnaly.filter((x) => x.url === REVOKE).map((x) => ({ ...x.body })), [{ token: p1._token }, { visitorId: id }]);
+});
+
+test('ma.36: 401 na /visit po visitorId nie zabiera wygasłego tokenu czekającego na /revoke', async () => {
+  const k = koperta([], { storage: { retentionDays: 365, consentRequired: false } });
+  let st = 202;
+  const p1 = await leadTokenu({ koperta: k, statusSygnalu: () => st });
+  const p2 = await powrot(p1, 91 * 24 * H);
+  const { form } = formularzDema();
+  p2.dom('submit', { target: form });
+  p2.dataLayer.push({ event: 'generate_lead' });
+  await p2.gotowe();
+  st = 401;
+  const p3 = await powrot(p2, 26 * H);
+  await p3.gotowe();
+  assert.equal(p3.sygnaly.filter((x) => x.url === VISIT && x.body.visitorId).length, 1, '/visit po visitorId poszedł i dostał 401');
+  assert.equal(p3._dysk.state.hotLead, undefined);
+  assert.equal(p3._dysk.state.leadToken.t, p1._token);
 });
 
 for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {

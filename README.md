@@ -1586,7 +1586,9 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   never both (the server answers 422). 401 or 403 drops the token and the
   link, no retry. Past `exp` the link goes and no `/visit` is sent, but the
   token stays (`revokeOnly`) for a later `/revoke` — the server deletes the
-  history on an expired token too. "Clear", refusal and withdrawal send
+  history on an expired token too. Such a token does not block a later
+  `visitorId` link (an agency test lead in the same browser) and goes only
+  with the profile's retention or "Clear". "Clear", refusal and withdrawal send
   `/revoke { token }`, plus `/revoke { visitorId }` when the id also went to
   a form. A second token replaces the first **without** `/revoke`: revoke
   works per person and would wipe the new lead's history as well; the old
@@ -1600,7 +1602,10 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
 - **Refusal after the id went out (ma.35, `consentRequired: false`):** the
   database stays, but the link does not: `/revoke {visitorId}` and the local
   link (`idShared`, `hotLead`) goes, also when the refusal came between visits
-  (caught on the next page view). Consent given later does not bring it back;
+  (caught on the next page view), and the browser gets a **new** `visitorId`
+  (ma.36; the rest of the profile stays). 2destate never links a revoked id to
+  a new lead, so without the new id a later form would link locally, get 401
+  and never link again. Consent given later does not bring the old link back;
   only a new form with a lead does. With `consentRequired: true` the refusal
   deletes the whole database with `/revoke`, as before.
 - **MA-D30:** the browser is linked only when, **in the same visit**, the id

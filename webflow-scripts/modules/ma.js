@@ -3439,14 +3439,18 @@
     revokeHotLead();
     dropHotLead();
     delete state.idShared;
+    // ma.36: 2destate nie wiąże już odwołanego id z nowym leadem - nowy visitorId,
+    // żeby późniejsza zgoda z nowym formularzem dała działające powiązanie.
+    state.visitorId = _uuid();
     save();
-    _log('consent denied — visitorId revoked, hot lead unbound');
+    _log('consent denied — visitorId revoked and replaced, hot lead unbound');
   }
 
-  function dropHotLead() {
+  // keepRevokeOnly (ma.36): 401 na visitorId nie zabiera wygasłego tokenu czekającego na /revoke.
+  function dropHotLead(keepRevokeOnly) {
     if (!state) return;
     delete state.hotLead;
-    delete state.leadToken;
+    if (!(keepRevokeOnly && state.leadToken && state.leadToken.revokeOnly)) delete state.leadToken;
     delete state.hotLeadSent;
     delete state.hotLeadRetryAt;
     delete state.beh;
@@ -3470,6 +3474,10 @@
       var p = JSON.parse(window.atob(b));
       return p && typeof p === 'object' && typeof p.exp === 'number' && typeof p.site === 'string' ? p : null;
     } catch (e) { return null; }
+  }
+
+  function liveToken() {
+    return state && state.leadToken && !state.leadToken.revokeOnly ? state.leadToken.t : null;
   }
 
   function tokenExpired(lt) {
@@ -3734,7 +3742,8 @@
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     // ma.36: po exp /visit nie ma sensu (401), ale token zostaje do /revoke - serwer
     // kasuje historię także na wygasłym tokenie („Wyczyść”, odmowa).
-    if (state.leadToken && tokenExpired(state.leadToken)) {
+    // ma.36: tylko żywy token - revokeOnly nie zrywa późniejszego powiązania po visitorId.
+    if (state.leadToken && !state.leadToken.revokeOnly && tokenExpired(state.leadToken)) {
       var old = state.leadToken;
       dropHotLead();
       state.leadToken = { t: old.t, exp: old.exp, revokeOnly: true };
@@ -3765,7 +3774,7 @@
       }
     }
     var id = state.visitorId;
-    var tok = state.leadToken ? state.leadToken.t : null;
+    var tok = liveToken();
     var mark = { visit: state.visits, units: units, at: nowReal, ev: evSig, time: timeS };
     state.hotLeadSent = mark;
     // Nieprzyjęty stan (sieć, 429, 503) nie liczy się jako wysłany - pojedzie ponownie.
@@ -3791,7 +3800,7 @@
         credentials: 'omit', mode: 'cors', keepalive: true
       }).then(function (r) {
         if (!r || r.ok) return;
-        var same = state && state.visitorId === id && (state.leadToken ? state.leadToken.t : null) === tok;
+        var same = state && state.visitorId === id && liveToken() === tok;
         if (tok && (r.status === 401 || r.status === 403)) {
           // ma.36: token nieznany, wygasły albo z innego originu - usuwamy, bez ponawiania.
           _log('visit signal refused (' + r.status + ') — lead token dropped');
@@ -3799,7 +3808,7 @@
         } else if (r.status === 401) {
           // Nieznany, odwołany albo wygasły visitorId - powiązania już nie ma.
           _log('visit signal refused (401) — hot lead unbound');
-          if (same) { dropHotLead(); save(); }
+          if (same) { dropHotLead(true); save(); }
         } else if (r.status === 403) {
           // Zły Origin albo lead niekwalifikowany - nie zrywamy, wstrzymujemy na dobę.
           _warn('visit signal refused (403) — Origin not on the project list or lead not eligible; paused 24 h');
