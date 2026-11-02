@@ -2525,7 +2525,13 @@
   }
 
   // ma.37: klik przycisku szablonu - bez danych osobowych, scoring tego nie liczy.
+  // Po kliku przycisku popupu chwila bez popupów ze scenariuszy: filter_rooms
+  // (ImageMapPro ≥ 1.7.1) to filtr gościa, a search_filter po 500 ms otworzyłby
+  // kolejny popup zaraz po zamknięciu tego. Pominięty popup oddaje częstotliwość.
+  var CTA_QUIET_MS = 5000;
+  var ctaQuietUntil = 0;
   function ctaClicked(template, action) {
+    ctaQuietUntil = Date.now() + CTA_QUIET_MS;
     _emit('ma:action', { 'do': 'popup_cta', action: action, template: template });
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({ event: 'ma_popup_cta', action: action });
@@ -2548,8 +2554,9 @@
   }
 
   // „N pokoi” w wyszukiwarce 2destate jak prefer_filters by:rooms, potem lista wyników.
-  // core 2destate (4110bf3e) zapisuje każde setFilters jako source "api" - bez
-  // search_filter i bez GA4 wyszukiwarki; pole dotknięte przez gościa zostaje (skipped).
+  // To klik gościa: { source: "user" } (ImageMapPro 2destate ≥ 1.7.1) - liczy się jak
+  // jego filtr (search_filter, GA4 wyszukiwarki). Starsza paczka opcję ignoruje i
+  // zapisuje "api" - wtedy bez tych zdarzeń, a pole dotknięte przez gościa zostaje.
   // Lista i tak dostaje przewinięcie: gość kliknął „pokaż”, więc ją zobaczy.
   function ctaFilterRooms() {
     var rooms = ctaRooms();
@@ -2557,7 +2564,7 @@
     if (rooms == null || !api || typeof api.setFilters !== 'function') return;
     try {
       mapNames().forEach(function (m) {
-        var r = api.setFilters(m, { rooms: [rooms] });
+        var r = api.setFilters(m, { rooms: [rooms] }, { source: 'user' });
         if (r && typeof r === 'object' && Array.isArray(r.applied) && !r.applied.length) _log('filter_rooms — 2destate applied nothing (field touched by the visitor)');
       });
     } catch (e) { _warn('filter_rooms failed', e); }
@@ -2680,6 +2687,7 @@
   }
 
   function showPopup(node, ctx, onShown, onSkipped, owner) {
+    if (Date.now() < ctaQuietUntil) { _log('popup skipped — the visitor just used a popup button'); onSkipped(); return; }
     var epoch = profileEpoch;
     var tplLib = popupTemplate(node.template);
     var noUnit = unitlessPopup(node.template, tplLib, ctx.unit);

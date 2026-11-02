@@ -1387,16 +1387,24 @@ segment }` in `state.scenarios[scenarioId].nodes`.
     `scroll_to`, `close`; anything else drops the block. `href` only with
     `link`, `target` only with `scroll_to` (elsewhere: warning, ignored).
     - `filter_rooms`: `d2estate.setFilters(map, { rooms: [pref.rooms] })` on
-      every 2destate map, like `prefer_filters by: rooms`. Today 2destate
-      core (4110bf3e) records every `setFilters` as `source: "api"`, so the
-      click gives no `search_filter` trigger and no GA4 search event, and a
-      rooms field the visitor touched stays (`skipped`, logged). Closes the
+      every 2destate map, like `prefer_filters by: rooms`, but with
+      `{ source: "user" }` — it is the visitor's click. ImageMapPro 2destate
+      1.7.1 and later record it as the visitor's filter (`search_filter`
+      trigger, GA4 search events). An older package ignores the option and
+      records `source: "api"`: no `search_filter`, no GA4 search event, and a
+      rooms field the visitor touched stays (`skipped`, logged). The page
+      loads the 2destate package (usually `@latest`, browser cache up to 7
+      days), not d2-ma, so both cases happen in the field. Closes the
       popup and scrolls to the results list (`[data-imp-detached-menu]`)
       either way. Without `pref.rooms` (a number ≥ 1) the button is not
       rendered.
     - `scroll_to`: `target` `"#id"` (`#[A-Za-z][\w-]{0,60}`, nothing else);
       closes the popup and scrolls to the element.
     - `close`: closes the popup only.
+    - For 5 s after a template button click no scenario popup opens (it is
+      skipped and gives its frequency back): with ImageMapPro ≥ 1.7.1
+      `filter_rooms` is the visitor's filter, and a `search_filter` scenario
+      would otherwise open another popup 500 ms after this one closed.
     - `contact` only closes the popup (no address, no scroll); a page that
       wants a form opens it in its own click handler.
     - Each button takes its action from its own block: `open_unit` gets the

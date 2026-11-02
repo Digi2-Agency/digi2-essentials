@@ -4774,7 +4774,7 @@ test('ma.37: filter_rooms — setFilters z pref.rooms, zamyka popup, zdarzenia m
   przyciski(env)[0]._klik({ preventDefault() { zapobiegl = true; } });
   assert.ok(zapobiegl, 'bez skoku na #');
   assert.equal(inst.isVisible, false);
-  assert.deepEqual(env.ustawioneFiltry.slice(-1), [['mapa', { rooms: [2] }, undefined]]);
+  assert.deepEqual(czyste(env.ustawioneFiltry.slice(-1)), [['mapa', { rooms: [2] }, { source: 'user' }]], 'klik gościa: source user (ImageMapPro ≥ 1.7.1)');
   assert.deepEqual(env.zdarzenia['ma:action'].filter((a) => a.do === 'popup_cta').map((a) => ({ ...a })), [{ do: 'popup_cta', action: 'filter_rooms', template: 'last-unit' }]);
   assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => ({ ...e })), [{ event: 'ma_popup_cta', action: 'filter_rooms' }]);
 });
@@ -4873,5 +4873,20 @@ test('ma.37: zgoda w trakcie powrotu (consentRequired:false) — touchpoint z ch
   const b = p2.sygnaly[0].body;
   assert.equal(b.touchpoint.utm_source, 'newsletter');
   assert.equal(Date.parse(b.touchpoint.ts), p2._dysk.state.visitStart);
+});
+
+test('ma.37: po kliku filter_rooms search_filter gościa przez 5 s nie otwiera kolejnego popupu; częstotliwość wraca', async () => {
+  const promo = scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_visit' }]);
+  const env = await powrotZPopupem(koperta([POWROT, promo], { templates: { popup: [zPrzyciskami([{ type: 'cta', label: 'Pokaż', action: 'filter_rooms' }])] } }),
+    { imp: { instances: { mapa: {} } } });
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit']);
+  przyciski(env)[0]._klik({ preventDefault() {} });
+  env.filtr({ rooms: [2] });   // ImageMapPro ≥ 1.7.1 zgłasza setFilters z source user
+  await env.minie(600);
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit'], 'bez drugiego popupu zaraz po kliku');
+  await env.minie(5000);
+  env.filtr({ rooms: [3] });
+  await env.minie(600);
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit', 'd2-ma-promo-filter'], 'once_per_visit nie zużyte przez pominięty');
 });
 
