@@ -4774,7 +4774,7 @@ test('ma.37: filter_rooms — setFilters z pref.rooms, zamyka popup, zdarzenia m
   przyciski(env)[0]._klik({ preventDefault() { zapobiegl = true; } });
   assert.ok(zapobiegl, 'bez skoku na #');
   assert.equal(inst.isVisible, false);
-  assert.deepEqual(env.ustawioneFiltry.slice(-1), [['mapa', { rooms: [2] }, undefined]]);
+  assert.deepEqual(czyste(env.ustawioneFiltry.slice(-1)), [['mapa', { rooms: [2] }, { source: 'user' }]], 'klik gościa: source user (ImageMapPro ≥ 1.7.1)');
   assert.deepEqual(env.zdarzenia['ma:action'].filter((a) => a.do === 'popup_cta').map((a) => ({ ...a })), [{ do: 'popup_cta', action: 'filter_rooms', template: 'last-unit' }]);
   assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => ({ ...e })), [{ event: 'ma_popup_cta', action: 'filter_rooms' }]);
 });

@@ -27,9 +27,10 @@ Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
   nie pokazuje), `scroll_to` z `target: "#id"`, `close`. `open_unit`, `contact`
   i `link` bez zmian; każdy przycisk ma własną akcję (link zostaje przy swoim
   adresie także obok `open_unit`).
-- `filter_rooms` 2destate zapisuje dziś jak zmianę ze skryptu: bez wyzwalacza
-  `search_filter` i bez zdarzeń GA4 wyszukiwarki, a pole pokoi ustawione wcześniej
-  przez gościa zostaje.
+- `filter_rooms` wywołuje `setFilters` z `{ source: "user" }`: od ImageMapPro
+  2destate 1.7.1 to filtr gościa (wyzwalacz `search_filter`, zdarzenia GA4
+  wyszukiwarki). Starsza paczka zapisuje go jak zmianę ze skryptu: bez tych
+  zdarzeń, a pole pokoi ustawione wcześniej przez gościa zostaje.
 - Klik przycisku z szablonu (i wbudowanego przycisku `promo-filter`): `dataLayer`
   `ma_popup_cta` `{ action }` i `ma:action` `{ do: "popup_cta", action, template }`.
 - Strona z własnym `[d2-ma-popup]` bez zmian.

@@ -2548,8 +2548,9 @@
   }
 
   // „N pokoi” w wyszukiwarce 2destate jak prefer_filters by:rooms, potem lista wyników.
-  // core 2destate (4110bf3e) zapisuje każde setFilters jako source "api" - bez
-  // search_filter i bez GA4 wyszukiwarki; pole dotknięte przez gościa zostaje (skipped).
+  // To klik gościa: { source: "user" } (ImageMapPro 2destate ≥ 1.7.1) - liczy się jak
+  // jego filtr (search_filter, GA4 wyszukiwarki). Starsza paczka opcję ignoruje i
+  // zapisuje "api" - wtedy bez tych zdarzeń, a pole dotknięte przez gościa zostaje.
   // Lista i tak dostaje przewinięcie: gość kliknął „pokaż”, więc ją zobaczy.
   function ctaFilterRooms() {
     var rooms = ctaRooms();
@@ -2557,7 +2558,7 @@
     if (rooms == null || !api || typeof api.setFilters !== 'function') return;
     try {
       mapNames().forEach(function (m) {
-        var r = api.setFilters(m, { rooms: [rooms] });
+        var r = api.setFilters(m, { rooms: [rooms] }, { source: 'user' });
         if (r && typeof r === 'object' && Array.isArray(r.applied) && !r.applied.length) _log('filter_rooms — 2destate applied nothing (field touched by the visitor)');
       });
     } catch (e) { _warn('filter_rooms failed', e); }
