@@ -246,7 +246,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 37;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 38;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -2332,8 +2332,10 @@
     return Object.prototype.hasOwnProperty.call(lib, id) ? lib[id] : null;
   }
 
-  function tokenVar(name) {
-    return 'var(--' + name + ')';
+  // ma.38: zapas = wygląd popupu bez stylu (biała karta, ciemny tekst i przycisk),
+  // więc strona bez zmiennych CSS tokenów nie dostaje przezroczystej karty.
+  function tokenVar(name, fallback) {
+    return 'var(--' + name + ', ' + fallback + ')';
   }
 
   // Szkielet popupu z szablonu: nakładka i okno. Bloki dochodzą w renderTemplate().
@@ -2350,9 +2352,9 @@
     dialog.setAttribute('d2-ma-template-body', '');
     dialog.style.cssText = 'position:relative;width:100%;max-width:' + TPL_SIZES[tpl.size] + 'px;background:#fff;color:#1a1d1c;'
       + 'border-radius:14px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.3);padding:20px 22px 22px';
-    if (tpl.style.background) dialog.style.setProperty('background-color', tokenVar(tpl.style.background));
-    if (tpl.style.text) dialog.style.setProperty('color', tokenVar(tpl.style.text));
-    if (tpl.style.font) dialog.style.setProperty('font-family', tokenVar(tpl.style.font));
+    if (tpl.style.background) dialog.style.setProperty('background-color', tokenVar(tpl.style.background, '#fff'));
+    if (tpl.style.text) dialog.style.setProperty('color', tokenVar(tpl.style.text, '#1a1d1c'));
+    if (tpl.style.font) dialog.style.setProperty('font-family', tokenVar(tpl.style.font, 'inherit'));
     if (tpl.style.radius) dialog.style.setProperty('border-radius', TPL_RADIUS[tpl.style.radius]);
     el.appendChild(dialog);
     document.body.appendChild(el);
@@ -2395,7 +2397,7 @@
         node.textContent = label;
         node.style.cssText = 'display:block;text-align:center;padding:12px 16px;border-radius:10px;background:#1a1d1c;'
           + 'color:#fff;text-decoration:none;font-weight:600;margin-top:12px';
-        if (tpl.style.accent) node.style.setProperty('background-color', tokenVar(tpl.style.accent));
+        if (tpl.style.accent) node.style.setProperty('background-color', tokenVar(tpl.style.accent, '#1a1d1c'));
       } else {
         var text = contentText({ text: b.text }, unit);
         if (text == null) text = b.fallback || null;
@@ -3088,11 +3090,20 @@
     // Przejście wewnątrz strony (także www. ↔ bez www.) to nie źródło -
     // referrer_internal odróżnia je od braku referrera (oba dają referrer_host null).
     e.referrer_internal = !!ref && siteHost(ref) === own;
-    e.referrer_host = ref && !e.referrer_internal ? ref.slice(0, 100) : null;
+    e.referrer_host = !e.referrer_internal ? refHost(ref) : null;
     // Ścieżka z „@” (także %40) to zwykle e-mail w adresie (np. /wypisz/jan@x.pl) - null, wpis zostaje.
     var lp = web ? (u.pathname || '/') : null;
     e.landing_path = lp && !/@|%40/i.test(lp) ? lp.slice(0, 200) : null;
     return e;
+  }
+
+  // ma.38: host spoza domeny (IPv6 w nawiasach, „_”, ponad 100 znaków) → null.
+  // Ucięty albo nie-domenowy host 2destate odrzuca razem z całym wpisem.
+  var HOST_LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+  var HOST_RE = new RegExp('^' + HOST_LABEL + '(?:\\.' + HOST_LABEL + ')*$');
+  function refHost(h) {
+    h = h == null ? '' : String(h).toLowerCase();
+    return h && h.length <= 100 && HOST_RE.test(h) ? h : null;
   }
 
   function siteHost(h) {
@@ -3104,9 +3115,14 @@
   // w utm_content / utm_term - ID kampanii (Google 10-11 cyfr, Meta utm_id
   // 18-19) w utm_campaign / utm_id nigdy nie są czyszczone z powodu cyfr.
   var PHONE_RE = /\+\d{2}[\s-]?\d|\d{3}[\s-]\d{3}[\s-]\d{3}|^\d{9}$/;
+  // ma.38: znak niedrukowalny (sterujący, formatujący, separator inny niż spacja -
+  // jak str.isprintable() w 2destate) → null; serwer odrzuciłby cały wpis.
+  // Przeglądarka bez \p{…} sprawdza same znaki sterujące.
+  var UNPRINTABLE_RE;
+  try { UNPRINTABLE_RE = new RegExp('(?! )[\\p{C}\\p{Z}]', 'u'); } catch (e) { UNPRINTABLE_RE = /[\u0000-\u001f\u007f-\u009f]/; }
   function utmValue(v, field) {
     v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
-    if (!v || v.indexOf('@') >= 0) return null;
+    if (!v || v.indexOf('@') >= 0 || UNPRINTABLE_RE.test(v)) return null;
     if ((field === 'content' || field === 'term') && PHONE_RE.test(v)) return null;
     return v.slice(0, 100);
   }
@@ -3166,9 +3182,14 @@
   function touchpointsOut(list) {
     return (list || []).map(function (e) {
       var o = { ts: ctxIso(e.ts) };
-      TOUCH_UTM.forEach(function (k) { if (e['utm_' + k] != null) o['utm_' + k] = e['utm_' + k]; });
+      // Wpis zapisany przed ma.38 przechodzi te same filtry, co nowy.
+      TOUCH_UTM.forEach(function (k) {
+        var v = e['utm_' + k] != null ? utmValue(e['utm_' + k], k) : null;
+        if (v != null) o['utm_' + k] = v;
+      });
       o.click_type = e.click_type || 'none';
-      if (e.referrer_host) o.referrer_host = e.referrer_host;
+      var rh = refHost(e.referrer_host);
+      if (rh) o.referrer_host = rh;
       if (e.landing_path) o.landing_path = e.landing_path;
       return o;
     });

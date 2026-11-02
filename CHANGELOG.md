@@ -16,6 +16,25 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.38 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.37–ma.16)
+
+Porządki po recenzji #53 (architekt-it) i uwaga webflow / 2destate z demo.
+
+- Popup z szablonu koperty: kolory i font z tokenów mają wartość zapasową
+  (`var(--surface, #fff)`, tekst i przycisk `#1a1d1c`, font `inherit`). Strona,
+  która nie definiuje zmiennych `--surface`, `--on-surface`, `--brand`,
+  `--body`, dostaje białą kartę z ciemnym tekstem, a nie przezroczystą.
+  Strona, która je definiuje, wygląda jak dotąd.
+- Historia źródeł (`touchpoints`, lead, `/visit`): wartość UTM ze znakiem
+  niedrukowalnym (nowa linia, tabulator, twarda spacja, znak zerowej
+  szerokości) jest pomijana. `referrer_host` dłuższy niż 100 znaków albo
+  niebędący zwykłą domeną (IPv6, `_`) jest pomijany zamiast ucinany. Dotąd
+  2destate odrzucał wtedy cały wpis; teraz odpada jedno pole. Wpisy zapisane
+  wcześniej przechodzą ten sam filtr przy wysyłce.
+- Dokumentacja: `visitorId()` / `profile().visitorId` zmienia się po odmowie
+  (ma.36), więc strona nie powinna go zapamiętywać; 2destate pomija źródło
+  wizyty w projekcie bez zakresu „kontekst leada” (`is_context_allowed`).
+
 ## v1.9.0-ma.37 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.36–ma.16)
 
 Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
