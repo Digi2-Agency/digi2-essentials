@@ -4141,6 +4141,36 @@ test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane l
   assert.ok(!q._dysk.state || !q._dysk.state.beh, 'w trakcie strony');
 });
 
+test('ma.34: start bez decyzji, potem odmowa — liczniki kasuje sama odmowa, bez ticku', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  const bezDecyzji = await powrot(p, 3 * MIN, { dataLayer: [] });
+  await bezDecyzji.gotowe();
+  assert.ok(bezDecyzji._dysk.state.beh, 'tick nie wystartował, liczniki czekają');
+  bezDecyzji.dataLayer.push(odmowa());
+  await bezDecyzji.gotowe();
+  assert.ok(!bezDecyzji._dysk.state || !bezDecyzji._dysk.state.beh);
+});
+
+test('ma.34: tick zatrzymany przez 503, potem odmowa — liczniki znikają', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  let st = 202;
+  const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+  const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p.gotowe();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.minie(61000);
+  st = 503;
+  p.okno('pagehide');
+  await sekundy(p, 3);
+  assert.ok(p._dysk.state.beh);
+  p.dataLayer.push(odmowa());
+  await p.gotowe();
+  assert.ok(!p._dysk.state || !p._dysk.state.beh);
+});
+
 for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {
   test('ma.34: stan nieprzyjęty (' + nazwa + ') jedzie ponownie przy następnej próbie', async () => {
     let st = 202;

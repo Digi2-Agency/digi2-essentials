@@ -1603,9 +1603,10 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   hidden or the page closes, at least 60 s after the last send; time alone leaves
   only then, after growing by 30 s. A state the server didn't take (network, 429,
   503) isn't retried on its own, and only events and time count as unsent, not the
-  unit list: they go with the next send attempt, so at the next
-  check on an open page or on the next page view of that visit, and it is lost if
-  the visit ends first. The same goes for a visit shorter than 60 s after the last
+  unit list: they go with the next send attempt. After a network error that is the
+  next check on an open page or the next page view of that visit; after 429 or 503
+  it waits out the block, then goes with the next page view, interaction or leaving
+  the page. It is lost if the visit ends first. The same goes for a visit shorter than 60 s after the last
   send: an event right before leaving is lost. An explicit refusal stops the whole
   `/visit` signal and deletes the counters.
   **Deploy the server first:** without the new fields it answers 422 and the

@@ -4224,6 +4224,8 @@
 
   function consentChanged(granted) {
     if (granted) revoked = false;
+    // Tick może już nie żyć (zgoda nieznana przy starcie, 429, 503, wyciszenie).
+    if (!granted) behForget();
     if (granted && blocked) { blocked = false; holding = false; openStore(); }
     // ma.33: zgoda przyszła, gdy baza była już otwarta bez niej (zgoda niewymagana) -
     // od teraz zbieramy historię źródeł, z wpisem tej odsłony.
