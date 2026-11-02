@@ -31,6 +31,9 @@ Przyciski z akcjami w popupie z szablonu panelu (Piotr, 2.11.2026: „tak, zleć
   2destate 1.7.1 to filtr gościa (wyzwalacz `search_filter`, zdarzenia GA4
   wyszukiwarki). Starsza paczka zapisuje go jak zmianę ze skryptu: bez tych
   zdarzeń, a pole pokoi ustawione wcześniej przez gościa zostaje.
+- Przez 5 s po kliku przycisku popupu scenariusze nie otwierają kolejnego popupu
+  (pominięty nie zużywa częstotliwości) — `filter_rooms` jako filtr gościa nie
+  wywoła od razu popupu z wyzwalacza `search_filter`.
 - Klik przycisku z szablonu (i wbudowanego przycisku `promo-filter`): `dataLayer`
   `ma_popup_cta` `{ action }` i `ma:action` `{ do: "popup_cta", action, template }`.
 - Strona z własnym `[d2-ma-popup]` bez zmian.

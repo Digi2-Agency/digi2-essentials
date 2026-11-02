@@ -2525,7 +2525,13 @@
   }
 
   // ma.37: klik przycisku szablonu - bez danych osobowych, scoring tego nie liczy.
+  // Po kliku przycisku popupu chwila bez popupów ze scenariuszy: filter_rooms
+  // (ImageMapPro ≥ 1.7.1) to filtr gościa, a search_filter po 500 ms otworzyłby
+  // kolejny popup zaraz po zamknięciu tego. Pominięty popup oddaje częstotliwość.
+  var CTA_QUIET_MS = 5000;
+  var ctaQuietUntil = 0;
   function ctaClicked(template, action) {
+    ctaQuietUntil = Date.now() + CTA_QUIET_MS;
     _emit('ma:action', { 'do': 'popup_cta', action: action, template: template });
     window.dataLayer = window.dataLayer || [];
     window.dataLayer.push({ event: 'ma_popup_cta', action: action });
@@ -2681,6 +2687,7 @@
   }
 
   function showPopup(node, ctx, onShown, onSkipped, owner) {
+    if (Date.now() < ctaQuietUntil) { _log('popup skipped — the visitor just used a popup button'); onSkipped(); return; }
     var epoch = profileEpoch;
     var tplLib = popupTemplate(node.template);
     var noUnit = unitlessPopup(node.template, tplLib, ctx.unit);

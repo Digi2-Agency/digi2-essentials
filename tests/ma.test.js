@@ -4875,3 +4875,18 @@ test('ma.37: zgoda w trakcie powrotu (consentRequired:false) — touchpoint z ch
   assert.equal(Date.parse(b.touchpoint.ts), p2._dysk.state.visitStart);
 });
 
+test('ma.37: po kliku filter_rooms search_filter gościa przez 5 s nie otwiera kolejnego popupu; częstotliwość wraca', async () => {
+  const promo = scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_visit' }]);
+  const env = await powrotZPopupem(koperta([POWROT, promo], { templates: { popup: [zPrzyciskami([{ type: 'cta', label: 'Pokaż', action: 'filter_rooms' }])] } }),
+    { imp: { instances: { mapa: {} } } });
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit']);
+  przyciski(env)[0]._klik({ preventDefault() {} });
+  env.filtr({ rooms: [2] });   // ImageMapPro ≥ 1.7.1 zgłasza setFilters z source user
+  await env.minie(600);
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit'], 'bez drugiego popupu zaraz po kliku');
+  await env.minie(5000);
+  env.filtr({ rooms: [3] });
+  await env.minie(600);
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-last-unit', 'd2-ma-promo-filter'], 'once_per_visit nie zużyte przez pominięty');
+});
+

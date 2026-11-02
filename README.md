@@ -1401,6 +1401,10 @@ segment }` in `state.scenarios[scenarioId].nodes`.
     - `scroll_to`: `target` `"#id"` (`#[A-Za-z][\w-]{0,60}`, nothing else);
       closes the popup and scrolls to the element.
     - `close`: closes the popup only.
+    - For 5 s after a template button click no scenario popup opens (it is
+      skipped and gives its frequency back): with ImageMapPro ≥ 1.7.1
+      `filter_rooms` is the visitor's filter, and a `search_filter` scenario
+      would otherwise open another popup 500 ms after this one closed.
     - `contact` only closes the popup (no address, no scroll); a page that
       wants a form opens it in its own click handler.
     - Each button takes its action from its own block: `open_unit` gets the
