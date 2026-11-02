@@ -3807,7 +3807,7 @@ test('MA-D38 D′: „Wyczyść" i wycofanie zgody wysyłają /revoke {visitorId
 // ma.13: poprawki z recenzji #17
 
 test('MA-D38 D′ (ma.13): visitorId oddany bez leada — „Wyczyść" i tak wysyła /revoke (2destate wiąże po samym polu)', async () => {
-  const env = await start({ koperta: koperta([]), cfg: HOT });
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   const { form } = formularzDema();
   env.dom('submit', { target: form });
   await env.gotowe();
@@ -3936,7 +3936,7 @@ test('MA-D38 D′ (ma.15): brak zgody przy starcie, baza z oddanym visitorId —
 });
 
 test('ma.22: gorący lead razem z kontekstem leadu — formularz dostaje visitorId, d2ma_context i d2ma_consent; bez zgody visitorId puste i brak znacznika', async () => {
-  const env = await start({ koperta: koperta([]), cfg: HOT });
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   const form = element({}, 'FORM');
@@ -3989,7 +3989,7 @@ test('ma.23: koperta tylko z digi2.app i api.2destate.com po https — inny adre
 
 
 test('ma.24: visitorId wpisywany także przy kliku w przycisk wysyłki (jak kontekst leadu); type=button nie', async () => {
-  const env = await start({ koperta: koperta([]), cfg: HOT });
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: zgodaTak() });
   env.dataLayer.push(unitOpen('A_1'));
   await env.gotowe();
   const form = element({}, 'FORM');
@@ -4103,12 +4103,14 @@ test('ma.34: każdy POST /visit ma visitNo i time_on_site_s, a pusty stan nie wy
 test('ma.34: consentRequired:false i jawna odmowa — zero /visit i liczników', async () => {
   const odmowa = () => [gtag('consent', 'update', { analytics_storage: 'denied' })];
   const p1 = await leadDema();
+  const id = p1.ma.profile().visitorId;
   const p = await powrot(p1, 26 * H, { dataLayer: odmowa() });
   assert.equal(p.ma.event('map_view'), false);
   await sekundy(p, 20);
   p.okno('pagehide');
   await p.gotowe();
-  assert.equal(p.sygnaly.length, 0);
+  // ma.35: zamiast /visit jeden /revoke - odmowa kończy powiązanie.
+  assert.deepEqual(p.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
   assert.ok(p._dysk.state, 'baza zostaje');
   assert.equal(p._dysk.state.beh, undefined);
 });
@@ -4206,9 +4208,9 @@ for (const [nazwa, kod] of [['wstrzymany przez 429', 429], ['wyciszony przez 422
   });
 }
 
-test('ma.34: odmowa, potem zgoda na tej samej stronie — jeden sygnał', async () => {
+test('ma.34: nieznana zgoda, potem zgoda na tej samej stronie — jeden sygnał', async () => {
   const p1 = await leadDema();
-  const p = await powrot(p1, 26 * H, { dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  const p = await powrot(p1, 26 * H, { dataLayer: [] });
   await p.gotowe();
   assert.equal(p.sygnaly.length, 0);
   p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
@@ -4218,6 +4220,46 @@ test('ma.34: odmowa, potem zgoda na tej samej stronie — jeden sygnał', async 
   p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
   await p.gotowe();
   assert.equal(p.sygnaly.length, 1, 'powtórzona zgoda nie wysyła drugi raz');
+});
+
+// ma.35 (issue #48, Piotr 2.11.2026): visitorId tylko za zgodą, także przy consentRequired:false.
+test('ma.35: consentRequired:false bez zgody — visitorId() null, pole puste, brak powiązania; po zgodzie id', async () => {
+  const env = await start({ koperta: koperta([]), cfg: HOT, dataLayer: [] });
+  const { form, ukryte } = formularzDema();
+  env.dom('submit', { target: form });
+  env.dataLayer.push({ event: 'generate_lead' });
+  await env.gotowe();
+  assert.equal(ukryte.value, '', 'bez decyzji gościa pole puste');
+  assert.equal(env.ma.visitorId(), null);
+  assert.equal(env._dysk.state.idShared, undefined);
+  assert.ok(!env._dysk.state.hotLead, 'bez oddanego id nie ma powiązania');
+  await env.ma.clear();
+  await env.gotowe();
+  assert.equal(env.sygnaly.length, 0, 'id nie oddany — nic do odwołania');
+
+  const odm = await start({ koperta: koperta([]), cfg: HOT, dataLayer: [gtag('consent', 'update', { analytics_storage: 'denied' })] });
+  assert.equal(odm.ma.visitorId(), null, 'jawna odmowa');
+
+  const zgoda = await start({ koperta: koperta([]), cfg: HOT, dataLayer: [] });
+  zgoda.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await zgoda.gotowe();
+  assert.equal(zgoda.ma.visitorId(), zgoda.ma.profile().visitorId);
+});
+
+test('ma.35: consentRequired:false, odmowa po oddaniu id — /revoke i koniec powiązania; zgoda go nie wskrzesza', async () => {
+  const p1 = await leadDema();
+  const id = p1.ma.profile().visitorId;
+  assert.ok(p1._dysk.state.hotLead);
+  p1.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
+  await p1.gotowe();
+  assert.deepEqual(p1.sygnaly.map((s) => [s.url, { ...s.body }]), [[REVOKE, { visitorId: id }]]);
+  assert.ok(p1._dysk.state, 'baza zostaje');
+  assert.equal(p1._dysk.state.hotLead, undefined);
+  assert.equal(p1._dysk.state.idShared, undefined);
+  const p2 = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+  await p2.gotowe();
+  assert.equal(p2.sygnaly.length, 0, 'bez nowego formularza i leada powrót nie sygnalizuje');
+  assert.equal(p2.ma.profile().visitorId, id, 'ten sam visitorId w bazie');
 });
 
 for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', -1]]) {

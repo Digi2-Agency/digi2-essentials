@@ -16,6 +16,20 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.35 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.34–ma.16)
+
+`visitorId` dla 2destate tylko za zgodą, także przy `consentRequired: false`
+(Piotr, 2.11.2026, issue #48). Dotyczy wyłącznie stron z `d2-ma-hot-lead`.
+
+- `digi2.ma.visitorId()` zwraca `null`, a pole `[d2-ma-visitor-id]` zostaje puste,
+  dopóki gość nie wyrazi zgody (nieznana zgoda też). Do ma.34 przy
+  `consentRequired: false` id szło bez zgody, choć dokumentacja mówiła inaczej.
+- Bez oddanego id nie powstaje powiązanie z leadem, więc powrót nie wysyła `/visit`.
+- Jawna odmowa po oddaniu id (`consentRequired: false`, baza zostaje): `/revoke`
+  w 2destate i koniec powiązania, także gdy odmowa przyszła między wizytami.
+  Późniejsza zgoda go nie wskrzesza — potrzebny nowy formularz z leadem.
+  Przy `consentRequired: true` bez zmian (odmowa i tak kasuje bazę z `/revoke`).
+
 ## v1.9.0-ma.34 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.33–ma.16)
 
 Zdarzenia zachowania wracającego leada w `/visit`. Tylko strona z

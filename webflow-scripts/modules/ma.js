@@ -171,6 +171,7 @@
  *   digi2.ma.track(unit)          Record a unit_view from any other source
  *   digi2.ma.lead()               Mark the visitor as a lead
  *   digi2.ma.visitorId()          With d2-ma-hot-lead: id for the 2destate form, null without consent
+ *                                 (ma.35: also with consentRequired:false; refusal → /revoke, link ends)
  *   digi2.ma.profile()            { visitorId, visits, lead, pref, lastUnit, views, … }
  *   digi2.ma.history()            Viewed units, oldest first
  *   digi2.ma.event(key, opts)     ma.34, d2-ma-hot-lead: behaviour event of a returning lead (see below)
@@ -240,7 +241,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 34;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 35;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3411,8 +3412,9 @@
   }
 
   // visitorId oddany stronie (formularz) - zapamiętujemy wizytę, w której to było.
+  // ma.35 (Piotr 2.11.2026, issue #48): tylko za zgodą, także przy consentRequired:false.
   function shareVisitorId() {
-    if (!hotLeadOn() || !tracking || !state) return null;
+    if (!hotLeadOn() || !tracking || !state || !hasConsent()) return null;
     if (state.idShared !== state.visits) {
       state.idShared = state.visits;
       bindHotLead();
@@ -3426,6 +3428,17 @@
     if (!state || state.hotLead || state.idShared == null || state.idShared !== state.leadVisit) return;
     state.hotLead = { visit: state.visits, at: Date.now() };
     _log('hot lead bound — return visits signal 2destate');
+  }
+
+  // ma.35: jawna odmowa przy consentRequired:false - baza zostaje, ale oddany
+  // visitorId nie: /revoke w 2destate i koniec powiązania. Nieznana zgoda czeka.
+  function idForget() {
+    if (!state || consentState() !== 'denied' || (state.idShared == null && !state.hotLead)) return;
+    revokeHotLead();
+    dropHotLead();
+    delete state.idShared;
+    save();
+    _log('consent denied — visitorId revoked, hot lead unbound');
   }
 
   function dropHotLead() {
@@ -3666,6 +3679,7 @@
   // Sygnał raz na wizytę powrotu, potem przyrost najwyżej co 5 minut. Przy wyjściu
   // (exit) bez czekania: ostatni przyrost i czas przepadłyby razem ze stroną.
   function sendVisitSignal(exit) {
+    if (hotLeadOn() && tracking && !consentRequired(envelope)) idForget();   // ma.35: odmowa sprzed tej odsłony
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
     // Decyzja Piotra 2.11.2026: sygnał tylko za zgodą, także przy consentRequired:false.
@@ -4231,6 +4245,7 @@
     if (granted) revoked = false;
     // Tick może już nie żyć (zgoda nieznana przy starcie, 429, 503, wyciszenie).
     if (!granted) behForget();
+    if (!granted && tracking && hotLeadOn() && !consentRequired(envelope)) idForget();
     if (granted && blocked) { blocked = false; holding = false; openStore(); }
     // ma.33: zgoda przyszła, gdy baza była już otwarta bez niej (zgoda niewymagana) -
     // od teraz zbieramy historię źródeł, z wpisem tej odsłony.
