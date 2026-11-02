@@ -1586,7 +1586,9 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   tab visible and activity in the last 5 minutes, so it understates a visitor who
   reads without moving), plus `events` when anything happened:
   `{ list_view: {n}, map_view: {n}, price_history_view: {n, units?},
-  card_download: {n, units?}, plan_dwell: {n, units, dwell_s: {id: s}} }`. `n` is
+  card_download: {n, units?}, plan_dwell: {n, units?, dwell_s: {id: s}} }`. In
+  `plan_dwell`, `units` and `n` cover only units at 180 s or more, because the server
+  scores every listed unit at once; shorter times stay in `dwell_s`. `n` is
   capped at 50, lists at the 20 newest UUIDs, `dwell_s` at 3600. Each send is the
   **state of the whole visit**, not a delta; the server merges by
   `(visitorId, visitNo)`, taking the max per field, so a duplicate or lost send

@@ -30,6 +30,8 @@ na umowę.
   raz na wizytę), `d2-ma-event="card_download|price_history_view"` z
   `d2-ma-unit="<uuid>"` (klik), `d2-ma-dwell` z `d2-ma-unit` (czas widoczności
   rzutu lub karty, `plan_dwell`).
+- `plan_dwell` wymienia w `units` tylko lokale oglądane co najmniej 180 s; krótsze
+  czasy idą w samym `dwell_s`.
 - `digi2.ma.event(key, { unitId, seconds })` robi to samo z widżetu; `seconds`
   tylko dla `plan_dwell`. Zwraca `false`, gdy zdarzenie nie zostało przyjęte.
 - `list_view` liczy też zmiana filtra przez gościa w wyszukiwarce 2destate.

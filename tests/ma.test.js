@@ -4350,8 +4350,27 @@ test('ma.34: atrybuty — map_view po około sekundzie w widoku, poza widokiem n
   const e = czyste(ostatni(p).events);
   assert.deepEqual(e.map_view, { n: 1 });
   assert.ok(!e.list_view, 'element poza widokiem');
-  assert.deepEqual(e.plan_dwell.units, [UID(3)]);
+  assert.equal(e.plan_dwell.units, undefined, 'poniżej 180 s tylko dwell_s');
+  assert.equal(e.plan_dwell.n, 0);
   assert.ok(e.plan_dwell.dwell_s[UID(3)] >= 10);
+});
+
+test('ma.34: plan_dwell — units i n tylko dla lokali po progu 180 s', async () => {
+  const p = await powrotLeada();
+  p.ma.event('plan_dwell', { unitId: UID(1), seconds: 179 });
+  p.ma.event('plan_dwell', { unitId: UID(2), seconds: 180 });
+  await p.minie(5 * MIN + 100);
+  assert.deepEqual(czyste(ostatni(p).events.plan_dwell), { n: 1, dwell_s: { [UID(1)]: 179, [UID(2)]: 180 }, units: [UID(2)] });
+});
+
+test('ma.34: pageviews nie przekracza 50 — serwer odpowiedziałby 422 i wyciszył moduł', async () => {
+  let p = await powrotLeada();
+  for (let i = 0; i < 55; i++) p = await powrot(p, 1000, { dataLayer: zgodaTak() });
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.minie(61000);
+  p.okno('pagehide');
+  await p.gotowe();
+  assert.equal(ostatni(p).pageviews, 50);
 });
 
 test('ma.34: klik w oznaczony element liczy zdarzenie z lokalem', async () => {

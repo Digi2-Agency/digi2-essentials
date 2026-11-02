@@ -3463,6 +3463,7 @@
   var BEH_MAX_N = 50;
   var BEH_MAX_TIME_S = 14400;
   var BEH_MAX_DWELL_S = 3600;
+  var BEH_DWELL_MIN_S = 180;       // próg plan_dwell z docs/ma-scoring.md w 2destate
   var BEH_EXIT_TIME_S = 30;        // sam czas: wysyłka przy wyjściu, gdy urósł o tyle
   var BEH_EXIT_MIN_MS = 60 * 1000; // serwer ma 60 żądań na godzinę, a wyjście omija 5 minut
   var BEH_ONCE = ['list_view', 'map_view'];
@@ -3558,7 +3559,11 @@
         if (sec >= 1) dwell[id] = sec;
         return sec >= 1;
       });
-      if (ids.length) out[key] = { n: ids.length, units: ids, dwell_s: dwell };
+      if (!ids.length) return;
+      // Serwer punktuje każdy lokal z units od razu, więc tam tylko te po progu.
+      var over = ids.filter(function (id) { return dwell[id] >= BEH_DWELL_MIN_S; });
+      out[key] = { n: over.length, dwell_s: dwell };
+      if (over.length) out[key].units = over;
     });
     return Object.keys(out).length ? out : null;
   }
