@@ -4832,6 +4832,7 @@ test('ma.37: dwa przyciski w obu kolejnościach — open_unit dostaje adres loka
     const adresy = Object.fromEntries(przyciski(env).map((c) => [c.getAttribute('d2-ma-template-cta'), c.getAttribute('href')]));
     assert.deepEqual(adresy, { open_unit: 'https://demo.example/oferta?sm-unit=A_7', link: 'https://demo.example/cennik' }, kolejnosc.join(' + '));
   }
+});
 
 // ---------------------------------------------------------------------------
 // ma.37: touchpoint wizyty w /visit (2destate 4110bf3e, docs/ma-touchpoints.md)
