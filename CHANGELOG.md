@@ -37,6 +37,13 @@ na razie wyłącznie Osiedle Demo (Piotr, 2.11.2026, akceptacja w czacie 2destat
   dostał też `visitorId`, idzie drugi `/revoke { visitorId }`.
 - Pole `d2-ma-visitor-id` działa dalej (leady testowe agencji); 2destate nie wiąże
   po nim prawdziwego leada.
+- Wygasły token czekający na `/revoke` nie blokuje późniejszego powiązania po
+  `visitorId` (lead testowy agencji w tej samej przeglądarce). Znika dopiero z
+  retencją profilu albo przy „Wyczyść”.
+- Zmiana ma.35: odmowa po oddaniu `visitorId` (`consentRequired: false`) po
+  `/revoke` nadaje nowy `visitorId`, reszta profilu zostaje. 2destate nie wiąże
+  odwołanego id z nowym leadem, więc bez tego późniejsza zgoda z nowym
+  formularzem nigdy nie dałaby działającego powiązania.
 
 ## v1.9.0-ma.35 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.34–ma.16)
 
