@@ -98,7 +98,7 @@ v1.8.3). Szczegóły: README → Build → Release gate.
 - Czerwona bramka to stop, nie przeszkoda: popraw kod albo wzorzec zrzutu
   (po obejrzeniu PNG), zacommituj i uruchom ponownie.
 
-Dwie pułapki jsDelivr, sprawdzone 2026-10-21:
+Trzy pułapki jsDelivr, sprawdzone 2026-10-21:
 
 - **Plik, którego nie ma w najnowszym stabilnym tagu, `@latest` bierze z
   najnowszego tagu, który go ma — także przedpremierowego.** Dopóki moduł
