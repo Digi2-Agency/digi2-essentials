@@ -29,7 +29,10 @@ na razie wyłącznie Osiedle Demo (Piotr, 2.11.2026, akceptacja w czacie 2destat
   Bez zgody, wygasły, z innego originu niż strona albo w złym formacie: `false`
   i nic nie trafia do magazynu.
 - Powrót leada wysyła `/visit` z `{ token }` zamiast `{ visitorId }` (nigdy
-  oba). 401 i 403 usuwają token i powiązanie, bez ponawiania.
+  oba). 401 i 403 usuwają token i powiązanie, bez ponawiania. Po `exp` powiązanie
+  znika, a token zostaje tylko do `/revoke`. Drugi token zastępuje pierwszy bez
+  `/revoke`. Przed otwarciem bazy `leadToken()` zwraca `false` — wołaj po odpowiedzi
+  zgłoszenia.
 - „Wyczyść”, odmowa i wycofanie zgody wysyłają `/revoke { token }`; gdy formularz
   dostał też `visitorId`, idzie drugi `/revoke { visitorId }`.
 - Pole `d2-ma-visitor-id` działa dalej (leady testowe agencji); 2destate nie wiąże

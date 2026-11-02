@@ -3484,6 +3484,8 @@
     var here = window.location && window.location.origin;
     if (p.site !== here) { _warn('lead token for another site ignored'); return false; }
     // Lead tej wizyty: powiązanie od nowa, poprzednie (visitorId) ustępuje tokenowi.
+    // Poprzedni token zastępujemy bez /revoke: revoke działa po osobie i skasowałby
+    // też historię nowego leada tej samej osoby; stary pseudonim wygasa sam.
     dropHotLead();
     state.leadToken = { t: t, exp: p.exp };
     state.hotLead = { visit: state.visits, at: Date.now(), token: true };
@@ -3730,7 +3732,15 @@
   function sendVisitSignal(exit) {
     if (hotLeadOn() && tracking && !consentRequired(envelope)) idForget();   // ma.35: odmowa sprzed tej odsłony
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
-    if (state.leadToken && tokenExpired(state.leadToken)) { dropHotLead(); save(); return; }   // ma.36
+    // ma.36: po exp /visit nie ma sensu (401), ale token zostaje do /revoke - serwer
+    // kasuje historię także na wygasłym tokenie („Wyczyść”, odmowa).
+    if (state.leadToken && tokenExpired(state.leadToken)) {
+      var old = state.leadToken;
+      dropHotLead();
+      state.leadToken = { t: old.t, exp: old.exp, revokeOnly: true };
+      save();
+      return;
+    }
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
     // Decyzja Piotra 2.11.2026: sygnał tylko za zgodą, także przy consentRequired:false.
     if (!hasConsent()) { behForget(); return; }
@@ -3819,8 +3829,9 @@
   // (bez czekania na odpowiedź). Wystarczy oddany visitorId - 2destate wiąże
   // lead po samym d2ma_visitor_id, także gdy strona nie zobaczyła leada;
   // /revoke odpowiada 204 i dla nieznanego id, więc nic nie zdradza.
-  // ma.36: token prawdziwego leada ma własny /revoke { token } (także wygasły -
-  // serwer i tak kasuje historię); oddany visitorId - osobny /revoke { visitorId }.
+  // ma.36: token prawdziwego leada ma własny /revoke { token }, także wygasły
+  // (zostaje jako revokeOnly - serwer i tak kasuje historię); oddany visitorId -
+  // osobny /revoke { visitorId }.
   function revokeHotLead(st) {
     st = st || state;
     if (!st || !hotLeadOn() || typeof fetch !== 'function' || !hotLeadApi()) return;

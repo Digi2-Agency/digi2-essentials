@@ -1584,11 +1584,19 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   token links the browser in this visit (replacing a `visitorId` link), and
   return visits send `/visit` with `{ token }` instead of `{ visitorId }` —
   never both (the server answers 422). 401 or 403 drops the token and the
-  link, no retry; a token past `exp` is dropped before sending. "Clear",
-  refusal and withdrawal send `/revoke { token }`, plus `/revoke { visitorId }`
-  when the id also went to a form. The token never shows in `profile()`, and
-  the console log masks it. 2destate never links a real lead on
-  `d2ma_visitor_id` alone, so the field can stay on the form.
+  link, no retry. Past `exp` the link goes and no `/visit` is sent, but the
+  token stays (`revokeOnly`) for a later `/revoke` — the server deletes the
+  history on an expired token too. "Clear", refusal and withdrawal send
+  `/revoke { token }`, plus `/revoke { visitorId }` when the id also went to
+  a form. A second token replaces the first **without** `/revoke`: revoke
+  works per person and would wipe the new lead's history as well; the old
+  pseudonym expires on its own. Before the database opens (start of the page,
+  envelope not loaded yet) `leadToken()` returns `false` and the token is
+  lost, so call it after the inquiry response, not on page load. The token
+  never shows in `profile()`, `context()` or the lead context fields, and the
+  debug log masks it. The browser cannot tell a real lead from an agency test
+  lead, so `d2ma_visitor_id` stays on the form; 2destate never links a real
+  lead on it.
 - **Refusal after the id went out (ma.35, `consentRequired: false`):** the
   database stays, but the link does not: `/revoke {visitorId}` and the local
   link (`idShared`, `hotLead`) goes, also when the refusal came between visits
