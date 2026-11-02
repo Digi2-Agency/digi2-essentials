@@ -3482,6 +3482,11 @@
     return state.hotLeadMuteVisit !== state.visits && !(state.hotLeadRetryAt && Date.now() < state.hotLeadRetryAt);
   }
 
+  // Tylko jawna odmowa kasuje liczniki; nieznana zgoda czeka (ma.31).
+  function behForget() {
+    if (state && state.beh && consentState() === 'denied') { delete state.beh; save(); }
+  }
+
   function behState() {
     if (!state.beh || state.beh.visit !== state.visits) state.beh = { visit: state.visits, activeMs: 0, ev: {} };
     return state.beh;
@@ -3608,7 +3613,7 @@
   function behTick() {
     behTimer = null;
     if (!behOn()) {
-      if (state && state.beh && !hasConsent()) { delete state.beh; save(); }
+      behForget();
       return;
     }
     var t = Date.now();
@@ -3658,7 +3663,7 @@
   function sendVisitSignal(exit) {
     if (!hotLeadOn() || !tracking || !state || !state.hotLead || typeof fetch !== 'function' || !hotLeadApi()) return;
     if (state.visits <= state.hotLead.visit) return;    // wizyta formularza to nie powrót
-    if (consentState() === 'denied') return;            // jawna odmowa także przy consentRequired:false
+    if (consentState() === 'denied') { behForget(); return; } // jawna odmowa także przy consentRequired:false
     if (hasConsent()) behStart();
     var nowReal = Date.now();
     if (state.hotLeadRetryAt && nowReal < state.hotLeadRetryAt) return;

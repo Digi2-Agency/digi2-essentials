@@ -1602,7 +1602,12 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   server. New events follow the 5-minute limit and leave at once when the tab is
   hidden or the page closes, at least 60 s after the last send; time alone leaves
   only then, after growing by 30 s. A state the server didn't take (network, 429,
-  503) goes again. An explicit refusal stops the whole `/visit` signal.
+  503) isn't retried on its own, and only events and time count as unsent, not the
+  unit list: they go with the next send attempt, so at the next
+  check on an open page or on the next page view of that visit, and it is lost if
+  the visit ends first. The same goes for a visit shorter than 60 s after the last
+  send: an event right before leaving is lost. An explicit refusal stops the whole
+  `/visit` signal and deletes the counters.
   **Deploy the server first:** without the new fields it answers 422 and the
   module mutes the visit. An old visit's unsent last counters are dropped.
 - **Answers:** 202 done; 401 (unknown, revoked or expired visitor) → link

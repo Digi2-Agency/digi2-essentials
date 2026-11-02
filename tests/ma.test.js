@@ -283,6 +283,7 @@ function strona(opts) {
     if (url.indexOf('/public/ma/') >= 0) {
       sygnaly.push({ url, body: JSON.parse(init.body), init });
       const st = (o.statusSygnalu && o.statusSygnalu(url)) || (url.indexOf('/revoke') >= 0 ? 204 : 202);
+      if (st === 0) return Promise.reject(new Error('offline: ' + url));
       return Promise.resolve({ ok: st >= 200 && st < 300, status: st, headers: { get: (h) => (h === 'Retry-After' ? (o.retryAfter || null) : null) } });
     }
     if (url.indexOf('hook.') >= 0 || url.indexOf('localhost') >= 0 || url.indexOf('/api/ma/channel/') >= 0) {
@@ -4117,6 +4118,49 @@ test('ma.34: consentRequired:false bez decyzji — sygnał powrotu jak dotąd, a
   assert.ok(!('events' in p.sygnaly[0].body));
   assert.ok(!p._dysk.state.beh);
 });
+
+test('ma.34: odmowa w trakcie strony i przy kolejnej odsłonie kasuje zapisane liczniki; nieznana zgoda nie', async () => {
+  const odmowa = () => gtag('consent', 'update', { analytics_storage: 'denied' });
+  const p = await powrotLeada();
+  p.ma.event('card_download', { unitId: UID(1) });
+  await p.gotowe();
+  assert.ok(p._dysk.state.beh, 'liczniki zapisane');
+  const bezDecyzji = await powrot(p, 3 * MIN, { dataLayer: [] });
+  await sekundy(bezDecyzji, 2);
+  assert.ok(bezDecyzji._dysk.state.beh, 'nieznana zgoda czeka');
+  const zOdmowa = await powrot(bezDecyzji, 3 * MIN, { dataLayer: [odmowa()] });
+  await zOdmowa.gotowe();
+  assert.ok(!zOdmowa._dysk.state || !zOdmowa._dysk.state.beh, 'przy starcie');
+
+  const q = await powrotLeada();
+  q.ma.event('card_download', { unitId: UID(1) });
+  await q.gotowe();
+  assert.ok(q._dysk.state.beh);
+  q.dataLayer.push(odmowa());
+  await sekundy(q, 2);
+  assert.ok(!q._dysk.state || !q._dysk.state.beh, 'w trakcie strony');
+});
+
+for (const [nazwa, kod] of [['503', 503], ['429', 429], ['błąd sieci', 0]]) {
+  test('ma.34: stan nieprzyjęty (' + nazwa + ') jedzie ponownie przy następnej próbie', async () => {
+    let st = 202;
+    const p1 = await leadDema({ statusSygnalu: () => st, dataLayer: zgodaTak() });
+    const p = await powrot(p1, 26 * H, { dataLayer: zgodaTak() });
+    await p.gotowe();
+    p.ma.event('card_download', { unitId: UID(1) });
+    await p.minie(61000);
+    st = kod;
+    p.okno('pagehide');
+    await p.gotowe();
+    assert.equal(p.sygnaly.length, 2);
+    st = 202;
+    await p.minie(3600 * 1000 + 1000);
+    p.okno('pagehide');
+    await p.gotowe();
+    assert.equal(p.sygnaly.length, 3, 'ten sam stan, bo poprzedni nie został przyjęty');
+    assert.equal(ostatni(p).events.card_download.n, 1);
+  });
+}
 
 test('ma.34: klucze spoza listy, także __proto__, odpadają i nic nie zanieczyszczają', async () => {
   const p = await powrotLeada();
