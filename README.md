@@ -1421,7 +1421,10 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       event too; a page's own `[d2-ma-popup]` buttons do not.
   - `layout`: `position` `center` | `bottom-right` | `bottom` | `top`, `size`
     `sm` (320 px) | `md` (380) | `lg` (520).
-  - `style`: only page tokens, `token:<name>` → `var(--<name>)`: `background`
+  - `style`: only page tokens, `token:<name>` → `var(--<name>, <fallback>)`
+    (ma.38: the fallback is the unstyled look — `#fff` background, `#1a1d1c`
+    text and CTA, `inherit` font — so a page without these CSS variables gets
+    a readable white card, not a transparent one): `background`
     (dialog background), `text` (colour), `accent` (CTA background), `font`
     (font family), and `radius` `none` | `sm` | `md` | `lg`
     (`var(--radius-sm|md|lg)`, falling back to 6 / 14 / 22 px). Webflow
@@ -1642,7 +1645,9 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   database stays, but the link does not: `/revoke {visitorId}` and the local
   link (`idShared`, `hotLead`) goes, also when the refusal came between visits
   (caught on the next page view), and the browser gets a **new** `visitorId`
-  (ma.36; the rest of the profile stays). 2destate never links a revoked id to
+  (ma.36; the rest of the profile stays) — `profile().visitorId` and
+  `visitorId()` return the new one, so a page that kept the old value must
+  read it again. 2destate never links a revoked id to
   a new lead, so without the new id a later form would link locally, get 401
   and never link again. Consent given later does not bring the old link back;
   only a new form with a lead does. With `consentRequired: true` the refusal
@@ -1669,7 +1674,10 @@ login means no `/visit` and no `/revoke` request at all, with one `console.warn`
   given during the visit: the entry has the visit's start time, like the
   history. No source history consent (`openedWithConsent`) or no entry for
   this visit → no `touchpoint` key. The server drops a bad entry and keeps
-  the visit (202).
+  the visit (202). It also skips the source when the project has no
+  „lead context” scope (`is_context_allowed` in 2destate) — the visit counts,
+  the source is not stored. The browser cannot see that scope and sends the
+  entry anyway.
 - **Behaviour events (ma.34):** every `/visit` also carries `visitNo`
   (`state.visits`) and `time_on_site_s` (0–14400, **active** time of this visit:
   tab visible and activity in the last 5 minutes, so it understates a visitor who
@@ -1887,13 +1895,15 @@ architekt-it.
 `referrer_host` are left out to save bytes in the 4 kB lead JSON; `ts` and
 `click_type` are always there, `landing_path` whenever the page URL parses.
 Readers (the 2destate validator) must treat an absent key exactly like `null`.
+Entries stored before ma.38 pass the same filters on the way out
+(`touchpoints()`, lead JSON, `/visit`).
 
 | Field | Meaning |
 |---|---|
 | `ts` | Start of the touchpoint, ISO 8601 UTC |
-| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** Personal data is dropped (`null`): a value with `@` in any field; a phone-like value (`+48…`, digits grouped with spaces or dashes, or exactly 9 digits) only in `utm_content` / `utm_term`. `utm_campaign` and `utm_id` are never cleared for digits — campaign ids are long numbers (Google 10–11, Meta 18–19). The filter applies to touchpoints only; the visit's `source` and the `utm` trigger read the URL as before |
+| `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` | From the landing URL, trimmed, ≤ 100 characters. **Left out when empty.** A value with a non-printable character (control, format such as zero-width, a separator other than the plain space, e.g. a no-break space; Python `str.isprintable()` in 2destate) is `null` — the server would reject the whole entry (ma.38). Personal data is dropped (`null`): a value with `@` in any field; a phone-like value (`+48…`, digits grouped with spaces or dashes, or exactly 9 digits) only in `utm_content` / `utm_term`. `utm_campaign` and `utm_id` are never cleared for digits — campaign ids are long numbers (Google 10–11, Meta 18–19). The filter applies to touchpoints only; the visit's `source` and the `utm` trigger read the URL as before |
 | `click_type` | `gclid` \| `gbraid` \| `wbraid` \| `dclid` \| `fbclid` \| `ttclid` \| `msclkid` \| `none` — which click id the URL had (first in that order). Closed list for v1. The id's value is never read into the profile. Always present |
-| `referrer_host` | Host of `document.referrer`, lower case, only when it is another site — a page of this site (also `www.` ↔ no `www.`) is not a source. Left out when empty |
+| `referrer_host` | Host of `document.referrer`, lower case, only when it is another site — a page of this site (also `www.` ↔ no `www.`) is not a source. Left out when empty. A host over 100 characters or not a plain domain (IPv6 in brackets, `_` in a label) is `null`, not cut — a cut host would make 2destate reject the whole entry (ma.38) |
 | `landing_path` | `location.pathname` of the page that made the entry — no query, no fragment, ≤ 200 characters; only for `http(s)` pages. A path with `@` (also `%40`), e.g. `/wypisz/jan@x.pl`, gives `null` — the entry stays (same rule in 2destate, review #271) |
 
 | Rule | Behaviour |
@@ -2056,13 +2066,14 @@ the promo price while a promotion runs.
 ```js
 digi2.ma.version            // ma.28: "ma.28" — the loaded script (same numbering as the envelope's minScript)
 digi2.ma.profile()          // { visitorId, visits, lead, views, pref, lastUnit, segment, counters, tracking, store, timeScale }
+                            // visitorId changes after a refusal once the id went out (ma.36) — read it fresh, don't cache it
 digi2.ma.history()          // views, oldest first
 digi2.ma.context()          // ma.16: { text, json } for the lead context fields, null without consent
 digi2.ma.fillContext(form)  // ma.16: write d2ma_context (+ _json with d2-ma-context="json") now
 digi2.ma.track(unit)        // another source
 digi2.ma.lead()
 digi2.ma.event('card_download', { unitId }) // ma.34, d2-ma-hot-lead: behaviour event, false if not accepted
-digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent
+digi2.ma.visitorId()        // ma.12, d2-ma-hot-lead: id for the 2destate form; null without consent; new after a refusal (ma.36)
 digi2.ma.load(urlOrObject)  // read an envelope (URL only from digi2.app / api.2destate.com, ma.23)
 digi2.ma.reload()
 digi2.ma.simulateReturn()

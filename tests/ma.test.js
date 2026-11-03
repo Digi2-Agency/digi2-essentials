@@ -2954,14 +2954,14 @@ test('popup z szablonu: bloki przez createElement i textContent, fallback przy p
   assert.ok(nak, 'nakładka z szablonu, nie wbudowana');
   assert.match(nak.style.cssText, /align-items:flex-end;justify-content:flex-end/);
   assert.match(okno.style.cssText, /max-width:520px/);
-  assert.equal(okno.style['background-color'], 'var(--surface)');
-  assert.equal(okno.style.color, 'var(--on-surface)');
-  assert.equal(okno.style['font-family'], 'var(--body)');
+  assert.equal(okno.style['background-color'], 'var(--surface, #fff)');
+  assert.equal(okno.style.color, 'var(--on-surface, #1a1d1c)');
+  assert.equal(okno.style['font-family'], 'var(--body, inherit)');
   const dzieci = okno.children.map((c) => [c.tagName, c.textContent]);
   assert.deepEqual(dzieci.slice(1), [['H3', '7 — 2 pokoje'], ['P', 'Zobacz szczegóły lokalu'], ['A', 'Zobacz lokal']],
     'obraz pominięty (lokal bez zdjęcia), budynek pusty → fallback');
   assert.equal(okno.children[0].getAttribute('d2-ma-close'), '');
-  assert.equal(okno.children[3].style['background-color'], 'var(--brand)');
+  assert.equal(okno.children[3].style['background-color'], 'var(--brand, #1a1d1c)');
 });
 
 test('popup z szablonu: własny [d2-ma-popup] strony wygrywa; bez templates.popup — wbudowany jak dotąd', async () => {
@@ -3000,7 +3000,7 @@ test('popup z szablonu: nieznane pola — ostrzeżenie i pominięcie; złe bloki
   const { okno } = oknoPopupu(env);
   assert.deepEqual(okno.children.slice(1).map((c) => c.textContent), ['7', 'T0', 'T1', 'T2'], 'tylko poprawne bloki z pierwszych 8');
   assert.equal(okno.style['background-color'], undefined, 'HEX odrzucony');
-  assert.equal(okno.style.color, 'var(--ok)');
+  assert.equal(okno.style.color, 'var(--ok, #1a1d1c)');
 });
 
 test('popup z szablonu: cta link — href przez safeLink; obraz z media.digi2.app; szablon bez poprawnych bloków odpada', async () => {
@@ -4599,6 +4599,7 @@ test('ma.36: digi2.ma.leadToken — powrót wysyła /visit z { token } zamiast v
   const b = { ...p2.sygnaly[0].body };
   assert.equal(b.token, p1._token);
   assert.ok(!('visitorId' in b), 'dokładnie jedno z token / visitorId');
+  assert.ok('touchpoint' in b, 'wariant z tokenem niesie touchpoint jak wariant z visitorId');
   assert.equal(b.source, 'return_visit');
   assert.equal(b.visitNo, p2.ma.profile().visits);
   assert.ok(!JSON.stringify(p2.ma.profile()).includes(p1._token), 'profile() nie oddaje tokenu');
@@ -4873,6 +4874,51 @@ test('ma.37: zgoda w trakcie powrotu (consentRequired:false) — touchpoint z ch
   const b = p2.sygnaly[0].body;
   assert.equal(b.touchpoint.utm_source, 'newsletter');
   assert.equal(Date.parse(b.touchpoint.ts), p2._dysk.state.visitStart);
+});
+
+test('ma.38: wizyta zaczęta bez zgody, zgoda na 2. stronie bez nowej kampanii — /visit bez klucza touchpoint', async () => {
+  const p1 = await leadDema();
+  const p2 = await powrot(p1, 26 * H, { dataLayer: [], search: '?utm_source=newsletter' });
+  assert.equal(p2.sygnaly.length, 0);
+  const p3 = await powrot(p2, 2 * MIN, { dataLayer: zgodaTak(), search: '' });
+  const v = p3.sygnaly.filter((x) => x.url === VISIT);
+  assert.equal(v.length, 1);
+  assert.equal(v[0].body.visitNo, p3.ma.profile().visits, 'ta sama wizyta');
+  assert.ok(!('touchpoint' in v[0].body), 'wpis zebrany bez zgody nie wychodzi');
+});
+
+test('ma.38: referrer_host spoza domeny albo ponad 100 znaków = null; wpis zostaje', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA });
+  const dlugi = 'a'.repeat(60) + '.' + 'b'.repeat(60) + '.pl';
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/', 'https://' + dlugi + '/').referrer_host, null, 'bez ucinania w środku etykiety');
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/', 'http://[::1]:8080/').referrer_host, null, 'IPv6');
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/', 'https://moj_host.pl/').referrer_host, null, '„_” w etykiecie');
+  assert.equal(env.ma.parseTouchpoint('https://x.pl/', 'https://Www.Google.PL:443/').referrer_host, 'www.google.pl');
+  const e = env.ma.parseTouchpoint('https://x.pl/oferta?utm_source=s', 'https://' + dlugi + '/');
+  assert.deepEqual([e.utm_source, e.landing_path], ['s', '/oferta']);
+});
+
+test('ma.38: znak niedrukowalny w UTM = null dla tego pola; spacja i polskie znaki zostają', async () => {
+  const env = await start({ koperta: koperta([]), zgoda: ZGODA });
+  const tp = (q) => env.ma.parseTouchpoint('https://x.pl/?' + q);
+  assert.equal(tp('utm_source=goo%0Agle').utm_source, null, 'nowa linia');
+  assert.equal(tp('utm_campaign=a%09b').utm_campaign, null, 'tabulator');
+  assert.equal(tp('utm_medium=c%C2%A0pc').utm_medium, null, 'twarda spacja');
+  assert.equal(tp('utm_term=x%E2%80%8By').utm_term, null, 'znak zerowej szerokości');
+  assert.equal(tp('utm_content=a%7Fb').utm_content, null, 'DEL');
+  assert.equal(tp('utm_campaign=jesie%C5%84+2026').utm_campaign, 'jesień 2026');
+  const e = tp('utm_source=goo%0Agle&utm_medium=cpc');
+  assert.equal(e.utm_medium, 'cpc', 'reszta wpisu zostaje');
+});
+
+test('ma.38: wpis zapisany przed ma.38 (ucięty host, znak sterujący) wychodzi oczyszczony', async () => {
+  const p1 = await start({ koperta: koperta([]), zgoda: ZGODA, search: '?utm_source=s' });
+  p1._dysk.state.touchpoints[0].utm_medium = 'c\npc';
+  p1._dysk.state.touchpoints[0].referrer_host = 'a'.repeat(99) + '-';
+  const p2 = await powrot(p1, 2 * MIN);
+  const e = p2.ma.touchpoints().items[0];
+  assert.equal(e.utm_source, 's');
+  assert.ok(!('utm_medium' in e) && !('referrer_host' in e));
 });
 
 test('ma.37: po kliku filter_rooms search_filter gościa przez 5 s nie otwiera kolejnego popupu; częstotliwość wraca', async () => {
