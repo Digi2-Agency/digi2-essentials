@@ -2918,12 +2918,12 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><th><code>reason</code></th><th>Meaning</th><th>Saved filter</th></tr>
       <tr><td><code>engine_3destate_next_load</code></td><td>Saved, this page doesn't change</td><td>kept</td></tr>
       <tr><td><code>engine_3destate_late</code></td><td>Makieta already rendered, config untouched</td><td>kept</td></tr>
-      <tr><td><code>engine_3destate_no_config</code></td><td>Makieta without <code>AppLauncher3DEOAConfig</code> after 15 s</td><td>kept</td></tr>
-      <tr><td><code>engine_3destate_ignored</code></td><td>The start state lacks our filter: the option is gone or the race was lost</td><td>kept</td></tr>
-      <tr><td><code>engine_3destate_unconfirmed</code></td><td>Config patched, no <code>filter-init</code> within 15 s</td><td>removed</td></tr>
+      <tr><td><code>engine_3destate_no_config</code></td><td>Makieta without <code>AppLauncher3DEOAConfig</code> after 30 s</td><td>kept</td></tr>
+      <tr><td><code>engine_3destate_ignored</code></td><td>The start state lacks our filter (option gone, race lost) or has only part of it</td><td>kept; removed when part applied</td></tr>
+      <tr><td><code>engine_3destate_unconfirmed</code></td><td>Config patched, no <code>filter-init</code> within 30 s</td><td>removed</td></tr>
       <tr><td><code>engine_3destate_no_storage</code></td><td><code>localStorage</code> refused, frequency not used</td><td>none</td></tr>
     </table>
-    <p class="muted"><code>sm-filters-*</code> in the URL and the page's own <code>unitFilterOverride</code> win. A saved filter applies once, expires after 30 days, and goes with consent withdrawal and <code>digi2.ma.clear()</code>. Checked on smartmakietabase <code>1789730517</code>; recheck after a makieta update.</p>
+    <p class="muted"><code>sm-filters-*</code> in the URL and the page's own <code>unitFilterOverride</code> win. A saved filter applies once, expires after 30 days, and goes with consent withdrawal, <code>digi2.ma.clear()</code>, an envelope without that scenario or a shorter <code>retentionDays</code>. It goes on before the envelope is fetched, so on that one load the envelope can't stop it. Checked on smartmakietabase <code>1789730517</code>; recheck after a makieta update.</p>
     <p><b>Version report.</b> Every envelope fetch adds <code>?s=ma.N&amp;e=2destate|3destate|none</code>, no visitor id, no cookies. This request runs before consent, as it always has, because the envelope carries <code>consentRequired</code>.</p>
   </section>
 
