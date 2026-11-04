@@ -787,6 +787,7 @@
       <a href="#ma-lead-context">Lead Context in Forms</a>
       <a href="#ma-touchpoints">Touchpoints (visit sources)</a>
       <a href="#ma-search">Search: Filters &amp; Sort</a>
+      <a href="#ma-engines">Engines: 2destate / 3destate</a>
       <a href="#ma-conditions">Page Conditions</a>
       <a href="#ma-webflow">Webflow Setup</a>
     </div>
@@ -2806,7 +2807,8 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>map_mark</code> ranking</td><td>With <code>both</code>: units matching both first, then rooms, then floor; within a group the map's own order</td></tr>
       <tr><td><code>map_mark</code> <code>className</code></td><td>No <code>imp-</code> (the map's own classes — <code>imp-object-hidden</code> would hide units) and no <code>d2-ma-</code>; otherwise <code>d2-preferred</code></td></tr>
       <tr><td><code>map_mark</code> without <code>markProducts</code> in 2destate</td><td>Switches the map to the best unit's floor and highlights that one unit (no tooltip) — works on 2destate 1.6.9</td></tr>
-      <tr><td><code>map_mark</code> before the map loaded / without 2destate</td><td>Waits for the map / skipped with a <code>console.info</code>, the branch goes on</td></tr>
+      <tr><td><code>map_mark</code> before the map loaded / without 2destate</td><td>Waits for the map / skipped with a <code>console.info</code>, the branch goes on. ma.39: frequency is used only once the action ran, so a later trigger tries again</td></tr>
+      <tr><td><code>map_mark</code> / <code>map_order</code> on 3destate (ma.39)</td><td>Not run: <code>ma:action</code> with <code>status: "skipped"</code>, <code>reason: "engine_3destate"</code>, once per page view. Frequency not used, <code>delayMinutes</code> ignored, the branch goes on</td></tr>
       <tr><td><code>cooldownMinutes</code> (0–10080)</td><td>Minimum gap between two runs of the action in this scenario, across visits, on top of <code>frequency</code></td></tr>
     </table>
 
@@ -2887,7 +2889,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
     <table>
       <tr><th>Node</th><th>Fields</th><th>Behaviour</th></tr>
       <tr><td>trigger <code>search_filter</code></td><td><code>rooms</code>, <code>floor</code>, <code>minCount</code> (as <code>type_view</code>)</td><td>The visitor's filter includes that room count / floor; no key = any filter. No sort trigger</td></tr>
-      <tr><td>action <code>prefer_filters</code></td><td><code>by</code>: <code>rooms</code> | <code>floor</code> | <code>both</code></td><td><code>setFilters</code> with the profile's preference, once a visit; skipped when the visitor already filtered in this visit or there is no preference; waits for the map</td></tr>
+      <tr><td>action <code>prefer_filters</code></td><td><code>by</code>: <code>rooms</code> | <code>floor</code> | <code>both</code></td><td><code>setFilters</code> with the profile's preference, once a visit; skipped when the visitor already filtered in this visit or there is no preference; waits for the map. On 3destate (ma.39) it applies on the <b>next load</b> only, see below</td></tr>
       <tr><td>action <code>map_order</code></td><td>as before</td><td>Also orders the result list; skipped after a user sort in this visit (their choice wins until the visit ends)</td></tr>
       <tr><td>popup <code>promo-filter</code></td><td><code>cta: "contact"</code></td><td>Built in, no unit needed: „Szukasz mieszkania 2-pokojowego? Pokażemy wolne lokale i aktualne promocje.” — <code>N-pokojowego</code> for any N ≥ 1 from <code>pref.rooms</code> (one number; filter <code>[2, 3]</code> → 2). Skipped without <code>pref.rooms</code>. <code>templates.popup[]</code> with that id wins, the page's own element over both</td></tr>
       <tr><td>profile</td><td><code>filters</code>, <code>sort</code></td><td><code>pref.rooms</code> / <code>pref.floor</code> come from the last user filter only while no unit has been viewed. Lead context: <code>filtrował: 2–3 pokoje, do 700 000 zł, tylko wolne</code></td></tr>
@@ -2901,6 +2903,28 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
   <span class="prop">flat_building</span>, <span class="prop">flat_availability</span>, <span class="prop">flat_price</span>, <span class="prop">flat_isPromo</span>, <span class="prop">view_source</span>: <span class="string">'wyszukiwarka'</span> | <span class="string">'mapa'</span> }</code></pre>
     <p class="muted">ma.18: <code>item_list_sort</code> only for <code>price</code>, <code>area</code>, <code>floor</code> × <code>asc</code>/<code>desc</code> (left out for rooms, name, custom). A filter change reaches the profile and scenarios once, after 500 ms of quiet — a slider is one <code>search_filter</code>. ma.19: a change still waiting is written at once on form submit (lead context; <code>search_filter</code> actions may run then), with the time of the last change. ma.20: on <code>pagehide</code> only the fact is stored — no scenario action at exit, no replay on the next page; a <code>custom</code> order sends no event and the next one has no <code>item_list_sort</code>. Only <code>source: "user"</code> counts. <code>digi2.ma.clear()</code> resets the search filters too — ma.26: with explicit nulls (core merges filters), fields the visitor touched stay. ma.26: <code>prefer_filters</code> that core did not apply (touched field, no search panel) does not count and retries next visit.</p>
     <p class="muted">No visitor data in these events; they do not depend on the d2-ma profile consent (GA4 consent is Consent Mode's job). <code>d2-ma-search-events="off"</code> on the loader tag switches them off. Every contract key is in every push; a missing value is <code>undefined</code>, not left out (ma.21) — otherwise a GTM Data Layer Variable keeps the previous push's value.</p>
+  </section>
+
+  <section id="ma-engines">
+    <h2>Engines: 2destate / 3destate</h2>
+    <p>From <code>v1.9.0-ma.39</code>: the module tells the two engines apart in one place. The 2destate API wins; then 3destate traces (<code>AppLauncher3DEOAConfig</code>, <code>#sm3de</code>, the launcher script, <code>oa3de*</code> events); then a 2destate package still loading.</p>
+    <table>
+      <tr><th>Action</th><th>2destate</th><th>3destate</th></tr>
+      <tr><td><code>map_mark</code>, <code>map_order</code></td><td>Run; frequency is used once they ran</td><td>Not run: <code>ma:action</code> with <code>status: "skipped"</code>, <code>reason: "engine_3destate"</code></td></tr>
+      <tr><td><code>prefer_filters</code></td><td>Applied at once with <code>setFilters</code></td><td>Saved, applied on the next load through the undocumented <code>props.unitFilterOverride</code></td></tr>
+    </table>
+    <p>3destate reads that filter only before the app renders, and the loader fetches this module asynchronously, so the module can lose the race. It never changes the page silently. <code>oa3de__unit-list-filter-init</code> confirms the filter; a match gives the ordinary <code>ma:action</code> with <code>filters</code>. Otherwise <code>status: "skipped"</code> with:</p>
+    <table>
+      <tr><th><code>reason</code></th><th>Meaning</th><th>Saved filter</th></tr>
+      <tr><td><code>engine_3destate_next_load</code></td><td>Saved, this page doesn't change</td><td>kept</td></tr>
+      <tr><td><code>engine_3destate_late</code></td><td>Makieta already rendered, config untouched</td><td>kept</td></tr>
+      <tr><td><code>engine_3destate_no_config</code></td><td>Makieta without <code>AppLauncher3DEOAConfig</code> after 30 s</td><td>kept</td></tr>
+      <tr><td><code>engine_3destate_ignored</code></td><td>The start state lacks our filter (option gone, race lost) or has only part of it</td><td>kept; removed when part applied</td></tr>
+      <tr><td><code>engine_3destate_unconfirmed</code></td><td>Config patched, no <code>filter-init</code> within 30 s</td><td>removed</td></tr>
+      <tr><td><code>engine_3destate_no_storage</code></td><td><code>localStorage</code> refused, frequency not used</td><td>none</td></tr>
+    </table>
+    <p class="muted"><code>sm-filters-*</code> in the URL and the page's own <code>unitFilterOverride</code> win. A saved filter applies once, expires after 30 days, and goes with consent withdrawal, <code>digi2.ma.clear()</code>, an envelope without that scenario or a shorter <code>retentionDays</code>. It goes on before the envelope is fetched, so on that one load the envelope can't stop it. Checked on smartmakietabase <code>1789730517</code>; recheck after a makieta update.</p>
+    <p><b>Version report.</b> Every envelope fetch adds <code>?s=ma.N&amp;e=2destate|3destate|none</code>, no visitor id, no cookies. This request runs before consent, as it always has, because the envelope carries <code>consentRequired</code>.</p>
   </section>
 
   <section id="ma-conditions">
