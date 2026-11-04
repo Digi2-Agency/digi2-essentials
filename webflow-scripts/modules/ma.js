@@ -5257,6 +5257,9 @@
 
   window.digi2.ma = api;
 
+  // ma.40: zapis z ma.39 pochodzi z profilu, a po tej wersji nic by go już nie skasowało.
+  try { window.localStorage.removeItem('d2ma_3de_filter'); } catch (e) {}
+
   if (document.readyState === 'loading' && document.addEventListener) {
     document.addEventListener('DOMContentLoaded', boot);
   } else {

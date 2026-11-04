@@ -22,8 +22,8 @@ Korekta zlecenia 2destate po wydaniu ma.39. **Strony przypinają ma.40, nie ma.3
 
 - `prefer_filters` na 3destate się nie wykonuje: `ma:action` z `status: "skipped"`,
   `reason: "engine_3destate"`, jak `map_mark` i `map_order`, raz na odsłonę, bez
-  zużycia częstotliwości; gałąź idzie dalej. Znika zapis `d2ma_3de_filter` i ingerencja
-  w `props.unitFilterOverride` z ma.39 wraz z powodami `engine_3destate_next_load`,
+  zużycia częstotliwości; gałąź idzie dalej. Znika ingerencja w `props.unitFilterOverride`
+  z ma.39, a zapis `d2ma_3de_filter` z tej wersji jest kasowany przy starcie modułu; razem z nimi powody `engine_3destate_next_load`,
   `_late`, `_no_config`, `_ignored`, `_unconfirmed`, `_no_storage`. Panel 2destate
   blokuje tę akcję dla 3destate. Filtr startowy w demo Nowej Pabianickiej działa jak
   dotąd, poza d2-ma.

@@ -296,8 +296,10 @@ function strona(opts) {
   }
 
   const pobrania = [];
+  const opcjePobran = [];
   function fetch(url, init) {
     pobrania.push(String(url));
+    opcjePobran.push(init);
     if (String(url).split('?')[0] === 'https://digi2.app/api/ma/scenario/demo.json') {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
@@ -343,6 +345,7 @@ function strona(opts) {
     window, zegar, dataLayer, popupy, zablokowane, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
     proxyWolania,
     pobrania,
+    opcjePobran,
     /** Moduł popupów dociągnął się po d2-ma: loader podstawia prawdziwy obiekt i oznacza _loaded. */
     zaladujPopups() { window.digi2.popups = popupsApi; window.digi2._loaded.popups = true; },
     segmenty: () => dataLayer.filter((e) => e && typeof e.event === 'string' && e.event.indexOf('ma_') === 0 && e.event !== 'ma_form_field'),
@@ -5265,3 +5268,12 @@ test('ma.40: prefer_filters na 3destate — powód engine_3destate, bez zapisu, 
   assert.equal(p.dataLayer.filter((e) => e.event === 'ma_engaged').length, 1);
 });
 
+test('ma.40: koperta z credentials omit i bez własnych nagłówków, także przy reload; zapis z ma.39 sprzątnięty', async () => {
+  const dysk = { ls: { d2ma_3de_filter: '{"filters":{"rooms":[3]}}', inny: '1' } };
+  const p = await start({ koperta: koperta([], { minScript: 'ma.17' }), dysk });
+  await p.ma.reload();
+  const opcje = p.pobrania.map((u, i) => (u.indexOf('/scenario/') >= 0 ? p.opcjePobran[i] : null)).filter(Boolean);
+  assert.equal(opcje.length, 2);
+  opcje.forEach((o) => assert.deepEqual(czyste(o), { credentials: 'omit' }));
+  assert.deepEqual(czyste(dysk.ls), { inny: '1' });
+});
