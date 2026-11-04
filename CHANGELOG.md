@@ -16,6 +16,34 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.41 — 2026-11-04 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.40–ma.16)
+
+Wygląd popupu i podmiana treści, zlecenie 2destate. Szablon bez `design` i bez `action`
+działa jak dotąd.
+
+- `templates.popup[].design`: `placement` (`center`, `side-left`, `side-right`,
+  `bar-bottom`, `bar-top`, `slide-in`), `colors.*`, `backgroundImage.*`, `typography.*`,
+  `radiusPx`, `cta.*`, `imageLayout`, `spacing`, `overlay`, `behavior.*`. Zła wartość to
+  ostrzeżenie w konsoli i pominięcie pola, nie szablonu. Esc, fokus i aria zostają w
+  każdym układzie.
+- `overlay: "none"`: strona pod popupem klika się i przewija dalej.
+- `behavior.closeOnOverlay: false` nie wymaga nowej opcji w `popups.js`, więc działa też
+  ze starszym modułem popupów. `behavior.closeButton: false` zdejmuje krzyżyk tylko, gdy
+  na ekranie stoi przycisk `close`.
+- `behavior.delaySeconds`: popup czeka do 120 s, tylko na tej odsłonie. Nowszy wyzwalacz
+  zastępuje czekający, a wyjście ze strony oddaje częstotliwość. Kroki za popupem
+  wykonują się od razu, nie po czasie.
+- W układzie `bar-*` blok obrazu jest miniaturą o wysokości 48 px; w pełnej szerokości
+  urósłby ponad ekran.
+- `templates.content[].action`: `text`, `html`, `image`, `hide`, `show`, `attr`; cel to
+  `selector` szablonu albo `[d2-ma-slot]` kroku, najwyżej 20 elementów, nigdy w popupie
+  ani wokół niego. `image` i `attr src` zdejmują z obrazu `srcset` i `sizes`, inaczej
+  przeglądarka trzyma stary plik. `html` składa `strong`, `em`, `a`, `br` z danych, nigdy przez
+  `innerHTML`. `attr` tylko `alt`, `title`, `aria-label`, `href`, `src`, bez pól `{{…}}`. Selektor nie
+  trafi w `body`, `script`, `iframe` itp., także przez klasę (`.body` w Webflow). „Wyczyść”
+  i nowa rewizja scenariusza cofają te zmiany, poza zwykłym tekstem w slocie bez selektora. Krok content dalej wymaga pola `slot`, także gdy
+  szablon ma selektor.
+
 ## v1.9.0-ma.40 — 2026-11-04 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.39–ma.16)
 
 Korekta zlecenia 2destate po wydaniu ma.39. **Strony przypinają ma.40, nie ma.39.**

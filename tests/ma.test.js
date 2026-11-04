@@ -67,7 +67,12 @@ function element(attrs, tagName) {
   return {
     tagName: tagName || 'DIV',
     attributes: Object.assign({}, attrs || {}),
-    style: { setProperty(n, v) { this[n] = v; } },
+    style: {
+      setProperty(n, v, pr) { this[n] = v; this._pr = Object.assign({}, this._pr, { [n]: pr || '' }); },
+      removeProperty(n) { delete this[n]; },
+      getPropertyValue(n) { return this[n] || ''; },
+      getPropertyPriority(n) { return (this._pr && this._pr[n]) || ''; },
+    },
     getAttribute(n) { return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null; },
     setAttribute(n, v) { this.attributes[n] = String(v); },
     removeAttribute(n) { delete this.attributes[n]; },
@@ -179,6 +184,7 @@ function strona(opts) {
     documentElement: { scrollHeight: 3000, clientHeight: 1000, scrollTop: 0 },
     addEventListener(n, f) { (naDokumencie[n] = naDokumencie[n] || []).push(f); },
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
+    createTextNode: (t) => Object.assign(element({}, '#text'), { textContent: String(t) }),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
       if (sel.indexOf('data-appid') >= 0) return o.obcyAppid ? element() : null;
@@ -5276,4 +5282,724 @@ test('ma.40: koperta z credentials omit i bez własnych nagłówków, także prz
   assert.equal(opcje.length, 2);
   opcje.forEach((o) => assert.deepEqual(czyste(o), { credentials: 'omit' }));
   assert.deepEqual(czyste(dysk.ls), { inny: '1' });
+});
+
+
+// ---------------------------------------------------------------------------
+// ma.41: design popupu i działania podmiany treści
+// ---------------------------------------------------------------------------
+
+const MEDIA = 'https://media.digi2.app/a.jpg';
+const zDesignem = (design, extra) => Object.assign({}, SZABLON, { design }, extra);
+async function popupZDesignem(design, extra) {
+  return powrotZPopupem(koperta([POWROT], { templates: { popup: [zDesignem(design, extra)] } }));
+}
+const ctaPopupu = (okno) => potomkowie(okno).find((x) => x.getAttribute('d2-ma-template-cta') !== null);
+
+test('ma.41: szablon bez design daje ten sam DOM; pusty lub w całości zły design to samo', async () => {
+  const opis = async (env) => {
+    const { nak, okno } = oknoPopupu(env);
+    return JSON.stringify([nak.style, okno.style, potomkowie(okno).map((x) => [x.tagName, x.attributes, x.style, x.textContent])]);
+  };
+  const bazowy = await opis(await powrotZPopupem(koperta([POWROT], { templates: { popup: [SZABLON] } })));
+  assert.equal(await opis(await popupZDesignem({})), bazowy);
+  assert.equal(await opis(await popupZDesignem({ placement: 'x', radiusPx: 99, colors: { text: 'red' }, overlay: 'x', cta: { shape: 'x' } })), bazowy);
+});
+
+test('ma.41: placement — nakładka i okno z listy, wygrywa z layout.position; zła wartość z ostrzeżeniem', async () => {
+  const przypadki = [
+    ['center', 'center', 'center', '16px', {}],
+    ['side-right', 'stretch', 'flex-end', '0', { height: '100%', overflow: 'auto', 'border-radius': '0' }],
+    ['side-left', 'stretch', 'flex-start', '0', { height: '100%', overflow: 'auto', 'border-radius': '0' }],
+    ['bar-bottom', 'flex-end', 'center', '0', { 'max-width': '100%', 'border-radius': '0', display: 'flex', 'flex-wrap': 'wrap', 'align-items': 'center', gap: '8px 20px' }],
+    ['bar-top', 'flex-start', 'center', '0', { 'max-width': '100%', 'border-radius': '0', display: 'flex' }],
+    ['slide-in', 'flex-end', 'flex-end', '16px', {}],
+  ];
+  for (const [placement, align, justify, padding, okno] of przypadki) {
+    const env = await popupZDesignem({ placement });
+    const o = oknoPopupu(env);
+    assert.equal(o.nak.style['align-items'], align, placement);
+    assert.equal(o.nak.style['justify-content'], justify, placement);
+    assert.equal(o.nak.style.padding, padding, placement);
+    Object.keys(okno).forEach((k) => assert.equal(o.okno.style[k], okno[k], placement + ' ' + k));
+  }
+  const pasek = oknoPopupu(await popupZDesignem({ placement: 'bar-bottom' }));
+  const cta = ctaPopupu(pasek.okno);
+  assert.equal(cta.style.display, 'inline-block');
+  assert.equal(cta.style['margin-top'], '0');
+  assert.equal(pasek.okno.children[1].style.margin, '0');
+  const zla = await popupZDesignem({ placement: 'floating' });
+  assert.ok(zla.ostrzezenia.some((w) => w.includes('placement not valid')));
+  assert.match(oknoPopupu(zla).nak.style.cssText, /align-items:flex-end;justify-content:flex-end/, 'zostaje layout.position');
+});
+
+test('ma.41: colors — hex wygrywa z tokenami; accentText, overlay; nie-hex odpada', async () => {
+  const env = await popupZDesignem({ colors: { background: '#112233', text: '#abc', accent: '#11223344', accentText: '#fff', overlay: '#000000aa' } });
+  const { nak, okno } = oknoPopupu(env);
+  assert.equal(okno.style['background-color'], '#112233');
+  assert.equal(okno.style.color, '#abc');
+  const cta = ctaPopupu(okno);
+  assert.equal(cta.style['background-color'], '#11223344');
+  assert.equal(cta.style.color, '#fff');
+  assert.equal(nak.style.background, '#000000aa');
+  for (const zly of ['red', '#12', 'url(x)', '#12345g', '#fff;color:red']) {
+    const z = await popupZDesignem({ colors: { background: zly } });
+    assert.equal(oknoPopupu(z).okno.style['background-color'], 'var(--surface, #fff)', zly);
+    assert.ok(z.ostrzezenia.some((w) => w.includes('background not valid')), zly);
+  }
+});
+
+test('ma.41: backgroundImage — mediaUrl albo {{unit.image}}, fit, scrim, url() zakodowany; zły adres odpada', async () => {
+  const { okno } = oknoPopupu(await popupZDesignem({ backgroundImage: { src: "https://media.digi2.app/a(1)'b.jpg", fit: 'contain', scrim: 40 } }));
+  assert.equal(okno.style['background-size'], 'contain');
+  assert.equal(okno.style['background-image'], 'linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)),url("https://media.digi2.app/a%281%29%27b.jpg")');
+  for (const src of ['http://media.digi2.app/a.jpg', 'https://evil.example/a.jpg', 'javascript:alert(1)']) {
+    const z = await popupZDesignem({ backgroundImage: { src } });
+    assert.equal(oknoPopupu(z).okno.style['background-image'], undefined, src);
+    assert.ok(z.ostrzezenia.some((w) => w.includes('src not valid')), src);
+  }
+  const bezObrazu = oknoPopupu(await popupZDesignem({ backgroundImage: { src: '{{unit.image}}' } }));
+  assert.equal(bezObrazu.okno.style['background-image'], undefined, 'lokal bez zdjęcia');
+  const zla = await popupZDesignem({ backgroundImage: { src: MEDIA, fit: 'fill', scrim: 90 } });
+  assert.equal(oknoPopupu(zla).okno.style['background-size'], 'cover');
+  assert.match(oknoPopupu(zla).okno.style['background-image'], /rgba\(0,0,0,0\)/);
+});
+
+test('ma.41: typography, radiusPx, spacing, overlay — wartości z list', async () => {
+  const o = oknoPopupu(await popupZDesignem({ typography: { font: 'serif', titleSize: 'xl', textSize: 'lg', align: 'center' }, radiusPx: 24, spacing: 'roomy', overlay: 'light' }));
+  assert.equal(o.okno.style['font-family'], "Georgia, 'Times New Roman', serif");
+  assert.equal(o.okno.style['text-align'], 'center');
+  assert.equal(o.okno.style['border-radius'], '24px');
+  assert.equal(o.okno.style.padding, '32px 34px 34px');
+  assert.equal(o.nak.style.background, 'rgba(15,18,24,.25)');
+  assert.equal(o.okno.children[1].style['font-size'], '34px');
+  assert.equal(o.okno.children[2].style['font-size'], '18px');
+  const z = await popupZDesignem({ typography: { font: 'comic', titleSize: 'xxl', textSize: 'xl', align: 'justify' }, radiusPx: 41, spacing: 'huge' });
+  ['font not valid', 'titleSize not valid', 'textSize not valid', 'align not valid', 'radiusPx not valid', 'spacing not valid'].forEach((t) => {
+    assert.ok(z.ostrzezenia.some((w) => w.includes(t)), t);
+  });
+  assert.equal(oknoPopupu(await popupZDesignem({ radiusPx: '10px' })).okno.style['border-radius'], 'var(--radius-md, 14px)');
+});
+
+test('ma.41: cta — shape, variant, fullWidth', async () => {
+  for (const [shape, r] of [['square', '0'], ['rounded', '10px'], ['pill', '999px']]) {
+    assert.equal(ctaPopupu(oknoPopupu(await popupZDesignem({ cta: { shape } })).okno).style['border-radius'], r);
+  }
+  const obrys = ctaPopupu(oknoPopupu(await popupZDesignem({ colors: { accent: '#123456' }, cta: { variant: 'outline', fullWidth: false } })).okno);
+  assert.equal(obrys.style.background, 'transparent');
+  assert.equal(obrys.style.color, '#123456');
+  assert.equal(obrys.style.border, '2px solid #123456');
+  assert.equal(obrys.style.display, 'inline-block');
+  const pelny = ctaPopupu(oknoPopupu(await popupZDesignem({ cta: { fullWidth: true } })).okno);
+  assert.match(pelny.style.cssText, /display:block/);
+  assert.equal(pelny.style.display, undefined);
+});
+
+test('ma.41: imageLayout — pierwszy poprawny obraz w kolumnie, reszta w treści; bez obrazu jak top', async () => {
+  const blocks = [
+    { type: 'image', src: 'https://evil.example/x.jpg' },
+    { type: 'image', src: MEDIA, alt: 'pierwszy' },
+    { type: 'title', text: 'T' },
+    { type: 'image', src: 'https://media.digi2.app/b.jpg', alt: 'drugi' },
+  ];
+  const env = await popupZDesignem({ imageLayout: 'right', spacing: 'compact' }, { blocks });
+  const { okno } = oknoPopupu(env);
+  const grid = okno.children[1];
+  assert.equal(grid.getAttribute('d2-ma-split'), '');
+  assert.equal(grid.style['grid-template-columns'], '1fr 40%');
+  assert.equal(okno.style.padding, '0');
+  assert.equal(grid.children[1].getAttribute('alt'), 'pierwszy');
+  assert.equal(grid.children[1].style['object-fit'], 'cover');
+  assert.equal(grid.children[0].style.padding, '14px 16px 16px');
+  assert.deepEqual(grid.children[0].children.map((c) => c.tagName), ['H3', 'IMG']);
+  assert.match(grid.children[0].children[1].style.cssText, /width:calc\(100% \+ 32px\);height:auto;margin:-14px -16px 16px/);
+
+  const lewa = oknoPopupu(await popupZDesignem({ imageLayout: 'left' }, { blocks }));
+  assert.equal(lewa.okno.children[1].style['grid-template-columns'], '40% 1fr');
+  assert.equal(lewa.okno.children[1].children[0].tagName, 'IMG');
+
+  const bez = oknoPopupu(await popupZDesignem({ imageLayout: 'left' }, { blocks: [{ type: 'title', text: 'T' }] }));
+  assert.equal(bez.okno.querySelector('[d2-ma-split]'), null);
+  assert.equal(bez.okno.style.padding, '20px 22px 22px');
+  assert.ok((await popupZDesignem({ imageLayout: 'middle' }, { blocks })).ostrzezenia.some((w) => w.includes('imageLayout not valid')));
+});
+
+test('ma.41: overlay none — nakładka nie łapie kliknięć, okno tak, bez blokady przewijania', async () => {
+  const env = await popupZDesignem({ overlay: 'none' });
+  const { nak, okno } = oknoPopupu(env);
+  assert.equal(nak.style['pointer-events'], 'none');
+  assert.equal(okno.style['pointer-events'], 'auto');
+  assert.equal(nak.style.background, 'transparent');
+  assert.equal(env.window.digi2.popups.get('d2-ma-last-unit').opcje.lockScrollOnShow, false);
+  const zwykly = await popupZDesignem({ overlay: 'dark' });
+  assert.equal('lockScrollOnShow' in zwykly.window.digi2.popups.get('d2-ma-last-unit').opcje, false);
+});
+
+test('ma.41: behavior.closeButton — krzyżyk znika tylko przy przycisku close na ekranie', async () => {
+  const zClose = [{ type: 'title', text: 'T' }, { type: 'cta', label: 'Zamknij', action: 'close' }];
+  const a = oknoPopupu(await popupZDesignem({ behavior: { closeButton: false } }, { blocks: zClose }));
+  assert.equal(a.okno.querySelector('[d2-ma-close]'), null);
+  const b = oknoPopupu(await popupZDesignem({ behavior: { closeButton: false } }));
+  assert.ok(b.okno.querySelector('[d2-ma-close]'), 'bez przycisku close krzyżyk zostaje');
+  const c = oknoPopupu(await popupZDesignem({ behavior: { closeButton: false } }, { blocks: [{ type: 'title', text: 'T' }, { type: 'cta', label: '{{pref.floor}}x', action: 'close' }] }));
+  assert.ok(c.okno.querySelector('[d2-ma-close]') || c.okno.querySelector('[d2-ma-template-cta="close"]'), 'gość zawsze ma czym zamknąć');
+  assert.ok((await popupZDesignem({ behavior: { closeButton: 'no' } })).ostrzezenia.some((w) => w.includes('closeButton not valid')));
+});
+
+test('ma.41: behavior.closeOnOverlay false — klik w samą nakładkę nie dochodzi do popups.js', async () => {
+  const { nak } = oknoPopupu(await popupZDesignem({ behavior: { closeOnOverlay: false } }));
+  let zatrzymane = 0;
+  nak._klik({ target: nak, stopImmediatePropagation() { zatrzymane++; } });
+  assert.equal(zatrzymane, 1);
+  nak._klik({ target: element(), stopImmediatePropagation() { zatrzymane++; } });
+  assert.equal(zatrzymane, 1, 'klik w okno bez zmian');
+  assert.equal(oknoPopupu(await popupZDesignem({ behavior: { closeOnOverlay: true } })).nak._klik, undefined);
+});
+
+test('ma.41: behavior.delaySeconds — pokazanie po czasie; Wyczyść w czasie czekania kasuje', async () => {
+  const env = await popupZDesignem({ behavior: { delaySeconds: 30 } });
+  assert.equal(env.popupy.length, 0);
+  await env.minie(31000);
+  assert.equal(env.popupy.length, 1);
+  assert.equal(env.zdarzenia['ma:action'].filter((a) => a.do === 'popup').length, 1);
+
+  const c = await popupZDesignem({ behavior: { delaySeconds: 30 } });
+  await c.ma.clear();
+  await c.minie(31000);
+  assert.equal(c.popupy.length, 0);
+  assert.ok((await popupZDesignem({ behavior: { delaySeconds: 121 } })).ostrzezenia.some((w) => w.includes('delaySeconds not valid')));
+});
+
+test('ma.41: behavior.animation — atrybut i arkusz bez ruchu przy reduced-motion; zmiana design przebudowuje okno', async () => {
+  const env = await popupZDesignem({ behavior: { animation: 'slide' } });
+  assert.equal(oknoPopupu(env).okno.getAttribute('d2-ma-anim'), 'slide');
+  const css = env.window.document.querySelector('#d2-ma-design-css');
+  assert.match(css.textContent, /prefers-reduced-motion:no-preference/);
+  assert.equal(oknoPopupu(await popupZDesignem({ behavior: { animation: 'none' } })).okno.getAttribute('d2-ma-anim'), null);
+  assert.ok((await popupZDesignem({ behavior: { animation: 'spin' } })).ostrzezenia.some((w) => w.includes('animation not valid')));
+
+  // Podpis okna liczy się z całego tpl, więc design w nim jest.
+  const p = await popupZDesignem({ radiusPx: 5 });
+  assert.match(oknoPopupu(p).nak._d2maTplSig, /"radiusPx":5/);
+});
+
+test('ma.41: nieznane pola design ostrzegają i odpadają, szablon zostaje; tekst koperty nie trafia do stylu', async () => {
+  const env = await popupZDesignem({ custom: 'x', colors: { background: '#fff', position: 'fixed' }, radiusPx: 4 });
+  assert.ok(env.ostrzezenia.some((w) => w.includes('unknown field "custom"')));
+  assert.ok(env.ostrzezenia.some((w) => w.includes('unknown field "position"')));
+  const { okno } = oknoPopupu(env);
+  assert.equal(okno.style['border-radius'], '4px');
+  assert.equal(okno.style.position, undefined);
+});
+
+// -- content --
+
+const krokContent = (extra) => scenariusz('c', { event: 'type_view', rooms: 3, minCount: 1 }, [Object.assign({ do: 'content', slot: 's', templateId: 't' }, extra)]);
+async function zDzialaniem(tresc, elementy, opts) {
+  const k = koperta([krokContent()], { minScript: 'ma.17', templates: { content: [Object.assign({ templateId: 't' }, tresc)] } });
+  const p = await start(Object.assign({ koperta: k, elementy, mapa: false }, opts));
+  p.dataLayer.push(unitOpen('A_1', Object.assign({ rooms: 3 }, (opts || {}).lokal)));
+  await p.gotowe();
+  return p;
+}
+
+test('ma.41: bez action jak dotąd — napis w bibliotece, textContent w slocie; action text bez selektora to samo', async () => {
+  for (const t of [{ text: 'Cześć {{unit.rooms}}' }, { action: 'text', text: 'Cześć {{unit.rooms}}' }]) {
+    const slot = element({ 'd2-ma-slot': 's' });
+    slot.textContent = 'oryginał';
+    const p = await zDzialaniem(t, [slot]);
+    assert.equal(slot.textContent, 'Cześć 3');
+    assert.equal(slot.children.length, 0);
+    await p.ma.clear();
+    assert.equal(slot.textContent, 'oryginał');
+  }
+});
+
+test('ma.41: action spoza listy i zły selektor — szablon pominięty; krok bez szablonu też', async () => {
+  for (const t of [
+    { action: 'eval', text: 'x' },
+    { action: 'hide', selector: 'div, a' },
+    { action: 'hide', selector: 'body' },
+    { action: 'hide', selector: 'script#x' },
+    { action: 'hide', selector: 'div > body#x' },
+    { action: 'hide', selector: '.imp-x' },
+    { action: 'hide', selector: '.d2-ma-x' },
+    { action: 'hide', selector: '[onclick="x"]' },
+    { action: 'hide', selector: 'a:hover' },
+    { action: 'hide', selector: '*' },
+    { action: 'hide', selector: '.a .b .c .d .e' },
+    { action: 'hide', selector: '.' + 'a'.repeat(121) },
+    { action: 'hide', selector: '.a\n' },
+    { action: 'html', text: 'x', rich: 'nie tablica' },
+    { action: 'image', image: { src: 'https://evil.example/a.jpg' } },
+    { action: 'attr', attr: { name: 'onclick', value: 'x' } },
+    { action: 'attr', attr: { name: 'href', value: 'javascript:alert(1)' } },
+    { action: 'attr', attr: { name: 'src', value: 'https://evil.example/a.jpg' } },
+  ]) {
+    const slot = element({ 'd2-ma-slot': 's' });
+    const p = await zDzialaniem(t, [slot]);
+    assert.ok(p.ostrzezenia.some((w) => /content template "t"/.test(w)), JSON.stringify(t));
+    assert.equal(slot.style.display, undefined, JSON.stringify(t));
+    assert.equal(akcjeMa(p, 'content').length, 0, JSON.stringify(t));
+  }
+});
+
+test('ma.41: dozwolone selektory przechodzą', async () => {
+  for (const selector of ['#a', '.b', 'div.b', 'div#a > .b', '[d2-ma-slot="s"]', '[data-x="y"]', 'section.z .a > p.b [data-x="y"]']) {
+    const p = await zDzialaniem({ action: 'hide', selector }, []);
+    assert.ok(!p.ostrzezenia.some((w) => w.includes('selector not allowed')), selector);
+  }
+});
+
+test('ma.41: text z selektorem — textContent, Wyczyść przywraca dzieci', async () => {
+  const cel = element({ 'data-cel': 'x' });
+  const dziecko = element({}, 'SPAN');
+  cel.appendChild(dziecko);
+  const p = await zDzialaniem({ action: 'text', selector: '[data-cel="x"]', text: '<script>x</script> {{unit.rooms}}' }, [cel]);
+  assert.equal(cel.children[0].tagName, '#text');
+  assert.equal(cel.children[0].textContent, '<script>x</script> 3');
+  assert.equal(akcjeMa(p, 'content').length, 1);
+  await p.ma.clear();
+  assert.deepEqual(cel.children, [dziecko]);
+});
+
+test('ma.41: html — strong, em, a, br przez createElement; <script> zostaje tekstem; zły link = sam tekst; pole bez wartości = pominięcie', async () => {
+  const slot = element({ 'd2-ma-slot': 's' });
+  const rich = [
+    { text: 'Plain {{unit.rooms}} ' }, { text: 'B', bold: true }, { text: 'I', italic: true }, { text: 'BI', bold: true, italic: true },
+    { br: true }, { text: 'L', href: '/kontakt' }, { text: 'Zły', href: 'https://evil.example/' }, { text: '<script>alert(1)</script>' },
+  ];
+  const p = await zDzialaniem({ action: 'html', text: 'zapas', rich }, [slot]);
+  assert.deepEqual(slot.children.map((c) => c.tagName), ['#text', 'STRONG', 'EM', 'STRONG', 'BR', 'A', '#text', '#text']);
+  assert.equal(slot.children[0].textContent, 'Plain 3 ');
+  assert.equal(slot.children[3].children[0].tagName, 'EM');
+  assert.equal(slot.children[5].getAttribute('href'), 'https://demo.example/kontakt');
+  assert.equal(slot.children[6].textContent, 'Zły');
+  assert.equal(slot.children[7].textContent, '<script>alert(1)</script>');
+  assert.equal(potomkowie(slot).filter((x) => x.tagName === 'SCRIPT').length, 0);
+  assert.ok(!/innerHTML/.test(kodModulu.slice(kodModulu.indexOf('function richNodes'), kodModulu.indexOf('function applyAction'))));
+  await p.ma.clear();
+  assert.equal(slot.children.length, 0);
+
+  const a = element({ 'data-cel': 'x' });
+  const b = element({ 'data-cel': 'x' });
+  await zDzialaniem({ action: 'html', selector: '[data-cel="x"]', rich: [{ text: 'R', bold: true }] }, [a, b]);
+  assert.notEqual(a.children[0], b.children[0], 'każdy element ma własne węzły');
+  assert.equal(b.children.length, 1);
+
+  const pusty = element({ 'd2-ma-slot': 's' });
+  const q = await zDzialaniem({ action: 'html', rich: [{ text: 'Ok' }, { text: '{{unit.building}}' }] }, [pusty], { lokal: { building: null } });
+  assert.equal(pusty.children.length, 0, 'bieg z polem bez wartości: krok pominięty');
+  assert.equal(akcjeMa(q, 'content').length, 0);
+});
+
+test('ma.41: image — IMG podmieniony, inny element dostaje img; Wyczyść cofa', async () => {
+  const img = element({ 'data-cel': 'x', src: 'stary.jpg', alt: 'a' }, 'IMG');
+  const div = element({ 'data-cel': 'x' });
+  const p = await zDzialaniem({ action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: 'nowy' } }, [img, div]);
+  assert.equal(img.getAttribute('src'), MEDIA);
+  assert.equal(img.getAttribute('alt'), 'nowy');
+  assert.equal(div.children[0].getAttribute('src'), MEDIA);
+  await p.ma.clear();
+  assert.equal(img.getAttribute('src'), 'stary.jpg');
+  assert.equal(img.getAttribute('alt'), 'a');
+  assert.equal(div.children.length, 0);
+});
+
+test('ma.41: hide i show — znacznik, display, Wyczyść przywraca poprzedni styl', async () => {
+  const el = element({ 'data-cel': 'x' });
+  el.style.setProperty('display', 'grid');
+  const p = await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [el]);
+  assert.equal(el.getAttribute('d2-ma-hidden'), '');
+  assert.equal(el.style.display, 'none');
+  assert.equal(el.style.getPropertyPriority('display'), 'important');
+  await p.ma.clear();
+  assert.equal(el.getAttribute('d2-ma-hidden'), null);
+  assert.equal(el.style.display, 'grid');
+
+  const s = element({ 'data-cel': 'x' });
+  s.style.setProperty('display', 'none');
+  const q = await zDzialaniem({ action: 'show', selector: '[data-cel="x"]' }, [s]);
+  assert.equal(s.getAttribute('d2-ma-shown'), '');
+  assert.equal(s.style.display, undefined);
+  await q.ma.clear();
+  assert.equal(s.style.display, 'none');
+  assert.equal(s.getAttribute('d2-ma-shown'), null);
+
+  const css = element({ 'data-cel': 'x' });
+  const k = koperta([krokContent()], { minScript: 'ma.17', templates: { content: [{ templateId: 't', action: 'show', selector: '[data-cel="x"]' }] } });
+  const r = strona({ koperta: k, elementy: [css], mapa: false, dysk: {} });
+  r.window.getComputedStyle = () => ({ display: 'none' });
+  await r.gotowe();
+  r.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await r.gotowe();
+  assert.equal(css.style.display, 'revert', 'CSS strony dalej chowa');
+});
+
+test('ma.41: attr — tylko z listy, href i src sprawdzone, Wyczyść przywraca; działania na jednym elemencie cofają się niezależnie', async () => {
+  for (const [name, value, spodziewane] of [
+    ['alt', 'A', 'A'], ['title', 'T', 'T'], ['aria-label', 'L', 'L'],
+    ['href', '/kontakt', 'https://demo.example/kontakt'], ['src', MEDIA, MEDIA],
+  ]) {
+    const el = element({ 'data-cel': 'x', [name]: 'stare' });
+    const p = await zDzialaniem({ action: 'attr', selector: '[data-cel="x"]', attr: { name, value } }, [el]);
+    assert.equal(el.getAttribute(name), spodziewane, name);
+    await p.ma.clear();
+    assert.equal(el.getAttribute(name), 'stare', name);
+  }
+  const el = element({ 'data-cel': 'x' });
+  const p = await zDzialaniem({ action: 'attr', selector: '[data-cel="x"]', attr: { name: 'title', value: 'T' } }, [el]);
+  await p.ma.clear();
+  assert.equal(el.getAttribute('title'), null, 'atrybutu nie było: znika');
+
+  const dwa = element({ 'data-cel': 'x', title: 'stary' });
+  dwa.textContent = 'tekst';
+  const k = koperta([scenariusz('c', { event: 'type_view', rooms: 3, minCount: 1 }, [
+    { do: 'content', slot: 's', templateId: 'a' }, { do: 'content', slot: 's', templateId: 'h' },
+  ])], { minScript: 'ma.17', templates: { content: [
+    { templateId: 'a', action: 'attr', selector: '[data-cel="x"]', attr: { name: 'title', value: 'T' } },
+    { templateId: 'h', action: 'hide', selector: '[data-cel="x"]' },
+  ] } });
+  const w = await start({ koperta: k, elementy: [dwa], mapa: false });
+  w.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await w.gotowe();
+  assert.equal(dwa.getAttribute('title'), 'T');
+  assert.equal(dwa.style.display, 'none');
+  await w.ma.clear();
+  assert.equal(dwa.getAttribute('title'), 'stary');
+  assert.equal(dwa.style.display, undefined);
+});
+
+test('ma.41: cel — najwyżej 20 elementów, nigdy w popupie ani wokół niego; błąd querySelectorAll; zero = koniec gałęzi', async () => {
+  const wiele = Array.from({ length: 25 }, () => element({ 'data-cel': 'x' }));
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, wiele);
+  assert.equal(wiele.filter((e) => e.style.display === 'none').length, 20);
+
+  const popup = element({ 'd2-ma-popup': 'p' });
+  const wPopupie = element({ 'data-cel': 'x' });
+  popup.appendChild(wPopupie);
+  const wokol = element({ 'data-cel': 'x' });
+  const wewn = element({ 'd2-ma-popup': 'q' });
+  wokol.appendChild(wewn);
+  const obok = element({ 'data-cel': 'x' });
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [wPopupie, wokol, obok]);
+  assert.equal(wPopupie.style.display, undefined, 'w popupie');
+  assert.equal(wokol.style.display, undefined, 'wokół popupu');
+  assert.equal(obok.style.display, 'none');
+
+  const k = koperta([scenariusz('c', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 't' }, { do: 'datalayer', event: 'ma_engaged' }])], { minScript: 'ma.17', templates: { content: [{ templateId: 't', action: 'hide', selector: '.x' }] } });
+  const b = strona({ koperta: k, mapa: false, dysk: {} });
+  await b.gotowe();
+  const stare = b.window.document.querySelectorAll;
+  b.window.document.querySelectorAll = (s) => { if (s === '.x') throw new Error('zły'); return stare(s); };
+  b.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await b.gotowe();
+  assert.ok(b.ostrzezenia.some((w) => w.includes('content selector failed')));
+  assert.equal(b.dataLayer.filter((e) => e.event === 'ma_engaged').length, 0, 'bez elementów gałąź się kończy');
+});
+
+test('ma.41: nowa rewizja cofa zmiany działań swojego scenariusza, inne zostają; tekst w slocie jak dotąd', async () => {
+  const el = element({ 'data-cel': 'x' });
+  const inny = element({ 'data-inny': 'y' });
+  const slot = element({ 'd2-ma-slot': 's' });
+  slot.textContent = 'oryginał';
+  const sc = (id, tid, rev, slotName) => scenariusz(id, { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: slotName || 's', templateId: tid }], { revision: rev });
+  const templates = { content: [
+    { templateId: 'h', action: 'hide', selector: '[data-cel="x"]' },
+    { templateId: 'i', action: 'hide', selector: '[data-inny="y"]' },
+    { templateId: 'txt', text: 'nowy' },
+  ] };
+  const k = (rev) => koperta([sc('a', 'h', rev), sc('b', 'i', 1), sc('c', 'txt', rev)], { minScript: 'ma.17', templates });
+  const p = await start({ koperta: k(1), elementy: [el, inny, slot], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(el.style.display, 'none');
+  assert.equal(slot.textContent, 'nowy');
+  await p.ma.load(k(1));
+  await p.gotowe();
+  assert.equal(el.style.display, 'none', 'ta sama rewizja: bez zmian');
+  await p.ma.load(k(2));
+  await p.gotowe();
+  assert.equal(el.style.display, undefined, 'nowa rewizja: cofnięte');
+  assert.equal(el.getAttribute('d2-ma-hidden'), null);
+  assert.equal(inny.style.display, 'none', 'inny scenariusz zostaje');
+  assert.equal(slot.textContent, 'nowy', 'tekst bez działania jak dotąd');
+});
+
+test('ma.41: every_time powtarza działanie na następnej odsłonie; ma_content niesie template_id', async () => {
+  const el = element({ 'data-cel': 'x' });
+  const k = koperta([scenariusz('c', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 't', frequency: 'every_time' }])], { minScript: 'ma.17', templates: { content: [{ templateId: 't', action: 'hide', selector: '[data-cel="x"]' }] } });
+  const p = await start({ koperta: k, elementy: [el], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  const nowy = element({ 'data-cel': 'x' });
+  const p2 = await powrot(p, 2 * H, { elementy: [nowy] });
+  await p2.gotowe();
+  assert.equal(nowy.style.display, 'none');
+});
+
+test('ma.41: obraz w pasku to miniatura, nie pełna szerokość', async () => {
+  const { okno } = oknoPopupu(await popupZDesignem({ placement: 'bar-bottom' }, { blocks: [{ type: 'image', src: MEDIA }, { type: 'title', text: 'T' }] }));
+  const img = potomkowie(okno).find((x) => x.tagName === 'IMG');
+  assert.equal(img.style.cssText, 'display:block;width:auto;height:48px;margin:0');
+});
+
+test('ma.41 (recenzja): tablica jako nazwa nie przechodzi przez listę — bez javascript: w href', async () => {
+  for (const t of [
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: ['href'], value: 'javascript:alert(1)' } },
+    { action: ['hide'], selector: '[data-cel="x"]' },
+  ]) {
+    const el = element({ 'data-cel': 'x' });
+    const p = await zDzialaniem(t, [el]);
+    assert.equal(el.getAttribute('href'), null);
+    assert.equal(el.style.display, undefined);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')), 'odrzucone na wejściu');
+  }
+});
+
+test('ma.41 (recenzja): pola {{…}} w attr i alt obrazu odpadają, zamiast trafić na stronę dosłownie', async () => {
+  for (const t of [
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: 'alt', value: 'Lokal {{unit.name}}' } },
+    { action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: '{{unit.name}}' } },
+  ]) {
+    const el = element({ 'data-cel': 'x' });
+    const p = await zDzialaniem(t, [el]);
+    assert.equal(el.getAttribute('alt'), null);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')));
+  }
+});
+
+test('ma.41 (recenzja): selektor klasy trafiający w chroniony znacznik — element pominięty', async () => {
+  const body = element({ 'data-cel': 'x' }, 'BODY');
+  const skrypt = element({ 'data-cel': 'x' }, 'SCRIPT');
+  const ramka = element({ 'data-cel': 'x' }, 'IFRAME');
+  const zwykly = element({ 'data-cel': 'x' });
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [body, skrypt, ramka, zwykly]);
+  [body, skrypt, ramka].forEach((e) => assert.equal(e.style.display, undefined, e.tagName));
+  assert.equal(zwykly.style.display, 'none');
+});
+
+test('ma.41 (recenzja): show na elemencie z warunkami przeżywa render; cofnięcie przywraca znaczniki', async () => {
+  const el = element({ 'data-cel': 'x', 'd2-ma-cond': '', 'd2-ma-shown': '' });
+  const p = await zDzialaniem({ action: 'show', selector: '[data-cel="x"]' }, [el]);
+  assert.equal(el.style.display, 'revert');
+  assert.equal(el.style.getPropertyPriority('display'), 'important');
+  await p.ma.clear();
+  assert.equal(el.style.display, undefined);
+});
+
+test('ma.41 (recenzja): delaySeconds — nowszy wyzwalacz zastępuje czekający, pagehide oddaje częstotliwość, szablon znika', async () => {
+  const sc = scenariusz('d', { event: 'unit_view', unitIds: [], minCount: 1 }, [{ do: 'popup', template: 'last-unit', frequency: 'once_per_unit' }]);
+  const tpl = Object.assign({}, SZABLON, { blocks: [{ type: 'title', text: '{{unit.name}}' }], design: { behavior: { delaySeconds: 30 } } });
+  const k = koperta([sc], { minScript: 'ma.17', templates: { popup: [tpl] } });
+  const p = await start({ koperta: k });
+  p.dataLayer.push(unitOpen('A_1'));
+  await p.gotowe();
+  await p.minie(10000);
+  p.dataLayer.push(unitOpen('A_2'));
+  await p.gotowe();
+  await p.minie(31000);
+  assert.equal(p.popupy.length, 1, 'jeden popup');
+  const a = p.zdarzenia['ma:action'].filter((x) => x.do === 'popup');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].unit.unitId, 'A_2', 'nowszy lokal');
+  assert.deepEqual([...p._dysk.state.scenarios.d.freq.a1.units].length, 1, 'starszy oddał częstotliwość');
+
+  const w = await start({ koperta: k });
+  w.dataLayer.push(unitOpen('A_1'));
+  await w.gotowe();
+  assert.equal(w._dysk.state.scenarios.d.freq.a1.units.length, 1);
+  w.naOknie.pagehide.forEach((f) => f());
+  await w.gotowe();
+  assert.equal(w._dysk.state.scenarios.d.freq.a1.units.length, 0, 'wyjście oddaje częstotliwość');
+
+  const z = await start({ koperta: k });
+  z.dataLayer.push(unitOpen('A_1'));
+  await z.gotowe();
+  await z.ma.load(koperta([sc], { minScript: 'ma.17' }));
+  await z.minie(31000);
+  assert.equal(z.popupy.length, 0, 'szablon usunięty w czasie czekania');
+});
+
+test('ma.41 (recenzja): behavior.animation wyłącza domyślne fade z popups.js; bez niego opcji nie ma', async () => {
+  const a = await popupZDesignem({ behavior: { animation: 'none' } });
+  assert.equal(a.window.digi2.popups.get('d2-ma-last-unit').opcje.animation, 'none');
+  const b = await popupZDesignem({ behavior: { animation: 'slide' } });
+  assert.equal(b.window.digi2.popups.get('d2-ma-last-unit').opcje.animation, 'none');
+  const c = await popupZDesignem({ radiusPx: 2 });
+  assert.equal('animation' in c.window.digi2.popups.get('d2-ma-last-unit').opcje, false);
+});
+
+test('ma.41 (recenzja): cofa scenariusz, który zmienił element ostatni', async () => {
+  const el = element({ 'data-cel': 'x' });
+  const templates = { content: [{ templateId: 'h', action: 'hide', selector: '[data-cel="x"]' }] };
+  const sc = (id, rev) => scenariusz(id, { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'h' }], { revision: rev });
+  const k = (ra, rb) => koperta([sc('a', ra), sc('b', rb)], { minScript: 'ma.17', templates });
+  const p = await start({ koperta: k(1, 1), elementy: [el], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  await p.ma.load(k(2, 1));
+  assert.equal(el.style.display, 'none', 'b dalej chce ukrycia');
+  await p.ma.load(k(2, 2));
+  assert.equal(el.style.display, undefined);
+});
+
+test('ma.41 (recenzja): tło {{unit.image}} nie blokuje popupu bez lokalu', async () => {
+  const tpl = { templateId: 'bez', version: 1, blocks: [{ type: 'title', text: 'Oferta' }], design: { backgroundImage: { src: '{{unit.image}}' } } };
+  const k = koperta([scenariusz('r', { event: 'engagement', minSeconds: 1 }, [{ do: 'popup', template: 'bez' }])], { minScript: 'ma.17', templates: { popup: [tpl] } });
+  const p = await start({ koperta: k });
+  await p.minie(2000);
+  assert.equal(p.popupy.length, 1);
+  const { okno } = oknoPopupu(p);
+  assert.equal(okno.style['background-image'], undefined);
+});
+
+test('ma.41 (recenzja 2): image i attr src zdejmują srcset i sizes, Wyczyść je przywraca', async () => {
+  for (const t of [
+    { action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: 'n' } },
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: 'src', value: MEDIA } },
+  ]) {
+    const img = element({ 'data-cel': 'x', src: 'old.png', srcset: 'old.png 1x', sizes: '100vw' }, 'IMG');
+    const p = await zDzialaniem(t, [img]);
+    assert.equal(img.getAttribute('src'), MEDIA);
+    assert.equal(img.getAttribute('srcset'), null);
+    assert.equal(img.getAttribute('sizes'), null);
+    await p.ma.clear();
+    assert.equal(img.getAttribute('src'), 'old.png');
+    assert.equal(img.getAttribute('srcset'), 'old.png 1x');
+    assert.equal(img.getAttribute('sizes'), '100vw');
+  }
+});
+
+test('ma.41 (recenzja 2): show z warunkami zachowuje display strony, a na ukrytym używa revert', async () => {
+  const widoczny = async (display) => {
+    const el = element({ 'data-cel': 'x', 'd2-ma-cond': '' });
+    const k = koperta([krokContent()], { minScript: 'ma.17', templates: { content: [{ templateId: 't', action: 'show', selector: '[data-cel="x"]' }] } });
+    const r = strona({ koperta: k, elementy: [el], mapa: false, dysk: {} });
+    r.window.getComputedStyle = () => ({ display });
+    await r.gotowe();
+    r.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+    await r.gotowe();
+    return el;
+  };
+  const flex = await widoczny('flex');
+  assert.equal(flex.style.display, 'flex');
+  assert.equal(flex.style.getPropertyPriority('display'), 'important');
+  assert.equal((await widoczny('none')).style.display, 'revert');
+});
+
+test('ma.41 (recenzja 2): dwa scenariusze na jednym obrazie — Wyczyść zawsze do oryginału; nowa rewizja nie zabiera cudzej zmiany', async () => {
+  const img = element({ 'data-cel': 'x', src: 'orig.jpg', alt: 'orig' }, 'IMG');
+  const B = 'https://media.digi2.app/b.jpg';
+  const templates = { content: [
+    { templateId: 'i', action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: 'a' } },
+    { templateId: 'a', action: 'attr', selector: '[data-cel="x"]', attr: { name: 'src', value: B } },
+  ] };
+  const sc = (id, tid, rev) => scenariusz(id, { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: tid }], { revision: rev });
+  const k = (ra) => koperta([sc('a', 'i', ra), sc('b', 'a', 1)], { minScript: 'ma.17', templates });
+  const p = await start({ koperta: k(1), elementy: [img], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(img.getAttribute('src'), B);
+  await p.ma.load(k(2));
+  assert.equal(img.getAttribute('src'), B, 'src należy do b');
+  assert.equal(img.getAttribute('alt'), 'orig', 'alt należał do a');
+  await p.ma.clear();
+  assert.equal(img.getAttribute('src'), 'orig.jpg');
+});
+
+test('ma.41 (recenzja 2): opóźnienie — nowa rewizja albo brak scenariusza kasuje popup; po pokazaniu pagehide nic nie oddaje; własny popup bez opóźnienia', async () => {
+  const sc = (rev) => scenariusz('d', { event: 'unit_view', unitIds: [], minCount: 1 }, [{ do: 'popup', template: 'last-unit', frequency: 'once_per_unit' }], { revision: rev });
+  const tpl = Object.assign({}, SZABLON, { blocks: [{ type: 'title', text: 'T' }], design: { behavior: { delaySeconds: 30 } } });
+  const k = (lista) => koperta(lista, { minScript: 'ma.17', templates: { popup: [tpl] } });
+  for (const nowa of [[sc(2)], []]) {
+    const p = await start({ koperta: k([sc(1)]) });
+    p.dataLayer.push(unitOpen('A_1'));
+    await p.gotowe();
+    await p.ma.load(k(nowa));
+    await p.minie(31000);
+    assert.equal(p.popupy.length, 0, JSON.stringify(nowa.length));
+  }
+  const q = await start({ koperta: k([sc(1)]) });
+  q.dataLayer.push(unitOpen('A_1'));
+  await q.gotowe();
+  await q.minie(31000);
+  assert.equal(q.popupy.length, 1);
+  q.naOknie.pagehide.forEach((f) => f());
+  await q.gotowe();
+  assert.equal(q._dysk.state.scenarios.d.freq.a1.units.length, 1, 'pokazany: częstotliwość zostaje');
+
+  const wlasny = element({ 'd2-ma-popup': 'last-unit' });
+  wlasny.id = 'moj';
+  const o = await start({ koperta: k([sc(1)]), szablon: wlasny });
+  o.dataLayer.push(unitOpen('A_1'));
+  await o.gotowe();
+  assert.equal(o.popupy.length, 1, 'bez czekania');
+});
+
+test('ma.41 (recenzja 2): stare tło znika, gdy lokal nie ma zdjęcia; kolumna bierze pierwszy obraz z adresem także przy {{unit.image}} bez zdjęcia', async () => {
+  const blocks = [{ type: 'image', src: '{{unit.image}}' }, { type: 'image', src: MEDIA, alt: 'drugi' }, { type: 'title', text: 'T' }];
+  const { okno } = oknoPopupu(await popupZDesignem({ imageLayout: 'left' }, { blocks }));
+  assert.equal(okno.children[1].children[0].getAttribute('alt'), 'drugi');
+  assert.equal(potomkowie(okno).filter((x) => x.tagName === 'IMG').length, 1);
+  assert.match(kodModulu, /dialog\.style\.removeProperty\('background-image'\)/);
+});
+
+test('ma.41 (recenzja 2): html z pustym polem w zapasowym text działa; limity rich, attr i aliasu popupu', async () => {
+  const slot = element({ 'd2-ma-slot': 's' });
+  await zDzialaniem({ action: 'html', text: '{{unit.building}}', rich: [{ text: 'Ok' }] }, [slot], { lokal: { building: null } });
+  assert.equal(slot.children.length, 1, 'text jest tylko zapasem starszych skryptów');
+  const zle = [
+    { action: 'html', rich: Array.from({ length: 21 }, () => ({ text: 'a' })) },
+    { action: 'html', rich: Array.from({ length: 3 }, () => ({ text: 'a'.repeat(250) })) },
+    { action: 'html', rich: [{ text: 'a', href: 5 }] },
+    { action: 'attr', attr: { name: 'alt', value: 'a'.repeat(301) } },
+  ];
+  for (const t of zle) {
+    const el = element({ 'd2-ma-slot': 's' });
+    const p = await zDzialaniem(t, [el]);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')), JSON.stringify(t).slice(0, 40));
+    assert.equal(el.children.length, 0);
+  }
+  const alias = element({ 'data-d2-ma-popup': 'p' });
+  const w = element({ 'data-cel': 'x' });
+  alias.appendChild(w);
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [w]);
+  assert.equal(w.style.display, undefined);
+});
+
+test('ma.41 (recenzja 2): cofanie — priorytet display wraca, usunięty scenariusz też cofa, every_time ma właściciela, tekst slotu po attr ma swój zapis', async () => {
+  const el = element({ 'data-cel': 'x' });
+  el.style.setProperty('display', 'grid', 'important');
+  const hide = { templateId: 'h', action: 'hide', selector: '[data-cel="x"]' };
+  const k = (lista) => koperta(lista, { minScript: 'ma.17', templates: { content: [hide] } });
+  const sc = (extra) => scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [Object.assign({ do: 'content', slot: 's', templateId: 'h' }, extra)]);
+  const p = await start({ koperta: k([sc()]), elementy: [el], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  await p.ma.load(k([]));
+  assert.equal(el.style.display, 'grid', 'scenariusz usunięty z koperty');
+  assert.equal(el.style.getPropertyPriority('display'), 'important');
+
+  const e2 = element({ 'data-cel': 'x' });
+  const k2 = (rev) => koperta([scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'h', frequency: 'every_time' }], { revision: rev })], { minScript: 'ma.17', templates: { content: [hide] } });
+  const q = await start({ koperta: k2(1), elementy: [e2], mapa: false });
+  q.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await q.gotowe();
+  const e3 = element({ 'data-cel': 'x' });
+  const q2 = await powrot(q, 2 * H, { elementy: [e3] });
+  assert.equal(e3.style.display, 'none', 'odtworzone');
+  await q2.ma.load(k2(2));
+  assert.equal(e3.style.display, undefined, 'odtworzenie też cofa nowa rewizja');
+
+  const s3 = element({ 'data-cel': 'x', 'd2-ma-slot': 's', title: 'stary' });
+  s3.textContent = 'tekst';
+  const k3 = koperta([scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'at' }, { do: 'content', slot: 's', text: 'nowy' }])], { minScript: 'ma.17', templates: { content: [{ templateId: 'at', action: 'attr', selector: '[data-cel="x"]', attr: { name: 'title', value: 'T' } }] } });
+  const r = await start({ koperta: k3, elementy: [s3], mapa: false });
+  r.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await r.gotowe();
+  assert.equal(s3.textContent, 'nowy');
+  await r.ma.clear();
+  assert.equal(s3.textContent, 'tekst');
+  assert.equal(s3.getAttribute('title'), 'stary');
 });

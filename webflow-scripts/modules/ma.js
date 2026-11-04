@@ -160,6 +160,13 @@
  *   ?d2-ma-preview=<name>         Preview a segment / variant, nothing stored
  *   frequency "every_time"        content / map_mark / map_order re-applied each page
  *   action map_order              d2estate.setProductOrder with the profile ranking
+ *   templates.popup[].design (ma.41)  placement, colors, backgroundImage, typography, radiusPx, cta,
+ *                                 imageLayout, spacing, overlay, behavior: only listed values; a bad
+ *                                 one is warned about and dropped. Esc, focus, aria stay.
+ *   templates.content[].action (ma.41) text | html | image | hide | show | attr; target = selector or
+ *                                 [d2-ma-slot]; max 20 elements, never in a [d2-ma-popup] or on body,
+ *                                 script, iframe…; undone by Wyczyść and a new revision (plain slot
+ *                                 text: as before). Never innerHTML.
  *   Engine (ma.39)                2destate | 3destate, detected in one place (engine()). On 3destate
  *                                 map_mark, map_order and (ma.40) prefer_filters don't run: ma:action
  *                                 { status: "skipped", reason: "engine_3destate" }, frequency not used.
@@ -252,7 +259,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 40;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 41;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -888,6 +895,13 @@
     var lib = {};
     var list = t && typeof t === 'object' && Array.isArray(t.content) ? t.content : [];
     list.forEach(function (c) {
+      // ma.41: szablon z działaniem albo selektorem to obiekt; sam tekst zostaje napisem.
+      // action: "text" bez selektora to zwykły tekst w slocie.
+      if (c && SLOT_RE.test(String(c.templateId || '')) && (c.selector != null || (c.action != null && c.action !== 'text'))) {
+        var def = contentAction(c);
+        if (def) lib[c.templateId] = def;
+        return;
+      }
       if (!c || !SLOT_RE.test(String(c.templateId || '')) || !contentTextValid(c.text)) {
         _warn('content template "' + (c && c.templateId) + '" is not valid (id [a-z0-9-], text ≤ 160, fields from §13.9.2) — skipped');
         return;
@@ -897,10 +911,88 @@
     return lib;
   }
 
+  // ma.41: ten sam podzbiór CSS co SELECTOR_RE w ma_content_schema.py (2destate) i w panelu.
+  var SEL_PART = '(?:[a-z][a-z0-9]{0,20})?(?:#[A-Za-z][A-Za-z0-9_-]{0,60}|\\.[A-Za-z_][A-Za-z0-9_-]{0,60}'
+    + '|\\[(?:d2-ma-slot|data-[a-z0-9-]{1,40})="[A-Za-z0-9_-]{1,64}"\\])+';
+  var SELECTOR_RE = new RegExp('^' + SEL_PART + '(?:(?: | > )' + SEL_PART + '){0,3}$');
+  var SELECTOR_MAX = 120;
+  var SELECTOR_BAD_CLASS = /\.(?:imp-|d2-ma-)/;
+  var SELECTOR_BAD_TAGS = { html: 1, head: 1, body: 1, script: 1, style: 1, iframe: 1, link: 1, meta: 1, base: 1, object: 1, embed: 1, template: 1, noscript: 1 };
+  var CONTENT_ACTIONS = { text: 1, html: 1, image: 1, hide: 1, show: 1, attr: 1 };
+  var CONTENT_ATTRS = { alt: 1, title: 1, 'aria-label': 1, href: 1, src: 1 };
+  var CONTENT_MAX_ELS = 20;
+  var RICH_MAX_RUNS = 20;
+  var RICH_MAX_TEXT = 600;
+  var ATTR_MAX = 300;
+
+  function selectorOk(sel) {
+    if (typeof sel !== 'string' || !sel || sel.length > SELECTOR_MAX || !SELECTOR_RE.test(sel) || SELECTOR_BAD_CLASS.test(sel)) return false;
+    var re = /(?:^|[ >])([a-z][a-z0-9]*)/g;
+    var m;
+    while ((m = re.exec(sel))) if (SELECTOR_BAD_TAGS[m[1]]) return false;
+    return true;
+  }
+
+  function richValid(runs) {
+    if (!Array.isArray(runs) || !runs.length || runs.length > RICH_MAX_RUNS) return false;
+    var total = 0;
+    return runs.every(function (r) {
+      if (!r || typeof r !== 'object') return false;
+      if (r.br === true) return true;
+      if (!tplText(r.text, 300)) return false;
+      total += r.text.length;
+      return total <= RICH_MAX_TEXT && (r.href == null || typeof r.href === 'string');
+    });
+  }
+
+  function contentAction(c) {
+    var where = 'content template "' + c.templateId + '"';
+    var action = c.action == null ? 'text' : c.action;
+    // hasKey wymaga napisu: hasOwnProperty przepuściłby ['href'] przez listę i obok kontroli adresu.
+    if (!hasKey(CONTENT_ACTIONS, action)) { _warn(where + ' — unknown action, skipped'); return null; }
+    if (c.selector != null && !selectorOk(c.selector)) { _warn(where + ' — selector not allowed, skipped'); return null; }
+    var def = { action: action, selector: c.selector == null ? null : c.selector, text: typeof c.text === 'string' ? c.text : '' };
+    if (action === 'text' && !contentTextValid(c.text)) { _warn(where + ' — text not valid, skipped'); return null; }
+    if (action === 'html') {
+      if (!richValid(c.rich)) { _warn(where + ' — rich not valid, skipped'); return null; }
+      def.rich = c.rich;
+    }
+    if (action === 'image') {
+      if (!imageValid(c.image) || /\{\{/.test(String(c.image.alt || ''))) { _warn(where + ' — image needs an https src on this site or ' + MEDIA_HOSTS.join(', ') + ' and alt without fields, skipped'); return null; }
+      def.image = c.image;
+    }
+    if (action === 'attr') {
+      var a = c.attr;
+      var ok = a && typeof a === 'object' && hasKey(CONTENT_ATTRS, a.name)
+        && typeof a.value === 'string' && a.value.length >= 1 && a.value.length <= ATTR_MAX && !/\{\{/.test(a.value);
+      if (ok && a.name === 'href') ok = !!safePageLink(a.value);
+      if (ok && a.name === 'src') ok = !!mediaUrl(a.value);
+      if (!ok) { _warn(where + ' — attr must be alt, title, aria-label, href or src with a valid value, skipped'); return null; }
+      def.attr = { name: a.name, value: a.value };
+    }
+    return def;
+  }
+
   function contentTemplate(id) {
     var lib = (compiling || envelope || {}).contentTemplates || {};
-    if (Object.prototype.hasOwnProperty.call(lib, id)) return lib[id];
+    if (Object.prototype.hasOwnProperty.call(lib, id)) return typeof lib[id] === 'string' ? lib[id] : lib[id].text;
     return Object.prototype.hasOwnProperty.call(CONTENT_TEMPLATES, id) ? CONTENT_TEMPLATES[id] : null;
+  }
+
+  // ma.41: działanie szablonu kroku; null = zwykły tekst w slocie, jak dotąd.
+  function contentDef(node) {
+    if (node.templateId == null) return null;
+    var lib = (compiling || envelope || {}).contentTemplates || {};
+    var id = String(node.templateId);
+    var v = Object.prototype.hasOwnProperty.call(lib, id) ? lib[id] : null;
+    return v && typeof v === 'object' ? v : null;
+  }
+
+  // Tekst kroku content; działania bez tekstu mają pusty, a html sam pilnuje swoich pól.
+  function contentStepText(node, unit) {
+    var def = contentDef(node);
+    if (node.image || node.video || (def && def.action !== 'text')) return '';
+    return contentText(node, unit);
   }
 
   function compileScenario(s) {
@@ -1412,8 +1504,8 @@
       recordFrequency(st, node, ctx.unit);
       _emit('ma:action', { scenarioId: sc.id, nodeId: node.id, 'do': 'datalayer', event: node.event, segment: segment });
     } else if (kind === 'content') {
-      var text = node.image || node.video ? '' : contentText(node, ctx.unit);
-      var n = text == null ? 0 : applyContent(node, text);
+      var text = contentStepText(node, ctx.unit);
+      var n = text == null ? 0 : applyContent(node, text, ctx.unit, sc);
       // Pole bez wartości albo brak slotu na stronie: treść się nie zmienia, a dalsze
       // kroki (np. ma_content) by o tym kłamały - gałąź się kończy.
       if (!n) {
@@ -1608,16 +1700,26 @@
     var els = document.querySelectorAll('[d2-ma-slot="' + slot + '"], [data-d2-ma-slot="' + slot + '"]');
     for (var i = 0; i < els.length; i++) {
       var known = false;
-      for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === els[i]) known = true;
+      for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === els[i] && !slotOriginals[j].key) known = true;
       if (!known) slotOriginals.push({ el: els[i], text: els[i].textContent });
       els[i].textContent = text;
     }
     return els.length;
   }
 
-  function restoreSlots() {
-    slotOriginals.forEach(function (o) {
-      if (o.kids) {
+  // scenarios: tylko zmiany działań tych scenariuszy (ma.41, nowa rewizja); bez = wszystko.
+  function restoreSlots(scenarios) {
+    var back = scenarios ? slotOriginals.filter(function (o) { return o.sc != null && scenarios[o.sc]; }) : slotOriginals;
+    back.forEach(function (o) {
+      if (o.attr) {
+        if (o.attr.value == null) o.el.removeAttribute(o.attr.name); else o.el.setAttribute(o.attr.name, o.attr.value);
+      } else if (o.display) {
+        ['hidden', 'shown'].forEach(function (k) {
+          if (o.display[k] == null) o.el.removeAttribute('d2-ma-' + k); else o.el.setAttribute('d2-ma-' + k, o.display[k]);
+        });
+        if (o.display.value) o.el.style.setProperty('display', o.display.value, o.display.priority);
+        else o.el.style.removeProperty('display');
+      } else if (o.kids) {
         while (o.el.firstChild) o.el.removeChild(o.el.firstChild);
         o.kids.forEach(function (k) { o.el.appendChild(k); });
       } else if (o.img) {
@@ -1628,6 +1730,10 @@
         o.el.textContent = o.text;
       }
     });
+    if (scenarios) {
+      slotOriginals = slotOriginals.filter(function (o) { return back.indexOf(o) < 0; });
+      return;
+    }
     slotOriginals = [];
     mountedVideos = [];
   }
@@ -1743,21 +1849,135 @@
     return el;
   }
 
-  function remember(el, entry) {
-    for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === el) return;
+  // key: osobny oryginał dla atrybutu i display; bez niego treść elementu.
+  function remember(el, entry, sc) {
+    for (var j = 0; j < slotOriginals.length; j++) {
+      if (slotOriginals[j].el === el && slotOriginals[j].key === entry.key) {
+        // Oryginał zostaje, a cofa go scenariusz, który zmienił element ostatni.
+        if (sc) slotOriginals[j].sc = sc.id;
+        return;
+      }
+    }
     entry.el = el;
+    if (sc) entry.sc = sc.id;
     slotOriginals.push(entry);
   }
 
-  function mount(el, node) {
+  function mount(el, node, sc) {
     var kids = [];
     while (el.firstChild) { kids.push(el.firstChild); el.removeChild(el.firstChild); }
-    remember(el, { kids: kids });
+    remember(el, { kids: kids }, sc);
     el.appendChild(node);
   }
 
+  function inPopup(el) {
+    for (var e = el; e; e = e.parentNode) {
+      if (e.getAttribute && (e.getAttribute('d2-ma-popup') !== null || e.getAttribute('data-d2-ma-popup') !== null)) return true;
+    }
+    return !!(el.querySelector && el.querySelector('[d2-ma-popup], [data-d2-ma-popup]'));
+  }
+
+  // Cel działania: selektor szablonu albo slot kroku; najwyżej 20, nigdy w popupie ani wokół niego.
+  function contentTargets(def, node) {
+    var sel = def.selector || ('[d2-ma-slot="' + node.slot + '"], [data-d2-ma-slot="' + node.slot + '"]');
+    var found = [];
+    try { found = document.querySelectorAll(sel); } catch (e) { _warn('content selector failed: ' + sel); return []; }
+    var out = [];
+    for (var i = 0; i < found.length && out.length < CONTENT_MAX_ELS; i++) {
+      // Lista znaczników w selektorOk widzi tylko zapis: .body (domyślna klasa Webflow) trafia w <body>.
+      if (SELECTOR_BAD_TAGS[String(found[i].tagName || '').toLowerCase()]) { _log('content skipped — selector matched a protected element'); continue; }
+      if (!inPopup(found[i])) out.push(found[i]);
+    }
+    return out;
+  }
+
+  // Bieg po biegu przez createElement i textContent - nigdy innerHTML. null = pole bez wartości.
+  function richNodes(runs, unit) {
+    var out = [];
+    for (var i = 0; i < runs.length; i++) {
+      var r = runs[i];
+      if (r.br === true) { out.push(document.createElement('br')); continue; }
+      var text = contentText({ text: r.text }, unit);
+      if (text == null) return null;
+      var leaf = document.createTextNode(text);
+      if (r.italic === true) { var em = document.createElement('em'); em.appendChild(leaf); leaf = em; }
+      if (r.bold === true) { var b = document.createElement('strong'); b.appendChild(leaf); leaf = b; }
+      var href = r.href ? safePageLink(r.href) : null;
+      if (href) { var a = document.createElement('a'); a.setAttribute('href', href); a.appendChild(leaf); leaf = a; }
+      out.push(leaf);
+    }
+    return out;
+  }
+
+  // Atrybuty mają jeden wspólny zapis na element i nazwę, także dla action image: „Wyczyść”
+  // zawsze wraca do oryginału, a cofa scenariusz, który zmienił atrybut ostatni.
+  function setAttrKept(el, name, v, sc) {
+    remember(el, { key: 'attr:' + name, attr: { name: name, value: el.getAttribute(name) } }, sc);
+    if (v == null) el.removeAttribute(name); else el.setAttribute(name, v);
+  }
+
+  // Nowe src bez tego przegrałoby z srcset: Webflow daje go obrazom, a przeglądarka trzyma stary plik.
+  function setImageSrc(el, src, sc) {
+    setAttrKept(el, 'src', src, sc);
+    if (el.getAttribute('srcset') !== null) setAttrKept(el, 'srcset', null, sc);
+    if (el.getAttribute('sizes') !== null) setAttrKept(el, 'sizes', null, sc);
+  }
+
+  function applyAction(def, node, text, unit, sc) {
+    if (!document.querySelectorAll) return 0;
+    var nodes = null;
+    if (def.action === 'html') { nodes = richNodes(def.rich, unit); if (!nodes) return 0; }
+    var els = contentTargets(def, node);
+    els.forEach(function (el, n) {
+      if (def.action === 'text') {
+        mount(el, document.createTextNode(text), sc);
+      } else if (def.action === 'html') {
+        var kids = [];
+        while (el.firstChild) { kids.push(el.firstChild); el.removeChild(el.firstChild); }
+        remember(el, { kids: kids }, sc);
+        // Węzeł nie może stać w dwóch elementach: każdy cel dostaje własne.
+        (n ? richNodes(def.rich, unit) : nodes).forEach(function (x) { el.appendChild(x); });
+      } else if (def.action === 'image') {
+        if (el.tagName === 'IMG') {
+          setImageSrc(el, mediaUrl(def.image.src), sc);
+          setAttrKept(el, 'alt', def.image.alt || '', sc);
+        } else {
+          var img = document.createElement('img');
+          img.setAttribute('src', mediaUrl(def.image.src));
+          img.setAttribute('alt', def.image.alt || '');
+          mount(el, img, sc);
+        }
+      } else if (def.action === 'attr') {
+        var name = def.attr.name;
+        var v = name === 'href' ? safePageLink(def.attr.value) : name === 'src' ? mediaUrl(def.attr.value) : def.attr.value;
+        if (v == null) return;
+        if (name === 'src') setImageSrc(el, v, sc); else setAttrKept(el, name, v, sc);
+      } else {
+        remember(el, { key: 'display', display: {
+          value: el.style.getPropertyValue('display'), priority: el.style.getPropertyPriority('display'),
+          hidden: el.getAttribute('d2-ma-hidden'), shown: el.getAttribute('d2-ma-shown')
+        } }, sc);
+        if (def.action === 'hide') {
+          el.setAttribute('d2-ma-hidden', '');
+          el.style.setProperty('display', 'none', 'important');
+        } else {
+          el.setAttribute('d2-ma-shown', '');
+          el.style.removeProperty('display');
+          // applyConditions zdejmie d2-ma-shown z elementu z warunkami, a CSS strony go schowa.
+          var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
+          // Dlatego inline zostaje display, który strona dała mu właśnie teraz (np. flex).
+          if (el.getAttribute('d2-ma-cond') !== null) el.style.setProperty('display', cs && cs.display && cs.display !== 'none' ? cs.display : 'revert', 'important');
+          else if (cs && cs.display === 'none') el.style.setProperty('display', 'revert');
+        }
+      }
+    });
+    return els.length;
+  }
+
   // Treść content w slotach: tekst, obraz albo wideo. Zwraca liczbę slotów.
-  function applyContent(node, text) {
+  function applyContent(node, text, unit, sc) {
+    var def = contentDef(node);
+    if (def && (def.action !== 'text' || def.selector)) return applyAction(def, node, text, unit, sc);
     if (!node.image && !node.video) return setSlot(node.slot, text);
     if (!document.querySelectorAll) return 0;
     var els = document.querySelectorAll('[d2-ma-slot="' + node.slot + '"], [data-d2-ma-slot="' + node.slot + '"]');
@@ -2281,7 +2501,8 @@
   function unitlessPopup(template, tpl, unit) {
     if (Object.prototype.hasOwnProperty.call(UNITLESS_TEXT, template)) return true;
     if (unit || !tpl) return false;
-    var js = JSON.stringify(tpl);
+    // Tylko bloki: tło design z {{unit.image}} to ozdoba, bez lokalu po prostu go nie ma.
+    var js = JSON.stringify(tpl.blocks);
     return !/\{\{\s*unit\./.test(js);
   }
 
@@ -2375,7 +2596,7 @@
       var id = p && p.templateId;
       var where = 'popup template "' + id + '"';
       if (!p || typeof p !== 'object' || !SLOT_RE.test(String(id || ''))) { _warn(where + ' — needs a templateId [a-z0-9-], skipped'); return; }
-      onlyKeys(p, { templateId: 1, version: 1, blocks: 1, layout: 1, style: 1 }, where);
+      onlyKeys(p, { templateId: 1, version: 1, blocks: 1, layout: 1, style: 1, design: 1 }, where);
       var blocks = (Array.isArray(p.blocks) ? p.blocks.slice(0, 8) : []).map(function (b, i) {
         return tplBlock(b, where + ' block ' + (i + 1));
       }).filter(Boolean);
@@ -2407,8 +2628,213 @@
         position: TPL_POSITIONS[layout.position] ? layout.position : 'center',
         size: TPL_SIZES[layout.size] ? layout.size : 'md'
       };
+      // Bez pola design wpis ma ten sam kształt co dotąd, więc i ten sam podpis.
+      var design = p.design && typeof p.design === 'object' ? designOf(p.design, where + ' design') : null;
+      if (design && Object.keys(design).length) lib[id].design = design;
     });
     return lib;
+  }
+
+  // ---------------------------------------------------------------------------
+  // design popupu (ma.41): tylko wartości z list niżej, tekst koperty nie trafia do stylu.
+  // Zła wartość = _warn i pominięcie pola, nie szablonu. Wzorzec: popupPreviewDoc w panelu 2destate.
+  // ---------------------------------------------------------------------------
+  var DESIGN_HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+  var DESIGN_PLACEMENTS = {
+    center: { align: 'center', justify: 'center', padding: '16px' },
+    'side-right': { align: 'stretch', justify: 'flex-end', padding: '0', side: 1 },
+    'side-left': { align: 'stretch', justify: 'flex-start', padding: '0', side: 1 },
+    'bar-bottom': { align: 'flex-end', justify: 'center', padding: '0', bar: 1 },
+    'bar-top': { align: 'flex-start', justify: 'center', padding: '0', bar: 1 },
+    'slide-in': { align: 'flex-end', justify: 'flex-end', padding: '16px' }
+  };
+  var DESIGN_FONTS = {
+    inherit: 'inherit',
+    sans: "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif",
+    serif: "Georgia, 'Times New Roman', serif",
+    mono: 'ui-monospace, Menlo, Consolas, monospace'
+  };
+  var DESIGN_TITLE_PX = { sm: 18, md: 22, lg: 28, xl: 34 };
+  var DESIGN_TEXT_PX = { sm: 14, md: 16, lg: 18 };
+  var DESIGN_CTA_RADIUS = { square: '0', rounded: '10px', pill: '999px' };
+  var DESIGN_SPACING = { compact: [14, 16], normal: [20, 22], roomy: [32, 34] };
+  var DESIGN_OVERLAY = { none: 'transparent', light: 'rgba(15,18,24,.25)', dark: 'rgba(15,18,24,.55)' };
+
+  function hasKey(map, k) {
+    return typeof k === 'string' && Object.prototype.hasOwnProperty.call(map, k);
+  }
+
+  // Jedno pole: brak = nic, poprawne = przepisane, złe = ostrzeżenie.
+  function designField(src, dst, key, ok, where) {
+    if (src[key] == null) return;
+    if (ok(src[key])) dst[key] = src[key];
+    else _warn(where + ' — ' + key + ' not valid, ignored');
+  }
+
+  function designGroup(raw, key, keys, where, read) {
+    if (raw[key] == null) return null;
+    if (typeof raw[key] !== 'object') { _warn(where + ' — ' + key + ' not valid, ignored'); return null; }
+    onlyKeys(raw[key], keys, where + ' ' + key);
+    var out = {};
+    read(raw[key], out, where + ' ' + key);
+    return Object.keys(out).length ? out : null;
+  }
+
+  function inList(map) { return function (v) { return hasKey(map, v); }; }
+  function inRange(lo, hi) { return function (v) { return typeof v === 'number' && isFinite(v) && v >= lo && v <= hi; }; }
+  function isBool(v) { return v === true || v === false; }
+  function isHex(v) { return typeof v === 'string' && DESIGN_HEX.test(v); }
+
+  function designOf(raw, where) {
+    onlyKeys(raw, { placement: 1, colors: 1, backgroundImage: 1, typography: 1, radiusPx: 1, cta: 1, imageLayout: 1, spacing: 1, overlay: 1, behavior: 1 }, where);
+    var d = {};
+    designField(raw, d, 'placement', inList(DESIGN_PLACEMENTS), where);
+    designField(raw, d, 'radiusPx', inRange(0, 40), where);
+    designField(raw, d, 'imageLayout', inList({ top: 1, left: 1, right: 1 }), where);
+    designField(raw, d, 'spacing', inList(DESIGN_SPACING), where);
+    designField(raw, d, 'overlay', inList(DESIGN_OVERLAY), where);
+    var colorKeys = { background: 1, text: 1, accent: 1, accentText: 1, overlay: 1 };
+    var colors = designGroup(raw, 'colors', colorKeys, where, function (r, o, w) {
+      Object.keys(colorKeys).forEach(function (k) { designField(r, o, k, isHex, w); });
+    });
+    if (colors) d.colors = colors;
+    var bg = designGroup(raw, 'backgroundImage', { src: 1, fit: 1, scrim: 1 }, where, function (r, o, w) {
+      designField(r, o, 'src', function (v) { return v === '{{unit.image}}' || !!mediaUrl(v); }, w);
+      if (!o.src) return;
+      designField(r, o, 'fit', inList({ cover: 1, contain: 1 }), w);
+      designField(r, o, 'scrim', inRange(0, 80), w);
+    });
+    if (bg) d.backgroundImage = bg;
+    var typo = designGroup(raw, 'typography', { font: 1, titleSize: 1, textSize: 1, align: 1 }, where, function (r, o, w) {
+      designField(r, o, 'font', inList(DESIGN_FONTS), w);
+      designField(r, o, 'titleSize', inList(DESIGN_TITLE_PX), w);
+      designField(r, o, 'textSize', inList(DESIGN_TEXT_PX), w);
+      designField(r, o, 'align', inList({ left: 1, center: 1 }), w);
+    });
+    if (typo) d.typography = typo;
+    var cta = designGroup(raw, 'cta', { shape: 1, variant: 1, fullWidth: 1 }, where, function (r, o, w) {
+      designField(r, o, 'shape', inList(DESIGN_CTA_RADIUS), w);
+      designField(r, o, 'variant', inList({ solid: 1, outline: 1 }), w);
+      designField(r, o, 'fullWidth', isBool, w);
+    });
+    if (cta) d.cta = cta;
+    var beh = designGroup(raw, 'behavior', { delaySeconds: 1, closeButton: 1, closeOnOverlay: 1, animation: 1 }, where, function (r, o, w) {
+      designField(r, o, 'delaySeconds', inRange(0, 120), w);
+      designField(r, o, 'closeButton', isBool, w);
+      designField(r, o, 'closeOnOverlay', isBool, w);
+      designField(r, o, 'animation', inList({ none: 1, fade: 1, slide: 1 }), w);
+    });
+    if (beh) d.behavior = beh;
+    return d;
+  }
+
+  // Animacje i jedna kolumna na telefonie: stały tekst, raz na stronę. Bez ruchu przy
+  // prefers-reduced-motion.
+  function designCss() {
+    if (document.querySelector('#d2-ma-design-css')) return;
+    var st = document.createElement('style');
+    st.id = 'd2-ma-design-css';
+    st.textContent = '@keyframes d2mafade{from{opacity:0}to{opacity:1}}'
+      + '@keyframes d2maslide{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}'
+      + '@media (prefers-reduced-motion:no-preference){[d2-ma-anim="fade"]{animation:d2mafade .25s ease-out}'
+      + '[d2-ma-anim="slide"]{animation:d2maslide .3s ease-out}}'
+      + '@media (max-width:480px){[d2-ma-split]{grid-template-columns:1fr!important}}';
+    (document.head || document.body).appendChild(st);
+  }
+
+  function applyDesignShell(el, dialog, d) {
+    var place = d.placement ? DESIGN_PLACEMENTS[d.placement] : null;
+    var colors = d.colors || {};
+    var typo = d.typography || {};
+    var beh = d.behavior || {};
+    var set = function (x, k, v) { x.style.setProperty(k, v); };
+    if (colors.overlay) set(el, 'background', colors.overlay);
+    else if (d.overlay) set(el, 'background', DESIGN_OVERLAY[d.overlay]);
+    if (d.overlay === 'none') {
+      set(el, 'pointer-events', 'none');
+      set(dialog, 'pointer-events', 'auto');
+    }
+    if (colors.background) set(dialog, 'background-color', colors.background);
+    if (colors.text) set(dialog, 'color', colors.text);
+    if (typo.font) set(dialog, 'font-family', DESIGN_FONTS[typo.font]);
+    if (typo.align) set(dialog, 'text-align', typo.align);
+    if (d.radiusPx != null) set(dialog, 'border-radius', d.radiusPx + 'px');
+    if (place) {
+      set(el, 'align-items', place.align);
+      set(el, 'justify-content', place.justify);
+      set(el, 'padding', place.padding);
+      if (place.side) {
+        set(dialog, 'height', '100%');
+        set(dialog, 'overflow', 'auto');
+        set(dialog, 'border-radius', '0');
+      }
+      if (place.bar) {
+        set(dialog, 'max-width', '100%');
+        set(dialog, 'border-radius', '0');
+        set(dialog, 'display', 'flex');
+        set(dialog, 'flex-wrap', 'wrap');
+        set(dialog, 'align-items', 'center');
+        set(dialog, 'gap', '8px 20px');
+      }
+    }
+    if (beh.animation === 'fade' || beh.animation === 'slide') dialog.setAttribute('d2-ma-anim', beh.animation);
+    if (beh.closeOnOverlay === false && el.addEventListener) {
+      // Słuchacz przed tym z popups.js (popups.create idzie po budowie): klik w samą
+      // nakładkę tam nie dochodzi. Bez nowej opcji, bo popups.js bywa z innej wersji.
+      el.addEventListener('click', function (e) {
+        if (e.target === el) e.stopImmediatePropagation();
+      }, true);
+    }
+    if ((beh.animation && beh.animation !== 'none') || d.imageLayout === 'left' || d.imageLayout === 'right') designCss();
+  }
+
+  // Adres w url(): nie wyjdzie z nawiasu.
+  function cssUrl(src) {
+    return String(src).replace(/[()'"\\\s]/g, function (c) { return '%' + ('0' + c.charCodeAt(0).toString(16)).slice(-2); });
+  }
+
+  function tplImageSrc(b, unit) {
+    return b.src === '{{unit.image}}' ? (unit && unit.image ? safeImage(unit.image) : null) : mediaUrl(b.src);
+  }
+
+  function tplImageNode(b, src, unit) {
+    var node = document.createElement('img');
+    node.setAttribute('src', src);
+    var alt = b.alt ? contentText({ text: b.alt }, unit) : '';
+    node.setAttribute('alt', alt || '');
+    return node;
+  }
+
+  // Tło okna zależy od lokalu, więc przy każdym renderze.
+  function applyDesignBackground(dialog, d, unit) {
+    var bg = d.backgroundImage;
+    if (!bg) return;
+    var src = bg.src === '{{unit.image}}' ? (unit && unit.image ? safeImage(unit.image) : null) : mediaUrl(bg.src);
+    if (!src) {
+      dialog.style.removeProperty('background-image');
+      return;
+    }
+    var s = (bg.scrim || 0) / 100;
+    dialog.style.setProperty('background-image', 'linear-gradient(rgba(0,0,0,' + s + '),rgba(0,0,0,' + s + ')),url("' + cssUrl(src) + '")');
+    dialog.style.setProperty('background-size', bg.fit || 'cover');
+    dialog.style.setProperty('background-position', 'center');
+    dialog.style.setProperty('background-repeat', 'no-repeat');
+  }
+
+  function applyDesignCta(node, tpl, d, bar) {
+    var colors = d.colors || {};
+    var cta = d.cta || {};
+    if (colors.accent) node.style.setProperty('background-color', colors.accent);
+    if (colors.accentText) node.style.setProperty('color', colors.accentText);
+    if (cta.shape) node.style.setProperty('border-radius', DESIGN_CTA_RADIUS[cta.shape]);
+    if (cta.variant === 'outline') {
+      var accent = colors.accent || (tpl.style.accent ? tokenVar(tpl.style.accent, '#1a1d1c') : '#1a1d1c');
+      node.style.setProperty('background', 'transparent');
+      node.style.setProperty('color', accent);
+      node.style.setProperty('border', '2px solid ' + accent);
+    }
+    if (cta.fullWidth === false || bar) node.style.setProperty('display', 'inline-block');
+    if (bar) node.style.setProperty('margin-top', '0');
   }
 
   function popupTemplate(id) {
@@ -2440,6 +2866,7 @@
     if (tpl.style.text) dialog.style.setProperty('color', tokenVar(tpl.style.text, '#1a1d1c'));
     if (tpl.style.font) dialog.style.setProperty('font-family', tokenVar(tpl.style.font, 'inherit'));
     if (tpl.style.radius) dialog.style.setProperty('border-radius', TPL_RADIUS[tpl.style.radius]);
+    if (tpl.design) applyDesignShell(el, dialog, tpl.design);
     el.appendChild(dialog);
     document.body.appendChild(el);
     return el;
@@ -2458,16 +2885,47 @@
       + 'background:rgba(255,255,255,.9);font-size:22px;line-height:1;cursor:pointer;color:#1a1d1c';
     close.textContent = '×';
     dialog.appendChild(close);
+    var d = tpl.design || {};
+    var space = DESIGN_SPACING[d.spacing] || DESIGN_SPACING.normal;
+    var bar = !!(d.placement && DESIGN_PLACEMENTS[d.placement].bar);
+    var typo = d.typography || {};
+    // ma.41: do kolumny idzie tylko pierwszy obraz z poprawnym adresem; bez niego układ jak top.
+    var splitBlock = null;
+    if (d.imageLayout === 'left' || d.imageLayout === 'right') {
+      for (var i = 0; i < tpl.blocks.length && !splitBlock; i++) {
+        if (tpl.blocks[i].type === 'image' && tplImageSrc(tpl.blocks[i], unit)) splitBlock = tpl.blocks[i];
+      }
+    }
+    var host = dialog;
+    if (splitBlock) {
+      var grid = document.createElement('div');
+      grid.setAttribute('d2-ma-split', '');
+      grid.style.setProperty('display', 'grid');
+      grid.style.setProperty('grid-template-columns', d.imageLayout === 'left' ? '40% 1fr' : '1fr 40%');
+      host = document.createElement('div');
+      host.style.setProperty('padding', space[0] + 'px ' + space[1] + 'px ' + (space[0] + 2) + 'px');
+      var side = tplImageNode(splitBlock, tplImageSrc(splitBlock, unit), unit);
+      side.style.setProperty('display', 'block');
+      side.style.setProperty('width', '100%');
+      side.style.setProperty('height', '100%');
+      side.style.setProperty('object-fit', 'cover');
+      if (d.imageLayout === 'left') { grid.appendChild(side); grid.appendChild(host); } else { grid.appendChild(host); grid.appendChild(side); }
+      dialog.appendChild(grid);
+      dialog.style.setProperty('padding', '0');
+    } else if (d.spacing || d.imageLayout) {
+      dialog.style.setProperty('padding', space[0] + 'px ' + space[1] + 'px ' + (space[0] + 2) + 'px');
+    }
+    applyDesignBackground(dialog, d, unit);
     tpl.blocks.forEach(function (b) {
       var node;
+      if (b === splitBlock) return;
       if (b.type === 'image') {
-        var src = b.src === '{{unit.image}}' ? (unit && unit.image ? safeImage(unit.image) : null) : mediaUrl(b.src);
+        var src = tplImageSrc(b, unit);
         if (!src) return;
-        node = document.createElement('img');
-        node.setAttribute('src', src);
-        var alt = b.alt ? contentText({ text: b.alt }, unit) : '';
-        node.setAttribute('alt', alt || '');
-        node.style.cssText = 'display:block;width:calc(100% + 44px);height:auto;margin:-20px -22px 16px';
+        node = tplImageNode(b, src, unit);
+        node.style.cssText = 'display:block;width:calc(100% + ' + (space[1] * 2) + 'px);height:auto;margin:-' + space[0] + 'px -' + space[1] + 'px 16px';
+        // Pasek układa bloki w rzędzie: obraz na pełną szerokość urósłby ponad ekran.
+        if (bar) node.style.cssText = 'display:block;width:auto;height:48px;margin:0';
       } else if (b.type === 'cta') {
         var label = contentText({ text: b.label }, unit);
         if (label == null) return;
@@ -2482,6 +2940,7 @@
         node.style.cssText = 'display:block;text-align:center;padding:12px 16px;border-radius:10px;background:#1a1d1c;'
           + 'color:#fff;text-decoration:none;font-weight:600;margin-top:12px';
         if (tpl.style.accent) node.style.setProperty('background-color', tokenVar(tpl.style.accent, '#1a1d1c'));
+        if (tpl.design) applyDesignCta(node, tpl, d, bar);
       } else {
         var text = contentText({ text: b.text }, unit);
         if (text == null) text = b.fallback || null;
@@ -2489,9 +2948,14 @@
         node = document.createElement(b.type === 'title' ? 'h3' : 'p');
         node.textContent = text;
         node.style.cssText = b.type === 'title' ? 'margin:0 0 6px;font-size:22px;line-height:1.2' : 'margin:0 0 6px';
+        if (bar) node.style.setProperty('margin', '0');
+        if (b.type === 'title' && typo.titleSize) node.style.setProperty('font-size', DESIGN_TITLE_PX[typo.titleSize] + 'px');
+        if (b.type !== 'title' && typo.textSize) node.style.setProperty('font-size', DESIGN_TEXT_PX[typo.textSize] + 'px');
       }
-      dialog.appendChild(node);
+      host.appendChild(node);
     });
+    // Krzyżyk znika tylko, gdy gość ma czym zamknąć: przycisk close faktycznie na ekranie.
+    if (d.behavior && d.behavior.closeButton === false && dialog.querySelector('[d2-ma-template-cta="close"]')) dialog.removeChild(close);
   }
 
   function templateCta(tpl) {
@@ -2779,7 +3243,54 @@
     })();
   }
 
-  function showPopup(node, ctx, onShown, onSkipped, owner) {
+  function ownPopup(template) {
+    return document.querySelector('[d2-ma-popup="' + template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
+      + '[data-d2-ma-popup="' + template + '"]');
+  }
+
+  // ma.41: behavior.delaySeconds. Czekanie stoi przed całą resztą showPopup, więc po czasie
+  // działają te same kontrole (sprzedany lokal, cisza po przycisku, podpis szablonu, popup na ekranie).
+  var popupDelays = {};      // szablon -> { timer, onSkipped }
+  var delayExitHooked = false;
+
+  function dropPopupDelay(template, skipped) {
+    var w = popupDelays[template];
+    if (!w) return;
+    delete popupDelays[template];
+    clearTimeout(w.timer);
+    if (skipped) w.onSkipped();
+  }
+
+  function delayedPopup(node, ctx, onShown, onSkipped, owner, seconds) {
+    var epoch = profileEpoch;
+    var ids = String(owner).split('/');
+    var scenario = function () { return envelope && envelope.scenarios.filter(function (x) { return x.id === ids[0]; })[0]; };
+    var rev = (scenario() || {}).revision;
+    // Nowszy wyzwalacz zastępuje czekający, jak przy dymku mapy: starszy oddaje częstotliwość.
+    dropPopupDelay(node.template, true);
+    if (!delayExitHooked && window.addEventListener) {
+      // Wyjście ze strony w czasie czekania: popup się nie pokazał, częstotliwość wraca.
+      delayExitHooked = true;
+      window.addEventListener('pagehide', function () {
+        Object.keys(popupDelays).forEach(function (t) { dropPopupDelay(t, true); });
+      });
+    }
+    popupDelays[node.template] = { onSkipped: onSkipped, timer: setTimeout(function () {
+      delete popupDelays[node.template];
+      // Profil wyczyszczony albo zgoda wycofana: popup przepada razem z wpisem częstotliwości.
+      if (epoch !== profileEpoch || !tracking) return;
+      // Nowa rewizja zaczyna ścieżkę od zera: popup ze starej już nie należy do niej.
+      var cur = scenario();
+      if (!cur || cur.revision !== rev || !cur.nodes[ids[1]] || !popupTemplate(node.template)) { _log('popup skipped — scenario or template gone while waiting'); onSkipped(); return; }
+      showPopup(node, ctx, onShown, onSkipped, owner, true);
+    }, seconds * 1000) };
+  }
+
+  function showPopup(node, ctx, onShown, onSkipped, owner, waited) {
+    // Własny [d2-ma-popup] strony wygrywa z szablonem, więc i jego design, także opóźnienie.
+    var waitTpl = waited || ownPopup(node.template) ? null : popupTemplate(node.template);
+    var waitS = waitTpl && waitTpl.design && waitTpl.design.behavior ? waitTpl.design.behavior.delaySeconds : 0;
+    if (waitS > 0) { delayedPopup(node, ctx, onShown, onSkipped, owner, waitS); return; }
     if (Date.now() < ctaQuietUntil) { _log('popup skipped — the visitor just used a popup button'); onSkipped(); return; }
     var epoch = profileEpoch;
     var tplLib = popupTemplate(node.template);
@@ -2804,8 +3315,7 @@
       return popupsApi().then(function (popups) {
         var name = 'd2-ma-' + node.template;
         var inst = popups.get(name);
-        var own = document.querySelector('[d2-ma-popup="' + node.template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
-          + '[data-d2-ma-popup="' + node.template + '"]');
+        var own = ownPopup(node.template);
         var tpl = own ? null : popupTemplate(node.template);
         // Nowa rewizja koperty (d2-ma-refresh) zmieniła szablon - szkielet z
         // pierwszego renderu ma stare położenie i styl, więc budujemy od nowa.
@@ -2821,10 +3331,15 @@
           var el = own || (tpl ? buildFromTemplate(tpl) : (noUnit ? buildUnitless(node.template) : buildFallback(node.template)));
           if (!own) el._d2maTplSig = sig;
           if (!el.id) el.id = name;
-          inst = popups.create(name, {
+          var createOpts = {
             popupSelector: '#' + el.id, cookieName: null, dataTagTrigger: false, openOnLoad: false,
             closeTriggerSelector: '#' + el.id + ' [d2-ma-close], #' + el.id + ' [data-d2-ma-close]'
-          });
+          };
+          // ma.41: bez nakładki strona pod spodem działa dalej, więc i przewija się dalej.
+          if (tpl && tpl.design && tpl.design.overlay === 'none') createOpts.lockScrollOnShow = false;
+          // Animację wybiera design; bez tego popups.js dokłada do niej swoje domyślne fade.
+          if (tpl && tpl.design && tpl.design.behavior && tpl.design.behavior.animation) createOpts.animation = 'none';
+          inst = popups.create(name, createOpts);
         }
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
         // ma.32: ten sam popup już na ekranie (albo jeszcze się zamyka) - nie
@@ -3563,8 +4078,9 @@
         if (node.invalid || node.type !== 'action' || !STATE_ACTIONS[node['do']] || !st.nodes[id]) return;
         if (frequencyOf(node).kind !== 'every') return;
         if (node['do'] === 'content') {
-          var text = node.image || node.video ? '' : contentText(node, st.nodes[id].unit || lastUnit());
-          if (text != null) applyContent(node, text);
+          var stepUnit = st.nodes[id].unit || lastUnit();
+          var text = contentStepText(node, stepUnit);
+          if (text != null) applyContent(node, text, stepUnit, sc);
         } else {
           mapMark(sc, node, st.nodes[id].unit, true);
         }
@@ -5129,6 +5645,13 @@
       waitForConsent();
       return Promise.resolve(true);
     }
+    // ma.41: zmiany działań content wracają przy nowej rewizji swojego scenariusza.
+    var stale = {};
+    (envelope ? envelope.scenarios : []).forEach(function (o) {
+      var cur = env.scenarios.filter(function (x) { return x.id === o.id; })[0];
+      if (!cur || cur.revision !== o.revision) stale[o.id] = true;
+    });
+    restoreSlots(stale);
     var before = crmSeq;
     applyEnvelope(env);
     hookSignals();
