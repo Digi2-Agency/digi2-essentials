@@ -1545,7 +1545,7 @@ behaves as if that time had passed — deferred actions included.
   | `imageLayout` | `top`, `left`, `right` | `left` / `right`: first image with a valid URL goes to a 40% column, one column at ≤ 480 px; none valid = `top` |
   | `spacing` | `compact`, `normal`, `roomy` | Padding 14/16, 20/22, 32/34 px |
   | `overlay` | `none`, `light`, `dark` | `none`: page stays clickable and scrollable (`lockScrollOnShow: false`) |
-  | `behavior.delaySeconds` | 0-120 | Wait before `show()`; dropped on `clear()` or consent withdrawal |
+  | `behavior.delaySeconds` | 0-120 | Wait at the start of `showPopup`, so all its checks run afterwards. A newer trigger for the template replaces the waiting one; leaving the page or a removed scenario returns the frequency; `clear()` or consent withdrawal drops it. In memory only, and steps after the popup have already run |
   | `behavior.closeButton` | bool | `false` removes × only when a `close` button actually rendered |
   | `behavior.closeOnOverlay` | bool | `false`: a capture listener on the overlay, registered before `popups.create`, stops the click. No `popups.js` option, because that module can come from another version on `@latest` |
   | `behavior.animation` | `none`, `fade`, `slide` | Own `<style>`, only under `prefers-reduced-motion: no-preference` |
@@ -1557,7 +1557,9 @@ behaves as if that time had passed — deferred actions included.
   it is an object: unknown action, a selector outside the `SELECTOR_RE` subset of
   `ma_content_schema.py` (forbidden tags, `.imp-`, `.d2-ma-`, ≤ 120 chars) or an invalid
   value skips the template. Target: `selector`, else `[d2-ma-slot]` of the step, through
-  `querySelectorAll` in `try/catch`, at most 20 elements, never inside or around a popup.
+  `querySelectorAll` in `try/catch`, at most 20 elements, never inside or around a
+  `[d2-ma-popup]`. The forbidden tag list also applies to the matched element, because
+  `.body` (Webflow's default class) hits `<body>`. `attr` value and `image.alt` take no fields.
   None = the branch ends, as for an empty slot. The step still needs `slot` for
   `validNode`.
 
@@ -1571,8 +1573,9 @@ behaves as if that time had passed — deferred actions included.
   | `attr` | `alt`, `title`, `aria-label`, `href` (`safePageLink`), `src` (`mediaUrl`) |
 
   Every change goes to `slotOriginals`, per element and per attribute, so `clear()`,
-  consent withdrawal and a new revision of that scenario undo them. Plain slot text
-  doesn't undo on a new revision, as before.
+  consent withdrawal and a new revision of the scenario that last changed the element
+  undo them. Plain slot text (`action: "text"` without a selector) doesn't undo on a
+  new revision, as before.
 - **Engine (ma.39)** — `engine()` is the one place that tells `2destate` from
   `3destate`: the 2destate API first, then 3destate traces
   (`AppLauncher3DEOAConfig`, `#sm3de`, the launcher script, any `oa3de*` event),

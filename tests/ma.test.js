@@ -5743,3 +5743,112 @@ test('ma.41: obraz w pasku to miniatura, nie pełna szerokość', async () => {
   const img = potomkowie(okno).find((x) => x.tagName === 'IMG');
   assert.equal(img.style.cssText, 'display:block;width:auto;height:48px;margin:0');
 });
+
+test('ma.41 (recenzja): tablica jako nazwa nie przechodzi przez listę — bez javascript: w href', async () => {
+  for (const t of [
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: ['href'], value: 'javascript:alert(1)' } },
+    { action: ['hide'], selector: '[data-cel="x"]' },
+  ]) {
+    const el = element({ 'data-cel': 'x' });
+    await zDzialaniem(t, [el]);
+    assert.equal(el.getAttribute('href'), null);
+    assert.equal(el.style.display, undefined);
+  }
+});
+
+test('ma.41 (recenzja): pola {{…}} w attr i alt obrazu odpadają, zamiast trafić na stronę dosłownie', async () => {
+  for (const t of [
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: 'alt', value: 'Lokal {{unit.name}}' } },
+    { action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: '{{unit.name}}' } },
+  ]) {
+    const el = element({ 'data-cel': 'x' });
+    const p = await zDzialaniem(t, [el]);
+    assert.equal(el.getAttribute('alt'), null);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')));
+  }
+});
+
+test('ma.41 (recenzja): selektor klasy trafiający w chroniony znacznik — element pominięty', async () => {
+  const body = element({ 'data-cel': 'x' }, 'BODY');
+  const skrypt = element({ 'data-cel': 'x' }, 'SCRIPT');
+  const ramka = element({ 'data-cel': 'x' }, 'IFRAME');
+  const zwykly = element({ 'data-cel': 'x' });
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [body, skrypt, ramka, zwykly]);
+  [body, skrypt, ramka].forEach((e) => assert.equal(e.style.display, undefined, e.tagName));
+  assert.equal(zwykly.style.display, 'none');
+});
+
+test('ma.41 (recenzja): show na elemencie z warunkami przeżywa render; cofnięcie przywraca znaczniki', async () => {
+  const el = element({ 'data-cel': 'x', 'd2-ma-cond': '', 'd2-ma-shown': '' });
+  const p = await zDzialaniem({ action: 'show', selector: '[data-cel="x"]' }, [el]);
+  assert.equal(el.style.display, 'revert');
+  assert.equal(el.style.getPropertyPriority('display'), 'important');
+  await p.ma.clear();
+  assert.equal(el.style.display, undefined);
+});
+
+test('ma.41 (recenzja): delaySeconds — nowszy wyzwalacz zastępuje czekający, pagehide oddaje częstotliwość, szablon znika', async () => {
+  const sc = scenariusz('d', { event: 'unit_view', unitIds: [], minCount: 1 }, [{ do: 'popup', template: 'last-unit', frequency: 'once_per_unit' }]);
+  const tpl = Object.assign({}, SZABLON, { blocks: [{ type: 'title', text: '{{unit.name}}' }], design: { behavior: { delaySeconds: 30 } } });
+  const k = koperta([sc], { minScript: 'ma.17', templates: { popup: [tpl] } });
+  const p = await start({ koperta: k });
+  p.dataLayer.push(unitOpen('A_1'));
+  await p.gotowe();
+  await p.minie(10000);
+  p.dataLayer.push(unitOpen('A_2'));
+  await p.gotowe();
+  await p.minie(31000);
+  assert.equal(p.popupy.length, 1, 'jeden popup');
+  const a = p.zdarzenia['ma:action'].filter((x) => x.do === 'popup');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].unit.unitId, 'A_2', 'nowszy lokal');
+  assert.deepEqual([...p._dysk.state.scenarios.d.freq.a1.units].length, 1, 'starszy oddał częstotliwość');
+
+  const w = await start({ koperta: k });
+  w.dataLayer.push(unitOpen('A_1'));
+  await w.gotowe();
+  assert.equal(w._dysk.state.scenarios.d.freq.a1.units.length, 1);
+  w.naOknie.pagehide.forEach((f) => f());
+  await w.gotowe();
+  assert.equal(w._dysk.state.scenarios.d.freq.a1.units.length, 0, 'wyjście oddaje częstotliwość');
+
+  const z = await start({ koperta: k });
+  z.dataLayer.push(unitOpen('A_1'));
+  await z.gotowe();
+  await z.ma.load(koperta([sc], { minScript: 'ma.17' }));
+  await z.minie(31000);
+  assert.equal(z.popupy.length, 0, 'szablon usunięty w czasie czekania');
+});
+
+test('ma.41 (recenzja): behavior.animation wyłącza domyślne fade z popups.js; bez niego opcji nie ma', async () => {
+  const a = await popupZDesignem({ behavior: { animation: 'none' } });
+  assert.equal(a.window.digi2.popups.get('d2-ma-last-unit').opcje.animation, 'none');
+  const b = await popupZDesignem({ behavior: { animation: 'slide' } });
+  assert.equal(b.window.digi2.popups.get('d2-ma-last-unit').opcje.animation, 'none');
+  const c = await popupZDesignem({ radiusPx: 2 });
+  assert.equal('animation' in c.window.digi2.popups.get('d2-ma-last-unit').opcje, false);
+});
+
+test('ma.41 (recenzja): cofa scenariusz, który zmienił element ostatni', async () => {
+  const el = element({ 'data-cel': 'x' });
+  const templates = { content: [{ templateId: 'h', action: 'hide', selector: '[data-cel="x"]' }] };
+  const sc = (id, rev) => scenariusz(id, { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'h' }], { revision: rev });
+  const k = (ra, rb) => koperta([sc('a', ra), sc('b', rb)], { minScript: 'ma.17', templates });
+  const p = await start({ koperta: k(1, 1), elementy: [el], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  await p.ma.load(k(2, 1));
+  assert.equal(el.style.display, 'none', 'b dalej chce ukrycia');
+  await p.ma.load(k(2, 2));
+  assert.equal(el.style.display, undefined);
+});
+
+test('ma.41 (recenzja): tło {{unit.image}} nie blokuje popupu bez lokalu', async () => {
+  const tpl = { templateId: 'bez', version: 1, blocks: [{ type: 'title', text: 'Oferta' }], design: { backgroundImage: { src: '{{unit.image}}' } } };
+  const k = koperta([scenariusz('r', { event: 'engagement', minSeconds: 1 }, [{ do: 'popup', template: 'bez' }])], { minScript: 'ma.17', templates: { popup: [tpl] } });
+  const p = await start({ koperta: k });
+  await p.minie(2000);
+  assert.equal(p.popupy.length, 1);
+  const { okno } = oknoPopupu(p);
+  assert.equal(okno.style['background-image'], undefined);
+});

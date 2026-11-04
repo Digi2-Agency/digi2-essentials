@@ -2930,7 +2930,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td><code>hide</code>, <code>show</code></td><td><code>d2-ma-hidden</code> + <code>display: none !important</code>; <code>d2-ma-shown</code> + inline <code>display</code> removed</td></tr>
       <tr><td><code>attr</code></td><td>Only <code>alt</code>, <code>title</code>, <code>aria-label</code>, <code>href</code>, <code>src</code>, with checked links</td></tr>
     </table>
-    <p class="muted">Target: the template's <code>selector</code> (safe CSS subset), else the step's <code>[d2-ma-slot]</code>; at most 20 elements, never inside or around a popup. No target ends the branch. The step still needs <code>slot</code>. <code>digi2.ma.clear()</code>, consent withdrawal and a new revision of the scenario undo these changes.</p>
+    <p class="muted">Target: the template's <code>selector</code> (safe CSS subset), else the step's <code>[d2-ma-slot]</code>; at most 20 elements, never inside or around a <code>[d2-ma-popup]</code>, and never <code>body</code>, <code>html</code>, <code>script</code>, <code>iframe</code> and similar, even matched by a class. No target ends the branch. The step still needs <code>slot</code>. <code>digi2.ma.clear()</code> and consent withdrawal undo these changes; a new revision of the scenario undoes them too, except plain <code>text</code> without a selector, as before.</p>
   </section>
 
   <section id="ma-engines">

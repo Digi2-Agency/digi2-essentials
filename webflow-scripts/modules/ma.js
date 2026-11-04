@@ -164,8 +164,9 @@
  *                                 imageLayout, spacing, overlay, behavior: only listed values; a bad
  *                                 one is warned about and dropped. Esc, focus, aria stay.
  *   templates.content[].action (ma.41) text | html | image | hide | show | attr; target = selector or
- *                                 [d2-ma-slot]; max 20 elements, never in a popup; undone by Wyczyść
- *                                 and a new revision. Never innerHTML.
+ *                                 [d2-ma-slot]; max 20 elements, never in a [d2-ma-popup] or on body,
+ *                                 script, iframe…; undone by Wyczyść and a new revision (plain slot
+ *                                 text: as before). Never innerHTML.
  *   Engine (ma.39)                2destate | 3destate, detected in one place (engine()). On 3destate
  *                                 map_mark, map_order and (ma.40) prefer_filters don't run: ma:action
  *                                 { status: "skipped", reason: "engine_3destate" }, frequency not used.
@@ -895,7 +896,8 @@
     var list = t && typeof t === 'object' && Array.isArray(t.content) ? t.content : [];
     list.forEach(function (c) {
       // ma.41: szablon z działaniem albo selektorem to obiekt; sam tekst zostaje napisem.
-      if (c && SLOT_RE.test(String(c.templateId || '')) && (c.action != null || c.selector != null)) {
+      // action: "text" bez selektora to zwykły tekst w slocie.
+      if (c && SLOT_RE.test(String(c.templateId || '')) && (c.selector != null || (c.action != null && c.action !== 'text'))) {
         var def = contentAction(c);
         if (def) lib[c.templateId] = def;
         return;
@@ -946,7 +948,8 @@
   function contentAction(c) {
     var where = 'content template "' + c.templateId + '"';
     var action = c.action == null ? 'text' : c.action;
-    if (!Object.prototype.hasOwnProperty.call(CONTENT_ACTIONS, action)) { _warn(where + ' — unknown action, skipped'); return null; }
+    // hasKey wymaga napisu: hasOwnProperty przepuściłby ['href'] przez listę i obok kontroli adresu.
+    if (!hasKey(CONTENT_ACTIONS, action)) { _warn(where + ' — unknown action, skipped'); return null; }
     if (c.selector != null && !selectorOk(c.selector)) { _warn(where + ' — selector not allowed, skipped'); return null; }
     var def = { action: action, selector: c.selector == null ? null : c.selector, text: typeof c.text === 'string' ? c.text : '' };
     if (action === 'text' && !contentTextValid(c.text)) { _warn(where + ' — text not valid, skipped'); return null; }
@@ -955,13 +958,13 @@
       def.rich = c.rich;
     }
     if (action === 'image') {
-      if (!imageValid(c.image)) { _warn(where + ' — image needs an https src on this site or ' + MEDIA_HOSTS.join(', ') + ', skipped'); return null; }
+      if (!imageValid(c.image) || /\{\{/.test(String(c.image.alt || ''))) { _warn(where + ' — image needs an https src on this site or ' + MEDIA_HOSTS.join(', ') + ' and alt without fields, skipped'); return null; }
       def.image = c.image;
     }
     if (action === 'attr') {
       var a = c.attr;
-      var ok = a && typeof a === 'object' && Object.prototype.hasOwnProperty.call(CONTENT_ATTRS, a.name)
-        && typeof a.value === 'string' && a.value.length >= 1 && a.value.length <= ATTR_MAX;
+      var ok = a && typeof a === 'object' && hasKey(CONTENT_ATTRS, a.name)
+        && typeof a.value === 'string' && a.value.length >= 1 && a.value.length <= ATTR_MAX && !/\{\{/.test(a.value);
       if (ok && a.name === 'href') ok = !!safePageLink(a.value);
       if (ok && a.name === 'src') ok = !!mediaUrl(a.value);
       if (!ok) { _warn(where + ' — attr must be alt, title, aria-label, href or src with a valid value, skipped'); return null; }
@@ -1711,8 +1714,9 @@
       if (o.attr) {
         if (o.attr.value == null) o.el.removeAttribute(o.attr.name); else o.el.setAttribute(o.attr.name, o.attr.value);
       } else if (o.display) {
-        o.el.removeAttribute('d2-ma-hidden');
-        o.el.removeAttribute('d2-ma-shown');
+        ['hidden', 'shown'].forEach(function (k) {
+          if (o.display[k] == null) o.el.removeAttribute('d2-ma-' + k); else o.el.setAttribute('d2-ma-' + k, o.display[k]);
+        });
         if (o.display.value) o.el.style.setProperty('display', o.display.value, o.display.priority);
         else o.el.style.removeProperty('display');
       } else if (o.kids) {
@@ -1847,7 +1851,13 @@
 
   // key: osobny oryginał dla atrybutu i display; bez niego treść elementu.
   function remember(el, entry, sc) {
-    for (var j = 0; j < slotOriginals.length; j++) if (slotOriginals[j].el === el && slotOriginals[j].key === entry.key) return;
+    for (var j = 0; j < slotOriginals.length; j++) {
+      if (slotOriginals[j].el === el && slotOriginals[j].key === entry.key) {
+        // Oryginał zostaje, a cofa go scenariusz, który zmienił element ostatni.
+        if (sc) slotOriginals[j].sc = sc.id;
+        return;
+      }
+    }
     entry.el = el;
     if (sc) entry.sc = sc.id;
     slotOriginals.push(entry);
@@ -1873,7 +1883,11 @@
     var found = [];
     try { found = document.querySelectorAll(sel); } catch (e) { _warn('content selector failed: ' + sel); return []; }
     var out = [];
-    for (var i = 0; i < found.length && out.length < CONTENT_MAX_ELS; i++) if (!inPopup(found[i])) out.push(found[i]);
+    for (var i = 0; i < found.length && out.length < CONTENT_MAX_ELS; i++) {
+      // Lista znaczników w selektorOk widzi tylko zapis: .body (domyślna klasa Webflow) trafia w <body>.
+      if (SELECTOR_BAD_TAGS[String(found[i].tagName || '').toLowerCase()]) { _log('content skipped — selector matched a protected element'); continue; }
+      if (!inPopup(found[i])) out.push(found[i]);
+    }
     return out;
   }
 
@@ -1927,15 +1941,20 @@
         remember(el, { key: 'attr:' + name, attr: { name: name, value: el.getAttribute(name) } }, sc);
         el.setAttribute(name, v);
       } else {
-        remember(el, { key: 'display', display: { value: el.style.getPropertyValue('display'), priority: el.style.getPropertyPriority('display') } }, sc);
+        remember(el, { key: 'display', display: {
+          value: el.style.getPropertyValue('display'), priority: el.style.getPropertyPriority('display'),
+          hidden: el.getAttribute('d2-ma-hidden'), shown: el.getAttribute('d2-ma-shown')
+        } }, sc);
         if (def.action === 'hide') {
           el.setAttribute('d2-ma-hidden', '');
           el.style.setProperty('display', 'none', 'important');
         } else {
           el.setAttribute('d2-ma-shown', '');
           el.style.removeProperty('display');
+          // applyConditions zdejmie d2-ma-shown z elementu z warunkami, a CSS strony go schowa.
           var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
-          if (cs && cs.display === 'none') el.style.setProperty('display', 'revert');
+          if (el.getAttribute('d2-ma-cond') !== null) el.style.setProperty('display', 'revert', 'important');
+          else if (cs && cs.display === 'none') el.style.setProperty('display', 'revert');
         }
       }
     });
@@ -2469,7 +2488,8 @@
   function unitlessPopup(template, tpl, unit) {
     if (Object.prototype.hasOwnProperty.call(UNITLESS_TEXT, template)) return true;
     if (unit || !tpl) return false;
-    var js = JSON.stringify(tpl);
+    // Tylko bloki: tło design z {{unit.image}} to ozdoba, bez lokalu po prostu go nie ma.
+    var js = JSON.stringify(tpl.blocks);
     return !/\{\{\s*unit\./.test(js);
   }
 
@@ -3210,7 +3230,45 @@
     })();
   }
 
-  function showPopup(node, ctx, onShown, onSkipped, owner) {
+  // ma.41: behavior.delaySeconds. Czekanie stoi przed całą resztą showPopup, więc po czasie
+  // działają te same kontrole (sprzedany lokal, cisza po przycisku, podpis szablonu, popup na ekranie).
+  var popupDelays = {};      // szablon -> { timer, onSkipped }
+  var delayExitHooked = false;
+
+  function dropPopupDelay(template, skipped) {
+    var w = popupDelays[template];
+    if (!w) return;
+    delete popupDelays[template];
+    clearTimeout(w.timer);
+    if (skipped) w.onSkipped();
+  }
+
+  function delayedPopup(node, ctx, onShown, onSkipped, owner, seconds) {
+    var epoch = profileEpoch;
+    var scId = String(owner).split('/')[0];
+    // Nowszy wyzwalacz zastępuje czekający, jak przy dymku mapy: starszy oddaje częstotliwość.
+    dropPopupDelay(node.template, true);
+    if (!delayExitHooked && window.addEventListener) {
+      // Wyjście ze strony w czasie czekania: popup się nie pokazał, częstotliwość wraca.
+      delayExitHooked = true;
+      window.addEventListener('pagehide', function () {
+        Object.keys(popupDelays).forEach(function (t) { dropPopupDelay(t, true); });
+      });
+    }
+    popupDelays[node.template] = { onSkipped: onSkipped, timer: setTimeout(function () {
+      delete popupDelays[node.template];
+      // Profil wyczyszczony albo zgoda wycofana: popup przepada razem z wpisem częstotliwości.
+      if (epoch !== profileEpoch || !tracking) return;
+      var live = envelope && envelope.scenarios.some(function (x) { return x.id === scId; });
+      if (!live || !popupTemplate(node.template)) { _log('popup skipped — scenario or template gone while waiting'); onSkipped(); return; }
+      showPopup(node, ctx, onShown, onSkipped, owner, true);
+    }, seconds * 1000) };
+  }
+
+  function showPopup(node, ctx, onShown, onSkipped, owner, waited) {
+    var waitTpl = waited ? null : popupTemplate(node.template);
+    var waitS = waitTpl && waitTpl.design && waitTpl.design.behavior ? waitTpl.design.behavior.delaySeconds : 0;
+    if (waitS > 0) { delayedPopup(node, ctx, onShown, onSkipped, owner, waitS); return; }
     if (Date.now() < ctaQuietUntil) { _log('popup skipped — the visitor just used a popup button'); onSkipped(); return; }
     var epoch = profileEpoch;
     var tplLib = popupTemplate(node.template);
@@ -3258,6 +3316,8 @@
           };
           // ma.41: bez nakładki strona pod spodem działa dalej, więc i przewija się dalej.
           if (tpl && tpl.design && tpl.design.overlay === 'none') createOpts.lockScrollOnShow = false;
+          // Animację wybiera design; bez tego popups.js dokłada do niej swoje domyślne fade.
+          if (tpl && tpl.design && tpl.design.behavior && tpl.design.behavior.animation) createOpts.animation = 'none';
           inst = popups.create(name, createOpts);
         }
         if (!inst || !inst.popupElement) { onSkipped(); return null; }
@@ -3277,8 +3337,7 @@
         }
         fill(inst.popupElement, fresh);
         wireCta(inst.popupElement, name, fresh, tpl ? (templateCta(tpl) || node.cta) : node.cta);
-        var delayS = tpl && tpl.design && tpl.design.behavior ? tpl.design.behavior.delaySeconds : 0;
-        var showNow = function () { whenMapTooltipClosed(node.template, owner, epoch, function () {
+        whenMapTooltipClosed(node.template, owner, epoch, function () {
           // park: false - popup ze scenariusza nie czeka za innym popupem na
           // ekranie (popups.js pokazałby go po zamknięciu tamtego, ~1 s później,
           // jako drugi na tę samą interakcję). Nie wszedł na ekran = pominięty:
@@ -3290,16 +3349,7 @@
           inst.pendingShow = false;
           _log('popup skipped — popups module did not show it (another popup or the lightbox on screen) → ' + name);
           onSkipped();
-        }, onSkipped); };
-        if (delayS > 0) {
-          // ma.41: profil wyczyszczony albo zgoda wycofana w czasie czekania - popup przepada.
-          setTimeout(function () {
-            if (epoch !== profileEpoch || !tracking) return;
-            showNow();
-          }, delayS * 1000);
-        } else {
-          showNow();
-        }
+        }, onSkipped);
         return null;
       });
     })['catch'](function (e) { _warn('popup failed', e); onSkipped(); });
