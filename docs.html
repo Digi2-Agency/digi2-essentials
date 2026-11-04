@@ -2926,7 +2926,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><th>Content <code>action</code></th><th>Effect</th></tr>
       <tr><td><code>text</code></td><td><code>textContent</code>, with fields</td></tr>
       <tr><td><code>html</code></td><td><code>rich[]</code>: <code>text</code>, <code>bold</code>, <code>italic</code>, <code>href</code>, <code>br</code>. Built from data, never <code>innerHTML</code>. A run with an empty field skips the step</td></tr>
-      <tr><td><code>image</code></td><td>Allowed URL; replaces an <code>img</code>, or adds one</td></tr>
+      <tr><td><code>image</code></td><td>Allowed URL; replaces an <code>img</code> and drops its <code>srcset</code> and <code>sizes</code>, or adds one</td></tr>
       <tr><td><code>hide</code>, <code>show</code></td><td><code>d2-ma-hidden</code> + <code>display: none !important</code>; <code>d2-ma-shown</code> + inline <code>display</code> removed</td></tr>
       <tr><td><code>attr</code></td><td>Only <code>alt</code>, <code>title</code>, <code>aria-label</code>, <code>href</code>, <code>src</code>, with checked links</td></tr>
     </table>

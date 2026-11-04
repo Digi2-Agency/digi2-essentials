@@ -1710,7 +1710,7 @@
   // scenarios: tylko zmiany działań tych scenariuszy (ma.41, nowa rewizja); bez = wszystko.
   function restoreSlots(scenarios) {
     var back = scenarios ? slotOriginals.filter(function (o) { return o.sc != null && scenarios[o.sc]; }) : slotOriginals;
-    back.slice().reverse().forEach(function (o) {
+    back.forEach(function (o) {
       if (o.attr) {
         if (o.attr.value == null) o.el.removeAttribute(o.attr.name); else o.el.setAttribute(o.attr.name, o.attr.value);
       } else if (o.display) {
@@ -1909,6 +1909,20 @@
     return out;
   }
 
+  // Atrybuty mają jeden wspólny zapis na element i nazwę, także dla action image: „Wyczyść”
+  // zawsze wraca do oryginału, a cofa scenariusz, który zmienił atrybut ostatni.
+  function setAttrKept(el, name, v, sc) {
+    remember(el, { key: 'attr:' + name, attr: { name: name, value: el.getAttribute(name) } }, sc);
+    if (v == null) el.removeAttribute(name); else el.setAttribute(name, v);
+  }
+
+  // Nowe src bez tego przegrałoby z srcset: Webflow daje go obrazom, a przeglądarka trzyma stary plik.
+  function setImageSrc(el, src, sc) {
+    setAttrKept(el, 'src', src, sc);
+    if (el.getAttribute('srcset') !== null) setAttrKept(el, 'srcset', null, sc);
+    if (el.getAttribute('sizes') !== null) setAttrKept(el, 'sizes', null, sc);
+  }
+
   function applyAction(def, node, text, unit, sc) {
     if (!document.querySelectorAll) return 0;
     var nodes = null;
@@ -1925,9 +1939,8 @@
         (n ? richNodes(def.rich, unit) : nodes).forEach(function (x) { el.appendChild(x); });
       } else if (def.action === 'image') {
         if (el.tagName === 'IMG') {
-          remember(el, { img: { src: el.getAttribute('src'), alt: el.getAttribute('alt') } }, sc);
-          el.setAttribute('src', mediaUrl(def.image.src));
-          el.setAttribute('alt', def.image.alt || '');
+          setImageSrc(el, mediaUrl(def.image.src), sc);
+          setAttrKept(el, 'alt', def.image.alt || '', sc);
         } else {
           var img = document.createElement('img');
           img.setAttribute('src', mediaUrl(def.image.src));
@@ -1938,8 +1951,7 @@
         var name = def.attr.name;
         var v = name === 'href' ? safePageLink(def.attr.value) : name === 'src' ? mediaUrl(def.attr.value) : def.attr.value;
         if (v == null) return;
-        remember(el, { key: 'attr:' + name, attr: { name: name, value: el.getAttribute(name) } }, sc);
-        el.setAttribute(name, v);
+        if (name === 'src') setImageSrc(el, v, sc); else setAttrKept(el, name, v, sc);
       } else {
         remember(el, { key: 'display', display: {
           value: el.style.getPropertyValue('display'), priority: el.style.getPropertyPriority('display'),
@@ -1953,7 +1965,8 @@
           el.style.removeProperty('display');
           // applyConditions zdejmie d2-ma-shown z elementu z warunkami, a CSS strony go schowa.
           var cs = window.getComputedStyle ? window.getComputedStyle(el) : null;
-          if (el.getAttribute('d2-ma-cond') !== null) el.style.setProperty('display', 'revert', 'important');
+          // Dlatego inline zostaje display, który strona dała mu właśnie teraz (np. flex).
+          if (el.getAttribute('d2-ma-cond') !== null) el.style.setProperty('display', cs && cs.display && cs.display !== 'none' ? cs.display : 'revert', 'important');
           else if (cs && cs.display === 'none') el.style.setProperty('display', 'revert');
         }
       }
@@ -3230,6 +3243,11 @@
     })();
   }
 
+  function ownPopup(template) {
+    return document.querySelector('[d2-ma-popup="' + template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
+      + '[data-d2-ma-popup="' + template + '"]');
+  }
+
   // ma.41: behavior.delaySeconds. Czekanie stoi przed całą resztą showPopup, więc po czasie
   // działają te same kontrole (sprzedany lokal, cisza po przycisku, podpis szablonu, popup na ekranie).
   var popupDelays = {};      // szablon -> { timer, onSkipped }
@@ -3245,7 +3263,9 @@
 
   function delayedPopup(node, ctx, onShown, onSkipped, owner, seconds) {
     var epoch = profileEpoch;
-    var scId = String(owner).split('/')[0];
+    var ids = String(owner).split('/');
+    var scenario = function () { return envelope && envelope.scenarios.filter(function (x) { return x.id === ids[0]; })[0]; };
+    var rev = (scenario() || {}).revision;
     // Nowszy wyzwalacz zastępuje czekający, jak przy dymku mapy: starszy oddaje częstotliwość.
     dropPopupDelay(node.template, true);
     if (!delayExitHooked && window.addEventListener) {
@@ -3259,14 +3279,16 @@
       delete popupDelays[node.template];
       // Profil wyczyszczony albo zgoda wycofana: popup przepada razem z wpisem częstotliwości.
       if (epoch !== profileEpoch || !tracking) return;
-      var live = envelope && envelope.scenarios.some(function (x) { return x.id === scId; });
-      if (!live || !popupTemplate(node.template)) { _log('popup skipped — scenario or template gone while waiting'); onSkipped(); return; }
+      // Nowa rewizja zaczyna ścieżkę od zera: popup ze starej już nie należy do niej.
+      var cur = scenario();
+      if (!cur || cur.revision !== rev || !cur.nodes[ids[1]] || !popupTemplate(node.template)) { _log('popup skipped — scenario or template gone while waiting'); onSkipped(); return; }
       showPopup(node, ctx, onShown, onSkipped, owner, true);
     }, seconds * 1000) };
   }
 
   function showPopup(node, ctx, onShown, onSkipped, owner, waited) {
-    var waitTpl = waited ? null : popupTemplate(node.template);
+    // Własny [d2-ma-popup] strony wygrywa z szablonem, więc i jego design, także opóźnienie.
+    var waitTpl = waited || ownPopup(node.template) ? null : popupTemplate(node.template);
     var waitS = waitTpl && waitTpl.design && waitTpl.design.behavior ? waitTpl.design.behavior.delaySeconds : 0;
     if (waitS > 0) { delayedPopup(node, ctx, onShown, onSkipped, owner, waitS); return; }
     if (Date.now() < ctaQuietUntil) { _log('popup skipped — the visitor just used a popup button'); onSkipped(); return; }
@@ -3293,8 +3315,7 @@
       return popupsApi().then(function (popups) {
         var name = 'd2-ma-' + node.template;
         var inst = popups.get(name);
-        var own = document.querySelector('[d2-ma-popup="' + node.template + '"]:not([d2-ma-template]):not([d2-ma-builtin]), '
-          + '[data-d2-ma-popup="' + node.template + '"]');
+        var own = ownPopup(node.template);
         var tpl = own ? null : popupTemplate(node.template);
         // Nowa rewizja koperty (d2-ma-refresh) zmieniła szablon - szkielet z
         // pierwszego renderu ma stare położenie i styl, więc budujemy od nowa.

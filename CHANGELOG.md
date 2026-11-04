@@ -37,7 +37,8 @@ działa jak dotąd.
   urósłby ponad ekran.
 - `templates.content[].action`: `text`, `html`, `image`, `hide`, `show`, `attr`; cel to
   `selector` szablonu albo `[d2-ma-slot]` kroku, najwyżej 20 elementów, nigdy w popupie
-  ani wokół niego. `html` składa `strong`, `em`, `a`, `br` z danych, nigdy przez
+  ani wokół niego. `image` i `attr src` zdejmują z obrazu `srcset` i `sizes`, inaczej
+  przeglądarka trzyma stary plik. `html` składa `strong`, `em`, `a`, `br` z danych, nigdy przez
   `innerHTML`. `attr` tylko `alt`, `title`, `aria-label`, `href`, `src`, bez pól `{{…}}`. Selektor nie
   trafi w `body`, `script`, `iframe` itp., także przez klasę (`.body` w Webflow). „Wyczyść”
   i nowa rewizja scenariusza cofają te zmiany, poza zwykłym tekstem w slocie bez selektora. Krok content dalej wymaga pola `slot`, także gdy

@@ -1567,9 +1567,9 @@ behaves as if that time had passed — deferred actions included.
   |---|---|
   | `text` | `textContent`, fields through `contentText`; with a selector the element's children return on undo |
   | `html` | `rich[]` (`text`, `bold`, `italic`, `href`, `br`) built with `createElement` and text nodes, never `innerHTML`. A run with a field without value skips the step; a bad `href` (`safePageLink`) leaves plain text |
-  | `image` | `mediaUrl`; `IMG` gets `src` / `alt`, another element gets an `img` |
+  | `image` | `mediaUrl`; `IMG` gets `src` / `alt` and loses `srcset` / `sizes` (they would keep the old file), another element gets an `img` |
   | `hide` | `d2-ma-hidden` and `display: none !important` |
-  | `show` | `d2-ma-shown`, removes inline `display`; still hidden by page CSS: `display: revert` |
+  | `show` | `d2-ma-shown`, removes inline `display`; still hidden by page CSS: `display: revert`. On `[d2-ma-cond]` the computed `display` stays inline with `!important`, because `applyConditions` takes the marker away on the next render |
   | `attr` | `alt`, `title`, `aria-label`, `href` (`safePageLink`), `src` (`mediaUrl`) |
 
   Every change goes to `slotOriginals`, per element and per attribute, so `clear()`,

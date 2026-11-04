@@ -5750,9 +5750,10 @@ test('ma.41 (recenzja): tablica jako nazwa nie przechodzi przez listę — bez j
     { action: ['hide'], selector: '[data-cel="x"]' },
   ]) {
     const el = element({ 'data-cel': 'x' });
-    await zDzialaniem(t, [el]);
+    const p = await zDzialaniem(t, [el]);
     assert.equal(el.getAttribute('href'), null);
     assert.equal(el.style.display, undefined);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')), 'odrzucone na wejściu');
   }
 });
 
@@ -5851,4 +5852,154 @@ test('ma.41 (recenzja): tło {{unit.image}} nie blokuje popupu bez lokalu', asyn
   assert.equal(p.popupy.length, 1);
   const { okno } = oknoPopupu(p);
   assert.equal(okno.style['background-image'], undefined);
+});
+
+test('ma.41 (recenzja 2): image i attr src zdejmują srcset i sizes, Wyczyść je przywraca', async () => {
+  for (const t of [
+    { action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: 'n' } },
+    { action: 'attr', selector: '[data-cel="x"]', attr: { name: 'src', value: MEDIA } },
+  ]) {
+    const img = element({ 'data-cel': 'x', src: 'old.png', srcset: 'old.png 1x', sizes: '100vw' }, 'IMG');
+    const p = await zDzialaniem(t, [img]);
+    assert.equal(img.getAttribute('src'), MEDIA);
+    assert.equal(img.getAttribute('srcset'), null);
+    assert.equal(img.getAttribute('sizes'), null);
+    await p.ma.clear();
+    assert.equal(img.getAttribute('src'), 'old.png');
+    assert.equal(img.getAttribute('srcset'), 'old.png 1x');
+    assert.equal(img.getAttribute('sizes'), '100vw');
+  }
+});
+
+test('ma.41 (recenzja 2): show z warunkami zachowuje display strony, a na ukrytym używa revert', async () => {
+  const widoczny = async (display) => {
+    const el = element({ 'data-cel': 'x', 'd2-ma-cond': '' });
+    const k = koperta([krokContent()], { minScript: 'ma.17', templates: { content: [{ templateId: 't', action: 'show', selector: '[data-cel="x"]' }] } });
+    const r = strona({ koperta: k, elementy: [el], mapa: false, dysk: {} });
+    r.window.getComputedStyle = () => ({ display });
+    await r.gotowe();
+    r.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+    await r.gotowe();
+    return el;
+  };
+  const flex = await widoczny('flex');
+  assert.equal(flex.style.display, 'flex');
+  assert.equal(flex.style.getPropertyPriority('display'), 'important');
+  assert.equal((await widoczny('none')).style.display, 'revert');
+});
+
+test('ma.41 (recenzja 2): dwa scenariusze na jednym obrazie — Wyczyść zawsze do oryginału; nowa rewizja nie zabiera cudzej zmiany', async () => {
+  const img = element({ 'data-cel': 'x', src: 'orig.jpg', alt: 'orig' }, 'IMG');
+  const B = 'https://media.digi2.app/b.jpg';
+  const templates = { content: [
+    { templateId: 'i', action: 'image', selector: '[data-cel="x"]', image: { src: MEDIA, alt: 'a' } },
+    { templateId: 'a', action: 'attr', selector: '[data-cel="x"]', attr: { name: 'src', value: B } },
+  ] };
+  const sc = (id, tid, rev) => scenariusz(id, { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: tid }], { revision: rev });
+  const k = (ra) => koperta([sc('a', 'i', ra), sc('b', 'a', 1)], { minScript: 'ma.17', templates });
+  const p = await start({ koperta: k(1), elementy: [img], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(img.getAttribute('src'), B);
+  await p.ma.load(k(2));
+  assert.equal(img.getAttribute('src'), B, 'src należy do b');
+  assert.equal(img.getAttribute('alt'), 'orig', 'alt należał do a');
+  await p.ma.clear();
+  assert.equal(img.getAttribute('src'), 'orig.jpg');
+});
+
+test('ma.41 (recenzja 2): opóźnienie — nowa rewizja albo brak scenariusza kasuje popup; po pokazaniu pagehide nic nie oddaje; własny popup bez opóźnienia', async () => {
+  const sc = (rev) => scenariusz('d', { event: 'unit_view', unitIds: [], minCount: 1 }, [{ do: 'popup', template: 'last-unit', frequency: 'once_per_unit' }], { revision: rev });
+  const tpl = Object.assign({}, SZABLON, { blocks: [{ type: 'title', text: 'T' }], design: { behavior: { delaySeconds: 30 } } });
+  const k = (lista) => koperta(lista, { minScript: 'ma.17', templates: { popup: [tpl] } });
+  for (const nowa of [[sc(2)], []]) {
+    const p = await start({ koperta: k([sc(1)]) });
+    p.dataLayer.push(unitOpen('A_1'));
+    await p.gotowe();
+    await p.ma.load(k(nowa));
+    await p.minie(31000);
+    assert.equal(p.popupy.length, 0, JSON.stringify(nowa.length));
+  }
+  const q = await start({ koperta: k([sc(1)]) });
+  q.dataLayer.push(unitOpen('A_1'));
+  await q.gotowe();
+  await q.minie(31000);
+  assert.equal(q.popupy.length, 1);
+  q.naOknie.pagehide.forEach((f) => f());
+  await q.gotowe();
+  assert.equal(q._dysk.state.scenarios.d.freq.a1.units.length, 1, 'pokazany: częstotliwość zostaje');
+
+  const wlasny = element({ 'd2-ma-popup': 'last-unit' });
+  wlasny.id = 'moj';
+  const o = await start({ koperta: k([sc(1)]), szablon: wlasny });
+  o.dataLayer.push(unitOpen('A_1'));
+  await o.gotowe();
+  assert.equal(o.popupy.length, 1, 'bez czekania');
+});
+
+test('ma.41 (recenzja 2): stare tło znika, gdy lokal nie ma zdjęcia; kolumna bierze pierwszy obraz z adresem także przy {{unit.image}} bez zdjęcia', async () => {
+  const blocks = [{ type: 'image', src: '{{unit.image}}' }, { type: 'image', src: MEDIA, alt: 'drugi' }, { type: 'title', text: 'T' }];
+  const { okno } = oknoPopupu(await popupZDesignem({ imageLayout: 'left' }, { blocks }));
+  assert.equal(okno.children[1].children[0].getAttribute('alt'), 'drugi');
+  assert.equal(potomkowie(okno).filter((x) => x.tagName === 'IMG').length, 1);
+  assert.match(kodModulu, /dialog\.style\.removeProperty\('background-image'\)/);
+});
+
+test('ma.41 (recenzja 2): html z pustym polem w zapasowym text działa; limity rich, attr i aliasu popupu', async () => {
+  const slot = element({ 'd2-ma-slot': 's' });
+  await zDzialaniem({ action: 'html', text: '{{unit.building}}', rich: [{ text: 'Ok' }] }, [slot], { lokal: { building: null } });
+  assert.equal(slot.children.length, 1, 'text jest tylko zapasem starszych skryptów');
+  const zle = [
+    { action: 'html', rich: Array.from({ length: 21 }, () => ({ text: 'a' })) },
+    { action: 'html', rich: Array.from({ length: 3 }, () => ({ text: 'a'.repeat(250) })) },
+    { action: 'html', rich: [{ text: 'a', href: 5 }] },
+    { action: 'attr', attr: { name: 'alt', value: 'a'.repeat(301) } },
+  ];
+  for (const t of zle) {
+    const el = element({ 'd2-ma-slot': 's' });
+    const p = await zDzialaniem(t, [el]);
+    assert.ok(p.ostrzezenia.some((w) => w.includes('content template "t"')), JSON.stringify(t).slice(0, 40));
+    assert.equal(el.children.length, 0);
+  }
+  const alias = element({ 'data-d2-ma-popup': 'p' });
+  const w = element({ 'data-cel': 'x' });
+  alias.appendChild(w);
+  await zDzialaniem({ action: 'hide', selector: '[data-cel="x"]' }, [w]);
+  assert.equal(w.style.display, undefined);
+});
+
+test('ma.41 (recenzja 2): cofanie — priorytet display wraca, usunięty scenariusz też cofa, every_time ma właściciela, tekst slotu po attr ma swój zapis', async () => {
+  const el = element({ 'data-cel': 'x' });
+  el.style.setProperty('display', 'grid', 'important');
+  const hide = { templateId: 'h', action: 'hide', selector: '[data-cel="x"]' };
+  const k = (lista) => koperta(lista, { minScript: 'ma.17', templates: { content: [hide] } });
+  const sc = (extra) => scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [Object.assign({ do: 'content', slot: 's', templateId: 'h' }, extra)]);
+  const p = await start({ koperta: k([sc()]), elementy: [el], mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  await p.ma.load(k([]));
+  assert.equal(el.style.display, 'grid', 'scenariusz usunięty z koperty');
+  assert.equal(el.style.getPropertyPriority('display'), 'important');
+
+  const e2 = element({ 'data-cel': 'x' });
+  const k2 = (rev) => koperta([scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'h', frequency: 'every_time' }], { revision: rev })], { minScript: 'ma.17', templates: { content: [hide] } });
+  const q = await start({ koperta: k2(1), elementy: [e2], mapa: false });
+  q.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await q.gotowe();
+  const e3 = element({ 'data-cel': 'x' });
+  const q2 = await powrot(q, 2 * H, { elementy: [e3] });
+  assert.equal(e3.style.display, 'none', 'odtworzone');
+  await q2.ma.load(k2(2));
+  assert.equal(e3.style.display, undefined, 'odtworzenie też cofa nowa rewizja');
+
+  const s3 = element({ 'data-cel': 'x', 'd2-ma-slot': 's', title: 'stary' });
+  s3.textContent = 'tekst';
+  const k3 = koperta([scenariusz('a', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'content', slot: 's', templateId: 'at' }, { do: 'content', slot: 's', text: 'nowy' }])], { minScript: 'ma.17', templates: { content: [{ templateId: 'at', action: 'attr', selector: '[data-cel="x"]', attr: { name: 'title', value: 'T' } }] } });
+  const r = await start({ koperta: k3, elementy: [s3], mapa: false });
+  r.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await r.gotowe();
+  assert.equal(s3.textContent, 'nowy');
+  await r.ma.clear();
+  assert.equal(s3.textContent, 'tekst');
+  assert.equal(s3.getAttribute('title'), 'stary');
 });
