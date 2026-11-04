@@ -1163,7 +1163,7 @@ contain `;` or `@`.
 
 **ma.39:** every envelope fetch (start, `load(url)`, `reload()`, `d2-ma-refresh`)
 adds `?s=ma.N&e=<engine>` to the request, not to the stored URL. `e` is
-`2destate`, `3destate` or `none` (no engine visible yet: the map script may
+`2destate` or `3destate`, left out while no engine is visible (the map script may
 still be on its way). No visitor id, `credentials: 'omit'`. **This request runs
 before consent** and always has: the envelope carries `consentRequired`, so it
 can't wait for it. The server sees the browser's IP and origin as with any
@@ -1533,43 +1533,17 @@ behaves as if that time had passed — deferred actions included.
 - **Engine (ma.39)** — `engine()` is the one place that tells `2destate` from
   `3destate`: the 2destate API first, then 3destate traces
   (`AppLauncher3DEOAConfig`, `#sm3de`, the launcher script, any `oa3de*` event),
-  then a 2destate package still loading. On 3destate `map_mark` and `map_order`
-  don't run: `ma:action { status: "skipped", reason: "engine_3destate" }`, once
-  per page view, frequency not used, `delayMinutes` ignored, the branch goes on.
+  then a 2destate package still loading. On 3destate `map_mark`, `map_order`
+  and (ma.40) `prefer_filters` don't run: `ma:action { status: "skipped", reason:
+  "engine_3destate" }`, once per page view, frequency not used, `delayMinutes`
+  ignored, the branch goes on. ma.39 alone tried `props.unitFilterOverride` for
+  `prefer_filters`; removed in ma.40, which is the version to pin.
   On either engine their frequency is recorded only after the action ran (no
   map, map still loading, nothing matching, `markProducts` returning 0 on every map,
   visitor's own sort: free for the next trigger, without `ma:action`). `delayMinutes`
   doesn't use it either (also `prefer_filters`): a second trigger is recognised by the
   queue of deferred actions. One trigger per node waits for the map; replaying
   `every_time` doesn't touch frequency.
-- **prefer_filters on 3destate (ma.39)** — no runtime API exists, only the start
-  filter `AppLauncher3DEOAConfig.props.unitFilterOverride` (**undocumented**, read
-  before the app renders; checked 2026-11-04 on smartmakietabase `1789730517`, a
-  change after render has no effect; recheck after a makieta update). The action
-  saves `{ filters, at, c, sc, node }` to `localStorage` `d2ma_3de_filter`, and the
-  next load applies it once: when the file runs and again in `boot()`, by patching
-  the config or, when the config isn't assigned yet, a setter on that global. Needs
-  consent when it was saved under `consentRequired`. `sm-filters-*` in the URL and
-  the page's own `unitFilterOverride` win. `oa3de__unit-list-filter-init` confirms:
-  a match gives the ordinary `ma:action { do: "prefer_filters", filters }`.
-  **No `<head>` guarantee:** the loader fetches `ma.js` asynchronously, so it can
-  lose the race with the makieta; then the page is left alone and the reason says so.
-
-  | `reason` (`status: "skipped"`, with `filters`) | Meaning | Saved filter |
-  |---|---|---|
-  | `engine_3destate_next_load` | Saved, nothing changes on this page | kept |
-  | `engine_3destate_late` | Makieta already rendered, config untouched | kept |
-  | `engine_3destate_no_config` | Makieta without `AppLauncher3DEOAConfig` after 30 s | kept |
-  | `engine_3destate_ignored` | `filter-init` without our filter (API gone, or lost race); with part of it (a field this makieta lacks) | kept; removed when part applied |
-  | `engine_3destate_unconfirmed` | Config patched, no `filter-init` in 30 s | removed |
-  | `engine_3destate_no_storage` | `localStorage` refused, frequency not used | none |
-
-  A saved filter expires after 30 days; `wipe` and `digi2.ma.clear()` remove it, and
-  so does an envelope without that scenario or with a shorter `retentionDays`. The
-  filter goes on before the envelope is fetched (the race allows nothing else), so
-  on that one load the envelope can't stop it: it is the visitor's own preference
-  on their own page and nothing is sent. Consent arriving after module start also
-  retries, when the makieta hasn't rendered yet.
 - **map_mark** (ma.4) — 2destate only. Ranks `d2estate.getProducts()` against
   the profile: matching rooms count 2, matching floor 1 (`by`: `rooms`,
   `floor`, `both` — both first, then rooms, then floor), sold units out, within

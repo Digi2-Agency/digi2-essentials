@@ -5003,7 +5003,6 @@ test('ma.37: contact z szablonu zamyka i przewija do [d2-ma-contact], potem #kon
 // ma.39: adapter silnika 2destate / 3destate, zgłaszanie wersji przy kopercie
 // ---------------------------------------------------------------------------
 
-const FILTR_3DE = 'd2ma_3de_filter';
 const akcjeMa = (p, rodzaj) => (p.zdarzenia['ma:action'] || []).filter((a) => a.do === rodzaj);
 
 test('ma.39: map_mark i map_order na 3destate — pominięte z powodem raz na odsłonę, częstotliwość niezużyta, gałąź idzie dalej', async () => {
@@ -5058,126 +5057,6 @@ test('ma.39: 2destate — map_mark zużywa częstotliwość dopiero po wykonaniu
   assert.equal(Object.keys(gotowa._dysk.state.scenarios.m.freq).length, 1, 'po wykonaniu zapisana');
 });
 
-async function zapisFiltra3de(opts) {
-  const k = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
-  const p = await start(Object.assign({ koperta: k, mapa: false, kontener: true }, opts));
-  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
-  await p.gotowe();
-  return p;
-}
-// Następne wczytanie makiety: bez tego, co dotyczyło poprzedniej odsłony.
-const nastepna = (p, opts) => powrot(p, 2 * MIN, Object.assign({ konfig: undefined, kontener: true, wyrysowana: false }, opts));
-const filterInit = (filterState) => ({ event: 'oa3de__unit-list-filter-init', data: { filterState } });
-
-test('ma.39: prefer_filters na 3destate — zapis na następne wczytanie, filtr w konfiguracji makiety, potwierdzenie z filter-init', async () => {
-  const p = await zapisFiltra3de();
-  const a = akcjeMa(p, 'prefer_filters');
-  assert.equal(a.length, 1);
-  assert.equal(a[0].status, 'skipped');
-  assert.equal(a[0].reason, 'engine_3destate_next_load');
-  assert.deepEqual(czyste(JSON.parse(p._dysk.ls[FILTR_3DE]).filters), { rooms: [3] });
-
-  const konfig = { appId: 'x', rootElement: 'sm3de', props: {} };
-  const p2 = await nastepna(p, { konfig });
-  assert.deepEqual(czyste(konfig.props.unitFilterOverride), { init: { rooms: { min: 3, max: 3 } } });
-  assert.equal(akcjeMa(p2, 'prefer_filters').length, 0, 'bez potwierdzenia jeszcze nic nie zgłaszamy');
-  p2.dataLayer.push(filterInit({ rooms: { min: 3, max: 3 } }));
-  await p2.gotowe();
-  const ok = akcjeMa(p2, 'prefer_filters');
-  assert.equal(ok.length, 1);
-  assert.equal(ok[0].status, undefined, 'wszedł: kształt jak na 2destate');
-  assert.deepEqual(czyste(ok[0].filters), { rooms: [3] });
-  assert.equal(p2._dysk.ls[FILTR_3DE], undefined, 'jednorazowo');
-});
-
-test('ma.39: prefer_filters na 3destate — makieta już wyrysowana: powód, konfiguracja bez zmian, zapis czeka', async () => {
-  const p = await zapisFiltra3de();
-  const konfig = { props: {} };
-  const p2 = await nastepna(p, { konfig, wyrysowana: true });
-  assert.equal(konfig.props.unitFilterOverride, undefined, 'strona bez zmian');
-  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_late');
-  assert.ok(p2._dysk.ls[FILTR_3DE], 'następne wczytanie próbuje znowu');
-});
-
-test('ma.39: prefer_filters na 3destate — filter-init bez naszego filtra to ignored, brak zdarzenia to unconfirmed', async () => {
-  const p = await zapisFiltra3de();
-  const p2 = await nastepna(p, { konfig: { props: {} } });
-  p2.dataLayer.push(filterInit({ rooms: { min: null, max: null } }));
-  await p2.gotowe();
-  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_ignored');
-  assert.ok(p2._dysk.ls[FILTR_3DE], 'ignored: to mógł być wyścig, zapis zostaje');
-
-  const p3 = await nastepna(p2, { konfig: { props: {} } });
-  await p3.minie(31000);
-  assert.equal(akcjeMa(p3, 'prefer_filters')[0].reason, 'engine_3destate_unconfirmed');
-  assert.equal(p3._dysk.ls[FILTR_3DE], undefined);
-});
-
-test('ma.39: prefer_filters na 3destate — plik przed konfiguracją: filtr w chwili jej przypisania', async () => {
-  const p = await zapisFiltra3de();
-  const p2 = await nastepna(p);
-  const konfig = { props: {} };
-  p2.window.AppLauncher3DEOAConfig = konfig;
-  assert.deepEqual(czyste(konfig.props.unitFilterOverride), { init: { rooms: { min: 3, max: 3 } } });
-  assert.equal(p2.window.AppLauncher3DEOAConfig, konfig);
-});
-
-test('ma.39: prefer_filters na 3destate — skrypt startowy bez konfiguracji: no_config; strona bez makiety: cisza i zapis czeka', async () => {
-  const p = await zapisFiltra3de();
-  const bez = await nastepna(p, { kontener: false });
-  await bez.minie(31000);
-  assert.equal(akcjeMa(bez, 'prefer_filters').length, 0);
-  assert.ok(bez._dysk.ls[FILTR_3DE]);
-  const s = await nastepna(bez, { kontener: false, skrypt3de: true });
-  await s.minie(31000);
-  assert.equal(akcjeMa(s, 'prefer_filters')[0].reason, 'engine_3destate_no_config');
-});
-
-test('ma.39: prefer_filters na 3destate — adres sm-filters-* i własny filtr strony wygrywają', async () => {
-  const p = await zapisFiltra3de();
-  const k1 = { props: {} };
-  const adres = await nastepna(p, { konfig: k1, search: '?sm-filters-rooms-init-min=2' });
-  assert.equal(k1.props.unitFilterOverride, undefined);
-  assert.ok(adres._dysk.ls[FILTR_3DE]);
-  const wlasny = { init: { rooms: { min: 1, max: 1 } } };
-  const k2 = { props: { unitFilterOverride: wlasny } };
-  const s = await nastepna(adres, { konfig: k2, search: '' });
-  assert.equal(k2.props.unitFilterOverride, wlasny);
-  assert.equal(akcjeMa(s, 'prefer_filters').length, 0);
-});
-
-test('ma.39: prefer_filters na 3destate — zgoda: zapis wymagający zgody nie wchodzi bez niej; wycofanie i Wyczyść kasują', async () => {
-  const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: Date.now(), c: 1, sc: 'pref', node: 'n' }) } };
-  const k = koperta([], { minScript: 'ma.17' });
-  const konfig = { props: {} };
-  await start({ koperta: k, mapa: false, kontener: true, konfig, dysk });
-  assert.equal(konfig.props.unitFilterOverride, undefined, 'bez zgody konfiguracja nietknięta');
-
-  const p = await zapisFiltra3de();
-  assert.ok(p._dysk.ls[FILTR_3DE]);
-  await p.ma.clear();
-  assert.equal(p._dysk.ls[FILTR_3DE], undefined, 'Wyczyść');
-
-  const kz = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17', storage: { consentRequired: true, retentionDays: 90 } });
-  const zg = await start({ koperta: kz, mapa: false, kontener: true, dataLayer: [gtag('consent', 'update', { analytics_storage: 'granted' })] });
-  zg.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
-  await zg.gotowe();
-  assert.equal(JSON.parse(zg._dysk.ls[FILTR_3DE]).c, 1);
-  zg.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'denied' }));
-  await zg.gotowe();
-  assert.equal(zg._dysk.ls[FILTR_3DE], undefined, 'wycofanie zgody kasuje zapis');
-});
-
-test('ma.39: prefer_filters na 3destate — zapis niemożliwy: powód i częstotliwość wolna; 2destate bez zmian', async () => {
-  const p = await zapisFiltra3de({ lsBlad: true });
-  assert.equal(akcjeMa(p, 'prefer_filters')[0].reason, 'engine_3destate_no_storage');
-  assert.equal(Object.keys(p._dysk.state.scenarios.pref.freq || {}).length, 0);
-
-  const d = await zapisFiltra3de({ mapa: undefined, kontener: true, imp: { instances: { mapa: {} } } });
-  assert.equal(d.ustawioneFiltry.length, 1, 'API 2destate wygrywa ze śladami 3destate');
-  assert.equal((d._dysk.ls || {})[FILTR_3DE], undefined);
-});
-
 test('ma.39: koperta z ?s=ma.N&e=<silnik>, bez identyfikatora gościa, także przed zgodą i przy reload bez doklejania drugi raz', async () => {
   const k = koperta([], { minScript: 'ma.17' });
   const wersja = /var SCRIPT_VERSION = (\d+);/.exec(kodModulu)[1];
@@ -5189,8 +5068,7 @@ test('ma.39: koperta z ?s=ma.N&e=<silnik>, bez identyfikatora gościa, także pr
   assert.ok(adres(await start({ koperta: k, mapa: false, skrypt3de: true }))[0].endsWith('&e=3destate'));
   assert.ok(adres(await start({ koperta: k, mapa: false, skrypt2de: true }))[0].endsWith('&e=2destate'));
   const zaden = await start({ koperta: k, mapa: false });
-  assert.ok(adres(zaden)[0].endsWith('&e=none'));
-  assert.equal(adres(zaden)[0].indexOf('visitor'), -1);
+  assert.equal(adres(zaden)[0], 'https://digi2.app/api/ma/scenario/demo.json?s=ma.' + wersja, 'silnika nie widać: bez e');
 
   const zQuery = await start({ koperta: k, endpoint: 'https://digi2.app/api/ma/scenario/demo.json?site=a#x' });
   assert.ok(adres(zQuery)[0].endsWith('?site=a&s=ma.' + wersja + '&e=2destate#x'));
@@ -5206,30 +5084,7 @@ test('ma.39: koperta z ?s=ma.N&e=<silnik>, bez identyfikatora gościa, także pr
 test('ma.39 (recenzja): obcy script[data-appid] to nie 3destate', async () => {
   const k = koperta([], { minScript: 'ma.17' });
   const wez = async (o) => (await start(Object.assign({ koperta: k, mapa: false }, o))).pobrania[0];
-  assert.ok((await wez({ obcyAppid: true })).endsWith('&e=none'));
-});
-
-test('ma.39 (recenzja): filtr wszedł częściowo — zapis znika, nie narzucamy go przy każdym wczytaniu', async () => {
-  const k = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'both' }])], { minScript: 'ma.17' });
-  const p = await start({ koperta: k, mapa: false, kontener: true });
-  p.dataLayer.push(unitOpen('A_1', { rooms: 3, floor: 2 }));
-  await p.gotowe();
-  const p2 = await nastepna(p, { konfig: { props: {} } });
-  p2.dataLayer.push(filterInit({ rooms: { min: 3, max: 3 }, floor: { min: null, max: null } }));
-  await p2.gotowe();
-  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_ignored');
-  assert.equal(p2._dysk.ls[FILTR_3DE], undefined);
-});
-
-test('ma.39 (recenzja): zgoda po starcie modułu, makieta jeszcze nie stoi — filtr wchodzi', async () => {
-  const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: START, c: 1, sc: 'pref', node: 'a1' }) } };
-  const konfig = { props: {} };
-  const k = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17', storage: { consentRequired: true, retentionDays: 90 } });
-  const p = await start({ koperta: k, mapa: false, kontener: true, konfig, dysk });
-  assert.equal(konfig.props.unitFilterOverride, undefined);
-  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
-  await p.gotowe();
-  assert.deepEqual(czyste(konfig.props.unitFilterOverride), { init: { rooms: { min: 3, max: 3 } } });
+  assert.ok(!(await wez({ obcyAppid: true })).includes('&e='));
 });
 
 test('ma.39 (recenzja): nowa rewizja przy akcji czekającej na mapę nie zeruje ścieżki', async () => {
@@ -5299,36 +5154,6 @@ test('ma.39 (recenzja): odtworzenie every_time nie przesuwa częstotliwości (co
   assert.equal(p2._dysk.state.scenarios.m.freq.a1.at, at);
 });
 
-test('ma.39 (recenzja): własny filtr strony bez fałszywego no_config; timer nie kasuje nowszego zapisu', async () => {
-  const p = await zapisFiltra3de();
-  const k2 = { props: { unitFilterOverride: { init: {} } } };
-  const s = await nastepna(p, { konfig: k2 });
-  await s.minie(31000);
-  assert.equal(akcjeMa(s, 'prefer_filters').length, 0);
-
-  const p2 = await nastepna(s, { konfig: { props: {} } });
-  const nowszy = JSON.parse(p2._dysk.ls[FILTR_3DE]);
-  nowszy.at += 1000;
-  nowszy.filters = { rooms: [2] };
-  p2._dysk.ls[FILTR_3DE] = JSON.stringify(nowszy);
-  await p2.minie(31000);
-  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_unconfirmed');
-  assert.deepEqual(JSON.parse(p2._dysk.ls[FILTR_3DE]).filters, { rooms: [2] }, 'nowszy zostaje');
-});
-
-test('ma.39 (recenzja): koperta bez scenariusza albo krótsza retencja kasują zapis', async () => {
-  const p = await zapisFiltra3de();
-  const bez = await nastepna(p, { koperta: koperta([], { minScript: 'ma.17' }) });
-  await bez.gotowe();
-  assert.equal(bez._dysk.ls[FILTR_3DE], undefined, 'scenariusz nieopublikowany');
-
-  const q = await zapisFiltra3de();
-  const krotka = koperta(q._opts.koperta.scenarios, { minScript: 'ma.17', storage: { consentRequired: false, retentionDays: 1 } });
-  const r = await powrot(q, 2 * 24 * H, { koperta: krotka, konfig: undefined });
-  await r.gotowe();
-  assert.equal(r._dysk.ls[FILTR_3DE], undefined, 'starszy niż retencja koperty');
-});
-
 const mapMarkZOpoznieniem = (extra) => koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [Object.assign({ do: 'map_mark', by: 'rooms', delayMinutes: 5 }, extra), { do: 'datalayer', event: 'ma_engaged' }])], { minScript: 'ma.17' });
 const lokalA = [{ id: 'A', name: 'A', rooms: 3, floor: 1, status: 'available' }];
 
@@ -5392,33 +5217,6 @@ test('ma.39 (recenzja 2): kolejka na mapę — prawdziwy wyzwalacz zastępuje od
   assert.ok(p2._dysk.state.scenarios.m.freq.a1.at > at, 'wyzwalacz zapisał częstotliwość');
 });
 
-test('ma.39 (recenzja 2): późna zgoda na odsłonie z zapisem nie daje fałszywego late', async () => {
-  const p = await zapisFiltra3de({ wyrysowana: true });
-  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
-  await p.gotowe();
-  assert.deepEqual(akcjeMa(p, 'prefer_filters').map((a) => a.reason), ['engine_3destate_next_load']);
-});
-
-test('ma.39 (recenzja 2): goły d2-ma-consent-required wymaga zgody także dla zapisu c:0', async () => {
-  for (const wartosc of ['', 'true']) {
-    const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: START, c: 0, sc: 'pref', node: 'a1' }) } };
-    const konfig = { props: {} };
-    await start({ koperta: koperta([]), mapa: false, kontener: true, konfig, dysk, cfg: { 'd2-ma-consent-required': wartosc } });
-    assert.equal(konfig.props.unitFilterOverride, undefined, JSON.stringify(wartosc));
-  }
-  const konfig = { props: {} };
-  const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: START, c: 0, sc: 'pref', node: 'a1' }) } };
-  await start({ koperta: koperta([scenariusz('pref', { event: 'lead' }, [])], { minScript: 'ma.17' }), mapa: false, kontener: true, konfig, dysk });
-  assert.ok(konfig.props.unitFilterOverride, 'kontrola: bez atrybutu zapis c:0 wchodzi');
-});
-
-test('ma.39 (recenzja 2): koperta odrzucona przez wersję nie kasuje zapisu', async () => {
-  const p = await zapisFiltra3de();
-  const r = await nastepna(p, { koperta: koperta([], { version: '999' }) });
-  await r.gotowe();
-  assert.ok(r._dysk.ls[FILTR_3DE]);
-});
-
 test('ma.39 (recenzja 2): silnik ze zdarzeń oa3de; map_order bez instancji mapy nie zgłasza wykonania', async () => {
   const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }])], { minScript: 'ma.17' });
   const p = await start({ koperta: k, mapa: false });
@@ -5448,3 +5246,22 @@ test('ma.39 (recenzja 2): wpis ze starej rewizji bez nowego wyzwalacza nie zapis
   await p.gotowe();
   assert.equal((p._dysk.state.scenarios.m.freq || {}).a1, undefined);
 });
+
+test('ma.40: prefer_filters na 3destate — powód engine_3destate, bez zapisu, bez konfiguracji makiety, gałąź idzie dalej', async () => {
+  const k = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'rooms', delayMinutes: 5 }, { do: 'datalayer', event: 'ma_engaged' }])], { minScript: 'ma.17' });
+  const konfig = { props: {} };
+  const p = await start({ koperta: k, mapa: false, kontener: true, konfig });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  p.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await p.gotowe();
+  const a = akcjeMa(p, 'prefer_filters');
+  assert.equal(a.length, 1);
+  assert.deepEqual(czyste(a[0]), { scenarioId: 'pref', nodeId: 'a1', do: 'prefer_filters', status: 'skipped', reason: 'engine_3destate' });
+  assert.equal(konfig.props.unitFilterOverride, undefined);
+  assert.equal(p._dysk.ls, undefined, 'bez zapisu w localStorage');
+  assert.equal((p._dysk.state.scenarios.pref.freq || {}).a1, undefined);
+  assert.equal(p._dysk.state.pending.length, 0);
+  assert.equal(p.dataLayer.filter((e) => e.event === 'ma_engaged').length, 1);
+});
+
