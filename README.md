@@ -1530,6 +1530,49 @@ behaves as if that time had passed — deferred actions included.
   `last-unit` ("Wróć do lokalu {{unit.name}}"), `last-unit-price`
   ("{{unit.name}} — {{unit.price}}"). A content action skipped by `frequency`
   still hands its `slot` to a following `ma_content`.
+- **`templates.popup[].design` (ma.41)** — every field is copied only from a closed
+  list; a bad value is warned about and dropped, the template stays, and envelope text
+  never reaches a style.
+
+  | Field | Values | Effect |
+  |---|---|---|
+  | `placement` | `center`, `side-left`, `side-right`, `bar-bottom`, `bar-top`, `slide-in` | Beats `layout.position`. `side-*`: full height, scrolls, radius 0. `bar-*`: full width row, radius 0, image blocks are 48 px thumbnails |
+  | `colors.background`, `.text`, `.accent`, `.accentText`, `.overlay` | hex 3, 6 or 8 | Beat `style` and tokens |
+  | `backgroundImage.src`, `.fit`, `.scrim` | `{{unit.image}}` or `mediaUrl()`; `cover`, `contain`; 0-80 | Window background under a dark layer |
+  | `typography.font`, `.titleSize`, `.textSize`, `.align` | `inherit`, `sans`, `serif`, `mono`; `sm`-`xl` (18/22/28/34 px); `sm`-`lg` (14/16/18 px); `left`, `center` | |
+  | `radiusPx` | 0-40 | Beats `style.radius` |
+  | `cta.shape`, `.variant`, `.fullWidth` | `square`, `rounded`, `pill`; `solid`, `outline`; bool | |
+  | `imageLayout` | `top`, `left`, `right` | `left` / `right`: first image with a valid URL goes to a 40% column, one column at ≤ 480 px; none valid = `top` |
+  | `spacing` | `compact`, `normal`, `roomy` | Padding 14/16, 20/22, 32/34 px |
+  | `overlay` | `none`, `light`, `dark` | `none`: page stays clickable and scrollable (`lockScrollOnShow: false`) |
+  | `behavior.delaySeconds` | 0-120 | Wait before `show()`; dropped on `clear()` or consent withdrawal |
+  | `behavior.closeButton` | bool | `false` removes × only when a `close` button actually rendered |
+  | `behavior.closeOnOverlay` | bool | `false`: a capture listener on the overlay, registered before `popups.create`, stops the click. No `popups.js` option, because that module can come from another version on `@latest` |
+  | `behavior.animation` | `none`, `fade`, `slide` | Own `<style>`, only under `prefers-reduced-motion: no-preference` |
+
+  With `overlay: "none"` the dialog keeps `aria-modal` and the Tab trap from `popups.js`,
+  as the contract asks, though the page behind stays usable by mouse.
+- **`templates.content[].action` (ma.41)** — a plain `{ templateId, text }` stays a
+  string in the library and goes through `setSlot` as before. With `action` or `selector`
+  it is an object: unknown action, a selector outside the `SELECTOR_RE` subset of
+  `ma_content_schema.py` (forbidden tags, `.imp-`, `.d2-ma-`, ≤ 120 chars) or an invalid
+  value skips the template. Target: `selector`, else `[d2-ma-slot]` of the step, through
+  `querySelectorAll` in `try/catch`, at most 20 elements, never inside or around a popup.
+  None = the branch ends, as for an empty slot. The step still needs `slot` for
+  `validNode`.
+
+  | `action` | Effect |
+  |---|---|
+  | `text` | `textContent`, fields through `contentText`; with a selector the element's children return on undo |
+  | `html` | `rich[]` (`text`, `bold`, `italic`, `href`, `br`) built with `createElement` and text nodes, never `innerHTML`. A run with a field without value skips the step; a bad `href` (`safePageLink`) leaves plain text |
+  | `image` | `mediaUrl`; `IMG` gets `src` / `alt`, another element gets an `img` |
+  | `hide` | `d2-ma-hidden` and `display: none !important` |
+  | `show` | `d2-ma-shown`, removes inline `display`; still hidden by page CSS: `display: revert` |
+  | `attr` | `alt`, `title`, `aria-label`, `href` (`safePageLink`), `src` (`mediaUrl`) |
+
+  Every change goes to `slotOriginals`, per element and per attribute, so `clear()`,
+  consent withdrawal and a new revision of that scenario undo them. Plain slot text
+  doesn't undo on a new revision, as before.
 - **Engine (ma.39)** — `engine()` is the one place that tells `2destate` from
   `3destate`: the 2destate API first, then 3destate traces
   (`AppLauncher3DEOAConfig`, `#sm3de`, the launcher script, any `oa3de*` event),

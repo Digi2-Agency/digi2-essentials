@@ -787,6 +787,7 @@
       <a href="#ma-lead-context">Lead Context in Forms</a>
       <a href="#ma-touchpoints">Touchpoints (visit sources)</a>
       <a href="#ma-search">Search: Filters &amp; Sort</a>
+      <a href="#ma-design">Popup Design and Content Actions</a>
       <a href="#ma-engines">Engines: 2destate / 3destate</a>
       <a href="#ma-conditions">Page Conditions</a>
       <a href="#ma-webflow">Webflow Setup</a>
@@ -2903,6 +2904,33 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
   <span class="prop">flat_building</span>, <span class="prop">flat_availability</span>, <span class="prop">flat_price</span>, <span class="prop">flat_isPromo</span>, <span class="prop">view_source</span>: <span class="string">'wyszukiwarka'</span> | <span class="string">'mapa'</span> }</code></pre>
     <p class="muted">ma.18: <code>item_list_sort</code> only for <code>price</code>, <code>area</code>, <code>floor</code> × <code>asc</code>/<code>desc</code> (left out for rooms, name, custom). A filter change reaches the profile and scenarios once, after 500 ms of quiet — a slider is one <code>search_filter</code>. ma.19: a change still waiting is written at once on form submit (lead context; <code>search_filter</code> actions may run then), with the time of the last change. ma.20: on <code>pagehide</code> only the fact is stored — no scenario action at exit, no replay on the next page; a <code>custom</code> order sends no event and the next one has no <code>item_list_sort</code>. Only <code>source: "user"</code> counts. <code>digi2.ma.clear()</code> resets the search filters too — ma.26: with explicit nulls (core merges filters), fields the visitor touched stay. ma.26: <code>prefer_filters</code> that core did not apply (touched field, no search panel) does not count and retries next visit.</p>
     <p class="muted">No visitor data in these events; they do not depend on the d2-ma profile consent (GA4 consent is Consent Mode's job). <code>d2-ma-search-events="off"</code> on the loader tag switches them off. Every contract key is in every push; a missing value is <code>undefined</code>, not left out (ma.21) — otherwise a GTM Data Layer Variable keeps the previous push's value.</p>
+  </section>
+
+  <section id="ma-design">
+    <h2>Popup Design and Content Actions</h2>
+    <p>From <code>v1.9.0-ma.41</code>. A template without <code>design</code> or <code>action</code> behaves as before. A bad value gives a <code>console.warn</code> and drops that field, not the template.</p>
+    <table>
+      <tr><th><code>design</code> field</th><th>Values</th><th>Effect</th></tr>
+      <tr><td><code>placement</code></td><td><code>center</code>, <code>side-left</code>, <code>side-right</code>, <code>bar-bottom</code>, <code>bar-top</code>, <code>slide-in</code></td><td>Beats <code>layout.position</code>. In a bar, image blocks are 48 px thumbnails</td></tr>
+      <tr><td><code>colors.*</code></td><td>hex: <code>background</code>, <code>text</code>, <code>accent</code>, <code>accentText</code>, <code>overlay</code></td><td>Beat <code>style</code> and tokens</td></tr>
+      <tr><td><code>backgroundImage.*</code></td><td><code>src</code>: <code>{{unit.image}}</code> or an allowed URL; <code>fit</code>: <code>cover</code>, <code>contain</code>; <code>scrim</code>: 0-80</td><td>Window background</td></tr>
+      <tr><td><code>typography.*</code></td><td><code>font</code>: <code>inherit</code>, <code>sans</code>, <code>serif</code>, <code>mono</code>; <code>titleSize</code>: <code>sm</code>-<code>xl</code>; <code>textSize</code>: <code>sm</code>-<code>lg</code>; <code>align</code>: <code>left</code>, <code>center</code></td><td></td></tr>
+      <tr><td><code>radiusPx</code></td><td>0-40</td><td>Beats <code>style.radius</code></td></tr>
+      <tr><td><code>cta.*</code></td><td><code>shape</code>: <code>square</code>, <code>rounded</code>, <code>pill</code>; <code>variant</code>: <code>solid</code>, <code>outline</code>; <code>fullWidth</code>: bool</td><td></td></tr>
+      <tr><td><code>imageLayout</code></td><td><code>top</code>, <code>left</code>, <code>right</code></td><td>First valid image in a 40% column, one column at 480 px and below</td></tr>
+      <tr><td><code>spacing</code></td><td><code>compact</code>, <code>normal</code>, <code>roomy</code></td><td>Window padding</td></tr>
+      <tr><td><code>overlay</code></td><td><code>none</code>, <code>light</code>, <code>dark</code></td><td><code>none</code>: the page stays clickable and scrollable</td></tr>
+      <tr><td><code>behavior.*</code></td><td><code>delaySeconds</code>: 0-120; <code>closeButton</code>, <code>closeOnOverlay</code>: bool; <code>animation</code>: <code>none</code>, <code>fade</code>, <code>slide</code></td><td>× goes only when a <code>close</code> button is on screen. Esc, focus and aria stay in every layout</td></tr>
+    </table>
+    <table>
+      <tr><th>Content <code>action</code></th><th>Effect</th></tr>
+      <tr><td><code>text</code></td><td><code>textContent</code>, with fields</td></tr>
+      <tr><td><code>html</code></td><td><code>rich[]</code>: <code>text</code>, <code>bold</code>, <code>italic</code>, <code>href</code>, <code>br</code>. Built from data, never <code>innerHTML</code>. A run with an empty field skips the step</td></tr>
+      <tr><td><code>image</code></td><td>Allowed URL; replaces an <code>img</code>, or adds one</td></tr>
+      <tr><td><code>hide</code>, <code>show</code></td><td><code>d2-ma-hidden</code> + <code>display: none !important</code>; <code>d2-ma-shown</code> + inline <code>display</code> removed</td></tr>
+      <tr><td><code>attr</code></td><td>Only <code>alt</code>, <code>title</code>, <code>aria-label</code>, <code>href</code>, <code>src</code>, with checked links</td></tr>
+    </table>
+    <p class="muted">Target: the template's <code>selector</code> (safe CSS subset), else the step's <code>[d2-ma-slot]</code>; at most 20 elements, never inside or around a popup. No target ends the branch. The step still needs <code>slot</code>. <code>digi2.ma.clear()</code>, consent withdrawal and a new revision of the scenario undo these changes.</p>
   </section>
 
   <section id="ma-engines">
