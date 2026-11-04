@@ -161,11 +161,9 @@
  *   frequency "every_time"        content / map_mark / map_order re-applied each page
  *   action map_order              d2estate.setProductOrder with the profile ranking
  *   Engine (ma.39)                2destate | 3destate, detected in one place (engine()). On 3destate
- *                                 map_mark / map_order don't run: ma:action { status: "skipped",
- *                                 reason: "engine_3destate" }, frequency not used. prefer_filters is
- *                                 saved for the next load (props.unitFilterOverride, undocumented API);
- *                                 reasons: engine_3destate_next_load | _late | _no_config | _ignored |
- *                                 _unconfirmed | _no_storage. Envelope fetch adds ?s=ma.N&e=<engine|none>.
+ *                                 map_mark, map_order and (ma.40) prefer_filters don't run: ma:action
+ *                                 { status: "skipped", reason: "engine_3destate" }, frequency not used.
+ *                                 Envelope fetch adds ?s=ma.N, and &e=<engine> once one is visible.
  *   content image / video         <img>, YouTube / Vimeo frame (after ad_storage consent; d2-ma-
  *                                 video-consent can only add categories) or <video> for mp4
  *   ma_form_field                 Per-field time and clicks (name only, never values)
@@ -224,12 +222,8 @@
   var TOUCH_THROTTLE_MS = 15000;
   var EVENT_3DE_VIEW = 'oa3de__unit-open';
   var EVENT_3DE_LEAD = 'oa3de__contact-form-make-inquiry';
-  var EVENT_3DE_FILTER_INIT = 'oa3de__unit-list-filter-init';
   var ENGINE_2D = '2destate';
   var ENGINE_3D = '3destate';
-  var FILTER_3DE_KEY = 'd2ma_3de_filter';
-  var FILTER_3DE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-  var FILTER_3DE_CONFIRM_MS = 30000;
   var EVENT_LEAD = 'generate_lead';
   var DEFAULT_PRODUCTS_API = 'https://api.2destate.com/api/v1';
   var DEFAULT_CONSENT = 'analytics_storage';
@@ -258,7 +252,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 39;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 40;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -860,7 +854,6 @@
     }
     if (String(raw.version) !== CONTRACT_VERSION) {
       _warn('envelope version "' + raw.version + '" is not "' + CONTRACT_VERSION + '" — no scenario runs');
-      env.rejected = true;
       return env;
     }
     env.contentTemplates = contentLibrary(raw.templates);
@@ -1332,8 +1325,8 @@
     }
     var delay = num(node.delayMinutes) || 0;
     var mapKind = node['do'] === 'map_mark' || node['do'] === 'map_order';
-    // ma.39: map_* na 3destate i tak się nie wykona - bez czekania i bez zużycia częstotliwości.
-    if (delay > 0 && mapKind && engine() === ENGINE_3D) delay = 0;
+    // ma.39: te akcje na 3destate i tak się nie wykonają - bez czekania i bez zużycia częstotliwości.
+    if (delay > 0 && (mapKind || node['do'] === 'prefer_filters') && engine() === ENGINE_3D) delay = 0;
     // ma.39: te akcje zużywają częstotliwość dopiero po wykonaniu, więc drugi wyzwalacz
     // w czasie opóźnienia rozpoznajemy po kolejce, nie po wpisie częstotliwości.
     if (delay > 0 && (mapKind || node['do'] === 'prefer_filters')) {
@@ -1438,8 +1431,13 @@
     } else if (kind === 'prefer_filters') {
       // Gość już filtrował w tej wizycie: jego wybór zostaje, a akcja nie zużywa
       // swojej częstotliwości (spróbuje przy następnej wizycie).
-      if (!preferFilters(sc, node, true)) return;
-      recordFrequency(st, node, ctx.unit);
+      // ma.40: 3destate nie ma API filtrów - powód jak przy map_*, gałąź idzie dalej.
+      if (engine() === ENGINE_3D) {
+        mapMark(sc, node, ctx.unit);
+      } else {
+        if (!preferFilters(sc, node, true)) return;
+        recordFrequency(st, node, ctx.unit);
+      }
     } else if (kind === 'webhook') {
       if (sendWebhook(sc, node, ctx)) {
         recordFrequency(st, node, ctx.unit);
@@ -1867,7 +1865,7 @@
   // replay: odtworzenie stanu przy odsłonie (every_time), bez częstotliwości.
   function mapMark(sc, node, unit, replay) {
     var kind = node['do'];
-    if (kind !== 'prefer_filters' && engine() === ENGINE_3D) {
+    if (engine() === ENGINE_3D) {
       _log(kind + ' skipped — 3destate has no API for it');
       reportSkipped(sc, node, 'engine_3destate');
       return;
@@ -1978,172 +1976,6 @@
       }
     } catch (e) {}
     return null;
-  }
-
-  // ---------------------------------------------------------------------------
-  // prefer_filters na 3destate (ma.39). NIEUDOKUMENTOWANE API: props.unitFilterOverride
-  // w window.AppLauncher3DEOAConfig, smartmakietabase 1789730517. Makieta czyta je tylko
-  // przy starcie, zmiany w trakcie nie ma. Sprawdzone 2026-11-04 na żywej makiecie:
-  // działa przed wyrysowaniem, po nim bez efektu, a oa3de__unit-list-filter-init pokazuje
-  // stan startowy - stąd potwierdzenie. Po zmianie wersji makiety sprawdzić ponownie.
-  // Akcja zapisuje filtr, a zakłada go dopiero następne wczytanie, o ile ten plik zdąży
-  // przed makietą. Gdy nie zdąży: powód w ma:action i strona bez zmian.
-  // ---------------------------------------------------------------------------
-  var f3de = { rec: null, started: false, patched: false, own: false, timer: null, result: null };
-
-  function filter3deRead() {
-    var rec = null;
-    try { rec = JSON.parse(window.localStorage.getItem(FILTER_3DE_KEY) || 'null'); } catch (e) { return null; }
-    if (!rec || !rec.filters || typeof rec.filters !== 'object' || !(Date.now() - rec.at < FILTER_3DE_TTL_MS)) {
-      if (rec) filter3deRemove();
-      return null;
-    }
-    return rec;
-  }
-
-  function filter3deRemove() {
-    try { window.localStorage.removeItem(FILTER_3DE_KEY); } catch (e) {}
-  }
-
-  // Tylko ten zapis: wyzwalacz w czasie czekania mógł już zapisać nowszy.
-  function filter3deRemoveRec(rec) {
-    var cur = filter3deRead();
-    if (cur && rec && cur.at === rec.at) filter3deRemove();
-  }
-
-  // Wycofanie zgody, „Wyczyść": zapis znika, ten sam los co profil w d2ma.
-  function filter3deForget() {
-    filter3deRemove();
-    if (f3de.timer) { clearTimeout(f3de.timer); f3de.timer = null; }
-    f3de.rec = null;
-    f3de.result = null;
-    engineReported = {};
-  }
-
-  function filter3deSave(sc, node, f) {
-    // Zapis jest na następne wczytanie: późna zgoda na tej odsłonie już go nie zakłada.
-    f3de.started = true;
-    try {
-      window.localStorage.setItem(FILTER_3DE_KEY, JSON.stringify({
-        filters: f, at: Date.now(), c: consentRequired(envelope) ? 1 : 0, sc: sc.id, node: node.id
-      }));
-    } catch (e) {
-      reportSkipped(sc, node, 'engine_3destate_no_storage', { filters: f });
-      return false;
-    }
-    reportSkipped(sc, node, 'engine_3destate_next_load', { filters: f });
-    return true;
-  }
-
-  function filter3deOverride(filters) {
-    var init = {};
-    Object.keys(filters).forEach(function (k) { init[k] = { min: filters[k][0], max: filters[k][0] }; });
-    return { init: init };
-  }
-
-  function filter3deStarted(cfg) {
-    var root = null;
-    try { root = document.getElementById && document.getElementById((cfg && cfg.rootElement) || 'sm3de'); } catch (e) {}
-    if (root && root.children && root.children.length) return true;
-    var dl = window.dataLayer;
-    if (!dl) return false;
-    for (var i = 0; i < dl.length; i++) if (dl[i] && dl[i].event === EVENT_3DE_FILTER_INIT) return true;
-    return false;
-  }
-
-  function filter3dePatch(cfg) {
-    if (!cfg || typeof cfg !== 'object' || !f3de.rec) return;
-    if (!cfg.props) cfg.props = {};
-    // Własny filtr startowy strony wygrywa.
-    if (cfg.props.unitFilterOverride) { f3de.own = true; _log('prefer_filters — the page sets its own 3destate start filter'); return; }
-    cfg.props.unitFilterOverride = filter3deOverride(f3de.rec.filters);
-    f3de.patched = true;
-  }
-
-  // Dwa podejścia: przy wykonaniu pliku i w boot() (zgoda z dataLayer jest znana dopiero tam).
-  function filter3deStart() {
-    if (f3de.started) return;
-    var rec = filter3deRead();
-    if (!rec) return;
-    var cs = consentState();
-    // Koperty jeszcze nie ma, więc zapis pamięta wymóg zgody z chwili akcji; atrybut może go tylko dołożyć.
-    var attr = _cfg('d2-ma-consent-required');
-    if (rec.c || attr === 'true' || attr === '' ? cs !== 'granted' : cs === 'denied') return;
-    // Adres wygrywa z konfiguracją makiety (sm-filters-*): to link kampanii, nie ruszamy.
-    if (/[?&]sm-filters-/.test((window.location && window.location.search) || '')) return;
-    f3de.started = true;
-    f3de.rec = rec;
-    var cfg = window.AppLauncher3DEOAConfig;
-    if (filter3deStarted(cfg)) { filter3deResult('engine_3destate_late'); return; }
-    if (cfg) {
-      filter3dePatch(cfg);
-    } else {
-      // Plik przed konfiguracją makiety (<head>): zakładamy filtr w chwili jej przypisania.
-      try {
-        var held;
-        Object.defineProperty(window, 'AppLauncher3DEOAConfig', {
-          configurable: true,
-          get: function () { return held; },
-          set: function (v) { held = v; filter3dePatch(v); }
-        });
-      } catch (e) {}
-    }
-    f3de.timer = setTimeout(function () {
-      f3de.timer = null;
-      if (f3de.result || f3de.own || !f3de.rec) return;
-      if (f3de.patched) { filter3deRemoveRec(f3de.rec); filter3deResult('engine_3destate_unconfirmed'); }
-      // Strona bez makiety: nic nie zmieniono i nic do zgłoszenia, zapis czeka.
-      else if (engine() === ENGINE_3D) filter3deResult('engine_3destate_no_config');
-    }, FILTER_3DE_CONFIRM_MS);
-  }
-
-  function filter3deResult(r) {
-    if (f3de.timer) { clearTimeout(f3de.timer); f3de.timer = null; }
-    f3de.result = r;
-    filter3deFlush();
-  }
-
-  // Filtr zakłada się przed pobraniem koperty. Gdy już ją znamy: scenariusz bez aktywnej
-  // publikacji albo zapis starszy niż retencja nie czekają na kolejne wczytanie.
-  function filter3dePrune() {
-    var rec = filter3deRead();
-    // Koperta odrzucona przez wersję kontraktu nie mówi nic o scenariuszach.
-    if (!rec || !envelope || envelope.rejected) return;
-    var days = num(envelope.storage.retentionDays);
-    var live = envelope.scenarios.some(function (x) { return x.id === rec.sc; });
-    if (live && (!days || days <= 0 || Date.now() - rec.at <= days * DAY_MS)) return;
-    filter3deRemove();
-    if (f3de.rec && f3de.rec.at === rec.at) {
-      if (f3de.timer) { clearTimeout(f3de.timer); f3de.timer = null; }
-      f3de.rec = null;
-      f3de.result = null;
-    }
-  }
-
-  // Słuchacze ma:action są pewni dopiero, gdy magazyn się otworzył.
-  function filter3deFlush() {
-    var rec = f3de.rec;
-    if (!rec || !f3de.result || !tracking) return;
-    var r = f3de.result;
-    f3de.rec = null;
-    f3de.result = null;
-    if (r === 'ok') _emit('ma:action', { scenarioId: rec.sc, nodeId: rec.node, 'do': 'prefer_filters', filters: rec.filters });
-    else reportSkipped({ id: rec.sc }, { id: rec.node, 'do': 'prefer_filters' }, r, { filters: rec.filters });
-  }
-
-  // Stan startowy makiety z oa3de__unit-list-filter-init mówi, czy filtr wszedł.
-  function filter3deConfirm(entry) {
-    if (!f3de.patched || f3de.result || !f3de.rec) return;
-    var fs = (entry.data && entry.data.filterState) || entry.filterState || {};
-    var filters = f3de.rec.filters;
-    var keys = Object.keys(filters);
-    var hit = keys.filter(function (k) {
-      return fs[k] && fs[k].min === filters[k][0] && fs[k].max === filters[k][0];
-    }).length;
-    // Nic nie weszło: to mógł być tylko wyścig z makietą, zapis czeka. Weszła część
-    // (makieta bez takiego pola): działa już raz, nie narzucamy jej przy każdym wczytaniu.
-    if (hit) filter3deRemoveRec(f3de.rec);
-    filter3deResult(hit === keys.length ? 'ok' : 'engine_3destate_ignored');
   }
 
   // ---------------------------------------------------------------------------
@@ -2322,7 +2154,6 @@
     if (rooms != null) f.rooms = [rooms];
     if (floor != null) f.floor = [floor];
     if (!f.rooms && !f.floor) { _log('prefer_filters skipped — no preference in the profile'); return false; }
-    if (engine() === ENGINE_3D) return filter3deSave(sc, node, f);
     var api = mapApi();
     if (!api || typeof api.setFilters !== 'function') {
       if (window.console && console.info) console.info('[digi2.ma] prefer_filters skipped — 2destate has no setFilters (core 1.7.0)');
@@ -3205,7 +3036,6 @@
     }
     var ev = entry.event;
     if (typeof ev === 'string' && ev.indexOf('oa3de') === 0) seen3de = true;
-    if (ev === EVENT_3DE_FILTER_INIT) filter3deConfirm(entry);
     if (ev === EVENT_3DE_VIEW) {
       var unit = from3destate(entry);
       if (unit) intake({ type: 'view', unit: unit });
@@ -4711,8 +4541,6 @@
 
   function consentChanged(granted) {
     if (granted) revoked = false;
-    // ma.39: CMP odpowiedział po starcie modułu - makieta może jeszcze nie stać.
-    if (granted) filter3deStart();
     // Tick może już nie żyć (zgoda nieznana przy starcie, 429, 503, wyciszenie).
     if (!granted) behForget();
     if (!granted && tracking && hotLeadOn() && !consentRequired(envelope)) idForget();
@@ -4751,7 +4579,7 @@
   function wipe(reason) {
     _log('no consent — d2ma deleted (' + reason + ')');
     var hadState = !!state;
-    filter3deForget();
+    engineReported = {};
     holding = false;
     openedWithConsent = false;
     pageTouchUsed = false;
@@ -5081,7 +4909,8 @@
     var h = u.indexOf('#');
     var hash = h < 0 ? '' : u.slice(h);
     if (h >= 0) u = u.slice(0, h);
-    return u + (u.indexOf('?') < 0 ? '?' : '&') + 's=ma.' + SCRIPT_VERSION + '&e=' + (engine() || 'none') + hash;
+    var e = engine();
+    return u + (u.indexOf('?') < 0 ? '?' : '&') + 's=ma.' + SCRIPT_VERSION + (e ? '&e=' + e : '') + hash;
   }
 
   function fetchEnvelope(url) {
@@ -5201,8 +5030,6 @@
       afterChange();
       highlightProfile();
       opening = null;
-      filter3dePrune();
-      filter3deFlush();
       _emit('ma:ready', { tracking: true, store: store.kind });
     }, function (e) {
       opening = null;
@@ -5241,7 +5068,6 @@
     if (booted) return;
     booted = true;
     hookDataLayer();
-    filter3deStart();
     hookContext();
     hookMap();
     bindUi();
@@ -5393,7 +5219,7 @@
     },
     clear: function () {
       var wasTracking = tracking;
-      filter3deForget();
+      engineReported = {};
       revokeHotLead();
       if (hotLeadTimer) { clearTimeout(hotLeadTimer); hotLeadTimer = null; }
       views = [];
@@ -5431,7 +5257,8 @@
 
   window.digi2.ma = api;
 
-  filter3deStart();
+  // ma.40: zapis z ma.39 pochodzi z profilu, a po tej wersji nic by go już nie skasowało.
+  try { window.localStorage.removeItem('d2ma_3de_filter'); } catch (e) {}
 
   if (document.readyState === 'loading' && document.addEventListener) {
     document.addEventListener('DOMContentLoaded', boot);
