@@ -860,6 +860,7 @@
     }
     if (String(raw.version) !== CONTRACT_VERSION) {
       _warn('envelope version "' + raw.version + '" is not "' + CONTRACT_VERSION + '" — no scenario runs');
+      env.rejected = true;
       return env;
     }
     env.contentTemplates = contentLibrary(raw.templates);
@@ -1337,12 +1338,13 @@
     // w czasie opóźnienia rozpoznajemy po kolejce, nie po wpisie częstotliwości.
     if (delay > 0 && (mapKind || node['do'] === 'prefer_filters')) {
       var perUnit = frequencyOf(node).kind === 'unit';
+      // Bez done/propagate: krok jeszcze się nie wykonał, gałąź ruszy z odłożonej akcji.
+      // Wpis po terminie nie liczy się, bo runDue i tak go wyrzuci bez wykonania.
       if (state.pending.some(function (p) {
-        return p.sc === sc.id && p.node === node.id && (!perUnit || unitKey(p.ctx.unit) === unitKey(c.unit));
+        return p.sc === sc.id && p.node === node.id && now() - p.created <= PENDING_TTL_MS
+          && (!perUnit || unitKey(p.ctx.unit) === unitKey(c.unit));
       })) {
         _log('already deferred → ' + sc.id + '/' + node.id);
-        done(st, node, c);
-        propagate(sc, st, node, c, pass, seen);
         return;
       }
       defer(sc, node, c, now() + scaled(delay * 60 * 1000), null);
@@ -1891,7 +1893,11 @@
     if (!products.length) {
       // Mapa jeszcze się ładuje - oznaczamy po onMapLoad.
       // ma.39: częstotliwość jeszcze niezużyta, więc drugi wyzwalacz nie dokłada kolejki.
-      if (!markWaiting.some(function (m) { return m.node === node; })) markWaiting.push({ sc: sc, node: node, unit: unit, replay: replay });
+      // Po id, nie po obiekcie: koperta z reload ma nowe obiekty. Prawdziwy wyzwalacz
+      // zastępuje odtworzenie stanu i wpis ze starej rewizji, bo on ma zapisać częstotliwość.
+      var queued = markWaiting.filter(function (m) { return m.sc.id === sc.id && m.node.id === node.id; })[0];
+      if (!queued) markWaiting.push({ sc: sc, node: node, unit: unit, replay: replay });
+      else if (!replay) { queued.sc = sc; queued.node = node; queued.unit = unit; queued.replay = false; }
       _log('map_mark waits for the map → ' + sc.id + '/' + node.id);
       return;
     }
@@ -2015,6 +2021,8 @@
   }
 
   function filter3deSave(sc, node, f) {
+    // Zapis jest na następne wczytanie: późna zgoda na tej odsłonie już go nie zakłada.
+    f3de.started = true;
     try {
       window.localStorage.setItem(FILTER_3DE_KEY, JSON.stringify({
         filters: f, at: Date.now(), c: consentRequired(envelope) ? 1 : 0, sc: sc.id, node: node.id
@@ -2059,7 +2067,8 @@
     if (!rec) return;
     var cs = consentState();
     // Koperty jeszcze nie ma, więc zapis pamięta wymóg zgody z chwili akcji; atrybut może go tylko dołożyć.
-    if (rec.c || _cfg('d2-ma-consent-required') === 'true' ? cs !== 'granted' : cs === 'denied') return;
+    var attr = _cfg('d2-ma-consent-required');
+    if (rec.c || attr === 'true' || attr === '' ? cs !== 'granted' : cs === 'denied') return;
     // Adres wygrywa z konfiguracją makiety (sm-filters-*): to link kampanii, nie ruszamy.
     if (/[?&]sm-filters-/.test((window.location && window.location.search) || '')) return;
     f3de.started = true;
@@ -2098,7 +2107,8 @@
   // publikacji albo zapis starszy niż retencja nie czekają na kolejne wczytanie.
   function filter3dePrune() {
     var rec = filter3deRead();
-    if (!rec || !envelope) return;
+    // Koperta odrzucona przez wersję kontraktu nie mówi nic o scenariuszach.
+    if (!rec || !envelope || envelope.rejected) return;
     var days = num(envelope.storage.retentionDays);
     var live = envelope.scenarios.some(function (x) { return x.id === rec.sc; });
     if (live && (!days || days <= 0 || Date.now() - rec.at <= days * DAY_MS)) return;

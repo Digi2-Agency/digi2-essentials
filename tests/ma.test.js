@@ -181,6 +181,7 @@ function strona(opts) {
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
+      if (sel.indexOf('data-appid') >= 0) return o.obcyAppid ? element() : null;
       if (sel === 'script[src*="oneappapps"]') return o.skrypt3de ? element() : null;
       if (sel === 'script[src*="2destate"]') return o.skrypt2de ? element() : null;
       const s = o.szablon;
@@ -317,6 +318,7 @@ function strona(opts) {
     return Promise.reject(new Error('offline: ' + url));
   }
 
+  if (o.markProducts && window.d2estate) window.d2estate.markProducts = o.markProducts;
   const context = vm.createContext({
     window, document,
     console: { log() {}, warn(...a) { ostrzezenia.push(a.join(' ')); }, error() {} },
@@ -5204,8 +5206,7 @@ test('ma.39: koperta z ?s=ma.N&e=<silnik>, bez identyfikatora gościa, także pr
 test('ma.39 (recenzja): obcy script[data-appid] to nie 3destate', async () => {
   const k = koperta([], { minScript: 'ma.17' });
   const wez = async (o) => (await start(Object.assign({ koperta: k, mapa: false }, o))).pobrania[0];
-  assert.ok((await wez({})).endsWith('&e=none'));
-  assert.ok(!kodModulu.includes('script[data-appid]'), 'selektor tylko po adresie skryptu startowego');
+  assert.ok((await wez({ obcyAppid: true })).endsWith('&e=none'));
 });
 
 test('ma.39 (recenzja): filtr wszedł częściowo — zapis znika, nie narzucamy go przy każdym wczytaniu', async () => {
@@ -5247,6 +5248,7 @@ test('ma.39 (recenzja): nowa rewizja przy akcji czekającej na mapę nie zeruje 
   p.mapaGotowa();
   await p.gotowe();
   assert.equal(p._dysk.state.scenarios.m.rev, 2, 'stan nowej rewizji');
+  assert.ok(p._dysk.state.scenarios.m.freq.a1, 'wyzwalacz nowej rewizji zapisał częstotliwość');
   assert.ok(Object.keys(p._dysk.state.scenarios.m.nodes).length >= Object.keys(przed.nodes).length, 'ścieżka nie wyzerowana');
 });
 
@@ -5284,13 +5286,16 @@ test('ma.39 (recenzja): odtworzenie every_time nie przesuwa częstotliwości (co
   const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms', frequency: 'every_time' }])], { minScript: 'ma.17' });
   const produkty = [{ id: 'A', name: 'A', rooms: 3, floor: 1, status: 'available' }];
   const imp = { instances: { mapa: {} } };
-  const p = await start({ koperta: k, produkty, imp });
-  p.window.d2estate.markProducts = () => 1;
+  let oznaczenia = 0;
+  const markProducts = () => { oznaczenia++; return 1; };
+  const p = await start({ koperta: k, produkty, imp, markProducts });
   p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
   await p.gotowe();
+  assert.equal(oznaczenia, 1);
   const at = p._dysk.state.scenarios.m.freq.a1.at;
   const p2 = await powrot(p, 5 * MIN);
   await p2.gotowe();
+  assert.equal(oznaczenia, 2, 'kontrola: odtworzenie faktycznie oznaczyło');
   assert.equal(p2._dysk.state.scenarios.m.freq.a1.at, at);
 });
 
@@ -5322,4 +5327,124 @@ test('ma.39 (recenzja): koperta bez scenariusza albo krótsza retencja kasują z
   const r = await powrot(q, 2 * 24 * H, { koperta: krotka, konfig: undefined });
   await r.gotowe();
   assert.equal(r._dysk.ls[FILTR_3DE], undefined, 'starszy niż retencja koperty');
+});
+
+const mapMarkZOpoznieniem = (extra) => koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [Object.assign({ do: 'map_mark', by: 'rooms', delayMinutes: 5 }, extra), { do: 'datalayer', event: 'ma_engaged' }])], { minScript: 'ma.17' });
+const lokalA = [{ id: 'A', name: 'A', rooms: 3, floor: 1, status: 'available' }];
+
+test('ma.39 (recenzja 2): odłożona akcja — drugi wyzwalacz nie kończy kroku; wpis po terminie nie blokuje', async () => {
+  const imp = { instances: { mapa: {} } };
+  let oznaczenia = 0;
+  const markProducts = () => { oznaczenia++; return 1; };
+  const p = await start({ koperta: mapMarkZOpoznieniem({ frequency: 'every_time' }), produkty: lokalA, imp, markProducts });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  p.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(p.dataLayer.filter((e) => e.event === 'ma_engaged').length, 0, 'krok za akcją czeka na jej wykonanie');
+  await p.minie(6 * MIN);
+  await p.gotowe();
+  assert.equal(oznaczenia, 1);
+  assert.equal(p.dataLayer.filter((e) => e.event === 'ma_engaged').length, 1);
+
+  const k = koperta([scenariusz('r', { event: 'return_visit', afterHours: 1 }, [{ do: 'map_mark', by: 'rooms', delayMinutes: 5 }])], { minScript: 'ma.17' });
+  let ozn2 = 0;
+  const q = await start({ koperta: k, produkty: lokalA, imp, markProducts: () => { ozn2++; return 1; } });
+  q.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await q.gotowe();
+  const q2 = await powrot(q, 2 * H);
+  assert.equal(q2._dysk.state.pending.length, 1);
+  const q3 = await powrot(q2, 48 * H);
+  await q3.minie(6 * MIN);
+  await q3.gotowe();
+  assert.equal(ozn2, 1, 'martwy wpis sprzed 48 h nie blokuje nowego wyzwalacza');
+});
+
+test('ma.39 (recenzja 2): once_per_unit z opóźnieniem — inny lokal ma własny wpis w kolejce', async () => {
+  const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms', delayMinutes: 5, frequency: 'once_per_unit' }])], { minScript: 'ma.17' });
+  const p = await start({ koperta: k, produkty: lokalA, imp: { instances: { mapa: {} } }, markProducts: () => 1 });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(p._dysk.state.pending.length, 1, 'ten sam lokal raz');
+  p.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(p._dysk.state.pending.length, 2, 'inny lokal osobno');
+});
+
+test('ma.39 (recenzja 2): kolejka na mapę — prawdziwy wyzwalacz zastępuje odtworzenie; ta sama rewizja po reload raz', async () => {
+  const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms', frequency: 'every_time' }])], { minScript: 'ma.17' });
+  const imp = { instances: { mapa: {} } };
+  const p = await start({ koperta: k, produkty: lokalA, imp, markProducts: () => 1 });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  const at = p._dysk.state.scenarios.m.freq.a1.at;
+  const produkty = [];
+  const p2 = await powrot(p, 5 * MIN, { produkty });
+  p2.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await p2.gotowe();
+  await p2.ma.load(klon(k));
+  await p2.gotowe();
+  produkty.push(lokalA[0]);
+  p2.mapaGotowa();
+  await p2.gotowe();
+  assert.equal(akcjeMa(p2, 'map_mark').length, 1, 'ta sama rewizja po reload: raz');
+  assert.ok(p2._dysk.state.scenarios.m.freq.a1.at > at, 'wyzwalacz zapisał częstotliwość');
+});
+
+test('ma.39 (recenzja 2): późna zgoda na odsłonie z zapisem nie daje fałszywego late', async () => {
+  const p = await zapisFiltra3de({ wyrysowana: true });
+  p.dataLayer.push(gtag('consent', 'update', { analytics_storage: 'granted' }));
+  await p.gotowe();
+  assert.deepEqual(akcjeMa(p, 'prefer_filters').map((a) => a.reason), ['engine_3destate_next_load']);
+});
+
+test('ma.39 (recenzja 2): goły d2-ma-consent-required wymaga zgody także dla zapisu c:0', async () => {
+  for (const wartosc of ['', 'true']) {
+    const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: START, c: 0, sc: 'pref', node: 'a1' }) } };
+    const konfig = { props: {} };
+    await start({ koperta: koperta([]), mapa: false, kontener: true, konfig, dysk, cfg: { 'd2-ma-consent-required': wartosc } });
+    assert.equal(konfig.props.unitFilterOverride, undefined, JSON.stringify(wartosc));
+  }
+  const konfig = { props: {} };
+  const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: START, c: 0, sc: 'pref', node: 'a1' }) } };
+  await start({ koperta: koperta([scenariusz('pref', { event: 'lead' }, [])], { minScript: 'ma.17' }), mapa: false, kontener: true, konfig, dysk });
+  assert.ok(konfig.props.unitFilterOverride, 'kontrola: bez atrybutu zapis c:0 wchodzi');
+});
+
+test('ma.39 (recenzja 2): koperta odrzucona przez wersję nie kasuje zapisu', async () => {
+  const p = await zapisFiltra3de();
+  const r = await nastepna(p, { koperta: koperta([], { version: '999' }) });
+  await r.gotowe();
+  assert.ok(r._dysk.ls[FILTR_3DE]);
+});
+
+test('ma.39 (recenzja 2): silnik ze zdarzeń oa3de; map_order bez instancji mapy nie zgłasza wykonania', async () => {
+  const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }])], { minScript: 'ma.17' });
+  const p = await start({ koperta: k, mapa: false });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  assert.equal(akcjeMa(p, 'map_mark')[0].reason, 'engine_3destate', 'sam oa3de__unit-open wystarcza');
+
+  const ko = koperta([scenariusz('o', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_order', by: 'rooms' }])], { minScript: 'ma.17' });
+  const b = await start({ koperta: ko, produkty: lokalA });
+  b.window.d2estate.setProductOrder = () => {};
+  b.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await b.gotowe();
+  assert.equal(akcjeMa(b, 'map_order').length, 0);
+  assert.equal((b._dysk.state.scenarios.o.freq || {}).a1, undefined);
+});
+
+test('ma.39 (recenzja 2): wpis ze starej rewizji bez nowego wyzwalacza nie zapisuje częstotliwości w nowej', async () => {
+  const sc = (rev) => scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }], { revision: rev });
+  const produkty = [];
+  const p = await start({ koperta: koperta([sc(1)], { minScript: 'ma.17' }), produkty, imp: { instances: { mapa: {} } }, markProducts: () => 1 });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  await p.ma.load(koperta([sc(2)], { minScript: 'ma.17' }));
+  await p.gotowe();
+  produkty.push(lokalA[0]);
+  p.mapaGotowa();
+  await p.gotowe();
+  assert.equal((p._dysk.state.scenarios.m.freq || {}).a1, undefined);
 });
