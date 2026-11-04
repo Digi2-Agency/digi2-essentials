@@ -16,6 +16,35 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.39 — 2026-11-04 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.38–ma.16)
+
+Adapter silnika 2destate / 3destate i zgłaszanie wersji, zlecenie 2destate.
+
+- `map_mark` i `map_order` na makiecie 3destate się nie wykonują i mówią dlaczego:
+  `ma:action` z `status: "skipped"`, `reason: "engine_3destate"`, raz na odsłonę.
+  Gałąź za akcją idzie dalej, `delayMinutes` nie odkłada takiej akcji.
+- **Częstotliwość `map_mark` / `map_order` zużywa się dopiero po wykonaniu, także na
+  2destate.** Strona bez mapy, mapa w trakcie ładowania, brak pasujących lokali albo
+  sortowanie gościa nie zużywają już `once_per_visit`: akcja próbuje przy kolejnym
+  wyzwalaczu.
+- `prefer_filters` na 3destate: filtr zapisany (`localStorage`, `d2ma_3de_filter`)
+  zakłada dopiero **następne wczytanie**, przez nieudokumentowane
+  `props.unitFilterOverride`. Makieta czyta je tylko przed wyrysowaniem, więc moduł musi
+  zdążyć przed nią. Nie ma na to gwarancji: moduł ładuje się asynchronicznie. Wynik
+  sprawdza `oa3de__unit-list-filter-init`. Wszedł = zwykłe `ma:action` z `filters`.
+  Inaczej `status: "skipped"` i `reason`: `engine_3destate_next_load` (zapisany, na tej
+  odsłonie bez zmian), `_late` (makieta już wyrysowana, strona bez zmian), `_no_config`
+  (brak `AppLauncher3DEOAConfig`), `_ignored` (makieta nie przyjęła), `_unconfirmed`
+  (brak zdarzenia w 15 s), `_no_storage`. Adres `sm-filters-*` i własny filtr strony
+  wygrywają. Filtr działa raz, wygasa po 30 dniach, a wycofanie zgody i „Wyczyść” go
+  kasują. Sprawdzone 4.11 na makiecie smartmakietabase `1789730517`; po zmianie wersji
+  makiety sprawdzić ponownie.
+- Pobranie koperty dokleja `?s=ma.N&e=<silnik>` (`2destate`, `3destate`, `none`, gdy
+  silnika jeszcze nie widać), także przy `reload()`. Bez identyfikatora gościa i bez
+  ciasteczek. **To żądanie idzie przed zgodą**, jak dotąd, bo koperta niesie
+  `consentRequired`. Serwer koperty musi przyjąć dodatkowe parametry; starsze wersje
+  wysyłają adres bez nich.
+
 ## v1.9.0-ma.38 — 2026-11-02 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.37–ma.16)
 
 Porządki po recenzji #53 (architekt-it) i uwaga webflow / 2destate z demo.

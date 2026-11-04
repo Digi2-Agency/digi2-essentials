@@ -181,6 +181,8 @@ function strona(opts) {
     createElement: (t) => element({}, String(t || 'div').toUpperCase()),
     querySelector(sel) {
       if (sel === '[d2-ma], [data-d2-ma]') return cfgEl;
+      if (sel.indexOf('script[data-appid]') === 0) return o.skrypt3de ? element() : null;
+      if (sel === 'script[src*="2destate"]') return o.skrypt2de ? element() : null;
       const s = o.szablon;
       if (s && (sel.indexOf('[d2-ma-popup="' + s.getAttribute('d2-ma-popup') + '"]') === 0 || (s.id && sel === '#' + s.id))) return s;
       // Element zbudowany przez moduł i dołożony do body (popup z szablonu).
@@ -220,7 +222,17 @@ function strona(opts) {
     dataLayer,
     location: { origin: 'https://demo.example', host: 'demo.example', hostname: 'demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
     localStorage: {
-      getItem(k) { return k === 'consentModeV2' && o.zgoda ? JSON.stringify(o.zgoda) : null; },
+      getItem(k) {
+        if (k === 'consentModeV2') return o.zgoda ? JSON.stringify(o.zgoda) : null;
+        const ls = (o.dysk && o.dysk.ls) || {};
+        return Object.prototype.hasOwnProperty.call(ls, k) ? ls[k] : null;
+      },
+      setItem(k, v) {
+        if (o.lsBlad) throw new Error('quota');
+        o.dysk.ls = o.dysk.ls || {};
+        o.dysk.ls[k] = String(v);
+      },
+      removeItem(k) { if (o.dysk && o.dysk.ls) delete o.dysk.ls[k]; },
     },
     crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuidN).padStart(12, '0') },
     atob: (b) => Buffer.from(b, 'base64').toString('binary'),
@@ -241,6 +253,14 @@ function strona(opts) {
   if (o.idb) window.indexedDB = o.idb;
   if (o.googleTag) window.google_tag_data = o.googleTag;
   if (o.imp) window.ImageMapPro = o.imp;
+  // ma.39: makieta 3destate. konfig = window.AppLauncher3DEOAConfig, kontener = #sm3de,
+  // wyrysowana = kontener ma już dzieci; skrypt3de / skrypt2de = sam tag startowy.
+  if (o.konfig) window.AppLauncher3DEOAConfig = o.konfig;
+  if (o.kontener || o.wyrysowana) {
+    const kontener = element({ id: 'sm3de' });
+    if (o.wyrysowana) kontener.children = [element()];
+    document.getElementById = (id) => (id === 'sm3de' ? kontener : null);
+  }
   if (o.dotyk) window.matchMedia = (q) => ({ matches: q === '(hover: none)' });
   window.requestAnimationFrame = (f) => { klatki.push(f); };
   if (o.mapa !== false) {
@@ -277,7 +297,7 @@ function strona(opts) {
   const pobrania = [];
   function fetch(url, init) {
     pobrania.push(String(url));
-    if (url === 'https://digi2.app/api/ma/scenario/demo.json') {
+    if (String(url).split('?')[0] === 'https://digi2.app/api/ma/scenario/demo.json') {
       if (!o.koperta) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve(null) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(klon(o.koperta)) });
     }
@@ -3976,13 +3996,13 @@ test('ma.23: koperta tylko z digi2.app i api.2destate.com po https — inny adre
     env.pobrania.length = 0;
     await env.ma.load(url);
     await env.gotowe();
-    assert.equal(env.pobrania.includes(url), ok, url);
+    assert.equal(env.pobrania.some((u) => u.split('?')[0] === url), ok, url);
     assert.equal(env.ostrzezenia.some((w) => w.includes('not on digi2.app or api.2destate.com')), !ok, 'warn: ' + url);
   }
   // Atrybut loadera (start strony): adres spoza listy — zero fetch koperty, strona działa bez MA.
   const zla = strona({ koperta: koperta([]) });
   await zla.gotowe();
-  assert.ok(zla.pobrania.includes('https://digi2.app/api/ma/scenario/demo.json'), 'kontrola: adres z listy pobrany przy starcie');
+  assert.ok(zla.pobrania.some((u) => u.split('?')[0] === 'https://digi2.app/api/ma/scenario/demo.json'), 'kontrola: adres z listy pobrany przy starcie');
   const obca = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
   await obca.gotowe();
   assert.equal(obca.pobrania.length, 0);
@@ -4023,14 +4043,14 @@ test('ma.25: lista hostów koperty — wielkie litery, kropka na końcu, host w 
     const env = await start({ koperta: koperta([]) });
     env.pobrania.length = 0;
     await env.ma.load(url);
-    assert.equal(env.pobrania.includes(url), ok, url);
+    assert.equal(env.pobrania.some((u) => u.split('?')[0] === url), ok, url);
   }
   // Zły adres w load() nie podmienia dobrego: reload() wraca do adresu ze startu.
   const env = await start({ koperta: koperta([]) });
   await env.ma.load('https://evil.example/k.json');
   env.pobrania.length = 0;
   await env.ma.reload();
-  assert.deepEqual(env.pobrania, ['https://digi2.app/api/ma/scenario/demo.json']);
+  assert.deepEqual(env.pobrania.map((u) => u.split('?')[0]), ['https://digi2.app/api/ma/scenario/demo.json']);
   // Zły adres na starcie: reload() (i d2-ma-refresh) nic nie pobiera ani nie ostrzega drugi raz.
   const zla = strona({ koperta: koperta([]), endpoint: 'https://evil.example/k.json' });
   await zla.gotowe();
@@ -4977,3 +4997,197 @@ test('ma.37: contact z szablonu zamyka i przewija do [d2-ma-contact], potem #kon
   assert.equal(kontakt.przew, 0, 'popup spoza szablonu panelu nie przewija');
 });
 
+// ---------------------------------------------------------------------------
+// ma.39: adapter silnika 2destate / 3destate, zgłaszanie wersji przy kopercie
+// ---------------------------------------------------------------------------
+
+const FILTR_3DE = 'd2ma_3de_filter';
+const akcjeMa = (p, rodzaj) => (p.zdarzenia['ma:action'] || []).filter((a) => a.do === rodzaj);
+
+test('ma.39: map_mark i map_order na 3destate — pominięte z powodem raz na odsłonę, częstotliwość niezużyta, gałąź idzie dalej', async () => {
+  const k = koperta([
+    scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }, { do: 'datalayer', event: 'ma_engaged' }], {}),
+    scenariusz('o', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_order', by: 'rooms', delayMinutes: 30 }]),
+  ], { minScript: 'ma.17' });
+  const p = await start({ koperta: k, mapa: false, kontener: true });
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  p.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await p.gotowe();
+  const marks = akcjeMa(p, 'map_mark');
+  assert.equal(marks.length, 1, 'raz na odsłonę');
+  assert.deepEqual(czyste(marks[0]), { scenarioId: 'm', nodeId: marks[0].nodeId, do: 'map_mark', status: 'skipped', reason: 'engine_3destate' });
+  assert.equal(akcjeMa(p, 'map_order')[0].reason, 'engine_3destate', 'delayMinutes nie odkłada akcji, która się nie wykona');
+  assert.equal(p.ma.profile() && p.dataLayer.filter((e) => e.event === 'ma_engaged').length, 1, 'gałąź za akcją idzie dalej');
+  assert.equal(p._dysk.state.pending.length, 0, 'nic nie czeka');
+  Object.values(p._dysk.state.scenarios).forEach((st) => {
+    Object.keys(st.freq || {}).forEach((id) => assert.ok(!/map/.test(id) || !st.freq[id].at, 'map_* bez wpisu częstotliwości: ' + id));
+  });
+});
+
+test('ma.39: 2destate — map_mark zużywa częstotliwość dopiero po wykonaniu, a bez status / reason w ma:action', async () => {
+  const k = koperta([scenariusz('m', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'map_mark', by: 'rooms' }])], { minScript: 'ma.17' });
+  const oznacz = (env) => { env.window.d2estate.markProducts = () => 1; return env; };
+  const imp = { instances: { mapa: {} } };
+  const pelna = oznacz(await start({ koperta: k, produkty: [], imp }));
+  const produkty = [{ id: 'A', name: 'A', rooms: 3, floor: 1, status: 'available' }];
+  pelna.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await pelna.gotowe();
+  const st = pelna._dysk.state.scenarios.m;
+  const wpisy = Object.keys(st.freq || {});
+  assert.equal(wpisy.length, 0, 'mapa jeszcze się ładuje: częstotliwość wolna');
+  assert.equal(akcjeMa(pelna, 'map_mark').length, 0);
+  pelna.dataLayer.push(unitOpen('A_2', { rooms: 3 }));
+  await pelna.gotowe();
+  pelna.window.d2estate.getProducts = () => produkty;
+  pelna.mapaGotowa();
+  await pelna.gotowe();
+  assert.equal(akcjeMa(pelna, 'map_mark').length, 1, 'po załadowaniu mapy raz, choć wyzwalacz był dwa razy');
+  assert.equal(Object.keys(pelna._dysk.state.scenarios.m.freq).length, 1, 'i wtedy zapisana');
+
+  const gotowa = oznacz(await start({ koperta: k, produkty, imp }));
+  gotowa.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await gotowa.gotowe();
+  const a = akcjeMa(gotowa, 'map_mark');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].status, undefined);
+  assert.equal(a[0].reason, undefined);
+  assert.equal(Object.keys(gotowa._dysk.state.scenarios.m.freq).length, 1, 'po wykonaniu zapisana');
+});
+
+async function zapisFiltra3de(opts) {
+  const k = koperta([scenariusz('pref', { event: 'type_view', rooms: 3, minCount: 1 }, [{ do: 'prefer_filters', by: 'rooms' }])], { minScript: 'ma.17' });
+  const p = await start(Object.assign({ koperta: k, mapa: false, kontener: true }, opts));
+  p.dataLayer.push(unitOpen('A_1', { rooms: 3 }));
+  await p.gotowe();
+  return p;
+}
+// Następne wczytanie makiety: bez tego, co dotyczyło poprzedniej odsłony.
+const nastepna = (p, opts) => powrot(p, 2 * MIN, Object.assign({ konfig: undefined, kontener: true, wyrysowana: false }, opts));
+const filterInit = (filterState) => ({ event: 'oa3de__unit-list-filter-init', data: { filterState } });
+
+test('ma.39: prefer_filters na 3destate — zapis na następne wczytanie, filtr w konfiguracji makiety, potwierdzenie z filter-init', async () => {
+  const p = await zapisFiltra3de();
+  const a = akcjeMa(p, 'prefer_filters');
+  assert.equal(a.length, 1);
+  assert.equal(a[0].status, 'skipped');
+  assert.equal(a[0].reason, 'engine_3destate_next_load');
+  assert.deepEqual(czyste(JSON.parse(p._dysk.ls[FILTR_3DE]).filters), { rooms: [3] });
+
+  const konfig = { appId: 'x', rootElement: 'sm3de', props: {} };
+  const p2 = await nastepna(p, { konfig });
+  assert.deepEqual(czyste(konfig.props.unitFilterOverride), { init: { rooms: { min: 3, max: 3 } } });
+  assert.equal(akcjeMa(p2, 'prefer_filters').length, 0, 'bez potwierdzenia jeszcze nic nie zgłaszamy');
+  p2.dataLayer.push(filterInit({ rooms: { min: 3, max: 3 } }));
+  await p2.gotowe();
+  const ok = akcjeMa(p2, 'prefer_filters');
+  assert.equal(ok.length, 1);
+  assert.equal(ok[0].status, undefined, 'wszedł: kształt jak na 2destate');
+  assert.deepEqual(czyste(ok[0].filters), { rooms: [3] });
+  assert.equal(p2._dysk.ls[FILTR_3DE], undefined, 'jednorazowo');
+});
+
+test('ma.39: prefer_filters na 3destate — makieta już wyrysowana: powód, konfiguracja bez zmian, zapis czeka', async () => {
+  const p = await zapisFiltra3de();
+  const konfig = { props: {} };
+  const p2 = await nastepna(p, { konfig, wyrysowana: true });
+  assert.equal(konfig.props.unitFilterOverride, undefined, 'strona bez zmian');
+  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_late');
+  assert.ok(p2._dysk.ls[FILTR_3DE], 'następne wczytanie próbuje znowu');
+});
+
+test('ma.39: prefer_filters na 3destate — filter-init bez naszego filtra to ignored, brak zdarzenia to unconfirmed', async () => {
+  const p = await zapisFiltra3de();
+  const p2 = await nastepna(p, { konfig: { props: {} } });
+  p2.dataLayer.push(filterInit({ rooms: { min: null, max: null } }));
+  await p2.gotowe();
+  assert.equal(akcjeMa(p2, 'prefer_filters')[0].reason, 'engine_3destate_ignored');
+  assert.ok(p2._dysk.ls[FILTR_3DE], 'ignored: to mógł być wyścig, zapis zostaje');
+
+  const p3 = await nastepna(p2, { konfig: { props: {} } });
+  await p3.minie(16000);
+  assert.equal(akcjeMa(p3, 'prefer_filters')[0].reason, 'engine_3destate_unconfirmed');
+  assert.equal(p3._dysk.ls[FILTR_3DE], undefined);
+});
+
+test('ma.39: prefer_filters na 3destate — plik przed konfiguracją: filtr w chwili jej przypisania', async () => {
+  const p = await zapisFiltra3de();
+  const p2 = await nastepna(p);
+  const konfig = { props: {} };
+  p2.window.AppLauncher3DEOAConfig = konfig;
+  assert.deepEqual(czyste(konfig.props.unitFilterOverride), { init: { rooms: { min: 3, max: 3 } } });
+  assert.equal(p2.window.AppLauncher3DEOAConfig, konfig);
+});
+
+test('ma.39: prefer_filters na 3destate — skrypt startowy bez konfiguracji: no_config; strona bez makiety: cisza i zapis czeka', async () => {
+  const p = await zapisFiltra3de();
+  const bez = await nastepna(p, { kontener: false });
+  await bez.minie(16000);
+  assert.equal(akcjeMa(bez, 'prefer_filters').length, 0);
+  assert.ok(bez._dysk.ls[FILTR_3DE]);
+  const s = await nastepna(bez, { kontener: false, skrypt3de: true });
+  await s.minie(16000);
+  assert.equal(akcjeMa(s, 'prefer_filters')[0].reason, 'engine_3destate_no_config');
+});
+
+test('ma.39: prefer_filters na 3destate — adres sm-filters-* i własny filtr strony wygrywają', async () => {
+  const p = await zapisFiltra3de();
+  const k1 = { props: {} };
+  const adres = await nastepna(p, { konfig: k1, search: '?sm-filters-rooms-init-min=2' });
+  assert.equal(k1.props.unitFilterOverride, undefined);
+  assert.ok(adres._dysk.ls[FILTR_3DE]);
+  const wlasny = { init: { rooms: { min: 1, max: 1 } } };
+  const k2 = { props: { unitFilterOverride: wlasny } };
+  const s = await nastepna(adres, { konfig: k2, search: '' });
+  assert.equal(k2.props.unitFilterOverride, wlasny);
+  assert.equal(akcjeMa(s, 'prefer_filters').length, 0);
+});
+
+test('ma.39: prefer_filters na 3destate — zgoda: zapis wymagający zgody nie wchodzi bez niej; wycofanie i Wyczyść kasują', async () => {
+  const dysk = { ls: { [FILTR_3DE]: JSON.stringify({ filters: { rooms: [3] }, at: Date.now(), c: 1, sc: 'pref', node: 'n' }) } };
+  const k = koperta([], { minScript: 'ma.17' });
+  const konfig = { props: {} };
+  const bezZgody = await start({ koperta: k, mapa: false, kontener: true, konfig, dysk });
+  assert.equal(konfig.props.unitFilterOverride, undefined, 'bez zgody konfiguracja nietknięta');
+
+  const p = await zapisFiltra3de();
+  assert.ok(p._dysk.ls[FILTR_3DE]);
+  await p.ma.clear();
+  assert.equal(p._dysk.ls[FILTR_3DE], undefined, 'Wyczyść');
+  assert.ok(bezZgody);
+});
+
+test('ma.39: prefer_filters na 3destate — zapis niemożliwy: powód i częstotliwość wolna; 2destate bez zmian', async () => {
+  const p = await zapisFiltra3de({ lsBlad: true });
+  assert.equal(akcjeMa(p, 'prefer_filters')[0].reason, 'engine_3destate_no_storage');
+  assert.equal(Object.keys(p._dysk.state.scenarios.pref.freq || {}).length, 0);
+
+  const d = await zapisFiltra3de({ mapa: undefined, kontener: true, imp: { instances: { mapa: {} } } });
+  assert.equal(d.ustawioneFiltry.length, 1, 'API 2destate wygrywa ze śladami 3destate');
+  assert.equal((d._dysk.ls || {})[FILTR_3DE], undefined);
+});
+
+test('ma.39: koperta z ?s=ma.N&e=<silnik>, bez identyfikatora gościa, także przed zgodą i przy reload bez doklejania drugi raz', async () => {
+  const k = koperta([], { minScript: 'ma.17' });
+  const wersja = /var SCRIPT_VERSION = (\d+);/.exec(kodModulu)[1];
+  const adres = (p) => p.pobrania.filter((u) => u.indexOf('/scenario/') >= 0);
+  const d2 = await start({ koperta: k });
+  assert.equal(adres(d2)[0], 'https://digi2.app/api/ma/scenario/demo.json?s=ma.' + wersja + '&e=2destate');
+  const d3 = await start({ koperta: k, mapa: false, kontener: true });
+  assert.ok(adres(d3)[0].endsWith('&e=3destate'));
+  assert.ok(adres(await start({ koperta: k, mapa: false, skrypt3de: true }))[0].endsWith('&e=3destate'));
+  assert.ok(adres(await start({ koperta: k, mapa: false, skrypt2de: true }))[0].endsWith('&e=2destate'));
+  const zaden = await start({ koperta: k, mapa: false });
+  assert.ok(adres(zaden)[0].endsWith('&e=none'));
+  assert.equal(adres(zaden)[0].indexOf('visitor'), -1);
+
+  const zQuery = await start({ koperta: k, endpoint: 'https://digi2.app/api/ma/scenario/demo.json?site=a#x' });
+  assert.ok(adres(zQuery)[0].endsWith('?site=a&s=ma.' + wersja + '&e=2destate#x'));
+
+  await d2.ma.reload();
+  assert.equal(adres(d2)[1], adres(d2)[0], 'reload: jeden komplet parametrów');
+
+  const przedZgoda = await start({ koperta: Object.assign({}, k, { storage: { consentRequired: true, retentionDays: 90 } }) });
+  assert.equal(przedZgoda.ma.profile(), null, 'bez zgody magazyn zamknięty');
+  assert.ok(adres(przedZgoda)[0].indexOf('s=ma.') > 0, 'koperta idzie przed zgodą, bo niesie consentRequired');
+});
