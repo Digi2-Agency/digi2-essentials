@@ -1443,8 +1443,13 @@
         _warn('the product "' + key.slice(1) + '" could not be read (' + res.reason
           + ') — the reference goes to the API as the page wrote it');
         // A blip is not an answer: the next caller asks again instead of
-        // sending a slug for the rest of the visit. A 404 is an answer.
-        if (res.reason !== 'product_not_found') delete productAsked[key];
+        // sending a slug for the rest of the visit. A 404 is an answer, and a
+        // 429 said how long the question has to wait.
+        if (res.retryAfter > 0) {
+          setTimeout(function () { delete productAsked[key]; }, res.retryAfter * 1000);
+        } else if (res.reason !== 'product_not_found') {
+          delete productAsked[key];
+        }
       }
       productSeen[key] = data;
       return data;
@@ -1796,16 +1801,25 @@
     return stayState;
   }
 
-  // Another period is the way out of a `final` refusal, so picking one has to
-  // bring the button back. The state stays on the form: send() still refuses
-  // the very request that earned it, and lets any other through.
+  // Another period or another party is the way out of a `final` refusal, so
+  // either has to bring the button back. The state stays on the form: send()
+  // still refuses the very request that earned it, and lets any other through.
+  function reopenForm(form) {
+    if (form.getAttribute('d2-booking-payment') !== 'final') return;
+    var stay = stayFor(form);
+    if (!stay || !stay.product || !stay.starts_at) return;
+    var body = values(form);
+    body.unit = stay.unit || 'day';
+    body.starts_at = stay.starts_at;
+    body.units_count = stay.units_count || 1;
+    if (requestKey(stay.product, body) === form._d2BookingClosedKey) return;
+    showMessage(form, 'form', '');
+    lock(form, false);
+  }
+
   function reopenClosed() {
     var forms = formsOf();
-    for (var i = 0; i < forms.length; i++) {
-      if (forms[i].getAttribute('d2-booking-payment') !== 'final') continue;
-      showMessage(forms[i], 'form', '');
-      lock(forms[i], false);
-    }
+    for (var i = 0; i < forms.length; i++) reopenForm(forms[i]);
   }
 
   function stayFor(form) {
@@ -2486,9 +2500,13 @@
 
     // One window per month, kept for the visit: walking back and forth must not
     // ask the API (and its rate limit) for an answer we already have.
-    function loadMonth(firstDay) {
+    function loadMonth(firstDay, again) {
       var key = dayKey(firstDay).slice(0, 7);
-      if (state.windows[key]) return Promise.resolve(false);
+      // A month that failed is asked for again only when the guest comes back
+      // to it, never by the two calls start() makes for the same month.
+      if (state.windows[key] && !(again && state.windows[key] === 'failed')) {
+        return Promise.resolve(false);
+      }
       state.windows[key] = true;
       // A month wholly behind the earliest stay has nothing to tell us.
       if (state.rules && addMonths(firstDay, 1) <= earliest()) return Promise.resolve(false);
@@ -2508,8 +2526,7 @@
       }).then(function (res) {
         el.removeAttribute('d2-booking-busy');
         if (!res.ok) {
-          // Coming back to this month asks again: nothing was learned about it.
-          delete state.windows[key];
+          state.windows[key] = 'failed';
           // The page is not held hostage by the API: the month stays usable and
           // the backend refuses the stay on quote or on submit if it must.
           _warn('the availability window ' + key + ' could not be read (' + res.reason
@@ -2530,7 +2547,7 @@
     function goToMonth(firstDay, focusDay) {
       state.month = startOfMonth(firstDay);
       if (focusDay) state.focusDay = focusDay;
-      return loadMonth(state.month).then(function () {
+      return loadMonth(state.month, true).then(function () {
         render(!!focusDay);
       });
     }
@@ -3440,6 +3457,8 @@
         form._d2BookingAttempt = null;
         var expired = refusal('hold_expired', res.status);
         showMessage(form, 'form', expired.message);
+        announce(expired.message);
+        _emit('booking:refused', { reason: expired.reason, status: expired.status, form: form });
         lock(form, false);
         return expired;
       }
@@ -3546,6 +3565,8 @@
    * times a second.
    */
   var RETURN_DELAYS = [1000, 2000, 3000, 5000, 8000, 8000, 8000, 8000];
+  // A Retry-After can run to most of an hour, and this page has a guest on it.
+  var RETURN_MAX_WAIT_MS = 30000;
   // States that end well, so the sentence is not painted as a refusal.
   var RETURN_GOOD = { confirmed: 1, paid: 1, balance_paid: 1, pending: 1 };
 
@@ -3646,9 +3667,12 @@
       var blip = !res.ok && (res.status === 0 || res.status === 429 || res.status >= 500);
       if (blip && tries + 1 < RETURN_DELAYS.length) {
         setTimeout(function () { pollStatus(host, id, payment, cfg, tries + 1); },
-          Math.max(RETURN_DELAYS[tries], (res.retryAfter || 0) * 1000));
+          Math.min(RETURN_MAX_WAIT_MS, Math.max(RETURN_DELAYS[tries], (res.retryAfter || 0) * 1000)));
         return res;
       }
+      // Out of tries on a blip, with the payment already being checked: that
+      // sentence is still the truth, and the e-mail will carry the answer.
+      if (blip && lastReturn && lastReturn.state === 'checking') return res;
       if (!res.ok) {
         returnSay(host, 'error', res.message, null, null, cfg);
         lastReturn = { state: 'error', status: null };
@@ -5124,21 +5148,26 @@
   function bind(form) {
     if (form.getAttribute('d2-booking-bound') !== null) return;
     form.setAttribute('d2-booking-bound', '');
-    // Capture, and stopped there: Webflow listens for this event on the
-    // document and does not care about preventDefault, so a Form Block would
-    // also post the guest's details to Webflow Forms and hide itself behind
-    // the success box. stopPropagation and not stopImmediatePropagation: other
-    // capture listeners on this form (d2-forms validation) still have to run.
+    // Stopped here on the way up: Webflow listens for this event on the document
+    // and does not care about preventDefault, so a Form Block would also post
+    // the guest's details to Webflow Forms and hide itself behind the success
+    // box. Not in the capture phase on purpose: d2-forms blocks an invalid form
+    // there, and that has to stop the booking whichever module loaded first.
+    // The page's own listeners on this form still run.
     form.addEventListener('submit', function (e) {
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
       // Submit is the whole way: the booking and then the payment.
       checkout(form, stayFor(form));
-    }, true);
+    });
     // The party is part of the price, so a changed guest count asks again —
     // once the typing has settled, not once per keystroke.
-    form.addEventListener('input', scheduleQuote);
-    form.addEventListener('change', scheduleQuote);
+    function changed() {
+      reopenForm(form);
+      scheduleQuote();
+    }
+    form.addEventListener('input', changed);
+    form.addEventListener('change', changed);
   }
 
   function applyAll() {

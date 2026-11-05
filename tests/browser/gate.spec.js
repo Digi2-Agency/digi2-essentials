@@ -327,6 +327,25 @@ test.describe('booking: the drawn widget and the payment', () => {
     expect(await page.evaluate(() => window.reachedDocument)).toBe(0);
   });
 
+  test('a form d2-forms refuses in the capture phase books nothing', async ({ page }) => {
+    // The order the two modules loaded in must not matter, so the refusal is
+    // added last, after booking has long been bound.
+    await page.evaluate(() => {
+      window.bookingAsked = 0;
+      const realFetch = window.fetch;
+      window.fetch = function (url, init) {
+        if (init && init.method === 'POST') window.bookingAsked += 1;
+        return realFetch.apply(this, arguments);
+      };
+      const form = document.querySelector('[d2-booking-form]');
+      form.addEventListener('submit', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+      form.requestSubmit();
+    });
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.bookingAsked)).toBe(0);
+    await expect(page.locator('[d2-booking-form]')).not.toHaveAttribute('d2-booking-busy', '');
+  });
+
   test('an empty widget becomes a whole booking form', async ({ page }) => {
     // One of each, and every one of them drawn by the module.
     for (const part of ['[d2-booking-calendar]', '[d2-booking-status]', '[d2-booking-form]',

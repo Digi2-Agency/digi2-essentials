@@ -4521,6 +4521,12 @@ a lead of `0`, and 24 hours at 15:00 opens the day after tomorrow. It is counted
 in the rental's zone. The calendar can still go stale on an open page, which is
 why `lead_time_too_short` after submit has its own sentence too.
 
+**The submit stops on the form, not earlier.** Webflow listens on the document
+and ignores `preventDefault`, so the module calls `stopPropagation` in the bubble
+phase. Capture would be wrong: d2-forms refuses an invalid form there, and that
+has to stop the booking whichever module loaded first. The price is that a
+document-level `submit` listener, a GTM form trigger included, hears nothing.
+
 **The calendar only speaks nights.** `units_count` is counted in `unit`, so
 sending the first of `allowed_units` would book 3 nights as 3 months. It always
 sends `day`, and a product without `day` answers `unit_not_allowed` on every day.
