@@ -13,6 +13,7 @@
  *     d2-booking="pk_live_…"                        <!-- the site key -->
  *     d2-booking-api="https://api.2destate.com/api/v1"   <!-- optional -->
  *     d2-booking-product="<uuid|slug>"              <!-- optional, page default -->
+ *     d2-booking-lang="en"                          <!-- optional, see Languages -->
  *   ></script>
  *
  *   d2-booking="pk_…"            Site key. A public, non-secret string: the
@@ -30,6 +31,9 @@
  *                                ?apartament=<slug> off the address, which is
  *                                how one booking page serves a whole CMS
  *                                collection. An attribute always wins.
+ *   d2-booking-lang="<code>"     The language the guest reads, out of the ones
+ *                                the key allows. Optional: without it the key's
+ *                                default_language decides. See Languages.
  *
  * A reference is resolved once per visit through GET /products/<ref> — the
  * only route of the contract whose path takes a reference — and the id of
@@ -40,6 +44,61 @@
  * On start the module reads GET /config once and keeps the answer for the whole
  * page: which fields the form asks for, the languages, the oldest child age.
  * A /config that cannot be read never closes the form — the backend decides.
+ *
+ * ─── Languages ──────────────────────────────────────────────────────────────
+ *
+ * Every sentence a guest reads lives in a dictionary, one per language: a flat
+ * key → sentence table in the same shape as the portal's i18next JSON (owner's
+ * decision D7), so the same key can be grepped on both sides. This module
+ * cannot use i18next — it has no dependencies — so these small tables are the
+ * whole of its translation. Shipped: pl, en, de, uk — the four languages the
+ * portal starts with. Polish is the original wording, English was written
+ * beside it, and German and Ukrainian are machine translations awaiting a
+ * native reading (both are pinned by tests all the same). A counted word is
+ * one key per form and which form a number takes is the plural function OF
+ * THAT DICTIONARY, so Ukrainian keeps its own three-form rule.
+ *
+ *   d2-booking-lang="de"   The page asks for one language (loader tag, read
+ *                          with digi2.attr). <html lang> is the quieter version
+ *                          of the same question.
+ *
+ * Which language wins:
+ *
+ *   1. d2-booking-lang, when the key allows it and the module has a dictionary
+ *   2. <html lang>, under the same two conditions
+ *   3. the key's default_language from /config
+ *
+ * A language the key does not allow — or one no dictionary covers — is refused
+ * in favour of the default, and an explicit attribute refused that way says so
+ * in the console: half a page in German promises a service the owner cannot
+ * give. The default itself is held to the same rule: a default_language no
+ * dictionary covers falls back to pl (and says so once), so the sentences and
+ * every Intl format stay in one language. A key whose /config lists no
+ * languages at all is not policed (there is nothing to check against): the
+ * attribute stands and everything else stays as it was, on the key's default.
+ *
+ * The chosen language is also what goes out as the booking's `locale` (so the
+ * portal's e-mails match the page) and what every Intl format follows: the
+ * money, the percentages, the month names, the weekday names and which day a
+ * week starts on.
+ *
+ * A key missing from one dictionary is read in the next language of the chain
+ * (the asked language → the key's default → pl) instead of leaving a hole; a
+ * key no dictionary has at all is reported in the console and renders nothing,
+ * because a guest should never read "manage_label_nights". A sentence whose
+ * {placeholder} has no value answers null the same way, so the caller falls
+ * back to a sentence that needs none — never to a printed brace.
+ *
+ * A counted word is one key per form (nights_one / nights_few / nights_many in
+ * Polish, nights_one / nights_other in English) and the choice between them is
+ * the `plural` function of that dictionary, not of the lookup: a language whose
+ * rule is a third thing is one entry away. Counted today: nights and years
+ * (the child-age limit).
+ *
+ * The browser-side check of the form says its sentences out of the same tables,
+ * the four it writes itself included (adults_required, child_age_max,
+ * child_ages_count, too_many_pets_over_threshold): nothing a guest can read is
+ * a literal in the code.
  *
  * ─── The form ───────────────────────────────────────────────────────────────
  *
@@ -431,6 +490,11 @@
  *   digi2.booking.money(a, cur)      Amount in whole currency → guest text
  *   digi2.booking.moneyMinor(n, cur) Amount in minor units → guest text
  *   digi2.booking.message(reason)    Human sentence for a refusal reason
+ *   digi2.booking.language()         The language the guest reads right now
+ *   digi2.booking.text(key, vars)    One sentence out of the dictionary, with
+ *                                    its {placeholders} filled in
+ *   digi2.booking.texts(lang)        One language's own table (a copy), in the
+ *                                    flat shape the portal's files have
  *   digi2.booking.status(bookingId)  Read the status of a booking once
  *   digi2.booking.returned()         The last status the return block printed
  *   digi2.booking.managed()          The last manage answer (never the token)
@@ -532,204 +596,723 @@
   // A day as the filter spells one (products.json: check_in "2027-05-01").
   var DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-  // The guest-facing copy lives in one table; stage 8 swaps it for dictionaries.
-  var MESSAGES = {
-    required: 'Wypełnij to pole.',
-    email: 'Podaj adres e-mail w postaci jan@przyklad.pl.',
-    number: 'Podaj liczbę.',
-    form_invalid: 'Popraw zaznaczone pola.',
-    stay_required: 'Wybierz termin pobytu.',
-    key_missing: 'Rezerwacja nie jest tu jeszcze skonfigurowana.',
-    network_error: 'Brak połączenia z systemem rezerwacji. Sprawdź internet i spróbuj ponownie.',
-    bad_response: 'Coś poszło nie tak. Spróbuj ponownie za chwilę.',
-    server_error: 'Coś poszło nie tak po naszej stronie. Spróbuj ponownie za chwilę.',
-    request_refused: 'Nie udało się dokończyć rezerwacji. Spróbuj ponownie.',
-    site_key_not_found: 'Rezerwacja online jest niedostępna. Skontaktuj się z obiektem.',
-    origin_not_allowed: 'Rezerwacja online nie działa na tej stronie. Skontaktuj się z obiektem.',
-    product_not_found: 'Tego obiektu nie ma już w ofercie.',
-    booking_not_found: 'Ten link do rezerwacji jest nieważny lub wygasł. Nowy znajdziesz w e-mailu.',
-    field_required: 'To pole jest wymagane.',
-    field_invalid: 'Popraw tę odpowiedź.',
-    validation_error: 'Popraw zaznaczone pola.',
-    invalid_request: 'Nie możemy użyć tych danych. Sprawdź termin i dane, potem spróbuj ponownie.',
-    invalid_stay: 'Sprawdź daty pobytu.',
-    // The same 400, on a search that also named a city: the route's own
-    // sentence is for logs, and the guest cannot tell which half it was about.
-    invalid_search: 'Sprawdź daty i miejsce pobytu.',
-    request_too_large: 'Wiadomość jest za długa. Skróć uwagi i spróbuj ponownie.',
-    rental_rules: 'Tego pobytu nie można zarezerwować. Wybierz inny termin lub długość pobytu.',
-    period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
-    too_many_requests: 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
-    booking_not_payable: 'Ta rezerwacja nie czeka już na płatność.',
-    booking_already_paid: 'Ta rezerwacja jest już opłacona.',
-    balance_already_paid: 'Dopłata jest już zaksięgowana.',
-    balance_processing: 'Płatność jest w drodze. Odśwież stronę za chwilę.',
-    no_balance: 'Nie ma teraz nic do dopłaty.',
-    stripe_not_connected: 'Płatności nie są włączone w tym obiekcie. Skontaktuj się z nim.',
-    stripe_account_not_ready: 'Płatności nie są jeszcze gotowe w tym obiekcie. Skontaktuj się z nim.',
-    payment_provider_unavailable: 'Operator płatności jest chwilowo niedostępny. Spróbuj ponownie za chwilę.',
-    request_not_allowed: 'Tej prośby nie można teraz złożyć — rezerwacja jest zamknięta albo prośba już czeka na decyzję.',
-    request_already_waiting: 'Taka prośba już czeka na decyzję właściciela.',
-    // The pets question, explained. The threshold and the amount come from the
-    // product's pet_fee: the weight never enters the arithmetic, it is only the
-    // sentence the guest reads (KONTRAKT.md, the group composition section).
-    pet_fee_over: 'Zwierzę powyżej {kg} kg: {amount} za pobyt.',
-    pet_fee_over_night: 'Zwierzę powyżej {kg} kg: {amount} za każdą noc.',
-    pet_fee_flat: 'Dopłata za zwierzę: {amount} za pobyt.',
-    pet_fee_flat_night: 'Dopłata za zwierzę: {amount} za każdą noc.',
-    // Payment
-    payment_opening: 'Przenosimy Cię do płatności…',
-    booking_received: 'Rezerwacja przyjęta. Potwierdzenie wysłaliśmy na Twój e-mail.',
-    checkout_url_missing: 'Rezerwacja jest zapisana, ale nie udało się otworzyć płatności. Sprawdź e-mail albo spróbuj ponownie.',
-    // The return page — what became of the booking the guest just paid for
-    return_loading: 'Sprawdzamy Twoją rezerwację…',
-    return_checking: 'Płatność jest jeszcze sprawdzana. Potwierdzenie wyślemy na Twój e-mail.',
-    return_pending: 'Rezerwacja przyjęta i czeka na decyzję obiektu. Odpowiedź wyślemy na Twój e-mail.',
-    return_confirmed: 'Rezerwacja potwierdzona. Do zobaczenia!',
-    return_paid: 'Płatność zaksięgowana. Czekamy jeszcze na potwierdzenie od obiektu.',
-    return_rejected: 'Obiekt nie przyjął tej rezerwacji. Możesz wybrać inny termin.',
-    return_cancelled: 'Płatność nie została dokończona, więc ten termin wrócił do oferty.',
-    return_cancelled_hold: 'Płatność nie została dokończona. Termin trzymamy jeszcze chwilę — link do płatności masz w e-mailu.',
-    return_expired: 'Czas na opłacenie tej rezerwacji minął i termin wrócił do oferty.',
-    return_balance_paid: 'Dopłata zaksięgowana. Dziękujemy!',
-    return_balance_cancelled: 'Dopłata nie została dokończona. Link do niej masz w e-mailu.',
-    return_balance: 'Do dopłaty {amount} — termin: {date}.',
-    return_new_period: 'Wybierz nowy termin',
-    return_unknown: 'Nie wiemy, o którą rezerwację chodzi. Otwórz link z e-maila jeszcze raz.',
-    // The manage page — the booking through the token from the e-mail
-    manage_loading: 'Wczytujemy rezerwację…',
-    manage_account: 'Przejdź do swoich rezerwacji',
-    manage_balance: '{amount} — termin: {date}',
-    manage_balance_elsewhere: 'Dopłatę otworzysz linkiem „Dopłata” z e-maila.',
-    manage_pay_balance: 'Dopłać teraz',
-    manage_refund: 'Poproś o zwrot',
-    manage_change_date: 'Poproś o zmianę terminu',
-    manage_request_sent: 'Prośba zapisana. Decyzję podejmie obiekt i odezwie się do Ciebie.',
-    manage_date_required: 'Podaj nową datę przyjazdu.',
-    manage_label_product: 'Obiekt',
-    manage_label_dates: 'Termin',
-    manage_label_status: 'Stan rezerwacji',
-    manage_label_paid: 'Wpłacono',
-    manage_label_outstanding: 'Do zapłaty',
-    manage_label_refunded: 'Zwrócono',
-    manage_label_balance: 'Dopłata',
-    manage_label_phone: 'Telefon alarmowy',
-    manage_label_requests: 'Twoje prośby',
-    manage_label_new_date: 'Nowa data przyjazdu',
-    manage_label_nights: 'Liczba nocy',
-    manage_label_note: 'Uwagi dla obiektu',
-    // The look the module draws itself
-    submit_label: 'Zarezerwuj',
-    total_label: 'Razem',
-    deposit_label: 'Teraz:',
-    balance_label: '· później:',
-    child_ages_hint: 'np. 7, 10',
-    // What the price of a place is the price of. The contract's only unit is a
-    // day, and a day of a rental is a night (allowed_units, products.json); a
-    // unit this table does not know shows nothing rather than a bare code.
-    unit_day: 'za noc',
-    mark: 'Rezerwacje: digi2',
-    // The calendar, said out loud: every one of these reaches the guest
-    // through the live region or an aria-label.
-    calendar_loading: 'Sprawdzamy wolne terminy…',
-    calendar_pick: 'Wybierz datę przyjazdu.',
-    calendar_arrival: 'Przyjazd {date}. Teraz wybierz datę wyjazdu.',
-    calendar_range: 'Wybrany termin: {from} – {to}, {count} {nights}.',
-    calendar_prev: 'Poprzedni miesiąc',
-    calendar_next: 'Następny miesiąc',
-    day_busy: 'zajęte',
-    day_past: 'termin już niedostępny',
-    day_arrival: 'wybrany przyjazd',
-    day_departure: 'wybrany wyjazd',
-    day_in_range: 'w wybranym terminie',
-    day_can_depart: 'możliwy wyjazd',
-    day_today: 'dziś',
-    nights_one: 'noc',
-    nights_few: 'noce',
-    nights_many: 'nocy'
-  };
-  var GENERIC_MESSAGE = 'Nie udało się dokończyć rezerwacji. Spróbuj ponownie lub skontaktuj się z obiektem.';
   /**
-   * Availability codes (services/rental_availability.py), the language-
-   * independent part of a rental_rules refusal. The calendar refuses with the
-   * same codes, so the sentence a guest reads is the same whether the browser
-   * or the backend caught the rule.
+   * Every sentence a guest reads, one table per language.
    *
-   * Every key is a literal from the backend's VIOLATION_* constants
-   * (services/rental_availability.py) and is pinned by
-   * tests/fixtures/booking-api/errors.json — never guessed from the names of
-   * the fields the availability answer carries. A code this table does not know
-   * — and a sentence whose {placeholder} has no value — falls back to the
-   * generic rental_rules sentence, so no guest ever reads a raw code or a
-   * leftover brace.
+   * `texts` is flat: one key, one sentence, {placeholder} for the values the
+   * sentence needs — the same shape as the portal's i18next JSON, so a file
+   * can be read on either side and a key grepped in both. This module cannot
+   * use i18next (it has no dependencies at all), so these small tables are
+   * the whole of its translation.
    *
-   * `past` is the module's own, never the backend's: a day behind today is not
-   * a period somebody took, and telling the guest it was just taken would
-   * contradict the same square's aria-label.
+   * `plural` is that language's own rule: which of the counted forms a number
+   * takes (nights_one / nights_few / nights_many in Polish, nights_one /
+   * nights_other in English). It belongs to the language, not to the lookup —
+   * a language whose rule is a third thing is then one entry away.
+   *
+   * The Polish wording is the original and the one the tests pin literally:
+   * it is the contract of what a guest reads, so a translation is added
+   * beside it and never on top of it.
+   *
+   * Which language a guest gets: the key decides what is on offer (/config
+   * carries `languages` and `default_language`) and the page may ask for one
+   * of them with d2-booking-lang — see pageLanguage.
    */
-  var VIOLATION_MESSAGES = {
-    past: 'Ten dzień już minął. Wybierz późniejszą datę.',
-    product_not_bookable: 'Ten obiekt nie przyjmuje teraz rezerwacji.',
-    unit_not_allowed: 'Taki pobyt nie jest tu dostępny.',
-    below_min_units: 'Najkrótszy pobyt to {min} {min_nights}.',
-    above_max_units: 'Najdłuższy pobyt to {max} {max_nights}.',
-    lead_time_too_short: 'Ten termin jest już za blisko. Wybierz późniejszy.',
-    blackout_overlap: 'W tym terminie obiekt nie przyjmuje gości.',
-    period_taken: MESSAGES.period_taken,
-    buffer_conflict: 'Między pobytami musi zostać przerwa. Wybierz termin dzień dalej.',
-    no_price_for_unit: 'Nie da się wycenić tego pobytu. Wybierz inny termin lub długość pobytu.',
-    too_many_guests: 'Za dużo osób na ten obiekt. Zmniejsz liczbę gości.'
-  };
-  // One row of the price, by kind (contract: base, season, weekend,
-  // season_weekend, extra_guest_fee, pet_fee, cleaning_fee, length_discount).
-  // A `label` in the answer always wins, and an unknown kind is shown by it.
-  var LINE_LABELS = {
-    base: 'Pobyt',
-    season: 'Pobyt w sezonie',
-    weekend: 'Weekend',
-    season_weekend: 'Weekend w sezonie',
-    extra_guest_fee: 'Dopłata za osobę',
-    pet_fee: 'Zwierzę',
-    cleaning_fee: 'Sprzątanie',
-    length_discount: 'Rabat za długość pobytu'
-  };
-  /**
-   * The booking state, as the guest reads it. Only the states the contract
-   * names (fixtures and KONTRAKT.md) are in here; a state we do not know shows
-   * no label at all, because the dates and the amounts beside it already say
-   * what matters and an English code says nothing.
-   */
-  var STATUS_LABELS = {
-    awaiting_payment: 'Czeka na płatność',
-    pending: 'Czeka na decyzję obiektu',
-    paid: 'Opłacona',
-    confirmed: 'Potwierdzona',
-    rejected: 'Odrzucona',
-    cancelled: 'Anulowana',
-    expired: 'Wygasła'
-  };
-  // A guest request: its kind and where it stands (contract: refund |
-  // date_change, pending | accepted | rejected | withdrawn).
-  var REQUEST_KINDS = { refund: 'Zwrot', date_change: 'Zmiana terminu' };
-  var REQUEST_STATES = {
-    pending: 'czeka na decyzję',
-    accepted: 'przyjęta',
-    rejected: 'odrzucona',
-    withdrawn: 'wycofana'
-  };
-
-  // The label over each field of the form the module draws itself. A Designer
-  // who builds the form writes their own labels and never sees these.
-  var FIELD_LABELS = {
-    name: 'Imię i nazwisko',
-    email: 'E-mail',
-    phone: 'Telefon',
-    adults: 'Dorośli',
-    children: 'Dzieci',
-    child_ages: 'Wiek dzieci',
-    pets: 'Zwierzęta',
-    pets_over_threshold: 'Powyżej progu wagi',
-    note: 'Uwagi'
+  var BASE_LANGUAGE = 'pl';
+  var DICTIONARIES = {
+    pl: {
+      // 1 noc, 2 noce, 5 nocy — Polish counts the thing it counts.
+      plural: function (count) {
+        var n = Math.abs(Number(count) || 0);
+        var last = n % 10;
+        var teen = n % 100;
+        if (n === 1) return 'one';
+        if (last >= 2 && last <= 4 && (teen < 12 || teen > 14)) return 'few';
+        return 'many';
+      },
+      texts: {
+        // The browser-side check of the form
+        required: 'Wypełnij to pole.',
+        email: 'Podaj adres e-mail w postaci jan@przyklad.pl.',
+        number: 'Podaj liczbę.',
+        form_invalid: 'Popraw zaznaczone pola.',
+        stay_required: 'Wybierz termin pobytu.',
+        // Children count into the party (guests is the sum), an age list has
+        // to be as long as the number of children, and a pet over the weight
+        // threshold is one of the pets — so these three are sentences too.
+        adults_required: 'Podaj liczbę dorosłych — dzieci liczą się razem z nimi.',
+        child_age_max: 'Wiek dziecka nie może być większy niż {max} {years}.',
+        child_ages_count: 'Podaj wiek każdego dziecka — {count} razem.',
+        too_many_pets_over_threshold: 'Nie może być więcej zwierząt powyżej progu wagi niż zwierząt.',
+        // Refusals, by the reason the contract names (never by the message)
+        key_missing: 'Rezerwacja nie jest tu jeszcze skonfigurowana.',
+        network_error: 'Brak połączenia z systemem rezerwacji. Sprawdź internet i spróbuj ponownie.',
+        bad_response: 'Coś poszło nie tak. Spróbuj ponownie za chwilę.',
+        server_error: 'Coś poszło nie tak po naszej stronie. Spróbuj ponownie za chwilę.',
+        request_refused: 'Nie udało się dokończyć rezerwacji. Spróbuj ponownie.',
+        site_key_not_found: 'Rezerwacja online jest niedostępna. Skontaktuj się z obiektem.',
+        origin_not_allowed: 'Rezerwacja online nie działa na tej stronie. Skontaktuj się z obiektem.',
+        product_not_found: 'Tego obiektu nie ma już w ofercie.',
+        booking_not_found: 'Ten link do rezerwacji jest nieważny lub wygasł. Nowy znajdziesz w e-mailu.',
+        field_required: 'To pole jest wymagane.',
+        field_invalid: 'Popraw tę odpowiedź.',
+        validation_error: 'Popraw zaznaczone pola.',
+        invalid_request: 'Nie możemy użyć tych danych. Sprawdź termin i dane, potem spróbuj ponownie.',
+        invalid_stay: 'Sprawdź daty pobytu.',
+        // The same 400, on a search that also named a city: the route's own
+        // sentence is for logs, and the guest cannot tell which half it was about.
+        invalid_search: 'Sprawdź daty i miejsce pobytu.',
+        request_too_large: 'Wiadomość jest za długa. Skróć uwagi i spróbuj ponownie.',
+        rental_rules: 'Tego pobytu nie można zarezerwować. Wybierz inny termin lub długość pobytu.',
+        period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
+        too_many_requests: 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
+        // The same refusal when the limit said exactly how long to wait.
+        too_many_requests_in: 'Zbyt wiele prób. Spróbuj ponownie za {seconds} s.',
+        booking_not_payable: 'Ta rezerwacja nie czeka już na płatność.',
+        booking_already_paid: 'Ta rezerwacja jest już opłacona.',
+        balance_already_paid: 'Dopłata jest już zaksięgowana.',
+        balance_processing: 'Płatność jest w drodze. Odśwież stronę za chwilę.',
+        no_balance: 'Nie ma teraz nic do dopłaty.',
+        stripe_not_connected: 'Płatności nie są włączone w tym obiekcie. Skontaktuj się z nim.',
+        stripe_account_not_ready: 'Płatności nie są jeszcze gotowe w tym obiekcie. Skontaktuj się z nim.',
+        payment_provider_unavailable: 'Operator płatności jest chwilowo niedostępny. Spróbuj ponownie za chwilę.',
+        request_not_allowed: 'Tej prośby nie można teraz złożyć — rezerwacja jest zamknięta albo prośba już czeka na decyzję.',
+        request_already_waiting: 'Taka prośba już czeka na decyzję właściciela.',
+        // The sentence left when the reason is one we have no words for.
+        generic: 'Nie udało się dokończyć rezerwacji. Spróbuj ponownie lub skontaktuj się z obiektem.',
+        /**
+         * Availability codes (services/rental_availability.py), the
+         * language-independent part of a rental_rules refusal: violation_ plus
+         * the backend's own VIOLATION_* literal, pinned by
+         * tests/fixtures/booking-api/errors.json and never guessed from the
+         * names of the fields the availability answer carries. The calendar
+         * refuses with the same codes, so the sentence is the same whether the
+         * browser or the backend caught the rule. A code no dictionary has —
+         * and a sentence whose {placeholder} has no value — falls back to
+         * rental_rules, so no guest reads a raw code or a leftover brace.
+         *
+         * `violation_past` is the module's own, never the backend's: a day
+         * behind today is not a period somebody took, and telling the guest it
+         * was just taken would contradict the same square's aria-label.
+         */
+        violation_past: 'Ten dzień już minął. Wybierz późniejszą datę.',
+        violation_product_not_bookable: 'Ten obiekt nie przyjmuje teraz rezerwacji.',
+        violation_unit_not_allowed: 'Taki pobyt nie jest tu dostępny.',
+        violation_below_min_units: 'Najkrótszy pobyt to {min} {min_nights}.',
+        violation_above_max_units: 'Najdłuższy pobyt to {max} {max_nights}.',
+        violation_lead_time_too_short: 'Ten termin jest już za blisko. Wybierz późniejszy.',
+        violation_blackout_overlap: 'W tym terminie obiekt nie przyjmuje gości.',
+        // The same sentence as the refusal reason above it, said about the
+        // same thing: the two are one word apart in the dictionary and a
+        // translator sees both where they are used.
+        violation_period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
+        violation_buffer_conflict: 'Między pobytami musi zostać przerwa. Wybierz termin dzień dalej.',
+        violation_no_price_for_unit: 'Nie da się wycenić tego pobytu. Wybierz inny termin lub długość pobytu.',
+        violation_too_many_guests: 'Za dużo osób na ten obiekt. Zmniejsz liczbę gości.',
+        // The pets question, explained. The threshold and the amount come from
+        // the product's pet_fee: the weight never enters the arithmetic, it is
+        // only the sentence the guest reads (KONTRAKT.md, the group
+        // composition section).
+        pet_fee_over: 'Zwierzę powyżej {kg} kg: {amount} za pobyt.',
+        pet_fee_over_night: 'Zwierzę powyżej {kg} kg: {amount} za każdą noc.',
+        pet_fee_flat: 'Dopłata za zwierzę: {amount} za pobyt.',
+        pet_fee_flat_night: 'Dopłata za zwierzę: {amount} za każdą noc.',
+        // Payment
+        payment_opening: 'Przenosimy Cię do płatności…',
+        booking_received: 'Rezerwacja przyjęta. Potwierdzenie wysłaliśmy na Twój e-mail.',
+        checkout_url_missing: 'Rezerwacja jest zapisana, ale nie udało się otworzyć płatności. Sprawdź e-mail albo spróbuj ponownie.',
+        // The return page — what became of the booking the guest just paid for
+        return_loading: 'Sprawdzamy Twoją rezerwację…',
+        return_checking: 'Płatność jest jeszcze sprawdzana. Potwierdzenie wyślemy na Twój e-mail.',
+        return_pending: 'Rezerwacja przyjęta i czeka na decyzję obiektu. Odpowiedź wyślemy na Twój e-mail.',
+        return_confirmed: 'Rezerwacja potwierdzona. Do zobaczenia!',
+        return_paid: 'Płatność zaksięgowana. Czekamy jeszcze na potwierdzenie od obiektu.',
+        return_rejected: 'Obiekt nie przyjął tej rezerwacji. Możesz wybrać inny termin.',
+        return_cancelled: 'Płatność nie została dokończona, więc ten termin wrócił do oferty.',
+        return_cancelled_hold: 'Płatność nie została dokończona. Termin trzymamy jeszcze chwilę — link do płatności masz w e-mailu.',
+        return_expired: 'Czas na opłacenie tej rezerwacji minął i termin wrócił do oferty.',
+        return_balance_paid: 'Dopłata zaksięgowana. Dziękujemy!',
+        return_balance_cancelled: 'Dopłata nie została dokończona. Link do niej masz w e-mailu.',
+        return_balance: 'Do dopłaty {amount} — termin: {date}.',
+        return_new_period: 'Wybierz nowy termin',
+        return_unknown: 'Nie wiemy, o którą rezerwację chodzi. Otwórz link z e-maila jeszcze raz.',
+        // The manage page — the booking through the token from the e-mail
+        manage_loading: 'Wczytujemy rezerwację…',
+        manage_account: 'Przejdź do swoich rezerwacji',
+        manage_balance: '{amount} — termin: {date}',
+        manage_balance_elsewhere: 'Dopłatę otworzysz linkiem „Dopłata” z e-maila.',
+        manage_pay_balance: 'Dopłać teraz',
+        manage_refund: 'Poproś o zwrot',
+        manage_change_date: 'Poproś o zmianę terminu',
+        manage_request_sent: 'Prośba zapisana. Decyzję podejmie obiekt i odezwie się do Ciebie.',
+        manage_date_required: 'Podaj nową datę przyjazdu.',
+        manage_label_product: 'Obiekt',
+        manage_label_dates: 'Termin',
+        manage_label_status: 'Stan rezerwacji',
+        manage_label_paid: 'Wpłacono',
+        manage_label_refunded: 'Zwrócono',
+        manage_label_balance: 'Dopłata',
+        manage_label_phone: 'Telefon alarmowy',
+        manage_label_new_date: 'Nowa data przyjazdu',
+        manage_label_nights: 'Liczba nocy',
+        manage_label_note: 'Uwagi dla obiektu',
+        /**
+         * The booking state, as the guest reads it. Only the states the
+         * contract names (fixtures and KONTRAKT.md) are in here; a state no
+         * dictionary knows shows no label at all, because the dates and the
+         * amounts beside it already say what matters and an English code says
+         * nothing.
+         */
+        status_awaiting_payment: 'Czeka na płatność',
+        status_pending: 'Czeka na decyzję obiektu',
+        status_paid: 'Opłacona',
+        status_confirmed: 'Potwierdzona',
+        status_rejected: 'Odrzucona',
+        status_cancelled: 'Anulowana',
+        status_expired: 'Wygasła',
+        // A guest request: its kind and where it stands (contract: refund |
+        // date_change, pending | accepted | rejected | withdrawn).
+        request_kind_refund: 'Zwrot',
+        request_kind_date_change: 'Zmiana terminu',
+        request_state_pending: 'czeka na decyzję',
+        request_state_accepted: 'przyjęta',
+        request_state_rejected: 'odrzucona',
+        request_state_withdrawn: 'wycofana',
+        // One row of the price, by kind (contract: base, season, weekend,
+        // season_weekend, extra_guest_fee, pet_fee, cleaning_fee,
+        // length_discount). A `label` in the answer always wins, and a kind no
+        // dictionary knows is shown by it.
+        line_base: 'Pobyt',
+        line_season: 'Pobyt w sezonie',
+        line_weekend: 'Weekend',
+        line_season_weekend: 'Weekend w sezonie',
+        line_extra_guest_fee: 'Dopłata za osobę',
+        line_pet_fee: 'Zwierzę',
+        line_cleaning_fee: 'Sprzątanie',
+        line_length_discount: 'Rabat za długość pobytu',
+        // The label over each field of the form the module draws itself. A
+        // Designer who builds the form writes their own labels and never sees
+        // these.
+        field_name: 'Imię i nazwisko',
+        field_email: 'E-mail',
+        field_phone: 'Telefon',
+        field_adults: 'Dorośli',
+        field_children: 'Dzieci',
+        field_child_ages: 'Wiek dzieci',
+        field_pets: 'Zwierzęta',
+        field_pets_over_threshold: 'Powyżej progu wagi',
+        field_note: 'Uwagi',
+        // The look the module draws itself
+        submit_label: 'Zarezerwuj',
+        total_label: 'Razem',
+        deposit_label: 'Teraz:',
+        balance_label: '· później:',
+        child_ages_hint: 'np. 7, 10',
+        mark: 'Rezerwacje: digi2',
+        // What the price of a place is the price of. The contract's only unit
+        // is a day, and a day of a rental is a night (allowed_units,
+        // products.json); a unit no dictionary knows shows nothing rather than
+        // a bare code.
+        unit_day: 'za noc',
+        // The calendar, said out loud: every one of these reaches the guest
+        // through the live region or an aria-label.
+        calendar_loading: 'Sprawdzamy wolne terminy…',
+        calendar_pick: 'Wybierz datę przyjazdu.',
+        calendar_arrival: 'Przyjazd {date}. Teraz wybierz datę wyjazdu.',
+        calendar_range: 'Wybrany termin: {from} – {to}, {count} {nights}.',
+        calendar_prev: 'Poprzedni miesiąc',
+        calendar_next: 'Następny miesiąc',
+        day_busy: 'zajęte',
+        day_past: 'termin już niedostępny',
+        day_arrival: 'wybrany przyjazd',
+        day_departure: 'wybrany wyjazd',
+        day_in_range: 'w wybranym terminie',
+        day_can_depart: 'możliwy wyjazd',
+        day_today: 'dziś',
+        nights_one: 'noc',
+        nights_few: 'noce',
+        nights_many: 'nocy',
+        years_one: 'rok',
+        years_few: 'lata',
+        years_many: 'lat'
+      }
+    },
+    en: {
+      // One night, two nights — English counts in two forms.
+      plural: function (count) {
+        return Math.abs(Number(count) || 0) === 1 ? 'one' : 'other';
+      },
+      texts: {
+        required: 'Please fill in this field.',
+        email: 'Enter an e-mail address like john@example.com.',
+        number: 'Enter a number.',
+        form_invalid: 'Please correct the marked fields.',
+        stay_required: 'Choose the dates of your stay.',
+        adults_required: 'Enter the number of adults — children count together with them.',
+        child_age_max: 'A child cannot be older than {max} {years}.',
+        child_ages_count: 'Give an age for every child — {count} in all.',
+        too_many_pets_over_threshold: 'There cannot be more pets over the weight threshold than pets.',
+        key_missing: 'Booking is not set up here yet.',
+        network_error: 'No connection to the booking system. Check your internet and try again.',
+        bad_response: 'Something went wrong. Please try again in a moment.',
+        server_error: 'Something went wrong on our side. Please try again in a moment.',
+        request_refused: 'The booking could not be completed. Please try again.',
+        site_key_not_found: 'Online booking is unavailable. Please contact the property.',
+        origin_not_allowed: 'Online booking does not work on this page. Please contact the property.',
+        product_not_found: 'This place is no longer on offer.',
+        booking_not_found: 'This booking link is invalid or has expired. You will find a new one in your e-mail.',
+        field_required: 'This field is required.',
+        field_invalid: 'Please correct this answer.',
+        validation_error: 'Please correct the marked fields.',
+        invalid_request: 'We cannot use these details. Check the dates and your details, then try again.',
+        invalid_stay: 'Check the dates of your stay.',
+        invalid_search: 'Check the dates and the place.',
+        request_too_large: 'Your message is too long. Shorten the notes and try again.',
+        rental_rules: 'This stay cannot be booked. Choose other dates or a different length of stay.',
+        period_taken: 'These dates have just been taken. Please choose others.',
+        too_many_requests: 'Too many attempts. Please try again in a moment.',
+        too_many_requests_in: 'Too many attempts. Please try again in {seconds} s.',
+        booking_not_payable: 'This booking is no longer waiting for payment.',
+        booking_already_paid: 'This booking has already been paid.',
+        balance_already_paid: 'The balance has already been settled.',
+        balance_processing: 'The payment is on its way. Refresh the page in a moment.',
+        no_balance: 'There is nothing left to pay right now.',
+        stripe_not_connected: 'Payments are not switched on at this property. Please contact them.',
+        stripe_account_not_ready: 'Payments are not ready at this property yet. Please contact them.',
+        payment_provider_unavailable: 'The payment provider is temporarily unavailable. Please try again in a moment.',
+        request_not_allowed: 'This request cannot be made now — the booking is closed, or a request is already waiting for a decision.',
+        request_already_waiting: 'A request like this is already waiting for the owner to decide.',
+        generic: 'The booking could not be completed. Please try again or contact the property.',
+        violation_past: 'This day is already behind us. Choose a later date.',
+        violation_product_not_bookable: 'This place is not taking bookings right now.',
+        violation_unit_not_allowed: 'A stay like this is not available here.',
+        violation_below_min_units: 'The shortest stay is {min} {min_nights}.',
+        violation_above_max_units: 'The longest stay is {max} {max_nights}.',
+        violation_lead_time_too_short: 'These dates are too close now. Choose later ones.',
+        violation_blackout_overlap: 'The property is not taking guests on these dates.',
+        violation_period_taken: 'These dates have just been taken. Please choose others.',
+        violation_buffer_conflict: 'A gap is needed between stays. Choose dates a day further out.',
+        violation_no_price_for_unit: 'This stay cannot be priced. Choose other dates or a different length of stay.',
+        violation_too_many_guests: 'Too many people for this place. Please reduce the number of guests.',
+        pet_fee_over: 'Pet over {kg} kg: {amount} per stay.',
+        pet_fee_over_night: 'Pet over {kg} kg: {amount} per night.',
+        pet_fee_flat: 'Pet fee: {amount} per stay.',
+        pet_fee_flat_night: 'Pet fee: {amount} per night.',
+        payment_opening: 'Taking you to the payment…',
+        booking_received: 'Booking received. We have sent the confirmation to your e-mail.',
+        checkout_url_missing: 'Your booking is saved, but the payment could not be opened. Check your e-mail or try again.',
+        return_loading: 'Checking your booking…',
+        return_checking: 'The payment is still being checked. We will send the confirmation to your e-mail.',
+        return_pending: 'Booking received and waiting for the property to decide. We will send their answer to your e-mail.',
+        return_confirmed: 'Booking confirmed. See you soon!',
+        return_paid: 'Payment settled. We are still waiting for the property to confirm.',
+        return_rejected: 'The property did not take this booking. You can choose other dates.',
+        return_cancelled: 'The payment was not completed, so these dates are back on offer.',
+        return_cancelled_hold: 'The payment was not completed. We are holding the dates a little longer — the payment link is in your e-mail.',
+        return_expired: 'The time to pay for this booking has passed and the dates are back on offer.',
+        return_balance_paid: 'The balance has been settled. Thank you!',
+        return_balance_cancelled: 'The balance payment was not completed. The link to it is in your e-mail.',
+        return_balance: 'Left to pay {amount} — by {date}.',
+        return_new_period: 'Choose new dates',
+        return_unknown: 'We do not know which booking this is. Please open the link from your e-mail again.',
+        manage_loading: 'Loading your booking…',
+        manage_account: 'Go to your bookings',
+        manage_balance: '{amount} — by {date}',
+        manage_balance_elsewhere: 'You can open the balance payment with the “Balance” link from your e-mail.',
+        manage_pay_balance: 'Pay the balance now',
+        manage_refund: 'Ask for a refund',
+        manage_change_date: 'Ask to change the dates',
+        manage_request_sent: 'Your request is saved. The property will decide and get back to you.',
+        manage_date_required: 'Enter the new arrival date.',
+        manage_label_product: 'Place',
+        manage_label_dates: 'Dates',
+        manage_label_status: 'Booking status',
+        manage_label_paid: 'Paid',
+        manage_label_refunded: 'Refunded',
+        manage_label_balance: 'Balance',
+        manage_label_phone: 'Emergency phone',
+        manage_label_new_date: 'New arrival date',
+        manage_label_nights: 'Number of nights',
+        manage_label_note: 'Notes for the property',
+        status_awaiting_payment: 'Waiting for payment',
+        status_pending: 'Waiting for the property to decide',
+        status_paid: 'Paid',
+        status_confirmed: 'Confirmed',
+        status_rejected: 'Rejected',
+        status_cancelled: 'Cancelled',
+        status_expired: 'Expired',
+        request_kind_refund: 'Refund',
+        request_kind_date_change: 'Date change',
+        request_state_pending: 'waiting for a decision',
+        request_state_accepted: 'accepted',
+        request_state_rejected: 'rejected',
+        request_state_withdrawn: 'withdrawn',
+        line_base: 'Stay',
+        line_season: 'Stay in season',
+        line_weekend: 'Weekend',
+        line_season_weekend: 'Weekend in season',
+        line_extra_guest_fee: 'Extra guest fee',
+        line_pet_fee: 'Pet',
+        line_cleaning_fee: 'Cleaning',
+        line_length_discount: 'Length-of-stay discount',
+        field_name: 'Full name',
+        field_email: 'E-mail',
+        field_phone: 'Phone',
+        field_adults: 'Adults',
+        field_children: 'Children',
+        field_child_ages: 'Ages of the children',
+        field_pets: 'Pets',
+        field_pets_over_threshold: 'Over the weight threshold',
+        field_note: 'Notes',
+        submit_label: 'Book now',
+        total_label: 'Total',
+        deposit_label: 'Now:',
+        balance_label: '· later:',
+        child_ages_hint: 'e.g. 7, 10',
+        mark: 'Bookings: digi2',
+        unit_day: 'per night',
+        calendar_loading: 'Checking which dates are free…',
+        calendar_pick: 'Choose your arrival date.',
+        calendar_arrival: 'Arrival {date}. Now choose your departure date.',
+        calendar_range: 'Chosen dates: {from} – {to}, {count} {nights}.',
+        calendar_prev: 'Previous month',
+        calendar_next: 'Next month',
+        day_busy: 'taken',
+        day_past: 'no longer available',
+        day_arrival: 'chosen arrival',
+        day_departure: 'chosen departure',
+        day_in_range: 'within the chosen dates',
+        day_can_depart: 'possible departure',
+        day_today: 'today',
+        nights_one: 'night',
+        nights_other: 'nights',
+        years_one: 'year',
+        years_other: 'years'
+      }
+    },
+    /**
+     * German and Ukrainian are MACHINE TRANSLATIONS of the Polish original,
+     * waiting for a native reading (CHANGELOG says so too). They are pinned by
+     * the tests all the same: the reading that comes has to be a deliberate
+     * change of a sentence, not a quiet drift. German is addressed formally
+     * ("Sie") and Ukrainian too ("ви"), which is the register a guest expects
+     * from a property in those languages; the Polish original is informal
+     * because Polish web copy is.
+     */
+    de: {
+      // Eine Nacht, zwei Nächte — German counts in two forms, like English.
+      plural: function (count) {
+        return Math.abs(Number(count) || 0) === 1 ? 'one' : 'other';
+      },
+      texts: {
+        required: 'Bitte füllen Sie dieses Feld aus.',
+        email: 'Geben Sie eine E-Mail-Adresse wie max@beispiel.de ein.',
+        number: 'Geben Sie eine Zahl ein.',
+        form_invalid: 'Bitte korrigieren Sie die markierten Felder.',
+        stay_required: 'Wählen Sie den Zeitraum Ihres Aufenthalts.',
+        adults_required: 'Geben Sie die Zahl der Erwachsenen an — Kinder zählen mit.',
+        child_age_max: 'Ein Kind darf nicht älter als {max} {years} sein.',
+        child_ages_count: 'Geben Sie das Alter jedes Kindes an — {count} insgesamt.',
+        too_many_pets_over_threshold: 'Über der Gewichtsgrenze dürfen nicht mehr Haustiere sein als insgesamt.',
+        key_missing: 'Die Buchung ist hier noch nicht eingerichtet.',
+        network_error: 'Keine Verbindung zum Buchungssystem. Prüfen Sie Ihr Internet und versuchen Sie es erneut.',
+        bad_response: 'Etwas ist schiefgelaufen. Versuchen Sie es in einem Moment erneut.',
+        server_error: 'Etwas ist auf unserer Seite schiefgelaufen. Versuchen Sie es in einem Moment erneut.',
+        request_refused: 'Die Buchung konnte nicht abgeschlossen werden. Versuchen Sie es erneut.',
+        site_key_not_found: 'Die Online-Buchung ist nicht verfügbar. Wenden Sie sich an die Unterkunft.',
+        origin_not_allowed: 'Die Online-Buchung funktioniert auf dieser Seite nicht. Wenden Sie sich an die Unterkunft.',
+        product_not_found: 'Diese Unterkunft ist nicht mehr im Angebot.',
+        booking_not_found: 'Dieser Buchungslink ist ungültig oder abgelaufen. Einen neuen finden Sie in Ihrer E-Mail.',
+        field_required: 'Dieses Feld ist erforderlich.',
+        field_invalid: 'Korrigieren Sie diese Angabe.',
+        validation_error: 'Bitte korrigieren Sie die markierten Felder.',
+        invalid_request: 'Diese Angaben können wir nicht verwenden. Prüfen Sie den Zeitraum und Ihre Daten und versuchen Sie es erneut.',
+        invalid_stay: 'Prüfen Sie den Zeitraum Ihres Aufenthalts.',
+        invalid_search: 'Prüfen Sie den Zeitraum und den Ort.',
+        request_too_large: 'Ihre Nachricht ist zu lang. Kürzen Sie die Anmerkungen und versuchen Sie es erneut.',
+        rental_rules: 'Dieser Aufenthalt kann nicht gebucht werden. Wählen Sie einen anderen Zeitraum oder eine andere Aufenthaltsdauer.',
+        period_taken: 'Dieser Zeitraum wurde gerade belegt. Wählen Sie einen anderen.',
+        too_many_requests: 'Zu viele Versuche. Versuchen Sie es in einem Moment erneut.',
+        too_many_requests_in: 'Zu viele Versuche. Versuchen Sie es in {seconds} s erneut.',
+        booking_not_payable: 'Diese Buchung wartet nicht mehr auf eine Zahlung.',
+        booking_already_paid: 'Diese Buchung ist bereits bezahlt.',
+        balance_already_paid: 'Die Restzahlung ist bereits verbucht.',
+        balance_processing: 'Die Zahlung ist unterwegs. Laden Sie die Seite in einem Moment neu.',
+        no_balance: 'Es ist derzeit nichts nachzuzahlen.',
+        stripe_not_connected: 'Zahlungen sind in dieser Unterkunft nicht aktiviert. Wenden Sie sich an sie.',
+        stripe_account_not_ready: 'Zahlungen sind in dieser Unterkunft noch nicht bereit. Wenden Sie sich an sie.',
+        payment_provider_unavailable: 'Der Zahlungsanbieter ist vorübergehend nicht verfügbar. Versuchen Sie es in einem Moment erneut.',
+        request_not_allowed: 'Diese Anfrage ist jetzt nicht möglich — die Buchung ist abgeschlossen oder eine Anfrage wartet bereits auf eine Entscheidung.',
+        request_already_waiting: 'Eine solche Anfrage wartet bereits auf die Entscheidung des Gastgebers.',
+        generic: 'Die Buchung konnte nicht abgeschlossen werden. Versuchen Sie es erneut oder wenden Sie sich an die Unterkunft.',
+        violation_past: 'Dieser Tag ist schon vorbei. Wählen Sie ein späteres Datum.',
+        violation_product_not_bookable: 'Diese Unterkunft nimmt derzeit keine Buchungen an.',
+        violation_unit_not_allowed: 'Ein solcher Aufenthalt ist hier nicht möglich.',
+        violation_below_min_units: 'Der kürzeste Aufenthalt beträgt {min} {min_nights}.',
+        violation_above_max_units: 'Der längste Aufenthalt beträgt {max} {max_nights}.',
+        violation_lead_time_too_short: 'Dieser Zeitraum liegt schon zu nah. Wählen Sie einen späteren.',
+        violation_blackout_overlap: 'In diesem Zeitraum nimmt die Unterkunft keine Gäste auf.',
+        violation_period_taken: 'Dieser Zeitraum wurde gerade belegt. Wählen Sie einen anderen.',
+        violation_buffer_conflict: 'Zwischen zwei Aufenthalten muss eine Pause bleiben. Wählen Sie einen Zeitraum einen Tag weiter.',
+        violation_no_price_for_unit: 'Dieser Aufenthalt lässt sich nicht berechnen. Wählen Sie einen anderen Zeitraum oder eine andere Aufenthaltsdauer.',
+        violation_too_many_guests: 'Zu viele Personen für diese Unterkunft. Verringern Sie die Zahl der Gäste.',
+        pet_fee_over: 'Haustier über {kg} kg: {amount} pro Aufenthalt.',
+        pet_fee_over_night: 'Haustier über {kg} kg: {amount} pro Nacht.',
+        pet_fee_flat: 'Haustiergebühr: {amount} pro Aufenthalt.',
+        pet_fee_flat_night: 'Haustiergebühr: {amount} pro Nacht.',
+        payment_opening: 'Wir leiten Sie zur Zahlung weiter…',
+        booking_received: 'Buchung erhalten. Die Bestätigung haben wir an Ihre E-Mail geschickt.',
+        checkout_url_missing: 'Ihre Buchung ist gespeichert, aber die Zahlung konnte nicht geöffnet werden. Prüfen Sie Ihre E-Mail oder versuchen Sie es erneut.',
+        return_loading: 'Wir prüfen Ihre Buchung…',
+        return_checking: 'Die Zahlung wird noch geprüft. Die Bestätigung schicken wir an Ihre E-Mail.',
+        return_pending: 'Buchung erhalten und wartet auf die Entscheidung der Unterkunft. Die Antwort schicken wir an Ihre E-Mail.',
+        return_confirmed: 'Buchung bestätigt. Bis bald!',
+        return_paid: 'Zahlung verbucht. Wir warten noch auf die Bestätigung der Unterkunft.',
+        return_rejected: 'Die Unterkunft hat diese Buchung nicht angenommen. Sie können einen anderen Zeitraum wählen.',
+        return_cancelled: 'Die Zahlung wurde nicht abgeschlossen, daher ist dieser Zeitraum wieder im Angebot.',
+        return_cancelled_hold: 'Die Zahlung wurde nicht abgeschlossen. Wir halten den Zeitraum noch einen Moment — den Zahlungslink haben Sie in Ihrer E-Mail.',
+        return_expired: 'Die Zeit für die Zahlung dieser Buchung ist abgelaufen und der Zeitraum ist wieder im Angebot.',
+        return_balance_paid: 'Restzahlung verbucht. Vielen Dank!',
+        return_balance_cancelled: 'Die Restzahlung wurde nicht abgeschlossen. Den Link dazu haben Sie in Ihrer E-Mail.',
+        return_balance: 'Noch zu zahlen {amount} — Frist: {date}.',
+        return_new_period: 'Neuen Zeitraum wählen',
+        return_unknown: 'Wir wissen nicht, um welche Buchung es geht. Öffnen Sie den Link aus der E-Mail noch einmal.',
+        manage_loading: 'Wir laden die Buchung…',
+        manage_account: 'Zu Ihren Buchungen',
+        manage_balance: '{amount} — Frist: {date}',
+        manage_balance_elsewhere: 'Die Restzahlung öffnen Sie mit dem Link „Restzahlung“ aus Ihrer E-Mail.',
+        manage_pay_balance: 'Restbetrag jetzt zahlen',
+        manage_refund: 'Erstattung beantragen',
+        manage_change_date: 'Umbuchung anfragen',
+        manage_request_sent: 'Anfrage gespeichert. Die Unterkunft entscheidet und meldet sich bei Ihnen.',
+        manage_date_required: 'Geben Sie das neue Anreisedatum an.',
+        manage_label_product: 'Unterkunft',
+        manage_label_dates: 'Zeitraum',
+        manage_label_status: 'Status der Buchung',
+        manage_label_paid: 'Bezahlt',
+        manage_label_refunded: 'Erstattet',
+        manage_label_balance: 'Restzahlung',
+        manage_label_phone: 'Notfalltelefon',
+        manage_label_new_date: 'Neues Anreisedatum',
+        manage_label_nights: 'Anzahl der Nächte',
+        manage_label_note: 'Anmerkungen für die Unterkunft',
+        status_awaiting_payment: 'Wartet auf Zahlung',
+        status_pending: 'Wartet auf die Entscheidung der Unterkunft',
+        status_paid: 'Bezahlt',
+        status_confirmed: 'Bestätigt',
+        status_rejected: 'Abgelehnt',
+        status_cancelled: 'Storniert',
+        status_expired: 'Abgelaufen',
+        request_kind_refund: 'Erstattung',
+        request_kind_date_change: 'Umbuchung',
+        request_state_pending: 'wartet auf Entscheidung',
+        request_state_accepted: 'angenommen',
+        request_state_rejected: 'abgelehnt',
+        request_state_withdrawn: 'zurückgezogen',
+        line_base: 'Aufenthalt',
+        line_season: 'Aufenthalt in der Saison',
+        line_weekend: 'Wochenende',
+        line_season_weekend: 'Wochenende in der Saison',
+        line_extra_guest_fee: 'Zuschlag pro Person',
+        line_pet_fee: 'Haustier',
+        line_cleaning_fee: 'Endreinigung',
+        line_length_discount: 'Rabatt für die Aufenthaltsdauer',
+        field_name: 'Vor- und Nachname',
+        field_email: 'E-Mail',
+        field_phone: 'Telefon',
+        field_adults: 'Erwachsene',
+        field_children: 'Kinder',
+        field_child_ages: 'Alter der Kinder',
+        field_pets: 'Haustiere',
+        field_pets_over_threshold: 'Über der Gewichtsgrenze',
+        field_note: 'Anmerkungen',
+        submit_label: 'Jetzt buchen',
+        total_label: 'Gesamt',
+        deposit_label: 'Jetzt:',
+        balance_label: '· später:',
+        child_ages_hint: 'z. B. 7, 10',
+        mark: 'Buchungen: digi2',
+        unit_day: 'pro Nacht',
+        calendar_loading: 'Wir prüfen die freien Zeiträume…',
+        calendar_pick: 'Wählen Sie das Anreisedatum.',
+        calendar_arrival: 'Anreise {date}. Wählen Sie jetzt das Abreisedatum.',
+        calendar_range: 'Gewählter Zeitraum: {from} – {to}, {count} {nights}.',
+        calendar_prev: 'Voriger Monat',
+        calendar_next: 'Nächster Monat',
+        day_busy: 'belegt',
+        day_past: 'Datum nicht mehr verfügbar',
+        day_arrival: 'gewählte Anreise',
+        day_departure: 'gewählte Abreise',
+        day_in_range: 'im gewählten Zeitraum',
+        day_can_depart: 'mögliche Abreise',
+        day_today: 'heute',
+        nights_one: 'Nacht',
+        nights_other: 'Nächte',
+        years_one: 'Jahr',
+        years_other: 'Jahre'
+      }
+    },
+    uk: {
+      // 1 ніч, 2 ночі, 5 ночей — three forms, and NOT the Polish three: 21 is
+      // "ніч" in Ukrainian where Polish says "nocy", so the rule is its own.
+      plural: function (count) {
+        var n = Math.abs(Number(count) || 0);
+        var last = n % 10;
+        var teen = n % 100;
+        if (last === 1 && teen !== 11) return 'one';
+        if (last >= 2 && last <= 4 && (teen < 12 || teen > 14)) return 'few';
+        return 'many';
+      },
+      texts: {
+        required: 'Заповніть це поле.',
+        email: 'Вкажіть адресу електронної пошти у вигляді ivan@example.com.',
+        number: 'Введіть число.',
+        form_invalid: 'Виправте позначені поля.',
+        stay_required: 'Виберіть дати проживання.',
+        adults_required: 'Вкажіть кількість дорослих — діти враховуються разом з ними.',
+        child_age_max: 'Дитина не може бути старшою за {max} {years}.',
+        child_ages_count: 'Вкажіть вік кожної дитини — {count} разом.',
+        too_many_pets_over_threshold: 'Тварин понад межу ваги не може бути більше, ніж усіх тварин.',
+        key_missing: 'Бронювання тут ще не налаштоване.',
+        network_error: 'Немає зв’язку із системою бронювання. Перевірте інтернет і спробуйте ще раз.',
+        bad_response: 'Щось пішло не так. Спробуйте ще раз трохи пізніше.',
+        server_error: 'Щось пішло не так на нашому боці. Спробуйте ще раз трохи пізніше.',
+        request_refused: 'Не вдалося завершити бронювання. Спробуйте ще раз.',
+        site_key_not_found: 'Онлайн-бронювання недоступне. Зв’яжіться з власником.',
+        origin_not_allowed: 'Онлайн-бронювання не працює на цій сторінці. Зв’яжіться з власником.',
+        product_not_found: 'Цього помешкання вже немає в пропозиції.',
+        booking_not_found: 'Це посилання на бронювання недійсне або час його дії минув. Нове знайдете в електронному листі.',
+        field_required: 'Це поле обов’язкове.',
+        field_invalid: 'Виправте цю відповідь.',
+        validation_error: 'Виправте позначені поля.',
+        invalid_request: 'Ми не можемо використати ці дані. Перевірте дати й дані та спробуйте ще раз.',
+        invalid_stay: 'Перевірте дати проживання.',
+        invalid_search: 'Перевірте дати й місце проживання.',
+        request_too_large: 'Повідомлення занадто довге. Скоротіть примітки і спробуйте ще раз.',
+        rental_rules: 'Це проживання неможливо забронювати. Виберіть інші дати або іншу тривалість.',
+        period_taken: 'Ці дати щойно зайняли. Виберіть інші.',
+        too_many_requests: 'Занадто багато спроб. Спробуйте ще раз трохи пізніше.',
+        too_many_requests_in: 'Занадто багато спроб. Спробуйте ще раз через {seconds} с.',
+        booking_not_payable: 'Це бронювання вже не очікує оплати.',
+        booking_already_paid: 'Це бронювання вже оплачене.',
+        balance_already_paid: 'Доплату вже зараховано.',
+        balance_processing: 'Платіж обробляється. Оновіть сторінку трохи пізніше.',
+        no_balance: 'Зараз нічого доплачувати не потрібно.',
+        stripe_not_connected: 'Платежі в цьому помешканні не ввімкнені. Зв’яжіться з власником.',
+        stripe_account_not_ready: 'Платежі в цьому помешканні ще не готові. Зв’яжіться з власником.',
+        payment_provider_unavailable: 'Платіжний оператор тимчасово недоступний. Спробуйте ще раз трохи пізніше.',
+        request_not_allowed: 'Цей запит зараз неможливий — бронювання закрите або запит уже очікує рішення.',
+        request_already_waiting: 'Такий запит уже очікує рішення власника.',
+        generic: 'Не вдалося завершити бронювання. Спробуйте ще раз або зв’яжіться з власником.',
+        violation_past: 'Цей день уже минув. Виберіть пізнішу дату.',
+        violation_product_not_bookable: 'Це помешкання зараз не приймає бронювань.',
+        violation_unit_not_allowed: 'Таке проживання тут недоступне.',
+        violation_below_min_units: 'Найкоротше проживання — {min} {min_nights}.',
+        violation_above_max_units: 'Найдовше проживання — {max} {max_nights}.',
+        violation_lead_time_too_short: 'Ці дати вже занадто близько. Виберіть пізніші.',
+        violation_blackout_overlap: 'У ці дати помешкання не приймає гостей.',
+        violation_period_taken: 'Ці дати щойно зайняли. Виберіть інші.',
+        violation_buffer_conflict: 'Між проживаннями має бути перерва. Виберіть дати на день далі.',
+        violation_no_price_for_unit: 'Не вдається розрахувати вартість цього проживання. Виберіть інші дати або іншу тривалість.',
+        violation_too_many_guests: 'Занадто багато осіб для цього помешкання. Зменште кількість гостей.',
+        pet_fee_over: 'Тварина понад {kg} кг: {amount} за проживання.',
+        pet_fee_over_night: 'Тварина понад {kg} кг: {amount} за кожну ніч.',
+        pet_fee_flat: 'Доплата за тварину: {amount} за проживання.',
+        pet_fee_flat_night: 'Доплата за тварину: {amount} за кожну ніч.',
+        payment_opening: 'Переходимо до оплати…',
+        booking_received: 'Бронювання прийнято. Підтвердження надіслали на вашу електронну пошту.',
+        checkout_url_missing: 'Бронювання збережено, але оплату не вдалося відкрити. Перевірте електронну пошту або спробуйте ще раз.',
+        return_loading: 'Перевіряємо ваше бронювання…',
+        return_checking: 'Платіж ще перевіряється. Підтвердження надішлемо на вашу електронну пошту.',
+        return_pending: 'Бронювання прийнято й очікує рішення власника. Відповідь надішлемо на вашу електронну пошту.',
+        return_confirmed: 'Бронювання підтверджено. До зустрічі!',
+        return_paid: 'Платіж зараховано. Ще чекаємо на підтвердження від власника.',
+        return_rejected: 'Власник не прийняв це бронювання. Ви можете вибрати інші дати.',
+        return_cancelled: 'Платіж не завершено, тому ці дати повернулися в пропозицію.',
+        return_cancelled_hold: 'Платіж не завершено. Дати тримаємо ще трохи — посилання на оплату є у вашому листі.',
+        return_expired: 'Час на оплату цього бронювання минув, і дати повернулися в пропозицію.',
+        return_balance_paid: 'Доплату зараховано. Дякуємо!',
+        return_balance_cancelled: 'Доплату не завершено. Посилання на неї є у вашому листі.',
+        return_balance: 'До доплати {amount} — термін: {date}.',
+        return_new_period: 'Вибрати інші дати',
+        return_unknown: 'Ми не знаємо, про яке бронювання йдеться. Відкрийте посилання з листа ще раз.',
+        manage_loading: 'Завантажуємо бронювання…',
+        manage_account: 'Перейти до своїх бронювань',
+        manage_balance: '{amount} — термін: {date}',
+        manage_balance_elsewhere: 'Доплату відкриєте посиланням «Доплата» з листа.',
+        manage_pay_balance: 'Доплатити зараз',
+        manage_refund: 'Попросити повернення коштів',
+        manage_change_date: 'Попросити змінити дати',
+        manage_request_sent: 'Запит збережено. Рішення ухвалить власник і звʼяжеться з вами.',
+        manage_date_required: 'Вкажіть нову дату приїзду.',
+        manage_label_product: 'Помешкання',
+        manage_label_dates: 'Дати',
+        manage_label_status: 'Стан бронювання',
+        manage_label_paid: 'Сплачено',
+        manage_label_refunded: 'Повернено',
+        manage_label_balance: 'Доплата',
+        manage_label_phone: 'Екстрений телефон',
+        manage_label_new_date: 'Нова дата приїзду',
+        manage_label_nights: 'Кількість ночей',
+        manage_label_note: 'Примітки для помешкання',
+        status_awaiting_payment: 'Очікує оплати',
+        status_pending: 'Очікує рішення власника',
+        status_paid: 'Оплачено',
+        status_confirmed: 'Підтверджено',
+        status_rejected: 'Відхилено',
+        status_cancelled: 'Скасовано',
+        status_expired: 'Термін минув',
+        request_kind_refund: 'Повернення коштів',
+        request_kind_date_change: 'Зміна дат',
+        request_state_pending: 'очікує рішення',
+        request_state_accepted: 'прийнято',
+        request_state_rejected: 'відхилено',
+        request_state_withdrawn: 'відкликано',
+        line_base: 'Проживання',
+        line_season: 'Проживання в сезон',
+        line_weekend: 'Вихідні',
+        line_season_weekend: 'Вихідні в сезон',
+        line_extra_guest_fee: 'Доплата за особу',
+        line_pet_fee: 'Тварина',
+        line_cleaning_fee: 'Прибирання',
+        line_length_discount: 'Знижка за тривалість проживання',
+        field_name: 'Ім’я та прізвище',
+        field_email: 'Електронна пошта',
+        field_phone: 'Телефон',
+        field_adults: 'Дорослі',
+        field_children: 'Діти',
+        field_child_ages: 'Вік дітей',
+        field_pets: 'Тварини',
+        field_pets_over_threshold: 'Понад межу ваги',
+        field_note: 'Примітки',
+        submit_label: 'Забронювати',
+        total_label: 'Разом',
+        deposit_label: 'Зараз:',
+        balance_label: '· пізніше:',
+        child_ages_hint: 'напр. 7, 10',
+        mark: 'Бронювання: digi2',
+        unit_day: 'за ніч',
+        calendar_loading: 'Перевіряємо вільні дати…',
+        calendar_pick: 'Виберіть дату приїзду.',
+        calendar_arrival: 'Приїзд {date}. Тепер виберіть дату виїзду.',
+        calendar_range: 'Вибрані дати: {from} – {to}, {count} {nights}.',
+        calendar_prev: 'Попередній місяць',
+        calendar_next: 'Наступний місяць',
+        day_busy: 'зайнято',
+        day_past: 'дата вже недоступна',
+        day_arrival: 'вибраний приїзд',
+        day_departure: 'вибраний виїзд',
+        day_in_range: 'у вибраних датах',
+        day_can_depart: 'можливий виїзд',
+        day_today: 'сьогодні',
+        nights_one: 'ніч',
+        nights_few: 'ночі',
+        nights_many: 'ночей',
+        years_one: 'рік',
+        years_few: 'роки',
+        years_many: 'років'
+      }
+    }
   };
   // The order the drawn form asks in, and which of them share the party row.
   var DRAWN_FIELDS = ['adults', 'children', 'pets', 'pets_over_threshold',
@@ -743,7 +1326,7 @@
     form_fields: {},
     child_max_age: DEFAULT_CHILD_MAX_AGE,
     languages: [],
-    default_language: 'pl',
+    default_language: BASE_LANGUAGE,
     branding_hidden: false,
     account_url: null
   };
@@ -783,14 +1366,81 @@
     return missing ? null : out;
   }
 
-  // 1 noc, 2 noce, 5 nocy — Polish counts the thing it counts.
-  function nightsWord(n) {
-    var count = Math.abs(Number(n) || 0);
-    var last = count % 10;
-    var teen = count % 100;
-    if (count === 1) return MESSAGES.nights_one;
-    if (last >= 2 && last <= 4 && (teen < 12 || teen > 14)) return MESSAGES.nights_few;
-    return MESSAGES.nights_many;
+  // ---------------------------------------------------------------------------
+  // The dictionaries — one key, one sentence, in the language the guest reads
+  // ---------------------------------------------------------------------------
+
+  function dictOf(language) {
+    var code = language === null || language === undefined ? '' : String(language);
+    return DICTIONARIES.hasOwnProperty(code) ? DICTIONARIES[code] : null;
+  }
+
+  /**
+   * The dictionaries to try for one language, in order: the language itself,
+   * the key's own default and the base one. A key a translation has not got
+   * yet is then read in the next language of the chain instead of leaving a
+   * hole in the page.
+   */
+  function dictChain(language) {
+    var out = [];
+    function add(dict) {
+      if (!dict) return;
+      for (var i = 0; i < out.length; i++) if (out[i] === dict) return;
+      out.push(dict);
+    }
+    add(dictOf(language));
+    add(dictOf(currentConfig().default_language));
+    add(DICTIONARIES[BASE_LANGUAGE]);
+    return out;
+  }
+
+  /**
+   * One sentence out of the dictionaries, or null when no dictionary in the
+   * chain has that key. `count` asks for a counted word: which of the forms a
+   * number takes is the rule of the dictionary that answers, which is where a
+   * plural rule belongs — Polish has three forms for a night, English two.
+   */
+  function lookup(key, language, count) {
+    var name = String(key);
+    var chain = dictChain(language);
+    for (var i = 0; i < chain.length; i++) {
+      var dict = chain[i];
+      if (count !== undefined && count !== null) {
+        var form = name + '_' + (typeof dict.plural === 'function' ? dict.plural(count) : 'other');
+        if (dict.texts.hasOwnProperty(form)) return dict.texts[form];
+      }
+      if (dict.texts.hasOwnProperty(name)) return dict.texts[name];
+    }
+    return null;
+  }
+
+  var _textWarned = {};
+  /**
+   * The sentence for a key, with the placeholders it needs filled in. A key no
+   * dictionary has is a mistake in the module and not something a guest should
+   * read: it is reported in the console and nothing is rendered. A placeholder
+   * with no value answers null, exactly as fill does, so the caller falls back
+   * to a sentence that needs none — never to a printed {brace}.
+   */
+  function t(key, vars, lang) {
+    var count = vars && vars.count !== undefined && vars.count !== null ? vars.count : null;
+    var text = lookup(key, lang === undefined || lang === null ? currentLanguage() : lang, count);
+    if (text === null) {
+      if (!_textWarned[key]) {
+        _textWarned[key] = true;
+        _warn('no text for "' + key + '" in any dictionary');
+      }
+      return '';
+    }
+    // fill runs even with no values at all: a sentence that needs {min} and
+    // was called without it answers null, never a printed brace.
+    return fill(text, vars);
+  }
+
+  // The counted word for a number, in the guest's language: 1 noc, 2 noce,
+  // 5 nocy — one night, two nights.
+  function nightsWord(n, lang) {
+    return t('nights', { count: Number(n) || 0 }, lang);
   }
 
   // ---------------------------------------------------------------------------
@@ -999,7 +1649,7 @@
   // browser knows it.
   function firstWeekday(lang) {
     try {
-      var loc = new Intl.Locale(lang || 'pl');
+      var loc = new Intl.Locale(lang || BASE_LANGUAGE);
       var info = typeof loc.getWeekInfo === 'function' ? loc.getWeekInfo() : loc.weekInfo;
       if (info && isFinite(info.firstDay)) return Number(info.firstDay) % 7;
     } catch (e) {}
@@ -1054,18 +1704,78 @@
     return _base;
   }
 
+  // 'en-GB' is the en dictionary: the region changes nothing a sentence says.
+  function langCode(value) {
+    var text = value === null || value === undefined ? '' : String(value).trim();
+    return text.split('-')[0].toLowerCase();
+  }
+
+  function keySpeaks(langs, code) {
+    for (var i = 0; i < langs.length; i++) {
+      if (langCode(langs[i]) === code) return true;
+    }
+    return false;
+  }
+
+  var _langWarned = {};
+  /**
+   * The language the guest reads — and the one every Intl format and the
+   * locale of a booking follow.
+   *
+   * The key decides what is on offer: /config carries the languages the owner
+   * allowed and the default. The page asks for one of them with
+   * d2-booking-lang on the loader tag, and <html lang> is the quieter version
+   * of the same question. A language the key does not allow — or one this
+   * module has no dictionary for — is refused in favour of the key's default,
+   * because half a page in German promises a service the owner cannot give;
+   * an explicit attribute refused that way says so in the console.
+   *
+   * A key whose answer lists no languages at all is not policed: there is
+   * nothing to check against, so an explicit attribute stands and everything
+   * else stays as it was — the key's default language.
+   *
+   * The default itself is held to the same rule: a key set to a language this
+   * module has no dictionary for cannot be the answer either, because the
+   * sentences would fall back to the base language while every Intl format
+   * followed a language nobody on the page reads. It says so in the console
+   * once, like a refused attribute.
+   */
   function pageLanguage(cfg) {
-    var fallback = (cfg && cfg.default_language) || FALLBACK_CONFIG.default_language;
+    var fallback = langCode((cfg && cfg.default_language) || FALLBACK_CONFIG.default_language)
+      || FALLBACK_CONFIG.default_language;
+    if (!dictOf(fallback)) {
+      if (!_langWarned['default:' + fallback]) {
+        _langWarned['default:' + fallback] = true;
+        _warn('the key\'s default_language="' + fallback + '" is not a language this module'
+          + ' has a dictionary for — the guest reads ' + BASE_LANGUAGE);
+      }
+      fallback = BASE_LANGUAGE;
+    }
     var langs = (cfg && isArray(cfg.languages)) ? cfg.languages : [];
+    var asked = langCode(attr(cfgEl(), 'd2-booking-lang'));
+    if (asked) {
+      var allowed = !langs.length || keySpeaks(langs, asked);
+      if (allowed && dictOf(asked)) return asked;
+      if (!_langWarned[asked]) {
+        _langWarned[asked] = true;
+        _warn('d2-booking-lang="' + asked + '" is not a language this page can be in'
+          + (allowed ? ' (no dictionary for it in the module)'
+            : ' (the key allows: ' + langs.join(', ') + ')')
+          + ' — the guest reads ' + fallback);
+      }
+      return fallback;
+    }
     var html = null;
     try { html = document.documentElement; } catch (e) { html = null; }
-    var tag = html ? String(html.getAttribute('lang') || '') : '';
-    var code = tag.split('-')[0].toLowerCase();
-    if (!code) return fallback;
-    for (var i = 0; i < langs.length; i++) {
-      if (String(langs[i]).toLowerCase() === code) return code;
-    }
+    var code = langCode(html ? html.getAttribute('lang') : '');
+    if (code && keySpeaks(langs, code) && dictOf(code)) return code;
     return fallback;
+  }
+
+  // The language of the page right now, for everything that has no /config
+  // answer in its hand.
+  function currentLanguage() {
+    return pageLanguage(currentConfig());
   }
 
   // ---------------------------------------------------------------------------
@@ -1176,14 +1886,18 @@
    * rental_rules sentence.
    */
   function violationText(code, rules) {
-    var text = VIOLATION_MESSAGES[String(code)];
-    if (!text) return null;
+    var lang = currentLanguage();
+    // A code no dictionary has is not a mistake in the module: the backend may
+    // name a rule this version never heard of, so the miss is quiet and the
+    // caller says the generic sentence instead.
+    var text = lookup('violation_' + String(code), lang);
+    if (text === null) return null;
     var r = rules || lastRules || {};
     return fill(text, {
       min: r.min > 1 ? r.min : null,
-      min_nights: r.min > 1 ? nightsWord(r.min) : null,
+      min_nights: r.min > 1 ? nightsWord(r.min, lang) : null,
       max: r.max > 0 ? r.max : null,
-      max_nights: r.max > 0 ? nightsWord(r.max) : null
+      max_nights: r.max > 0 ? nightsWord(r.max, lang) : null
     });
   }
 
@@ -1194,10 +1908,13 @@
         if (said) return said;
       }
     }
-    var text = MESSAGES[reason];
-    if (!text) return GENERIC_MESSAGE;
+    var lang = currentLanguage();
+    // A reason comes from the backend, so an unknown one is an answer we have
+    // no words for and not a bug: the generic sentence, with nothing in the log.
+    var text = lookup(String(reason), lang);
+    if (text === null) return t('generic', null, lang);
     if (reason === 'too_many_requests' && extra && extra.retryAfter > 0) {
-      return 'Zbyt wiele prób. Spróbuj ponownie za ' + extra.retryAfter + ' s.';
+      return t('too_many_requests_in', { seconds: extra.retryAfter }, lang) || text;
     }
     return text;
   }
@@ -1456,15 +2173,16 @@
   function petFeeText(data, cfg) {
     var fee = data && data.pet_fee && typeof data.pet_fee === 'object' ? data.pet_fee : null;
     if (!fee) return '';
-    var amount = money(fee.amount, data.currency ? String(data.currency) : null, pageLanguage(cfg));
+    var language = pageLanguage(cfg);
+    var amount = money(fee.amount, data.currency ? String(data.currency) : null, language);
     if (!amount) return '';
     var kg = parseFloat(String(fee.weight_threshold_kg));
     var perNight = String(fee.mode) === 'per_night';
     var over = isFinite(kg) && kg > 0;
-    var text = over
-      ? (perNight ? MESSAGES.pet_fee_over_night : MESSAGES.pet_fee_over)
-      : (perNight ? MESSAGES.pet_fee_flat_night : MESSAGES.pet_fee_flat);
-    return fill(text, { kg: over ? String(kg) : null, amount: amount }) || '';
+    var key = over
+      ? (perNight ? 'pet_fee_over_night' : 'pet_fee_over')
+      : (perNight ? 'pet_fee_flat_night' : 'pet_fee_flat');
+    return t(key, { kg: over ? String(kg) : null, amount: amount }, language) || '';
   }
 
   // ---------------------------------------------------------------------------
@@ -1657,20 +2375,20 @@
       if (!item.value) {
         // An empty ages list is only a problem once there are children.
         if (item.name === 'child_ages') agesItem = item;
-        else if (item.state === 'required') fail(item, MESSAGES.required);
+        else if (item.state === 'required') fail(item, t('required'));
         continue;
       }
-      if (item.name === 'email' && !EMAIL_RE.test(item.value)) { fail(item, MESSAGES.email); continue; }
+      if (item.name === 'email' && !EMAIL_RE.test(item.value)) { fail(item, t('email')); continue; }
       if (NUMBER_FIELD[item.name]) {
         var n = intOf(item.value);
-        if (n === null) { fail(item, MESSAGES.number); continue; }
+        if (n === null) { fail(item, t('number')); continue; }
         numbers[item.name] = n;
         continue;
       }
       if (item.name === 'child_ages') {
         agesItem = item;
         ages = parseAges(item.value);
-        if (ages === null) { fail(item, MESSAGES.number); ages = undefined; }
+        if (ages === null) { fail(item, t('number')); ages = undefined; }
       }
     }
 
@@ -1679,28 +2397,30 @@
     if (children > 0 && adultsItem && !(numbers.adults > 0)) {
       // guests is the sum of both, so children alone cannot be priced
       // (the contract: children without adults is 422).
-      fail(adultsItem, 'Podaj liczbę dorosłych — dzieci liczą się razem z nimi.');
+      fail(adultsItem, t('adults_required'));
     }
     if (agesItem && agesItem.state !== 'off') {
       var maxAge = cfg.child_max_age;
       if (ages) {
         for (var a = 0; a < ages.length; a++) {
           if (ages[a] > maxAge) {
-            fail(agesItem, 'Wiek dziecka nie może być większy niż ' + maxAge + ' lat.');
+            fail(agesItem, t('child_age_max', {
+              max: maxAge, years: t('years', { count: maxAge })
+            }));
             ages = undefined;
             break;
           }
         }
       }
       if (ages && children > 0 && ages.length !== children) {
-        fail(agesItem, 'Podaj wiek każdego dziecka — ' + children + ' razem.');
+        fail(agesItem, t('child_ages_count', { count: children }));
       } else if (!agesItem.value && agesItem.state === 'required' && children > 0) {
-        fail(agesItem, MESSAGES.required);
+        fail(agesItem, t('required'));
       }
     }
     var over = itemOf(items, 'pets_over_threshold');
     if (over && numbers.pets_over_threshold > (numbers.pets || 0)) {
-      fail(over, 'Nie może być więcej zwierząt powyżej progu wagi niż zwierząt.');
+      fail(over, t('too_many_pets_over_threshold'));
     }
 
     return { errors: errors, numbers: numbers, ages: ages };
@@ -2009,7 +2729,7 @@
     out.type = 'text';
     if (name === 'child_ages') {
       out.inputmode = 'numeric';
-      out.placeholder = MESSAGES.child_ages_hint;
+      out.placeholder = t('child_ages_hint');
     }
     return out;
   }
@@ -2029,7 +2749,7 @@
       fieldSeq += 1;
       var id = 'd2-booking-' + name + '-' + fieldSeq;
       var group = create('div', { 'd2-booking-field-group': '', 'd2-booking-built': '' });
-      group.appendChild(textEl('label', FIELD_LABELS[name] + (state === 'required' ? ' *' : ''), { 'for': id }));
+      group.appendChild(textEl('label', t('field_' + name) + (state === 'required' ? ' *' : ''), { 'for': id }));
       var input = create(name === 'note' ? 'textarea' : 'input', fieldAttrs(name, id));
       input.setAttribute('d2-booking-built', '');
       if (name === 'adults') {
@@ -2089,7 +2809,7 @@
     }
     if (!pageHas('d2-booking-total')) {
       var sum = create('div', { 'd2-booking-summary': '', 'd2-booking-built': '' });
-      sum.appendChild(textEl('span', MESSAGES.total_label));
+      sum.appendChild(textEl('span', t('total_label')));
       sum.appendChild(create('strong', {
         'd2-booking-total': '', 'd2-booking-built': '', 'd2-booking-empty': ''
       }));
@@ -2098,11 +2818,11 @@
     }
     if (!pageHas('d2-booking-deposit') && !pageHas('d2-booking-balance')) {
       var later = create('div', { 'd2-booking-later': '', 'd2-booking-built': '' });
-      later.appendChild(textEl('span', MESSAGES.deposit_label));
+      later.appendChild(textEl('span', t('deposit_label')));
       later.appendChild(create('span', {
         'd2-booking-deposit': '', 'd2-booking-built': '', 'd2-booking-empty': ''
       }));
-      later.appendChild(textEl('span', MESSAGES.balance_label));
+      later.appendChild(textEl('span', t('balance_label')));
       later.appendChild(create('span', {
         'd2-booking-balance': '', 'd2-booking-built': '', 'd2-booking-empty': ''
       }));
@@ -2116,7 +2836,7 @@
           'd2-booking-error': 'form', 'd2-booking-built': '', role: 'alert'
         }));
       }
-      host.appendChild(textEl('button', MESSAGES.submit_label, {
+      host.appendChild(textEl('button', t('submit_label'), {
         type: 'submit', 'd2-booking-submit': '', 'd2-booking-built': ''
       }));
     }
@@ -2174,7 +2894,7 @@
     if (!el.getAttribute('href')) el.setAttribute('href', MARK_URL);
     el.setAttribute('target', '_blank');
     el.setAttribute('rel', 'noopener');
-    if (!String(el.textContent || '').trim()) el.textContent = MESSAGES.mark;
+    if (!String(el.textContent || '').trim()) el.textContent = t('mark');
   }
 
   /**
@@ -2398,11 +3118,11 @@
       var wrap = create('div', { 'd2-booking-calendar-built': '' });
       var head = create('div', { 'd2-booking-calendar-head': '' });
       var prev = create('button', {
-        type: 'button', 'd2-booking-calendar-prev': '', 'aria-label': MESSAGES.calendar_prev
+        type: 'button', 'd2-booking-calendar-prev': '', 'aria-label': t('calendar_prev')
       });
       prev.textContent = '‹';
       var next = create('button', {
-        type: 'button', 'd2-booking-calendar-next': '', 'aria-label': MESSAGES.calendar_next
+        type: 'button', 'd2-booking-calendar-next': '', 'aria-label': t('calendar_next')
       });
       next.textContent = '›';
       captionSeq += 1;
@@ -2477,17 +3197,20 @@
     }
 
     function dayLabel(day, phase) {
+      var language = lang();
       var parts = [];
-      if (day === state.from) parts.push(MESSAGES.day_arrival);
-      else if (day === state.to) parts.push(MESSAGES.day_departure);
-      else if (state.from && state.to && day > state.from && day < state.to) parts.push(MESSAGES.day_in_range);
-      if (state.busy[day]) parts.push(MESSAGES.day_busy);
-      if (pastDay(day)) parts.push(MESSAGES.day_past);
-      else if (phase === 'departure' && day !== state.from && departureBlock(state.from, day) === null) {
-        parts.push(MESSAGES.day_can_depart);
+      if (day === state.from) parts.push(t('day_arrival', null, language));
+      else if (day === state.to) parts.push(t('day_departure', null, language));
+      else if (state.from && state.to && day > state.from && day < state.to) {
+        parts.push(t('day_in_range', null, language));
       }
-      if (day === todayIn(rules().timezone, 0)) parts.push(MESSAGES.day_today);
-      return dayText(day, lang()) + (parts.length ? ', ' + parts.join(', ') : '');
+      if (state.busy[day]) parts.push(t('day_busy', null, language));
+      if (pastDay(day)) parts.push(t('day_past', null, language));
+      else if (phase === 'departure' && day !== state.from && departureBlock(state.from, day) === null) {
+        parts.push(t('day_can_depart', null, language));
+      }
+      if (day === todayIn(rules().timezone, 0)) parts.push(t('day_today', null, language));
+      return dayText(day, language) + (parts.length ? ', ' + parts.join(', ') : '');
     }
 
     function render(focusNow) {
@@ -2635,7 +3358,7 @@
         state.from = day;
         state.to = 0;
         select(null);
-        announce(fill(MESSAGES.calendar_arrival, { date: dayText(day, lang()) }));
+        announce(t('calendar_arrival', { date: dayText(day, lang()) }));
         render(false);
         return;
       }
@@ -2652,11 +3375,11 @@
         starts_at: naiveOf(state.from),
         units_count: nights
       });
-      announce(fill(MESSAGES.calendar_range, {
+      announce(t('calendar_range', {
         from: dayText(state.from, lang()),
         to: dayText(day, lang()),
         count: nights,
-        nights: nightsWord(nights)
+        nights: nightsWord(nights, lang())
       }));
       render(false);
     }
@@ -2666,7 +3389,7 @@
       if (!state.product) {
         _warn('a calendar needs its product: put d2-booking-product="<uuid|slug>" on the loader tag or on the calendar');
       }
-      announce(MESSAGES.calendar_loading);
+      announce(t('calendar_loading'));
       state.month = startOfMonth(todayIn(null, 0));
       // The reference may be a slug and availability takes an id, so the
       // product is resolved before the first window is asked for.
@@ -2679,7 +3402,7 @@
         return loadMonth(state.month);
       }).then(function () {
         render(false);
-        announce(MESSAGES.calendar_pick);
+        announce(t('calendar_pick'));
       });
     }
 
@@ -2875,7 +3598,7 @@
 
   function lineLabel(line, language) {
     if (line.label) return String(line.label);
-    var text = LINE_LABELS[String(line.kind)] || String(line.kind || '');
+    var text = lookup('line_' + String(line.kind), language) || String(line.kind || '');
     // A cleaning fee folded into the stay leaves length_discount without its
     // rate (contract): the label then goes out without one, and the amount
     // beside it is still the answer's.
@@ -3087,9 +3810,9 @@
       if (form) {
         // We are leaving the page: the button stays down behind us.
         closeForm(form, 'opening', res, key || null);
-        showMessage(form, 'form', MESSAGES.payment_opening, true);
+        showMessage(form, 'form', t('payment_opening'), true);
       }
-      announce(MESSAGES.payment_opening);
+      announce(t('payment_opening'));
       _log('checkout opened', { booking: id });
       _emit('booking:payment', {
         booking_id: id, url: url, session: res.data, form: form || null
@@ -3110,8 +3833,8 @@
     if (created.payment_required === false) {
       // On request: the booking is in and the owner decides. Asking Stripe for
       // a session here would charge for a stay nobody has accepted.
-      showMessage(form, 'form', MESSAGES.booking_received, true);
-      announce(MESSAGES.booking_received);
+      showMessage(form, 'form', t('booking_received'), true);
+      announce(t('booking_received'));
       closeForm(form, 'done', createdRes, key || null);
       return Promise.resolve(createdRes);
     }
@@ -3386,34 +4109,34 @@
     var owes = isFinite(left) && left > 0;
 
     if (state === 'rejected') {
-      return { state: 'rejected', text: MESSAGES.return_rejected, done: true, again: true };
+      return { state: 'rejected', text: t('return_rejected'), done: true, again: true };
     }
     if (state === 'cancelled') {
-      return { state: 'cancelled', text: MESSAGES.return_cancelled, done: true, again: true };
+      return { state: 'cancelled', text: t('return_cancelled'), done: true, again: true };
     }
     if (state === 'expired') {
-      return { state: 'expired', text: MESSAGES.return_expired, done: true, again: true };
+      return { state: 'expired', text: t('return_expired'), done: true, again: true };
     }
     if (payment === 'balance_cancelled') {
-      return { state: 'cancelled', text: MESSAGES.return_balance_cancelled, done: true };
+      return { state: 'cancelled', text: t('return_balance_cancelled'), done: true };
     }
     if (payment === 'balance_success') {
       // The balance is paid when it is gone from the answer, not when Stripe
       // said so: the webhook is what moves it in our books.
-      if (owes) return { state: 'checking', text: MESSAGES.return_checking, done: false };
-      return { state: 'balance_paid', text: MESSAGES.return_balance_paid, done: true };
+      if (owes) return { state: 'checking', text: t('return_checking'), done: false };
+      return { state: 'balance_paid', text: t('return_balance_paid'), done: true };
     }
     if (state === 'confirmed') {
-      return { state: 'confirmed', text: MESSAGES.return_confirmed, done: true };
+      return { state: 'confirmed', text: t('return_confirmed'), done: true };
     }
     if (paid || state === 'paid') {
-      return { state: 'paid', text: MESSAGES.return_paid, done: true };
+      return { state: 'paid', text: t('return_paid'), done: true };
     }
     if (state === 'awaiting_payment' && hold === false) {
       // Nothing was paid and the hold is gone, so the period is back in the
       // offer. Saying "still being checked" here would keep a guest waiting
       // while the dates they wanted are taken by somebody else.
-      return { state: 'expired', text: MESSAGES.return_expired, done: true, again: true };
+      return { state: 'expired', text: t('return_expired'), done: true, again: true };
     }
     if (state === 'pending') {
       // payment_mode tells a prepaid booking from an on-request one, and
@@ -3421,17 +4144,17 @@
       // the owner decides. Nothing is being checked, so nothing is polled —
       // saying "the payment is still being checked" about a booking with no
       // payment would keep the guest watching a spinner for forty seconds.
-      return { state: 'pending', text: MESSAGES.return_pending, done: true };
+      return { state: 'pending', text: t('return_pending'), done: true };
     }
     if (payment === 'cancelled') {
       return {
         state: 'cancelled',
-        text: hold === false ? MESSAGES.return_cancelled : MESSAGES.return_cancelled_hold,
+        text: hold === false ? t('return_cancelled') : t('return_cancelled_hold'),
         done: true,
         again: hold === false
       };
     }
-    return { state: 'checking', text: MESSAGES.return_checking, done: false };
+    return { state: 'checking', text: t('return_checking'), done: false };
   }
 
   function returnBalance(data, cfg) {
@@ -3442,14 +4165,14 @@
     if (!amount) return '';
     // /status carries no timezone, so the day is read on the visitor's clock.
     var due = data.balance_due_at ? instantText(data.balance_due_at, null, language) : '';
-    return (due ? fill(MESSAGES.return_balance, { amount: amount, date: due }) : null) || amount;
+    return (due ? t('return_balance', { amount: amount, date: due }, language) : null) || amount;
   }
 
   function returnSay(host, state, text, siteUrl, data, cfg) {
     host.setAttribute('d2-booking-return-state', state);
     blockSlot(host, 'd2-booking-return-message', text, !!RETURN_GOOD[state]);
     blockSlot(host, 'd2-booking-return-balance', returnBalance(data, cfg));
-    blockLink(host, 'd2-booking-return-new', siteUrl, MESSAGES.return_new_period);
+    blockLink(host, 'd2-booking-return-new', siteUrl, t('return_new_period'));
   }
 
   function pollStatus(host, id, payment, cfg, tries) {
@@ -3487,10 +4210,10 @@
     if (!id) {
       // Asking about an empty id would fetch /bookings//status and get a 404,
       // which reads to the guest like a booking that was lost.
-      returnSay(host, 'unknown', MESSAGES.return_unknown, null, null, cfg);
+      returnSay(host, 'unknown', t('return_unknown'), null, null, cfg);
       return Promise.resolve(null);
     }
-    returnSay(host, 'loading', MESSAGES.return_loading, null, null, cfg);
+    returnSay(host, 'loading', t('return_loading'), null, null, cfg);
     return pollStatus(host, id, queryParam('payment'), cfg, 0);
   }
 
@@ -3513,13 +4236,13 @@
   // page that wants them apart can name any key of manageValues in
   // d2-booking-manage-field.
   var MANAGE_ROWS = [
-    { name: 'product_name', label: MESSAGES.manage_label_product },
-    { name: 'dates', label: MESSAGES.manage_label_dates },
-    { name: 'status', label: MESSAGES.manage_label_status },
-    { name: 'paid', label: MESSAGES.manage_label_paid },
-    { name: 'refunded', label: MESSAGES.manage_label_refunded },
-    { name: 'balance', label: MESSAGES.manage_label_balance },
-    { name: 'emergency_phone', label: MESSAGES.manage_label_phone }
+    { name: 'product_name', labelKey: 'manage_label_product' },
+    { name: 'dates', labelKey: 'manage_label_dates' },
+    { name: 'status', labelKey: 'manage_label_status' },
+    { name: 'paid', labelKey: 'manage_label_paid' },
+    { name: 'refunded', labelKey: 'manage_label_refunded' },
+    { name: 'balance', labelKey: 'manage_label_balance' },
+    { name: 'emergency_phone', labelKey: 'manage_label_phone' }
   ];
   /**
    * What the guest may ask for, and what has to be true for it.
@@ -3530,15 +4253,15 @@
    * refused as a booking that does not exist, which reads like a lost booking.
    */
   var MANAGE_ACTIONS = [
-    { kind: 'balance', allow: 'balance_payable', purpose: 'balance', label: MESSAGES.manage_pay_balance },
-    { kind: 'refund', allow: 'refund_available', purpose: 'manage', label: MESSAGES.manage_refund },
-    { kind: 'date_change', allow: 'date_change_available', purpose: 'manage', label: MESSAGES.manage_change_date }
+    { kind: 'balance', allow: 'balance_payable', purpose: 'balance', labelKey: 'manage_pay_balance' },
+    { kind: 'refund', allow: 'refund_available', purpose: 'manage', labelKey: 'manage_refund' },
+    { kind: 'date_change', allow: 'date_change_available', purpose: 'manage', labelKey: 'manage_change_date' }
   ];
   // What a date-change request needs, and the note either request may carry.
   var MANAGE_INPUTS = [
-    { name: 'requested_starts_at', kind: 'date_change', type: 'date', label: MESSAGES.manage_label_new_date },
-    { name: 'requested_units_count', kind: 'date_change', type: 'number', label: MESSAGES.manage_label_nights },
-    { name: 'customer_note', kind: 'any', type: 'textarea', label: MESSAGES.manage_label_note }
+    { name: 'requested_starts_at', kind: 'date_change', type: 'date', labelKey: 'manage_label_new_date' },
+    { name: 'requested_units_count', kind: 'date_change', type: 'number', labelKey: 'manage_label_nights' },
+    { name: 'customer_note', kind: 'any', type: 'textarea', labelKey: 'manage_label_note' }
   ];
 
   var lastManage = null;
@@ -3587,11 +4310,11 @@
       dates: from && to ? from + ' – ' + to : (from || to || ''),
       starts_at: from,
       ends_at: to,
-      status: STATUS_LABELS[String(data.status)] || '',
+      status: lookup('status_' + String(data.status), language) || '',
       paid: moneyMinor(data.amount_paid_minor, currency, language),
       outstanding: owed,
       refunded: isFinite(back) && back > 0 ? moneyMinor(back, currency, language) : '',
-      balance: owed && due ? (fill(MESSAGES.manage_balance, { amount: owed, date: due }) || owed) : owed,
+      balance: owed && due ? (t('manage_balance', { amount: owed, date: due }, language) || owed) : owed,
       balance_due_at: due,
       emergency_phone: data.emergency_phone ? String(data.emergency_phone) : ''
     };
@@ -3616,7 +4339,7 @@
       var row = MANAGE_ROWS[i];
       if (!values[row.name] || oneIn(host, 'd2-booking-manage-field', row.name)) continue;
       var line = create('div', { 'd2-booking-manage-row': '', 'd2-booking-built': '' });
-      line.appendChild(textEl('span', row.label));
+      line.appendChild(textEl('span', t(row.labelKey)));
       var slot = textEl('span', values[row.name], {
         'd2-booking-manage-field': row.name, 'd2-booking-built': ''
       });
@@ -3660,8 +4383,8 @@
     var state = String(item.status || '');
     row.setAttribute('d2-booking-manage-request-kind-name', kind);
     row.setAttribute('d2-booking-manage-request-state', state);
-    fillSlot(row, 'd2-booking-manage-request-kind', REQUEST_KINDS[kind] || kind);
-    fillSlot(row, 'd2-booking-manage-request-status', REQUEST_STATES[state] || state);
+    fillSlot(row, 'd2-booking-manage-request-kind', lookup('request_kind_' + kind, language) || kind);
+    fillSlot(row, 'd2-booking-manage-request-status', lookup('request_state_' + state, language) || state);
     fillSlot(row, 'd2-booking-manage-request-date',
       item.created_at ? instantText(item.created_at, zone, language) : '');
     // The owner's answer, passed on word for word: it is the only thing the
@@ -3748,7 +4471,7 @@
         manageSay(host, stuck.message);
         return stuck;
       }
-      manageSay(host, MESSAGES.payment_opening, true);
+      manageSay(host, t('payment_opening'), true);
       _log('balance checkout opened', { booking: id });
       _emit('booking:payment', {
         booking_id: id, url: url, session: copy(res.data), form: null, balance: true
@@ -3769,7 +4492,7 @@
     if (kind === 'date_change') {
       var when = naiveStamp(manageInput(host, 'requested_starts_at'));
       if (!when) {
-        manageSay(host, MESSAGES.manage_date_required);
+        manageSay(host, t('manage_date_required'));
         return Promise.resolve(refusal('invalid_request', 0));
       }
       body.requested_starts_at = when;
@@ -3797,7 +4520,7 @@
         _emit('booking:refused', { reason: res.reason, status: res.status, form: null });
         return res;
       }
-      manageSay(host, MESSAGES.manage_request_sent, true);
+      manageSay(host, t('manage_request_sent'), true);
       dropEl(manageActionEl(host, kind));
       var made = res.data && typeof res.data === 'object' ? res.data : { kind: kind, status: 'pending' };
       var box = requestsBox(host, true);
@@ -3820,7 +4543,7 @@
       fieldSeq += 1;
       var id = 'd2-booking-manage-' + want.name + '-' + fieldSeq;
       var group = create('div', { 'd2-booking-field-group': '', 'd2-booking-built': '' });
-      group.appendChild(textEl('label', want.label, { 'for': id }));
+      group.appendChild(textEl('label', t(want.labelKey), { 'for': id }));
       var input = create(want.type === 'textarea' ? 'textarea' : 'input', {
         'd2-booking-manage-input': want.name, 'd2-booking-built': '', id: id
       });
@@ -3847,7 +4570,7 @@
         continue;
       }
       if (!el) {
-        el = textEl('button', act.label, {
+        el = textEl('button', t(act.labelKey), {
           type: 'button', 'd2-booking-manage-action': act.kind, 'd2-booking-built': ''
         });
         host.appendChild(el);
@@ -3867,7 +4590,7 @@
   }
 
   function accountLink(host, cfg) {
-    return blockLink(host, 'd2-booking-manage-account', cfg.account_url, MESSAGES.manage_account);
+    return blockLink(host, 'd2-booking-manage-account', cfg.account_url, t('manage_account'));
   }
 
   /**
@@ -3892,7 +4615,7 @@
     for (i = 0; i < buttons.length; i++) dropEl(buttons[i]);
     var box = requestsBox(host, false);
     if (box) clearEl(box);
-    manageSay(host, text || MESSAGES.booking_not_found);
+    manageSay(host, text || t('booking_not_found'));
     accountLink(host, cfg);
   }
 
@@ -3911,7 +4634,7 @@
     // A balance this link cannot open is still worth a word: the guest has the
     // mail with the right link, or their account (KONTRAKT.md).
     var hint = data.balance_payable === true && purpose !== 'balance'
-      ? MESSAGES.manage_balance_elsewhere
+      ? t('manage_balance_elsewhere')
       : '';
     manageSay(host, hint);
     drawManageInputs(host, allowed);
@@ -3943,7 +4666,7 @@
       return Promise.resolve(null);
     }
     host.setAttribute('d2-booking-manage-state', 'loading');
-    manageSay(host, MESSAGES.manage_loading);
+    manageSay(host, t('manage_loading'));
     return request('GET', '/bookings/' + encodeURIComponent(id) + '/manage', {
       token: link.token,
       notFound: 'booking_not_found'
@@ -4109,7 +4832,7 @@
     var currency = entry.currency ? String(entry.currency) : null;
     var price = entry.price && typeof entry.price === 'object' ? entry.price : null;
     if (field === 'price') return price ? money(price.price, currency, language) : '';
-    if (field === 'price_unit') return price ? (MESSAGES['unit_' + String(price.unit)] || '') : '';
+    if (field === 'price_unit') return price ? (lookup('unit_' + String(price.unit), language) || '') : '';
     var value = entryField(entry, field);
     if (value === null || value === undefined || value === '') return '';
     if (isArray(value)) {
@@ -4601,8 +5324,8 @@
    * module already has for a period that is not chosen yet.
    */
   function searchProblem(s) {
-    if (!s.check_in !== !s.check_out) return MESSAGES.stay_required;
-    if (s.check_in && dayOfKey(s.check_out) <= dayOfKey(s.check_in)) return MESSAGES.invalid_stay;
+    if (!s.check_in !== !s.check_out) return t('stay_required');
+    if (s.check_in && dayOfKey(s.check_out) <= dayOfKey(s.check_in)) return t('invalid_stay');
     return '';
   }
 
@@ -4940,9 +5663,15 @@
     stay: function () { return stayState ? JSON.parse(JSON.stringify(stayState)) : null; },
     quote: runQuote,
     price: function () { return lastQuote ? JSON.parse(JSON.stringify(lastQuote)) : null; },
-    money: function (amount, currency) { return money(amount, currency, pageLanguage(currentConfig())); },
-    moneyMinor: function (minor, currency) { return moneyMinor(minor, currency, pageLanguage(currentConfig())); },
+    money: function (amount, currency) { return money(amount, currency, currentLanguage()); },
+    moneyMinor: function (minor, currency) { return moneyMinor(minor, currency, currentLanguage()); },
     message: function (reason) { return message(String(reason)); },
+    language: currentLanguage,
+    text: function (key, vars) { return t(String(key), vars) || ''; },
+    texts: function (lang) {
+      var dict = dictOf(lang === undefined || lang === null ? currentLanguage() : lang);
+      return dict ? copy(dict.texts) : {};
+    },
     status: function (bookingId) {
       var id = String(bookingId || '');
       if (!id) return Promise.resolve(refusal('booking_not_found', 0));

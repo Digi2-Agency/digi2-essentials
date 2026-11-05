@@ -51,6 +51,9 @@
  *                                      rate limits and server-side prices). Read raw, like d2-ma.
  *   d2-booking-api="<base>"            API base address, default https://api.2destate.com/api/v1
  *   d2-booking-product="<uuid|slug>"   Product (apartment) the page books by default
+ *   d2-booking-lang="<code>"           The language the guest reads — pl | en | de | uk, and one
+ *                                      of the ones the key allows (/config languages); without
+ *                                      it the key's default_language decides
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
@@ -112,6 +115,9 @@
  *   digi2.booking.money(amount, currency)  Amount in whole currency → guest text
  *   digi2.booking.moneyMinor(n, currency)  Amount in minor units → guest text
  *   digi2.booking.message(reason)          Human sentence for a refusal reason
+ *   digi2.booking.language()               The language the guest reads right now
+ *   digi2.booking.text(key, vars)          One sentence out of the dictionary, placeholders in
+ *   digi2.booking.texts(lang)              One language's own table (a copy)
  *   digi2.booking.status(bookingId)        Status of one booking (the return page)
  *   digi2.booking.returned()               The last status the return block printed
  *   digi2.booking.managed()                The last manage answer (never the token)

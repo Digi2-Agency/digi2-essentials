@@ -802,6 +802,7 @@
     <div class="sidebar-group-items">
       <a href="#booking">Overview</a>
       <a href="#booking-api">API Client &amp; Refusals</a>
+      <a href="#booking-languages">Languages</a>
       <a href="#booking-list">The List and the Search</a>
       <a href="#booking-form">The Guest Form</a>
       <a href="#booking-calendar">The Calendar</a>
@@ -3127,13 +3128,15 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
     <p>Booking a rental straight from the page — the guest's form, the stay and the payment — answered by the <strong>public site API</strong> of 2destate (<code>/api/v1/public/sites/{public_key}/…</code>, contract <strong>v1</strong>). One flag on the loader tag loads the module.</p>
     <pre><code>&lt;script src=<span class="string">"…/digi2-loader.min.js"</span>
   <span class="attr">d2-booking</span>=<span class="string">"pk_live_…"</span>
-  <span class="attr">d2-booking-product</span>=<span class="string">"3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"</span>&gt;&lt;/script&gt;</code></pre>
+  <span class="attr">d2-booking-product</span>=<span class="string">"3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"</span>
+  <span class="attr">d2-booking-lang</span>=<span class="string">"en"</span>&gt;&lt;/script&gt;</code></pre>
 
     <table>
       <tr><th>Attribute</th><th>Element</th><th>What it does</th></tr>
       <tr><td><code>d2-booking="pk_…"</code></td><td>loader tag</td><td><strong>Site key.</strong> Public and non-secret — it belongs in the page's HTML. The backend protects itself with the key's domain allowlist, rate limits and prices computed server-side, so there is nothing to hide. Read with <code>getAttribute</code>, never <code>digi2.attr</code>: a key is not a responsive value.</td></tr>
       <tr><td><code>d2-booking-api="&lt;base&gt;"</code></td><td>loader tag</td><td>API base address. Default <code>https://api.2destate.com/api/v1</code>. <code>https</code> only (<code>http://localhost</code> while building); anything else is a console warning and the default. Read raw — an address may legally contain <code>;</code> and <code>@</code>.</td></tr>
       <tr><td><code>d2-booking-product="&lt;uuid|slug&gt;"</code></td><td>loader tag, form, calendar or widget</td><td>Product (apartment) this page books — a uuid or a slug. The calendar may pick another one. <strong>Optional:</strong> with no attribute anywhere the module reads <code>?apartament=&lt;slug&gt;</code> off the address, which is how one booking page serves a whole CMS collection (<code>/rezerwacja?apartament=apartament-rynek-wroclaw</code>). An attribute always beats the address.</td></tr>
+      <tr><td><code>d2-booking-lang="&lt;code&gt;"</code></td><td>loader tag</td><td>The language the guest reads — <code>pl</code>, <code>en</code>, <code>de</code> or <code>uk</code>, and one of the languages the key allows (<code>/config</code> <code>languages</code>). <strong>Optional:</strong> without it the key's <code>default_language</code> decides, and <code>&lt;html lang&gt;</code> is honoured the same way. A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default — an explicit attribute refused that way says so in the console, <code>&lt;html lang&gt;</code> quietly. Read with <code>digi2.attr</code>. See <a href="#booking-languages">Languages</a>.</td></tr>
       <tr><td class="muted" colspan="3">A reference is resolved <strong>once per visit</strong> through <code>GET /products/&lt;ref&gt;</code> — the only route of the contract whose path takes a reference — and the <code>id</code> of that answer is what availability, quote and bookings get, since all three are spelled <code>{product_id}</code>. The same answer carries <code>pet_fee</code>. A lookup that is refused is logged and the reference goes out as the page wrote it; the backend then decides, exactly as it would have anyway.</td></tr>
     </table>
     <p class="muted">Every <code>d2-booking-*</code> attribute loads the one <code>booking</code> module — like the <code>d2-ma-*</code> family, and unlike an unknown <code>d2-x</code>, which the loader still turns into a module <code>x</code>.</p>
@@ -3148,7 +3151,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
     <pre><code>{ <span class="prop">ok</span>: <span class="keyword">true</span>,  <span class="prop">status</span>: <span class="num">200</span>, <span class="prop">data</span>: { … } }
 { <span class="prop">ok</span>: <span class="keyword">false</span>, <span class="prop">status</span>: <span class="num">409</span>, <span class="prop">reason</span>: <span class="string">'period_taken'</span>, <span class="prop">message</span>: <span class="string">'Ten termin…'</span>,
   <span class="prop">field</span>: <span class="string">'phone'</span>, <span class="prop">violations</span>: [<span class="string">'period_taken'</span>], <span class="prop">retryAfter</span>: <span class="num">45</span> }</code></pre>
-    <p><code>reason</code> is the typed reason from the contract's <code>errors.json</code> and the only thing the module acts on. The backend's own <code>detail</code> / <code>detail.message</code> sentence is <strong>never shown to the guest</strong> — it is written for logs, in whatever language the API speaks. <code>message</code> is always our own sentence, and a reason the module has never heard of still gets one.</p>
+    <p><code>reason</code> is the typed reason from the contract's <code>errors.json</code> and the only thing the module acts on. The backend's own <code>detail</code> / <code>detail.message</code> sentence is <strong>never shown to the guest</strong> — it is written for logs, in whatever language the API speaks. <code>message</code> is always our own sentence, in the language the guest reads (<a href="#booking-languages">Languages</a>), and a reason the module has never heard of still gets one.</p>
 
     <table>
       <tr><th>Answer</th><th><code>reason</code></th></tr>
@@ -3164,6 +3167,34 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td><code>fetch</code> rejected</td><td><code>network_error</code></td></tr>
     </table>
     <p class="muted">A refusal from a domain outside the key's allowlist carries no <code>Access-Control-Allow-Origin</code>, so the browser never lets the page read it — in a browser it looks exactly like a dead connection and is shown as one. That is the single refusal the module cannot name.</p>
+  </section>
+
+  <section id="booking-languages">
+    <h2>Booking — Languages</h2>
+    <p>Every sentence a guest reads lives in a <strong>dictionary</strong>, one per language: a flat <code>key → sentence</code> table in the same shape as the portal's i18next JSON, so the same key is greppable on both sides. The module has no dependencies, so these tables are the whole of its translation. Shipped today: <strong>pl, en, de, uk</strong> — the four languages the portal starts with. Polish is the original wording and English was written beside it; <strong>German and Ukrainian are machine translations awaiting a native reading</strong>, so read them before you put a German or Ukrainian page in front of guests.</p>
+    <pre><code>&lt;script src=<span class="string">"…/digi2-loader.min.js"</span> <span class="attr">d2-booking</span>=<span class="string">"pk_live_…"</span> <span class="attr">d2-booking-lang</span>=<span class="string">"en"</span>&gt;&lt;/script&gt;</code></pre>
+    <table>
+      <tr><th>Order</th><th>Where the language comes from</th></tr>
+      <tr><td>1</td><td><code>d2-booking-lang</code> — when the key allows it <strong>and</strong> the module has a dictionary for it</td></tr>
+      <tr><td>2</td><td><code>&lt;html lang&gt;</code> (<code>en-GB</code> → <code>en</code>) — under the same two conditions</td></tr>
+      <tr><td>3</td><td>the key's <code>default_language</code> from <code>/config</code></td></tr>
+      <tr><td class="muted" colspan="2">A language the key does not allow — or one no dictionary covers — is refused in favour of the default, and an explicit <code>d2-booking-lang</code> refused that way says so in the console: half a page in German promises a service the owner cannot give. A key whose <code>/config</code> lists no <code>languages</code> at all is not policed (nothing to check against): the attribute stands and everything else stays on the key's default. The default itself is held to the same rule: a <code>default_language</code> no dictionary covers falls back to <code>pl</code> and says so in the console, so the sentences and every <code>Intl</code> format stay in one language.</td></tr>
+    </table>
+    <p>The chosen language is also the booking's <code>locale</code> (so the portal's e-mails match the page) and what every <code>Intl</code> format follows: the amounts, the percentages, the month and weekday names, and which day a week starts on.</p>
+    <table>
+      <tr><th>Case</th><th>What happens</th></tr>
+      <tr><td>a key missing from one dictionary</td><td>read in the next language of the chain (asked → the key's default → <code>pl</code>), so the page has no hole</td></tr>
+      <tr><td>a key no dictionary has</td><td>nothing is rendered and the console names the key — a guest must never read <code>manage_label_nights</code></td></tr>
+      <tr><td>a <code>{placeholder}</code> with no value</td><td>the whole sentence is dropped and the caller falls back to one that needs none — never a printed brace</td></tr>
+      <tr><td>a counted word</td><td>one key per form (<code>nights_one</code> / <code>nights_few</code> / <code>nights_many</code> in Polish and Ukrainian, <code>nights_one</code> / <code>nights_other</code> in English and German); which one a number takes is the <code>plural</code> function <strong>of that dictionary</strong>, which is why Ukrainian can keep its own three-form rule — it says <em>21 ніч</em> where Polish says <em>21 nocy</em>. Counted today: <code>nights</code> and <code>years</code> (the child-age limit)</td></tr>
+      <tr><td>a <code>reason</code>, a price-line <code>kind</code>, a booking <code>status</code>, a request kind or a price unit the dictionary does not know</td><td>shown as the answer's own value (a line kind) or not at all (a status), and never reported: those come from the backend, which may name things this version has not heard of</td></tr>
+    </table>
+    <p>The <strong>browser-side form check</strong> says its sentences out of the same tables, the four it writes itself included: <code>adults_required</code> (children count into the party), <code>child_age_max</code>, <code>child_ages_count</code> and <code>too_many_pets_over_threshold</code> next to <code>required</code>, <code>email</code> and <code>number</code>. Nothing a guest can read is a literal in the code.</p>
+    <p>One sentence quotes a label of the portal's e-mail, so the two have to agree: <code>manage_balance_elsewhere</code> names the balance link — <code>„Dopłata”</code> (pl), <code>“Balance”</code> (en), <code>„Restzahlung“</code> (de), <code>«Доплата»</code> (uk). Those four strings are the contract for the portal's own translation; an e-mail that labels that link anything else sends the guest hunting in his inbox.</p>
+    <pre><code><span class="fn">digi2.booking.language</span>();                <span class="comment">// 'pl' | 'en' | 'de' | 'uk' — what the guest reads</span>
+<span class="fn">digi2.booking.text</span>(<span class="string">'submit_label'</span>);      <span class="comment">// one sentence out of the dictionary</span>
+<span class="fn">digi2.booking.text</span>(<span class="string">'nights'</span>, { <span class="prop">count</span>: <span class="num">21</span> }); <span class="comment">// 'nocy' / 'nights' / 'Nächte' / 'ніч'</span>
+<span class="fn">digi2.booking.texts</span>(<span class="string">'uk'</span>);               <span class="comment">// that language's own table (a copy)</span></code></pre>
   </section>
 
   <section id="booking-list">
