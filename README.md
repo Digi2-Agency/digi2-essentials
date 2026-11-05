@@ -4546,8 +4546,8 @@ and the attempt is kept twice over:
   the request can still land there, and `AbortController` would not undo it. The
   key is a UUID v4 tied to the exact body, new on any changed field and after
   24 h. A retry returns the same booking; one recovered as `expired` is not paid
-  and drops the key. This shape comes from 2destate and is not in
-  `tests/fixtures/booking-api/` yet.
+  and drops the key. Pinned by `contact.json` and `booking.json` in
+  `tests/fixtures/booking-api/`.
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.

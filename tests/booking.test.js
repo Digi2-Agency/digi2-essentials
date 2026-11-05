@@ -21,6 +21,7 @@ const QUOTE = fixture('quote');
 const STATUS = fixture('status');
 const MANAGE = fixture('manage');
 const REQUEST = fixture('request');
+const CONTACT = fixture('contact');
 const BALANCE = fixture('balance-checkout');
 const PRODUCT_FIXTURE = fixture('product');
 const ERRORS = fixture('errors').errors;
@@ -384,7 +385,7 @@ function page(opts) {
       return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, o.productData)));
     }
     if (route === 'status') return Promise.resolve(response(STATUS.status, statusResponse()));
-    if (route === 'contact') return Promise.resolve(response(200, { booking_id: BOOKING.response.id }));
+    if (route === 'contact') return Promise.resolve(response(CONTACT.status, clone(CONTACT.response)));
     if (route === 'manage') {
       return Promise.resolve(response(MANAGE.status, merged(MANAGE, o.manageData)));
     }
@@ -3537,9 +3538,8 @@ test('the poll gives up on a backend that stays down', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Contact change and idempotency. The shape is the one 2destate proposed
-// (POST /bookings/{id}/contact, contact_token, Idempotency-Key): it is not in
-// tests/fixtures/booking-api/ yet, so these tests stand on it by hand.
+// Contact change and idempotency: contact.json, and contact_token and the
+// Idempotency-Key header in booking.json.
 // ---------------------------------------------------------------------------
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -3553,6 +3553,15 @@ function failedPayment(extra) {
     script: { checkout: [{ status: 502, body: { detail: 'Bad gateway' } }] },
   }, extra || {}));
 }
+
+test('the contract fixtures name the two additions the module relies on', () => {
+  // MUTACJA: a copy of the contract without them, and these tests stop meaning
+  // what they say.
+  assert.match(BOOKING.headers['Idempotency-Key'], UUID_V4);
+  assert.ok(BOOKING.response.contact_token);
+  assert.ok(CONTACT.route.indexOf('/contact') > 0);
+  assert.equal(CONTACT.headers['X-Booking-Token'], BOOKING.response.contact_token);
+});
 
 test('every booking carries an Idempotency-Key in the form of a UUID v4', async () => {
   // MUTACJA: send no key, and a request that timed out here but landed there
@@ -3636,6 +3645,9 @@ test('a corrected e-mail goes to the booking before it is paid', async () => {
   const sent = contactPosts(env);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].body.customer_email, 'nowy@example.com');
+  Object.keys(sent[0].body).forEach((key) => {
+    assert.ok(Object.prototype.hasOwnProperty.call(CONTACT.request, key), key + ' is not in the contract');
+  });
   assert.equal(sent[0].init.headers['X-Booking-Token'], 'secret-contact');
   assert.equal(checkoutPosts(env).length, 2);
   assert.ok(env.calls.indexOf(sent[0]) < env.calls.indexOf(checkoutPosts(env)[1]), 'before the payment');
@@ -3676,7 +3688,7 @@ test('a contact the backend will not change stops the payment and says so', asyn
 test('no contact token means no change and no silent payment', async () => {
   // MUTACJA: skip the check, and a booking from a backend without the token is
   // paid under the old address.
-  const env = failedPayment({ booking: {} });
+  const env = failedPayment({ booking: { contact_token: null } });
   await paySubmit(env);
   fieldOf(env.form, 'email').value = 'nowy@example.com';
   fire(env.form, 'submit');

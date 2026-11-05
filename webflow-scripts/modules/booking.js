@@ -396,6 +396,7 @@
     too_many_requests: 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
     booking_not_payable: 'Ta rezerwacja nie czeka już na płatność.',
     hold_expired: 'Czas na opłacenie tej rezerwacji minął. Wyślij formularz jeszcze raz, żeby zarezerwować ten termin od nowa.',
+    idempotency_key_reused: 'Dane formularza się zmieniły. Wyślij go jeszcze raz.',
     contact_locked: 'Nie możemy już zmienić danych kontaktowych tej rezerwacji. Przywróć poprzednie dane albo zacznij od początku.',
     booking_already_paid: 'Ta rezerwacja jest już opłacona.',
     balance_already_paid: 'Dopłata jest już zaksięgowana.',

@@ -45,6 +45,17 @@
       }
     },
     {
+      "name": "field_invalid",
+      "status": 422,
+      "exact": true,
+      "body": {
+        "detail": {
+          "code": "field_invalid",
+          "field": "child_ages"
+        }
+      }
+    },
+    {
       "name": "rental_rules",
       "status": 409,
       "body": {
@@ -75,6 +86,16 @@
         "detail": {
           "reason": "period_taken",
           "message": "Someone else took this period"
+        }
+      }
+    },
+    {
+      "name": "idempotency_key_reused",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "idempotency_key_reused",
+          "message": "This Idempotency-Key was used with a different request"
         }
       }
     },
