@@ -346,6 +346,15 @@ test.describe('booking: the drawn widget and the payment', () => {
     await expect(page.locator('[d2-booking-form]')).not.toHaveAttribute('d2-booking-busy', '');
   });
 
+  test('the drawn look keeps its alignment on a page that left-aligns its buttons', async ({ page }) => {
+    // A Webflow site's own reset does exactly this, and it reached the calendar
+    // on the first real page.
+    await page.addStyleTag({ content: 'button { text-align: left; }' });
+    const aligned = await page.evaluate(() => ['[d2-booking-day]', '[d2-booking-submit]']
+      .map((s) => getComputedStyle(document.querySelector(s)).textAlign));
+    expect(aligned).toEqual(['center', 'center']);
+  });
+
   test('an empty widget becomes a whole booking form', async ({ page }) => {
     // One of each, and every one of them drawn by the module.
     for (const part of ['[d2-booking-calendar]', '[d2-booking-status]', '[d2-booking-form]',
