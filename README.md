@@ -4215,7 +4215,7 @@ its own, because a button standing between them belongs to neither.
 | `d2-booking-results` | any Div | The list, read once per visit. |
 | `d2-booking-results-limit="<n>"` | the list | How many places one page asks for. Default `24`; the key has its own maximum. |
 | `d2-booking-results-link="<shape>"` | the list | The address shape every card of this list leads to (below). Read raw — an address may legally contain `;` and `@`. |
-| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. Inside a Collection List the rows go into the list's own grid and the empty Collection Items leave with the pattern. |
+| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave. |
 | `d2-booking-bind="<field>"` | any element in the row, the row itself included | One field of the entry, as text (below). |
 | `d2-booking-link[="<shape>"]` | Link, or the row itself | Where this card leads. A whole card is usually one link, so the attribute may sit on the template. |
 | `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a `429` wait it is down together with the search button. |

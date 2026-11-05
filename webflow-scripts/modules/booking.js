@@ -2195,17 +2195,26 @@
    * the page has somewhere to put it — a key whose form never mentions pets
    * must not spend a request on a sentence nobody reads.
    */
-  function dropThresholdField(cfg) {
+  function thresholdFields() {
+    var out = [];
     var forms = formsOf();
     for (var i = 0; i < forms.length; i++) {
       var el = forms[i].querySelector('[d2-booking-field="pets_over_threshold"], '
         + '[data-d2-booking-field="pets_over_threshold"]');
-      if (el) removeField(el, forms[i], cfg);
+      if (el) out.push({ el: el, form: forms[i] });
     }
+    return out;
+  }
+
+  function dropThresholdField(cfg) {
+    var found = thresholdFields();
+    for (var i = 0; i < found.length; i++) removeField(found[i].el, found[i].form, cfg);
   }
 
   function applyPetFee(cfg) {
-    if (!hintSlots('pets_over_threshold').length) return Promise.resolve(null);
+    if (!hintSlots('pets_over_threshold').length && !thresholdFields().length) {
+      return Promise.resolve(null);
+    }
     // The form knows its product (the widget copies the attribute onto the one
     // it draws); the loader tag and the address are the fallbacks productOf
     // already walks.
@@ -4265,8 +4274,11 @@
    * would be a placeholder card above the apartments that no render ever
    * clears (only [d2-booking-item] rows are).
    */
-  function collectionItem(el) {
-    return !!el && (' ' + (el.getAttribute('class') || '') + ' ').indexOf(' w-dyn-item ') >= 0;
+  function collectionItemOf(el, box) {
+    for (var at = el.parentNode; at && at !== box; at = at.parentNode) {
+      if ((' ' + (at.getAttribute('class') || '') + ' ').indexOf(' w-dyn-item ') >= 0) return at;
+    }
+    return null;
   }
 
   function listTemplate(box) {
@@ -4274,14 +4286,14 @@
       var found = box.querySelectorAll('[d2-booking-template], [data-d2-booking-template]');
       var tmpl = null;
       var i;
-      var host = found.length ? found[0].parentNode : null;
-      // A Collection Item holds nothing but the card: the rows go where the
-      // items stood, in the Designer's grid, and the empty items go too.
-      var wrapped = !!host && collectionItem(host);
-      if (wrapped) host = host.parentNode;
-      box._d2BookingHost = host || box;
-      if (found.length && found[0].cloneNode) {
-        tmpl = found[0].cloneNode(true);
+      // Inside a Collection List the row is the whole Collection Item, however
+      // deep the card sits in it: its classes carry the columns and the layout
+      // of the Designer's grid, and it goes back where the items stood.
+      var item = found.length ? collectionItemOf(found[0], box) : null;
+      var pattern = item || found[0];
+      box._d2BookingHost = (pattern && pattern.parentNode) || box;
+      if (found.length && pattern.cloneNode) {
+        tmpl = pattern.cloneNode(true);
         dropTemplateMark(tmpl);
         tmpl.setAttribute('d2-booking-item', '');
       }
@@ -4290,9 +4302,7 @@
           + ' one is the pattern and the rest are taken off the page too — a card built inside'
           + ' a Webflow Collection List carries the attribute on every rendered item');
       }
-      for (i = 0; i < found.length; i++) {
-        dropEl(wrapped && collectionItem(found[i].parentNode) ? found[i].parentNode : found[i]);
-      }
+      for (i = 0; i < found.length; i++) dropEl(collectionItemOf(found[i], box) || found[i]);
       box._d2BookingRow = tmpl;
     }
     return box._d2BookingRow;
@@ -4751,6 +4761,7 @@
   function readSearch(form) {
     var out = { check_in: '', check_out: '', adults: '', children: '', location: '' };
     var els = searchFieldsOf(form);
+    var shown = {};
     var i;
     for (i = 0; i < els.length; i++) {
       var name = searchFieldName(els[i]);
@@ -4761,9 +4772,18 @@
       }
       var value = name === 'check_in' || name === 'check_out'
         ? dayValue(els[i]) : readValue(els[i]);
-      // One question may stand on several elements: a radio group, or a field
-      // built twice for two breakpoints. An empty one does not unsay the rest.
-      if (value !== '') out[name] = value;
+      // One question may stand on several elements. In a radio group the
+      // checked one answers. A field built twice for two breakpoints answers
+      // with the copy the guest can see, so clearing it is an answer, and a
+      // hidden copy only speaks when no visible one does.
+      if (String(els[i].type || '').toLowerCase() === 'radio') {
+        if (value !== '') out[name] = value;
+      } else if (els[i].offsetParent !== null) {
+        out[name] = value;
+        shown[name] = true;
+      } else if (!shown[name] && out[name] === '') {
+        out[name] = value;
+      }
     }
     var picked = stayPeriod(form);
     if (picked) {
@@ -5069,12 +5089,12 @@
     form.addEventListener('submit', function (e) {
       // The page stays: a search is the same page with another list in it, and
       // a reload would throw away the rows the guest is already reading.
-      // Capture and stopped there, for the reason bind() gives: without it a
-      // Form Block posts every search to Webflow and then hides itself.
+      // Stopped here, for the reason bind() gives: without it a Form Block
+      // posts every search to Webflow and then hides itself.
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
       if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
       runSearch(form);
-    }, true);
+    });
   }
 
   /**

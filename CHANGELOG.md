@@ -509,15 +509,15 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
 ### Poprawki po recenzji #61 (ten sam etap, przed wydaniem)
 
 - **Wyszukiwarka w Form Block nie wysyła się do Webflow** i nie chowa formularza.
-- **Lista w Collection List zostaje w siatce Designera.** Wiersze trafiają do
-  `.w-dyn-items`, a puste Collection Item znikają.
+- **Lista w Collection List zostaje w siatce Designera.** Wierszem jest cały
+  Collection Item, więc kolumny zostają, a puste pozycje znikają.
 - **Obrazek z Webflow pokazuje zdjęcie obiektu.** Moduł zdejmuje `srcset` i `sizes`.
 - **Karta bez adresu zostaje na liście**, tylko bez linku.
 - **Odrzucone wyszukiwanie zabiera stare wiersze** i zostawia przycisk ponowienia,
   a `digi2.booking.apply()` nie zmienia już wyszukiwania w mocy.
 - **W czasie czekania po 429 wyszukiwarka czeka razem z listą.**
-- **Radio i pola zdublowane** odpowiadają wartością zaznaczoną, a link zaznacza
-  właściwe radio.
+- **Radio i pola zdublowane.** Radio odpowiada zaznaczoną wartością, a link je
+  zaznacza. Pole zbudowane dwa razy odpowiada widoczną kopią, więc można je wyczyścić.
 - **Zły termin z linku nie blokuje formularza bez pól dat.**
 - **Kalendarz nie czeka na listę obiektów.**
 

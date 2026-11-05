@@ -248,8 +248,15 @@ function buildResults(spec) {
       const list = element({ class: 'w-dyn-list' }, 'div');
       const items = element({ class: 'w-dyn-items' }, 'div');
       for (let i = 0; i < spec.collection; i++) {
-        const item = element({ class: 'w-dyn-item' }, 'div');
-        item.appendChild(i ? row.cloneNode(true) : row);
+        const item = element({ class: 'w-dyn-item w-col w-col-4' }, 'div');
+        const card = i ? row.cloneNode(true) : row;
+        if (spec.collectionWrap) {
+          const inner = element({ class: 'wrap' }, 'div');
+          inner.appendChild(card);
+          item.appendChild(inner);
+        } else {
+          item.appendChild(card);
+        }
         items.appendChild(item);
       }
       list.appendChild(items);
@@ -4754,12 +4761,12 @@ function radio(form, value, checked) {
   return el;
 }
 
-test('a search is stopped in the capture phase, before the document handler of Webflow', async () => {
-  // MUTACJA: bubble phase or preventDefault alone, and every search is posted
-  // to Webflow Forms and the form hides behind .w-form-done.
+test('a search stops on the form, on the way up to the document handler of Webflow', async () => {
+  // MUTACJA: preventDefault alone, and every search is posted to Webflow Forms
+  // and the form hides behind .w-form-done.
   const env = listPage({ searchForm: true });
   await env.settled();
-  assert.equal(env.searchForm.capturing.submit, true);
+  assert.equal(env.searchForm.capturing.submit, false);
   let stopped = 0;
   fire(env.searchForm, 'submit', { preventDefault() {}, stopPropagation() { stopped += 1; } });
   await env.settled();
@@ -4799,6 +4806,18 @@ test('rows go into the grid of a Collection List and the empty items leave', asy
   assert.equal(rowsOf(env).length, 2);
   assert.equal(grid.children.length, 2, 'the rows and nothing else: no empty Collection Item is left');
   assert.equal(rowsOf(env)[0].parentNode, grid);
+  assert.equal(rowsOf(env)[0].getAttribute('class'), 'w-dyn-item w-col w-col-4', 'the columns of the grid stay');
+});
+
+test('a card deeper inside a Collection Item takes the whole item with it', async () => {
+  // MUTACJA: look at the direct parent only, and every row lands in the first
+  // grid cell beside a column of empty ones.
+  const env = listPage({ results: { collection: 3, collectionWrap: true }, products: answerOf(places(2), 2) });
+  await env.settled();
+  const grid = listBox(env).children[0].children[0];
+  assert.equal(grid.children.length, 2);
+  assert.equal(rowsOf(env).length, 2);
+  assert.equal(env.document.querySelectorAll('[d2-booking-template]').length, 0);
 });
 
 test('a repeat apply leaves the search in force alone', async () => {
@@ -4860,6 +4879,50 @@ test('a radio group answers with the checked one, wherever it stands', async () 
   fire(env.searchForm, 'submit');
   await env.settled();
   assert.ok(listCalls(env).pop().url.indexOf('location=' + encodeURIComponent('Wrocław')) >= 0);
+});
+
+test('clearing the visible copy of a field built twice is an answer', async () => {
+  // MUTACJA: let any non-empty copy win, and the hidden one brings the city
+  // back: the guest can never clear the search.
+  const env = listPage({ searchForm: { fields: ['location'], values: { location: 'Gdańsk' } } });
+  await env.settled();
+  const visible = searchFieldOf(env, 'location');
+  const hidden = element({ 'd2-booking-search-field': 'location' }, 'input');
+  hidden.value = 'Gdańsk';
+  hidden.offsetParent = null;
+  env.searchForm.appendChild(hidden);
+  visible.value = '';
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).pop().url.indexOf('location='), -1);
+});
+
+test('the order of the two copies does not matter', async () => {
+  // MUTACJA: skip an empty visible copy, and a hidden copy standing first in
+  // the markup keeps the city the guest has just cleared.
+  const env = listPage({ searchForm: { fields: ['location'], values: { location: 'Gdańsk' } } });
+  await env.settled();
+  searchFieldOf(env, 'location').offsetParent = null;
+  const visible = element({ 'd2-booking-search-field': 'location' }, 'input');
+  visible.value = '';
+  env.searchForm.appendChild(visible);
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).pop().url.indexOf('location='), -1);
+});
+
+test('a hidden field alone still speaks', async () => {
+  // MUTACJA: read visible fields only, and a page pinning a value in a hidden
+  // input loses it.
+  const env = listPage({ searchForm: { fields: ['adults'] } });
+  await env.settled();
+  const hidden = element({ 'd2-booking-search-field': 'location' }, 'input');
+  hidden.value = 'Sopot';
+  hidden.offsetParent = null;
+  env.searchForm.appendChild(hidden);
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.ok(listCalls(env).pop().url.indexOf('location=Sopot') >= 0);
 });
 
 test('a link checks the radio it names and leaves the values of the others', async () => {
@@ -4966,4 +5029,16 @@ test('a long wait is said in minutes', async () => {
   await short.settled();
   const brief = await short.booking.request('POST', '/products/x/bookings', { body: {} });
   assert.equal(brief.message, 'Zbyt wiele prób. Spróbuj ponownie za 45 s.');
+});
+
+test('the threshold field goes even from a form with no hint slot', async () => {
+  // MUTACJA: return early when there is no hint, and the question stays on a
+  // Designer's form and goes out in the quote and in the hold key.
+  const env = page({
+    config: { form_fields: { pets: 'optional' } },
+    forms: [{ fields: { pets_over_threshold: '' }, attrs: { 'd2-booking-product': PRODUCT } }],
+    productData: { pet_fee: null },
+  });
+  await env.settled();
+  assert.equal(env.document.querySelector('[d2-booking-field="pets_over_threshold"]'), null);
 });
