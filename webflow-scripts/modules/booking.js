@@ -179,8 +179,15 @@
  * the flight is kept under the key of the request itself, so a double submit
  * gets the answer of the attempt already running — and a retry after a payment
  * hiccup pays the booking that already exists instead of holding the period
- * twice. Changing anything (the dates, the party, the data) is a new request
- * and a new booking.
+ * twice. Changing the dates or the party is a new request and a new booking.
+ * Changing the contact is not: the booking keeps its hold and goes to
+ * POST /bookings/{id}/contact first, so what the guest is told reaches the
+ * address they typed last. Its contact_token lives only in this module, never
+ * on the booking object, in an event or in the address.
+ *
+ * Every POST /bookings carries an Idempotency-Key tied to the exact body, so a
+ * request that timed out here but landed there is recovered by the retry
+ * instead of being refused by the guest's own hold.
  *
  * Every payment refusal is answered by its reason (contract: the module reads
  * reason, never the message):
@@ -388,6 +395,8 @@
     period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
     too_many_requests: 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
     booking_not_payable: 'Ta rezerwacja nie czeka już na płatność.',
+    hold_expired: 'Czas na opłacenie tej rezerwacji minął. Wyślij formularz jeszcze raz, żeby zarezerwować ten termin od nowa.',
+    contact_locked: 'Nie możemy już zmienić danych kontaktowych tej rezerwacji. Przywróć poprzednie dane albo zacznij od początku.',
     booking_already_paid: 'Ta rezerwacja jest już opłacona.',
     balance_already_paid: 'Dopłata jest już zaksięgowana.',
     balance_processing: 'Płatność jest w drodze. Odśwież stronę za chwilę.',
@@ -1134,6 +1143,7 @@
     // Guest routes carry the token from the e-mail link in a header; the token
     // is opaque to this module.
     if (opts.token) headers['X-Booking-Token'] = opts.token;
+    if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
     init.headers = headers;
 
     return timeoutFetch(url, init, opts.timeout || FETCH_TIMEOUT_MS).then(function (r) {
@@ -2898,6 +2908,7 @@
       // also dropped from the kept ones, so the next period the guest picks
       // creates a booking of its own instead of paying the dead one again.
       if (res.reason === 'booking_not_payable' && key) drop(madeBookings, key);
+      if (res.reason === 'booking_not_payable' && form) form._d2BookingAttempt = null;
       closeForm(form, 'final', res, key || null);
       return;
     }
@@ -3006,10 +3017,88 @@
   }
 
   // What the booking is OF: the product, the period and the party. The
-  // contact fields are deliberately out of it — a guest who fixes a typo in
-  // their note after a payment hiccup must pay the booking they already hold,
-  // not ask the backend for a second hold on the same nights.
+  // contact fields are deliberately out of it — a guest who fixes a typo after
+  // a payment hiccup must pay the booking they already hold, not ask the
+  // backend for a second hold on the same nights. A changed name, e-mail or
+  // phone travels to that booking through sendContact().
   var HOLD_KEYS = ['unit', 'starts_at', 'units_count'].concat(PARTY_KEYS);
+
+  var CONTACT_KEYS = ['customer_email', 'customer_name', 'customer_phone'];
+
+  function contactOf(body) {
+    var out = {};
+    for (var i = 0; i < CONTACT_KEYS.length; i++) {
+      if (body[CONTACT_KEYS[i]]) out[CONTACT_KEYS[i]] = body[CONTACT_KEYS[i]];
+    }
+    return out;
+  }
+
+  // Per booking id: { token, sent }. Apart from the booking on purpose, because
+  // that object is handed to listeners and a copy of it to the page.
+  var bookingContacts = {};
+
+  function rememberContact(data, body) {
+    if (!data) return;
+    var token = data.contact_token ? String(data.contact_token) : null;
+    delete data.contact_token;
+    bookingContacts[String(data.id)] = { token: token, sent: JSON.stringify(contactOf(body)) };
+  }
+
+  /**
+   * The address the guest typed last reaches the booking before it is paid, or
+   * the confirmation and the link with its token go to the one they corrected.
+   * No token means no way of proving this guest made the booking, and paying
+   * under the old address in silence is the one thing not to do.
+   */
+  function sendContact(made, body) {
+    var kept = bookingContacts[String(made.id)] || { token: null, sent: '' };
+    var now = JSON.stringify(contactOf(body));
+    if (kept.sent === now) return Promise.resolve({ ok: true, status: 200, data: made });
+    if (!kept.token) return Promise.resolve(refusal('contact_locked', 0));
+    return request('POST', '/bookings/' + encodeURIComponent(String(made.id)) + '/contact', {
+      body: contactOf(body),
+      token: kept.token,
+      notFound: 'contact_locked',
+      conflict: 'booking_not_payable'
+    }).then(function (res) {
+      if (!res.ok) return res;
+      kept.sent = now;
+      return { ok: true, status: res.status, data: made };
+    });
+  }
+
+  // 24 h is what the backend promises for a key; past that a new one is safer.
+  var ATTEMPT_MS = 24 * 3600 * 1000;
+
+  function uuid() {
+    var b = new Array(16);
+    var c = typeof crypto !== 'undefined' ? crypto : null;
+    if (c && typeof c.getRandomValues === 'function') {
+      b = c.getRandomValues(new Uint8Array(16));
+    } else {
+      for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    }
+    b[6] = (b[6] & 15) | 64;
+    b[8] = (b[8] & 63) | 128;
+    var hex = '';
+    for (var j = 0; j < 16; j++) {
+      hex += (b[j] < 16 ? '0' : '') + b[j].toString(16);
+      if (j === 3 || j === 5 || j === 7 || j === 9) hex += '-';
+    }
+    return hex;
+  }
+
+  // The key belongs to the exact body: a retry of the same request repeats it,
+  // and any changed field is a new request with a new key.
+  function attemptKey(form, product, body) {
+    var said = productId(product) + '|' + JSON.stringify(body);
+    var kept = form._d2BookingAttempt;
+    if (!kept || kept.said !== said || Date.now() - kept.at > ATTEMPT_MS) {
+      kept = { said: said, key: uuid(), at: Date.now() };
+      form._d2BookingAttempt = kept;
+    }
+    return kept.key;
+  }
 
   function requestKey(product, body) {
     var of = {};
@@ -3102,14 +3191,21 @@
 
     var made = keptFor(madeBookings, key);
     var step = made
-      ? Promise.resolve({ ok: true, status: 200, data: made })
+      ? sendContact(made, body)
       : request('POST', '/products/' + encodeURIComponent(productId(stay.product)) + '/bookings', {
         body: body,
-        notFound: 'product_not_found'
+        notFound: 'product_not_found',
+        idempotencyKey: attemptKey(form, stay.product, body)
       });
 
     var chain = step.then(function (res) {
+      // A contact refused for good says what a refused payment says.
+      if (!res.ok && made && PAYMENT_FINAL[res.reason]) {
+        paymentRefused(form, res, key);
+        return res;
+      }
       if (!res.ok) {
+        if (res.reason === 'idempotency_key_reused') form._d2BookingAttempt = null;
         applyRefusal(form, res, cfg);
         _emit('booking:refused', { reason: res.reason, status: res.status, form: form });
         // The limit said how long, so the button waits exactly that long
@@ -3121,7 +3217,17 @@
         lock(form, false);
         return res;
       }
+      // A retry can recover a booking whose hold ran out while we were away.
+      // That one is over: the next submit is a new request under a new key.
+      if (!made && res.data && res.data.status === 'expired') {
+        form._d2BookingAttempt = null;
+        var expired = refusal('hold_expired', res.status);
+        showMessage(form, 'form', expired.message);
+        lock(form, false);
+        return expired;
+      }
       if (!made) {
+        rememberContact(res.data, body);
         keep(madeBookings, key, res.data);
         _log('booking created', { id: res.data && res.data.id });
         // A copy, like every other emit: a listener that reshapes the

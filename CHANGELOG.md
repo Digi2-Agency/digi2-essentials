@@ -335,6 +335,12 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
   stronie powrotu to kolejna próba, a nie zdanie o błędzie.
 - **Nieudane odczytanie produktu i miesiąca jest ponawiane**, a 404 nie.
 - **Wybór dnia klawiaturą zostawia fokus na tym dniu.**
+- **Poprawiony e-mail trafia do rezerwacji.** Gdy gość po nieudanej płatności
+  zmieni imię, e-mail albo telefon, moduł wysyła je do istniejącej rezerwacji przed
+  płatnością, więc potwierdzenie idzie na aktualny adres. Wymaga trasy
+  `POST /bookings/{id}/contact` po stronie 2destate (w budowie).
+- **Utracona odpowiedź nie blokuje terminu.** `POST /bookings` niesie
+  `Idempotency-Key`, więc ponowienie po przekroczeniu czasu odzyskuje rezerwację.
 
 ### Poprawki po przeglądzie (ten sam etap, przed wydaniem)
 

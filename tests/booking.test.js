@@ -350,6 +350,7 @@ function page(opts) {
     // first and the plain POST .../bookings is what is left.
     const route = text.indexOf('/config') >= 0 ? 'config'
       : text.indexOf('/status') >= 0 ? 'status'
+        : text.indexOf('/contact') >= 0 ? 'contact'
         : text.indexOf('/manage') >= 0 ? 'manage'
           : text.indexOf('/requests') >= 0 ? 'requests'
             : text.indexOf('/balance-checkout') >= 0 ? 'balance'
@@ -383,6 +384,7 @@ function page(opts) {
       return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, o.productData)));
     }
     if (route === 'status') return Promise.resolve(response(STATUS.status, statusResponse()));
+    if (route === 'contact') return Promise.resolve(response(200, { booking_id: BOOKING.response.id }));
     if (route === 'manage') {
       return Promise.resolve(response(MANAGE.status, merged(MANAGE, o.manageData)));
     }
@@ -3481,4 +3483,163 @@ test('the poll gives up on a backend that stays down', async () => {
   for (let i = 0; i < 12; i += 1) await env.tick();
   assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'error');
   assert.equal(callsTo(env, '/status').length, 8);
+});
+
+// ---------------------------------------------------------------------------
+// Contact change and idempotency. The shape is the one 2destate proposed
+// (POST /bookings/{id}/contact, contact_token, Idempotency-Key): it is not in
+// tests/fixtures/booking-api/ yet, so these tests stand on it by hand.
+// ---------------------------------------------------------------------------
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const OFFLINE_ONCE = ['offline'];
+
+function keyOf(call) { return call.init.headers['Idempotency-Key']; }
+function contactPosts(env) { return env.calls.filter((c) => /\/contact$/.test(c.url)); }
+function failedPayment(extra) {
+  return payPage(Object.assign({
+    booking: { contact_token: 'secret-contact' },
+    script: { checkout: [{ status: 502, body: { detail: 'Bad gateway' } }] },
+  }, extra || {}));
+}
+
+test('every booking carries an Idempotency-Key in the form of a UUID v4', async () => {
+  // MUTACJA: send no key, and a request that timed out here but landed there
+  // leaves the guest refused by their own invisible hold.
+  const env = payPage();
+  await paySubmit(env);
+  assert.match(keyOf(bookingPosts(env)[0]), UUID_V4);
+});
+
+test('a retry after a lost answer repeats the key and pays the booking it recovers', async () => {
+  // MUTACJA: a new key per attempt, and the retry gets period_taken.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  assert.equal(checkoutPosts(env).length, 0);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 2);
+  assert.equal(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('a changed field is a new request under a new key', async () => {
+  // MUTACJA: one key per form, and the backend answers idempotency_key_reused.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  fieldOf(env.form, 'note').value = 'Późny przyjazd';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+});
+
+test('a key older than a day is not used again', async () => {
+  // MUTACJA: keep the key for ever. The backend keeps it, the module promised not to.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  env.form._d2BookingAttempt.at -= 25 * 3600 * 1000;
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+});
+
+test('a recovered booking whose hold ran out is not paid, and the next try is new', async () => {
+  // MUTACJA: treat the 200 as a live booking, and the guest is sent to pay a
+  // hold that no longer exists.
+  const dead = Object.assign({}, BOOKING.response, { status: 'expired' });
+  const env = payPage({ script: { bookings: ['offline', { status: 200, body: dead }] } });
+  await paySubmit(env);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(checkoutPosts(env).length, 0);
+  assert.equal(submitOf(env.form).disabled, false);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[2]), keyOf(bookingPosts(env)[1]));
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('the contact token reaches no event and no booking the page can read', async () => {
+  // MUTACJA: leave it on the booking, and any script on the page can move the
+  // confirmation to its own address.
+  const env = failedPayment();
+  await paySubmit(env);
+  const created = env.events.filter((e) => e.name === 'booking:created');
+  assert.equal(created.length, 1);
+  assert.equal(JSON.stringify(created[0].data.booking).indexOf('secret-contact'), -1);
+  assert.equal((env.warnings.join(' ') + env.logs.join(' ')).indexOf('secret-contact'), -1);
+  assert.equal(dumpTree(env.document.documentElement).indexOf('secret-contact'), -1);
+});
+
+test('a corrected e-mail goes to the booking before it is paid', async () => {
+  // MUTACJA: pay without sendContact. This is the decision of 2026-11-05: the
+  // confirmation and the link go to the address the guest typed last.
+  const env = failedPayment();
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 1, 'still one booking');
+  const sent = contactPosts(env);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.customer_email, 'nowy@example.com');
+  assert.equal(sent[0].init.headers['X-Booking-Token'], 'secret-contact');
+  assert.equal(checkoutPosts(env).length, 2);
+  assert.ok(env.calls.indexOf(sent[0]) < env.calls.indexOf(checkoutPosts(env)[1]), 'before the payment');
+});
+
+test('an unchanged contact sends nothing, also on the try after a correction', async () => {
+  // MUTACJA: always post it, and every retry spends the 10 per hour limit.
+  const env = failedPayment({
+    script: { checkout: [1, 2, 3].map(() => ({ status: 502, body: { detail: 'x' } })) },
+  });
+  await paySubmit(env);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(contactPosts(env).length, 0);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'retry', 'the form is still open for one more try');
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(checkoutPosts(env).length, 4, 'that try really happened');
+  assert.equal(contactPosts(env).length, 1);
+});
+
+test('a contact the backend will not change stops the payment and says so', async () => {
+  // MUTACJA: pay anyway, and the guest believes the new address was taken.
+  const refused = failedPayment({ refuse: { contact: { status: 404, body: { detail: 'Not found' } } } });
+  await paySubmit(refused);
+  fieldOf(refused.form, 'email').value = 'nowy@example.com';
+  fire(refused.form, 'submit');
+  await refused.settled();
+  assert.equal(checkoutPosts(refused).length, 1, 'only the first, failed one');
+  assert.equal(submitOf(refused.form).disabled, false);
+  const said = refused.form.querySelector('[d2-booking-error="form"]').textContent;
+  assert.ok(said.indexOf('danych kontaktowych') >= 0, said);
+});
+
+test('no contact token means no change and no silent payment', async () => {
+  // MUTACJA: skip the check, and a booking from a backend without the token is
+  // paid under the old address.
+  const env = failedPayment({ booking: {} });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(contactPosts(env).length, 0);
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('a hold that ended before the contact change closes the form like a payment refusal', async () => {
+  // MUTACJA: treat it as a plain refusal, and the dead booking is kept and retried.
+  const env = failedPayment({
+    refuse: { contact: { status: 409, body: { detail: { reason: 'booking_not_payable' } } } },
+  });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'final');
 });

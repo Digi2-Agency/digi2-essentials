@@ -4527,6 +4527,21 @@ and the attempt is kept twice over:
   between the refusal and the retry must pay the booking they already hold, not
   ask for a second hold on the same nights. Change the period or the party and
   it is a different stay, so a different booking.
+- **A changed contact goes to the booking first.** Name, e-mail or phone that
+  differ from what the booking was made with go to `POST /bookings/{id}/contact`
+  before the checkout, under `X-Booking-Token: <contact_token>`. The token comes
+  with the booking answer and is taken off the object at once, because listeners
+  and the page get that object. The identifier alone must not move the
+  confirmation: it sits in the address, next to other people's scripts. No token,
+  or a 404, stops the payment with `contact_locked` instead of paying silently
+  under the old address; `booking_not_payable` and `booking_already_paid` close
+  the form like a payment refusal.
+- **`Idempotency-Key` on `POST /bookings`.** The fetch timeout rejects here while
+  the request can still land there, and `AbortController` would not undo it. The
+  key is a UUID v4 tied to the exact body, new on any changed field and after
+  24 h. A retry returns the same booking; one recovered as `expired` is not paid
+  and drops the key. This shape comes from 2destate and is not in
+  `tests/fixtures/booking-api/` yet.
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.
