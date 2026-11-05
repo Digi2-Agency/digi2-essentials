@@ -23,6 +23,7 @@ const MANAGE = fixture('manage');
 const REQUEST = fixture('request');
 const BALANCE = fixture('balance-checkout');
 const PRODUCT_FIXTURE = fixture('product');
+const PRODUCTS = fixture('products');
 const ERRORS = fixture('errors').errors;
 
 function refusalFixture(name) {
@@ -72,14 +73,27 @@ function element(attrs, tagName) {
     children: [],
     parentNode: null,
     style: {},
-    textContent: '',
+    ownText: '',
     value: '',
     listeners: {},
+    // textContent as the DOM really behaves: reading it is the text of the
+    // element and everything inside it, and writing it REPLACES every child
+    // with one text node. A plain property could never show a module that
+    // destroys the markup the Designer put inside a slot by writing the
+    // slot's own text back into it.
+    get textContent() {
+      return this.ownText + this.children.map((child) => child.textContent).join('');
+    },
+    set textContent(text) {
+      this.ownText = text === null || text === undefined ? '' : String(text);
+      this.children.forEach((child) => { child.parentNode = null; });
+      this.children = [];
+    },
     get firstChild() { return this.children[0] || null; },
     focus() { focused = this; },
     cloneNode(deep) {
       const copy = element(this.attributes, this.tagName);
-      copy.textContent = this.textContent;
+      copy.ownText = this.ownText;
       copy.value = this.value;
       copy.style = Object.assign({}, this.style);
       if (deep) this.children.forEach((child) => copy.appendChild(child.cloneNode(true)));
@@ -195,6 +209,68 @@ function buildPrice(spec) {
   return wrap;
 }
 
+// The list of places, as the Designer would build it: a container holding one
+// template row with the bind slots the page asked for. `inner` adds the
+// controls the module fills in — they sit NEXT to the list, which is where a
+// Webflow layout leaves them and where the rows cannot land on top of them.
+function buildResults(spec) {
+  const wrap = element({}, 'div');
+  const box = element(Object.assign({ 'd2-booking-results': '' }, spec.attrs || {}), 'div');
+  if (spec.template !== false) {
+    const row = element(Object.assign({ 'd2-booking-template': '', class: 'karta' },
+      spec.rowAttrs || {}), spec.rowTag || 'a');
+    (spec.template === undefined || spec.template === true
+      ? ['name', 'city_line', 'price', 'image']
+      : spec.template).forEach((field) => {
+      const slot = element({ 'd2-booking-bind': field },
+        field === 'image' ? (spec.imageTag || 'img') : 'span');
+      // A slot built as an icon beside a word, which is how a Designer builds
+      // a badge: the markup inside it has to survive the binding.
+      if ((spec.icons || []).indexOf(field) >= 0) {
+        slot.appendChild(element({ class: 'ikona' }, 'i'));
+        slot.ownText = 'na zapytanie';
+      }
+      row.appendChild(slot);
+    });
+    // Somebody duplicated the card inside the card.
+    if (spec.nested) row.appendChild(element({ 'd2-booking-template': '' }, 'div'));
+    // The whole card is the link, which is how a card is built; a page that
+    // wants the link inside the row says so.
+    if (spec.linkChild) row.appendChild(element({ 'd2-booking-link': spec.link || '' }, 'a'));
+    else if (spec.link !== false) row.setAttribute('d2-booking-link', spec.link || '');
+    box.appendChild(row);
+    // A card built inside a Webflow Collection List is rendered once per CMS
+    // item, so the published page carries the attribute on every one of them.
+    for (let i = 1; i < (spec.copies || 1); i++) box.appendChild(row.cloneNode(true));
+  }
+  wrap.appendChild(box);
+  (spec.inner || []).forEach((part) => {
+    if (part === 'more') wrap.appendChild(element({ 'd2-booking-more': '', type: 'button' }, 'button'));
+    else if (part === 'count') wrap.appendChild(element({ 'd2-booking-count': '' }, 'span'));
+    else wrap.appendChild(element({ ['d2-booking-results-' + part]: '' }, 'div'));
+  });
+  return wrap;
+}
+
+// The search above the list, as the Designer would build it: a <form
+// d2-booking-search> whose inputs carry d2-booking-search-field. `tags` turns
+// one of them into a <select> (the page's own list of cities) and `calendar`
+// puts stage 5's calendar in the form instead of two date inputs.
+function buildSearch(spec) {
+  const form = element(Object.assign({ 'd2-booking-search': '' }, spec.attrs || {}), 'form');
+  const names = spec.fields || ['check_in', 'check_out', 'adults', 'children', 'location'];
+  names.forEach((name) => {
+    const el = element({ 'd2-booking-search-field': name },
+      (spec.tags || {})[name] || 'input');
+    const value = (spec.values || {})[name];
+    el.value = value === undefined || value === null ? '' : String(value);
+    form.appendChild(el);
+  });
+  if (spec.calendar) form.appendChild(element({ 'd2-booking-calendar': '' }, 'div'));
+  if (spec.submit) form.appendChild(element({ type: 'submit' }, 'button'));
+  return form;
+}
+
 // A clock frozen at one instant: the calendar's "today", the lead time and the
 // month it opens on all read it, so the assertions do not drift with the date.
 function frozenClock(iso) {
@@ -251,6 +327,16 @@ function response(status, body, headers) {
  *   hash         fragment of the manage link ('#token=…&action=details')
  *   ret          true | { attrs, inner } — a <div d2-booking-return>
  *   manage       true | { attrs, inner } — a <div d2-booking-manage>
+ *   results      true | { attrs, template, icons, copies, nested, link,
+ *                linkChild, inner } — a <div d2-booking-results> with its
+ *                template row, optionally rendered more than once (a Webflow
+ *                Collection List) or holding a second pattern inside it
+ *   searchForm   true | { attrs, fields, values, tags, calendar } — a
+ *                <form d2-booking-search> above the list
+ *   products     overrides merged into the products fixture response
+ *   productsSeq  [overrides | { refuse: '<errors.json name>' }, …] — one per
+ *                GET /products call; the last repeats, which is how a second
+ *                page of the list, or a page that was refused, is built
  *   statusSeq    [overrides, …] — one per /status call; the last one repeats,
  *                which is how a poll that never settles is built
  *   manageData   overrides merged into the manage fixture response
@@ -296,6 +382,13 @@ function page(opts) {
   const manage = o.manage
     ? body.appendChild(buildBlock('d2-booking-manage', o.manage === true ? {} : o.manage))
     : null;
+  // Above the list, which is where a search belongs.
+  const searchForm = o.searchForm
+    ? body.appendChild(buildSearch(o.searchForm === true ? {} : o.searchForm))
+    : null;
+  const results = o.results
+    ? body.appendChild(buildResults(o.results === true ? {} : o.results))
+    : null;
 
   const document = {
     readyState: 'complete',
@@ -332,6 +425,22 @@ function page(opts) {
     return merged(STATUS, overrides || {});
   }
 
+  // One GET /products answer per call: a second page only differs because the
+  // answer did, so a fixed response could never prove the paging works. An
+  // entry that names a refusal of errors.json refuses that one call, which is
+  // how a list that answered once and was refused next is built.
+  let listCall = 0;
+  function productsResponse() {
+    const seq = o.productsSeq && o.productsSeq.length ? o.productsSeq : [o.products || {}];
+    const overrides = seq[Math.min(listCall, seq.length - 1)] || {};
+    listCall += 1;
+    if (overrides.refuse) {
+      const spec = refusalFixture(overrides.refuse);
+      return response(spec.status, spec.body, o.headers);
+    }
+    return response(PRODUCTS.status, merged(PRODUCTS, overrides));
+  }
+
   function fetchStub(url, init) {
     const text = String(url);
     const method = (init && init.method) || 'GET';
@@ -350,7 +459,10 @@ function page(opts) {
                     : text.indexOf('/quote') >= 0 ? 'quote'
                       // GET /products/<ref>: the only route whose path takes
                       // a reference, so it is what is left of /products/.
-                      : /\/products\/[^/?]+$/.test(text) ? 'product' : 'other';
+                      : /\/products\/[^/?]+$/.test(text) ? 'product'
+                        // GET /products with a query is the list; the single
+                        // place is the one above, with a reference in the path.
+                        : text.indexOf('/products') >= 0 ? 'products' : 'other';
     const refuse = (o.refuse || {})[route];
     if (refuse) {
       const spec = typeof refuse === 'string' ? refusalFixture(refuse) : refuse;
@@ -368,6 +480,7 @@ function page(opts) {
     if (route === 'product') {
       return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, o.productData)));
     }
+    if (route === 'products') return Promise.resolve(productsResponse());
     if (route === 'status') return Promise.resolve(response(STATUS.status, statusResponse()));
     if (route === 'manage') {
       return Promise.resolve(response(MANAGE.status, merged(MANAGE, o.manageData)));
@@ -459,6 +572,8 @@ function page(opts) {
     widget,
     ret,
     manage,
+    results,
+    searchForm,
     redirects,
     location,
     replaced,
@@ -1661,14 +1776,15 @@ test('the drawn look is styled through d2-booking CSS variables, injected once',
     .map((rule) => rule.split('{')[0])
     .filter((sel) => sel.trim().length);
   assert.ok(selectors.length > 10, 'the stylesheet has rules at all: ' + selectors.length);
-  // The three hosts the module draws into. Every rule starts inside one of
+  // The four hosts the module draws into. Every rule starts inside one of
   // them, so nothing in the sheet can reach a calendar, a form or a summary
-  // the Designer styled themselves.
+  // the Designer styled themselves — and the list only when the module drew
+  // its cards, never when the page brought a template of its own.
   // Plus the calendar grid, which is markup the module built itself: a month
   // is seven columns or it is nothing, and that rule has to reach a calendar
   // the Designer placed outside a widget too.
   const hosts = ['[d2-booking-widget]', '[d2-booking-return]', '[d2-booking-manage]',
-    '[d2-booking-calendar-grid]'];
+    '[d2-booking-results][d2-booking-results-drawn]', '[d2-booking-calendar-grid]'];
   selectors.forEach((sel) => {
     sel.split(',').forEach((one) => {
       const text = one.trim();
@@ -3235,4 +3351,905 @@ test('the pets sentence follows the product of the widget, not only the loader t
   assert.ok(asked[0].url.indexOf('/products/' + SLUG) > 0, asked[0].url);
   const hint = env.document.querySelector('[d2-booking-hint="pets_over_threshold"]');
   assert.ok(String(hint.textContent).indexOf('10') >= 0, String(hint.textContent));
+});
+
+// ---------------------------------------------------------------------------
+// The list of places — GET /products into the template the page built
+// ---------------------------------------------------------------------------
+
+function listPage(extra) {
+  return page(Object.assign({ forms: [], results: true }, extra || {}));
+}
+
+// `n` entries built off the fixture's one, each with its own id, slug and
+// name, so one card can be told from the card beside it.
+function places(n, from) {
+  const base = PRODUCTS.response.data[0];
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const k = (from || 0) + i;
+    out.push(Object.assign(clone(base), {
+      id: 'id-' + k,
+      slug: 'apartament-' + k,
+      name: 'Apartament ' + k,
+    }));
+  }
+  return out;
+}
+
+function answerOf(list, count, more) {
+  return { data: list, count: count === undefined ? list.length : count, has_more: !!more };
+}
+
+function rowsOf(env) {
+  return env.document.querySelectorAll('[d2-booking-item]');
+}
+
+function bindOf(row, field) {
+  return row.querySelector('[d2-booking-bind="' + field + '"]');
+}
+
+function bindText(row, field) {
+  const el = bindOf(row, field);
+  return el ? String(el.textContent || '') : null;
+}
+
+// GET /products with a query is the list; /products/<ref> is one place.
+function listCalls(env) {
+  return env.calls.filter((c) => /\/products\?/.test(c.url));
+}
+
+function listBox(env) {
+  return env.document.querySelector('[d2-booking-results]');
+}
+
+test('the template is cloned once per place and never stands in the list itself', async () => {
+  // MUTACJA: render the rows from innerHTML, or leave the template where it
+  // stands, and every list opens with one empty card above the apartments —
+  // and a name out of the API could bring its own markup with it.
+  const env = listPage({ products: answerOf(places(3), 3) });
+  await env.settled();
+
+  const rows = rowsOf(env);
+  assert.equal(rows.length, 3);
+  assert.equal(env.document.querySelectorAll('[d2-booking-template]').length, 0);
+  // The card keeps the class the Designer put on the template.
+  assert.equal(rows[0].getAttribute('class'), 'karta');
+  assert.deepEqual(rows.map((r) => bindText(r, 'name')),
+    ['Apartament 0', 'Apartament 1', 'Apartament 2']);
+  assert.equal(bindText(rows[0], 'city_line'), PRODUCTS.response.data[0].city_line);
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'ready');
+  assert.equal(listCalls(env).length, 1);
+});
+
+test('a field the answer left null leaves an empty marked slot, never "null"', async () => {
+  // MUTACJA: write String(value) whatever it holds and every apartment with
+  // no city line reads "null" — the contract calls eighteen of these fields
+  // nullable, so that is not an edge case but most pages.
+  const [one] = places(1);
+  one.name = null;
+  one.city_line = null;
+  one.image_url = null;
+  const env = listPage({
+    results: { template: ['name', 'city_line', 'image', 'description'] },
+    products: answerOf([one]),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  for (const field of ['name', 'city_line']) {
+    assert.equal(bindText(row, field), '', field);
+    assert.equal(bindOf(row, field).getAttribute('d2-booking-empty'), '', field);
+  }
+  const img = bindOf(row, 'image');
+  assert.equal(img.getAttribute('src'), null);
+  assert.equal(img.getAttribute('d2-booking-empty'), '');
+  // A field the answer does carry is still filled, and not marked.
+  assert.equal(bindText(row, 'description'), PRODUCTS.response.data[0].description);
+  assert.equal(bindOf(row, 'description').getAttribute('d2-booking-empty'), null);
+});
+
+test('the link carries the slug in the address shape the page asked for', async () => {
+  // MUTACJA: hard-code ?apartament= and a client whose apartments are CMS
+  // pages under SEO addresses cannot send a guest anywhere they actually live.
+  const list = answerOf(places(1));
+
+  const own = listPage({ products: list });
+  await own.settled();
+  // The default is the one the booking page itself reads off the address.
+  assert.equal(rowsOf(own)[0].getAttribute('href'), '?apartament=apartament-0');
+
+  const seo = listPage({ results: { link: '/apartamenty/{slug}' }, products: list });
+  await seo.settled();
+  assert.equal(rowsOf(seo)[0].getAttribute('href'), '/apartamenty/apartament-0');
+
+  const whole = listPage({
+    results: { attrs: { 'd2-booking-results-link': '/oferta/{slug}' }, linkChild: true },
+    products: list,
+  });
+  await whole.settled();
+  assert.equal(rowsOf(whole)[0].querySelector('[d2-booking-link]')
+    .getAttribute('href'), '/oferta/apartament-0');
+
+  // No slug in the answer: the id is a reference the booking page resolves
+  // just as well, so the card still leads somewhere.
+  const noSlug = places(1);
+  noSlug[0].slug = null;
+  const byId = listPage({ products: answerOf(noSlug) });
+  await byId.settled();
+  assert.equal(rowsOf(byId)[0].getAttribute('href'), '?apartament=id-0');
+});
+
+test('the more button asks for the next page, appends it and then goes', async () => {
+  // MUTACJA: ask for the same offset again, or re-render instead of appending,
+  // and the second page is the first one twice — with the button still
+  // offering a third.
+  const env = listPage({
+    results: { attrs: { 'd2-booking-results-limit': '3' }, inner: ['more', 'count'] },
+    productsSeq: [answerOf(places(3), 5, true), answerOf(places(2, 3), 5, false)],
+  });
+  await env.settled();
+
+  const more = env.document.querySelector('[d2-booking-more]');
+  assert.equal(rowsOf(env).length, 3);
+  assert.equal(more.getAttribute('hidden'), null);
+  assert.equal(slotText(env, 'd2-booking-count'), '5');
+  assert.ok(listCalls(env)[0].url.indexOf('limit=3&offset=0') > 0, listCalls(env)[0].url);
+
+  fire(more, 'click');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2);
+  assert.ok(listCalls(env)[1].url.indexOf('limit=3&offset=3') > 0, listCalls(env)[1].url);
+  assert.equal(rowsOf(env).length, 5);
+  assert.deepEqual(rowsOf(env).map((r) => bindText(r, 'name')).slice(3),
+    ['Apartament 3', 'Apartament 4']);
+  assert.equal(more.getAttribute('hidden'), '');
+
+  // A button the answer has finished with asks for nothing more.
+  fire(more, 'click');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2);
+});
+
+test('an answer with nothing in it shows the empty state and no rows', async () => {
+  // MUTACJA: leave the empty state hidden and a filter that found nothing is
+  // a blank strip of page that reads as broken.
+  const env = listPage({
+    results: { inner: ['more', 'count', 'empty'] },
+    products: answerOf([], 0),
+  });
+  await env.settled();
+
+  assert.equal(rowsOf(env).length, 0);
+  assert.equal(env.document.querySelector('[d2-booking-results-empty]').style.display, '');
+  assert.equal(slotText(env, 'd2-booking-count'), '0');
+  assert.equal(env.document.querySelector('[d2-booking-more]').getAttribute('hidden'), '');
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'empty');
+
+  // A list that found something keeps that same element out of sight.
+  const found = listPage({ results: { inner: ['empty'] }, products: answerOf(places(1)) });
+  await found.settled();
+  assert.equal(found.document.querySelector('[d2-booking-results-empty]').style.display, 'none');
+});
+
+test("a list with no template gets the module's own cards and its stylesheet", async () => {
+  // MUTACJA: give up without a template and a page that only had time for a
+  // container shows nothing at all; draw the cards without the stylesheet and
+  // they come out as a column of bare text.
+  const entry = PRODUCTS.response.data[0];
+  const env = listPage({
+    results: { template: false },
+    products: answerOf(places(1)),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  assert.ok(row, 'a card was drawn');
+  assert.equal(row.getAttribute('d2-booking-built'), '');
+  assert.equal(row.tagName, 'A');
+  assert.equal(row.getAttribute('href'), '?apartament=apartament-0');
+  assert.equal(bindText(row, 'name'), 'Apartament 0');
+  assert.equal(bindText(row, 'price'), money(entry.price.price, entry.currency));
+  assert.equal(bindOf(row, 'image').getAttribute('src'), entry.image_url);
+  // The amount says what it is an amount of; the contract's only unit is a day.
+  assert.ok(String(bindText(row, 'price_unit')).length > 0, bindText(row, 'price_unit'));
+
+  // The same stylesheet as the drawn widget, injected the same way.
+  const sheet = env.document.querySelector('[d2-booking-styles]');
+  assert.ok(sheet && String(sheet.textContent).indexOf('--d2-booking-accent') > 0);
+  assert.equal(listBox(env).getAttribute('d2-booking-results-drawn'), '');
+});
+
+test('nothing the API answers becomes markup or a style of its own', async () => {
+  // MUTACJA: write a bound value with innerHTML, or an image address into
+  // url(…) unchecked, and one apartment name out of somebody else's CMS runs
+  // script on the client's page.
+  const [one] = places(1);
+  one.name = '<img src=x onerror="alert(1)">';
+  one.city_line = '"><script>alert(2)</script>';
+  one.image_url = 'javascript:alert(3)';
+  const env = listPage({
+    results: { template: ['name', 'city_line', 'image'] },
+    products: answerOf([one]),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  // The text is the answer's text, character for character — and it is text.
+  assert.equal(bindText(row, 'name'), one.name);
+  assert.equal(bindOf(row, 'name').children.length, 0);
+  assert.equal(bindText(row, 'city_line'), one.city_line);
+  // An address that is not an image address is no image at all.
+  assert.equal(bindOf(row, 'image').getAttribute('src'), null);
+  assert.equal(bindOf(row, 'image').getAttribute('d2-booking-empty'), '');
+
+  // The same answer in a slot that is not an <img>: the address would go into
+  // a style property, where one quote ends the declaration and starts another.
+  const [two] = places(1);
+  two.image_url = 'https://cdn.example.org/a.jpg") ; background: url("http://evil.example';
+  const styled = listPage({
+    results: { template: ['image'], imageTag: 'div' },
+    products: answerOf([two]),
+  });
+  await styled.settled();
+  const slot = bindOf(rowsOf(styled)[0], 'image');
+  assert.equal(slot.style.backgroundImage, '');
+  assert.equal(slot.getAttribute('d2-booking-empty'), '');
+
+  // And an address that is an address does become the background.
+  const good = listPage({
+    results: { template: ['image'], imageTag: 'div' },
+    products: answerOf(places(1)),
+  });
+  await good.settled();
+  assert.equal(bindOf(rowsOf(good)[0], 'image').style.backgroundImage,
+    'url("' + PRODUCTS.response.data[0].image_url + '")');
+});
+
+test('any other scalar of the answer binds by its own name', async () => {
+  // MUTACJA: bind a fixed list of fields and a page that wants the floor, the
+  // beds or the rental kind waits for the next release of the module instead
+  // of writing one attribute.
+  const [one] = places(1);
+  one.currency = 'EUR';
+  one.floor = 0;
+  const env = listPage({
+    results: {
+      template: ['price', 'rooms', 'area', 'floor', 'beds', 'max_guests',
+        'rental_kind', 'amenities', 'requires_approval', 'pet_fee'],
+    },
+    products: answerOf([one]),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  // The amount is the entry's own price in the entry's own currency.
+  assert.equal(bindText(row, 'price'), money('250.00', 'EUR'));
+  assert.equal(bindText(row, 'rooms'), '2');
+  assert.equal(bindText(row, 'area'), '48.50');
+  assert.equal(bindText(row, 'beds'), '2');
+  assert.equal(bindText(row, 'max_guests'), '4');
+  assert.equal(bindText(row, 'rental_kind'), 'apartment');
+  assert.equal(bindText(row, 'amenities'), 'wifi');
+  // The ground floor is a floor, not a missing value.
+  assert.equal(bindText(row, 'floor'), '0');
+  assert.equal(bindOf(row, 'floor').getAttribute('d2-booking-empty'), null);
+  // false is the answer "no", not the word "false".
+  assert.equal(bindText(row, 'requires_approval'), '');
+  assert.equal(bindOf(row, 'requires_approval').getAttribute('d2-booking-empty'), '');
+  // An object is three fields, and none of them is "[object Object]".
+  assert.equal(bindText(row, 'pet_fee'), '');
+});
+
+test('a refused list says so and leaves the button for another try', async () => {
+  // MUTACJA: print the backend's own sentence, or nothing at all, and a list
+  // behind a rate limit looks like an offer with nothing in it.
+  const env = listPage({
+    results: { inner: ['more', 'count', 'empty'] },
+    refuse: { products: 'too_many_requests' },
+  });
+  await env.settled();
+
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'error');
+  assert.equal(rowsOf(env).length, 0);
+  assert.equal(slotText(env, 'd2-booking-results-message'), env.booking.message('too_many_requests'));
+  // A refusal is not an empty offer, so nothing says the offer is empty.
+  assert.equal(env.document.querySelector('[d2-booking-results-empty]').style.display, 'none');
+
+  // The button is still there and the next click asks for the same page again.
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2);
+  assert.ok(listCalls(env)[1].url.indexOf('offset=0') > 0, listCalls(env)[1].url);
+});
+
+// ---------------------------------------------------------------------------
+// The search above the list — the period, the party and the city
+// ---------------------------------------------------------------------------
+
+// The query GET /products takes, straight out of the contract fixture.
+const LIST_QUERY = PRODUCTS.query;
+
+function searchFieldOf(env, name) {
+  return env.searchForm.querySelector('[d2-booking-search-field="' + name + '"]');
+}
+
+test('a search sends the period, the city and guests as the sum of the party', async () => {
+  // MUTACJA: send adults and children beside guests (or instead of it) and the
+  // route answers 422 — GET /products takes guests and nothing else, and a
+  // guests that contradicts the sum of the party is a refusal (KONTRAKT.md).
+  const env = listPage({
+    searchForm: {
+      values: {
+        check_in: LIST_QUERY.check_in,
+        check_out: LIST_QUERY.check_out,
+        adults: LIST_QUERY.guests - 1,
+        children: 1,
+        location: LIST_QUERY.location,
+      },
+    },
+    productsSeq: [answerOf(places(3), 3), answerOf(places(1), 1)],
+  });
+  await env.settled();
+  assert.equal(listCalls(env).length, 1, 'the page opens with one page of the list');
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2);
+  const asked = listCalls(env)[1].url;
+  assert.ok(asked.indexOf('check_in=' + LIST_QUERY.check_in) > 0, asked);
+  assert.ok(asked.indexOf('check_out=' + LIST_QUERY.check_out) > 0, asked);
+  assert.ok(asked.indexOf('guests=' + LIST_QUERY.guests) > 0, asked);
+  assert.ok(asked.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, asked);
+  assert.ok(asked.indexOf('adults=') < 0, asked);
+  assert.ok(asked.indexOf('children=') < 0, asked);
+  // A search is the same page with another list, so nothing reloads.
+  assert.deepEqual(env.redirects, []);
+
+  // A page that asks about neither adults nor children sends no guests at all:
+  // an invented party would filter out apartments the guest can have.
+  const nobody = listPage({ searchForm: { fields: ['check_in', 'check_out', 'location'] } });
+  await nobody.settled();
+  fire(nobody.searchForm, 'submit');
+  await nobody.settled();
+  assert.ok(listCalls(nobody)[1].url.indexOf('guests=') < 0, listCalls(nobody)[1].url);
+});
+
+test('a pinned city wins over the page select and the guest cannot change it', async () => {
+  // MUTACJA: let the select answer for the location, or read the pin with
+  // digi2.attr, and the pilot's one-city page either wanders off its city or
+  // sends half a name — everything after a ';' is cut by the responsive reader.
+  const PIN = 'Warszawa; Praga-Północ';
+  const env = listPage({
+    searchForm: {
+      attrs: { 'd2-booking-location': PIN },
+      tags: { location: 'select' },
+      values: { location: 'Kraków' },
+    },
+  });
+  await env.settled();
+
+  const select = searchFieldOf(env, 'location');
+  assert.equal(select.value, PIN);
+  assert.equal(select.disabled, true);
+  assert.equal(select.getAttribute('d2-booking-pinned'), '');
+  assert.ok(listCalls(env)[0].url.indexOf('location=' + encodeURIComponent(PIN)) > 0,
+    listCalls(env)[0].url);
+
+  // A guest who sets the select anyway still gets the city the page pinned.
+  select.value = 'Kraków';
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.ok(listCalls(env)[1].url.indexOf('location=' + encodeURIComponent(PIN)) > 0,
+    listCalls(env)[1].url);
+  assert.ok(listCalls(env)[1].url.indexOf('Krak') < 0, listCalls(env)[1].url);
+  // The pin is the page's own decision, so it is not part of the shared link.
+  assert.ok(String(env.location.search).indexOf('location=') < 0, env.location.search);
+});
+
+test('a city pinned on the list alone filters it with no search form at all', async () => {
+  // MUTACJA: read d2-booking-location off a form only, and a city landing page
+  // with no search on it shows the whole country.
+  const env = listPage({ results: { attrs: { 'd2-booking-location': LIST_QUERY.location } } });
+  await env.settled();
+  assert.equal(listCalls(env).length, 1);
+  assert.ok(listCalls(env)[0].url.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0,
+    listCalls(env)[0].url);
+});
+
+test('a search goes into the page address and keeps what the address carried', async () => {
+  // MUTACJA: drop replaceState and a reload loses the search while the link is
+  // worth nothing to share; rewrite the whole query instead of only the search
+  // keys and ?apartament= and the campaign that brought the guest here go too.
+  const env = listPage({
+    search: '?utm_source=newsletter',
+    searchForm: {
+      values: {
+        check_in: LIST_QUERY.check_in,
+        check_out: LIST_QUERY.check_out,
+        adults: LIST_QUERY.guests,
+        location: LIST_QUERY.location,
+      },
+    },
+  });
+  await env.settled();
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  const where = String(env.location.search);
+  assert.ok(where.indexOf('utm_source=newsletter') > 0, where);
+  assert.ok(where.indexOf('check_in=' + LIST_QUERY.check_in) > 0, where);
+  assert.ok(where.indexOf('check_out=' + LIST_QUERY.check_out) > 0, where);
+  assert.ok(where.indexOf('adults=' + LIST_QUERY.guests) > 0, where);
+  assert.ok(where.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, where);
+  // The address keeps the two questions the page asked, not the sum we send:
+  // a shared link has to be able to put the party back into the form.
+  assert.ok(where.indexOf('guests=') < 0, where);
+  assert.deepEqual(env.redirects, []);
+});
+
+test('a link with a search in it opens its own result and fills the form', async () => {
+  // MUTACJA: ignore the query on start and a shared link opens the whole offer
+  // under a form that shows the search nobody performed.
+  const env = listPage({
+    search: '?check_in=' + LIST_QUERY.check_in + '&check_out=' + LIST_QUERY.check_out
+      + '&adults=' + LIST_QUERY.guests + '&location=' + encodeURIComponent(LIST_QUERY.location),
+    searchForm: true,
+  });
+  await env.settled();
+
+  assert.equal(listCalls(env).length, 1);
+  const asked = listCalls(env)[0].url;
+  assert.ok(asked.indexOf('check_in=' + LIST_QUERY.check_in) > 0, asked);
+  assert.ok(asked.indexOf('guests=' + LIST_QUERY.guests) > 0, asked);
+  assert.ok(asked.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, asked);
+  assert.equal(searchFieldOf(env, 'check_in').value, LIST_QUERY.check_in);
+  assert.equal(searchFieldOf(env, 'check_out').value, LIST_QUERY.check_out);
+  assert.equal(searchFieldOf(env, 'adults').value, String(LIST_QUERY.guests));
+  assert.equal(searchFieldOf(env, 'location').value, LIST_QUERY.location);
+});
+
+test('a search replaces the list and sends the paging back to the first page', async () => {
+  // MUTACJA: append the answer of a search, or keep the offset, and the second
+  // search shows the first one's apartments and asks for a page past its end.
+  const env = listPage({
+    results: { attrs: { 'd2-booking-results-limit': '3' }, inner: ['more', 'count'] },
+    searchForm: { values: { location: LIST_QUERY.location } },
+    productsSeq: [answerOf(places(3), 5, true), answerOf(places(2, 7), 2, false)],
+  });
+  await env.settled();
+  assert.equal(rowsOf(env).length, 3);
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.ok(listCalls(env)[1].url.indexOf('limit=3&offset=0') > 0, listCalls(env)[1].url);
+  assert.deepEqual(rowsOf(env).map((r) => bindText(r, 'name')), ['Apartament 7', 'Apartament 8']);
+  assert.equal(slotText(env, 'd2-booking-count'), '2');
+  assert.equal(env.document.querySelector('[d2-booking-more]').getAttribute('hidden'), '');
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'ready');
+  assert.equal(env.events.filter((e) => e.name === 'booking:search').length, 1);
+});
+
+test('a page still in flight when the search goes out no longer counts', async () => {
+  // MUTACJA: let the answer to a page asked for under the old filter still
+  // move the offset, and the first click after a search skips as many
+  // apartments as that answer carried.
+  const env = listPage({
+    results: { attrs: { 'd2-booking-results-limit': '3' }, inner: ['more'] },
+    searchForm: { values: { location: LIST_QUERY.location } },
+    productsSeq: [
+      answerOf(places(3), 9, true),
+      answerOf(places(3, 3), 9, true),
+      answerOf(places(2, 7), 9, true),
+    ],
+  });
+  await env.settled();
+
+  // The next page is asked for and the guest searches before it comes back.
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 3);
+  assert.deepEqual(rowsOf(env).map((r) => bindText(r, 'name')), ['Apartament 7', 'Apartament 8']);
+
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  await env.settled();
+  assert.ok(listCalls(env)[3].url.indexOf('offset=2') > 0, listCalls(env)[3].url);
+});
+
+test('half a period asks the API nothing and says one short sentence', async () => {
+  // MUTACJA: send one date without the other and the route answers 400 "check_in
+  // and check_out go together", whose sentence is for logs; the guest would see
+  // a list that went empty for no reason they can read.
+  const env = listPage({
+    searchForm: { values: { check_in: LIST_QUERY.check_in, location: LIST_QUERY.location } },
+  });
+  await env.settled();
+  assert.equal(listCalls(env).length, 1);
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 1, 'nothing was asked for');
+  assert.equal(slotText(env, 'd2-booking-results-message'), env.booking.message('stay_required'));
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'error');
+
+  // A departure that is not after the arrival is the same kind of mistake, and
+  // the module knows it before the route does.
+  searchFieldOf(env, 'check_in').value = LIST_QUERY.check_out;
+  searchFieldOf(env, 'check_out').value = LIST_QUERY.check_in;
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 1);
+  assert.equal(slotText(env, 'd2-booking-results-message'), env.booking.message('invalid_stay'));
+});
+
+test('a refused search says the module’s own sentence, never the API’s', async () => {
+  // MUTACJA: print detail from the body, or the same sentence whatever the
+  // filter asked for, and a guest who mistyped a city is told to check their
+  // dates while the backend's English goes on the page.
+  const dates = listPage({
+    searchForm: { fields: ['check_in', 'check_out'] },
+    refuse: { products: 'invalid_stay' },
+  });
+  await dates.settled();
+  assert.equal(slotText(dates, 'd2-booking-results-message'),
+    dates.booking.message('invalid_stay'));
+
+  const city = listPage({
+    results: { attrs: { 'd2-booking-location': 'Atlantyda' } },
+    refuse: { products: 'invalid_stay' },
+  });
+  await city.settled();
+  const said = slotText(city, 'd2-booking-results-message');
+  assert.equal(said, city.booking.message('invalid_search'));
+  assert.notEqual(said, city.booking.message('invalid_stay'));
+  assert.ok(said.indexOf(refusalFixture('invalid_stay').body.detail) < 0, said);
+
+  // 429 carries Retry-After, and the sentence says how long to wait.
+  const waiting = listPage({
+    searchForm: true,
+    refuse: { products: 'too_many_requests' },
+    headers: { 'Retry-After': '30' },
+  });
+  await waiting.settled();
+  assert.ok(String(slotText(waiting, 'd2-booking-results-message')).indexOf('30 s') > 0,
+    slotText(waiting, 'd2-booking-results-message'));
+});
+
+test('the calendar in the search form is the period, with no second calendar', async () => {
+  // MUTACJA: read the period from the date inputs only and a search form built
+  // around stage 5's calendar searches without dates — every click on it
+  // narrowing nothing.
+  const env = listPage({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-product': PRODUCT },
+    searchForm: { fields: ['adults'], values: { adults: 2 }, calendar: true },
+  });
+  await env.settled();
+
+  clickDay(env, '2027-05-05');
+  clickDay(env, '2027-05-08');
+  fire(env.searchForm, 'submit');
+  await env.settled();
+
+  const asked = listCalls(env)[1].url;
+  assert.ok(asked.indexOf('check_in=2027-05-05') > 0, asked);
+  assert.ok(asked.indexOf('check_out=2027-05-08') > 0, asked);
+  assert.ok(asked.indexOf('guests=2') > 0, asked);
+  // One calendar on the page, and it is the one the Designer put there.
+  assert.equal(env.document.querySelectorAll('[d2-booking-calendar]').length, 1);
+});
+
+test('a search field the route does not know is reported and not sent', async () => {
+  // MUTACJA: take a field name without checking it against the five the route
+  // knows, and a typo ("city" for "location") filters nothing while nothing on
+  // the page or in the console says why — the list simply ignores one field.
+  const env = listPage({
+    searchForm: { fields: ['location', 'city'], values: { location: LIST_QUERY.location, city: 'Gdańsk' } },
+  });
+  await env.settled();
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  const asked = listCalls(env)[1].url;
+  assert.ok(asked.indexOf('city=') < 0, asked);
+  assert.ok(asked.indexOf('Gda') < 0, asked);
+  assert.ok(asked.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, asked);
+  assert.ok(env.warnings.some((w) => w.indexOf('d2-booking-search-field="city"') >= 0),
+    env.warnings.join(' | '));
+});
+
+// ---------------------------------------------------------------------------
+// What a real page does to the list: a Collection List, a nullable slug, a
+// rate limit and a search that cannot go out
+// ---------------------------------------------------------------------------
+
+test('every pattern leaves the list, not only the first one', async () => {
+  // MUTACJA: take the first [d2-booking-template] and drop that one alone, and
+  // a card built inside a Webflow Collection List — rendered once per CMS item,
+  // so the published page carries the attribute N times — leaves every copy
+  // but one standing above the apartments as a clickable placeholder card that
+  // clearRows() never touches.
+  const env = listPage({
+    results: { copies: 3, inner: ['count'] },
+    products: answerOf(places(2), 2),
+  });
+  await env.settled();
+
+  assert.equal(rowsOf(env).length, 2);
+  assert.equal(env.document.querySelectorAll('[d2-booking-template]').length, 0);
+  assert.equal(listBox(env).children.length, 2, 'nothing but the rows is left in the list');
+  assert.ok(env.warnings.some((w) => w.indexOf('d2-booking-template') >= 0),
+    env.warnings.join(' | '));
+
+  // A pattern inside the pattern would otherwise be cloned into every card.
+  const inner = listPage({ results: { nested: true }, products: answerOf(places(2), 2) });
+  await inner.settled();
+  assert.equal(rowsOf(inner).length, 2);
+  assert.equal(inner.document.querySelectorAll('[d2-booking-template]').length, 0);
+});
+
+test('a CMS address shape with no slug to put in it leaves the card unlinked', async () => {
+  // MUTACJA: fall back to the id inside a {slug} path and a page whose
+  // apartments are CMS pages gets href="/apartamenty/<uuid>" — a collection
+  // address that cannot exist — for every entry whose slug is null (a nullable
+  // field of the contract).
+  const noSlug = places(1);
+  noSlug[0].slug = null;
+  const env = listPage({
+    results: { link: '/apartamenty/{slug}' },
+    products: answerOf(noSlug),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  assert.equal(row.getAttribute('href'), null);
+  assert.equal(row.getAttribute('d2-booking-empty'), '');
+
+  // The id is still a reference the booking page resolves, so a shape that
+  // asks for the id by name, and the default query, both lead somewhere.
+  const byId = listPage({ results: { link: '/oferta/{id}' }, products: answerOf(noSlug) });
+  await byId.settled();
+  assert.equal(rowsOf(byId)[0].getAttribute('href'), '/oferta/id-0');
+});
+
+test('a flag that is true leaves its slot exactly as the Designer built it', async () => {
+  // MUTACJA: write the slot's own text back into it and the badge loses the
+  // markup inside it (textContent replaces every child with one text node),
+  // while a badge built as an icon alone is marked d2-booking-empty under a
+  // flag that is true — so the page's CSS hides it.
+  const flagged = places(1);
+  flagged[0].requires_approval = true;
+  const env = listPage({
+    results: { template: ['name', 'requires_approval'], icons: ['requires_approval'] },
+    products: answerOf(flagged),
+  });
+  await env.settled();
+
+  const slot = bindOf(rowsOf(env)[0], 'requires_approval');
+  assert.equal(slot.getAttribute('d2-booking-empty'), null, 'true is an answer, not a gap');
+  assert.equal(slot.children.length, 1, 'the icon the Designer put in the slot is still there');
+  assert.ok(String(slot.textContent).indexOf('na zapytanie') >= 0, String(slot.textContent));
+
+  // false still empties the slot, icon and all: nobody reads "false" here.
+  const plain = places(1);
+  plain[0].requires_approval = false;
+  const off = listPage({
+    results: { template: ['name', 'requires_approval'], icons: ['requires_approval'] },
+    products: answerOf(plain),
+  });
+  await off.settled();
+  const empty = bindOf(rowsOf(off)[0], 'requires_approval');
+  assert.equal(String(empty.textContent), '');
+  assert.equal(empty.getAttribute('d2-booking-empty'), '');
+});
+
+test('a bind name the answer does not carry empties its slot', async () => {
+  // MUTACJA: read entry[field] with no hasOwnProperty guard and a mistyped
+  // bind name renders JavaScript into the card: "constructor" comes out as
+  // "function Object() { [native code] }".
+  const env = listPage({
+    results: { template: ['name', 'constructor', 'toString', 'city'] },
+    products: answerOf(places(1)),
+  });
+  await env.settled();
+
+  const row = rowsOf(env)[0];
+  for (const field of ['constructor', 'toString']) {
+    assert.equal(bindText(row, field), '', field);
+    assert.equal(bindOf(row, field).getAttribute('d2-booking-empty'), '', field);
+  }
+  // A field the answer really carries is untouched by the guard.
+  assert.equal(bindText(row, 'city'), PRODUCTS.response.data[0].city);
+});
+
+test('a list behind a rate limit holds its button for exactly Retry-After', async () => {
+  // MUTACJA: unlock [d2-booking-more] at once after a 429 and every click
+  // inside the window spends another call of the key's rate limit on another
+  // 429 — the rule the module states for every other button that meets one.
+  const env = listPage({
+    results: { inner: ['more', 'count'] },
+    refuse: { products: 'too_many_requests' },
+    headers: { 'Retry-After': '30' },
+  });
+  await env.settled();
+
+  const more = env.document.querySelector('[d2-booking-more]');
+  assert.ok(String(slotText(env, 'd2-booking-results-message')).indexOf('30 s') > 0,
+    slotText(env, 'd2-booking-results-message'));
+  assert.equal(more.disabled, true);
+  assert.equal(more.getAttribute('disabled'), '');
+  assert.ok(env.waits().indexOf(30000) >= 0, env.waits().join(','));
+
+  // A click that got past the disabled button spends nothing either.
+  fire(more, 'click');
+  await env.settled();
+  assert.equal(listCalls(env).length, 1, 'nothing was asked for during the wait');
+
+  // The wait is over: the button is one click from another try, like every
+  // other refusal of a page.
+  env.flush();
+  await env.settled();
+  assert.equal(more.disabled, false);
+  assert.equal(more.getAttribute('disabled'), null);
+  fire(more, 'click');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2);
+  assert.ok(listCalls(env)[1].url.indexOf('offset=0') > 0, listCalls(env)[1].url);
+});
+
+test('a refusal takes the empty state down with it', async () => {
+  // MUTACJA: leave [d2-booking-results-empty] where the answer before it left
+  // it and the guest reads "Nic nie znaleźliśmy." and the refusal sentence at
+  // the same time — a refusal is not an offer with nothing in it, which is
+  // what all four doc places promise.
+  const env = listPage({
+    results: { inner: ['empty', 'count'] },
+    searchForm: { values: { location: LIST_QUERY.location } },
+    productsSeq: [answerOf([], 0), { refuse: 'too_many_requests' }],
+  });
+  await env.settled();
+  const empty = env.document.querySelector('[d2-booking-results-empty]');
+  assert.equal(empty.style.display, '', 'the first answer found nothing and says so');
+
+  // The server refused the next page of the search.
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'error');
+  assert.equal(slotText(env, 'd2-booking-results-message'),
+    env.booking.message('too_many_requests'));
+  assert.equal(empty.style.display, 'none');
+
+  // And a search the module refuses itself answers the same way.
+  const typed = listPage({
+    results: { inner: ['empty'] },
+    searchForm: { values: { location: LIST_QUERY.location } },
+    products: answerOf([], 0),
+  });
+  await typed.settled();
+  assert.equal(typed.document.querySelector('[d2-booking-results-empty]').style.display, '');
+  searchFieldOf(typed, 'check_in').value = LIST_QUERY.check_in;
+  fire(typed.searchForm, 'submit');
+  await typed.settled();
+  assert.equal(slotText(typed, 'd2-booking-results-message'),
+    typed.booking.message('stay_required'));
+  assert.equal(typed.document.querySelector('[d2-booking-results-empty]').style.display, 'none');
+});
+
+test('a search that cannot go out leaves the list on the filter its rows came from', async () => {
+  // MUTACJA: install the new search before checking it and the rows on screen
+  // belong to the old filter while the next [d2-booking-more] asks for the
+  // next offset under the new one — two result sets in one column, with the
+  // apartments of the overlap shown twice and the rest skipped.
+  const env = listPage({
+    results: { attrs: { 'd2-booking-results-limit': '3' }, inner: ['more'] },
+    searchForm: {
+      values: {
+        check_in: LIST_QUERY.check_in,
+        check_out: LIST_QUERY.check_out,
+        location: LIST_QUERY.location,
+      },
+    },
+    productsSeq: [answerOf(places(3), 9, true), answerOf(places(3, 3), 9, true)],
+  });
+  await env.settled();
+  assert.ok(listCalls(env)[0].url.indexOf('check_in=' + LIST_QUERY.check_in) > 0,
+    listCalls(env)[0].url);
+
+  // The guest clears the departure and presses search: half a period.
+  searchFieldOf(env, 'check_out').value = '';
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 1, 'nothing was asked for');
+  assert.equal(slotText(env, 'd2-booking-results-message'), env.booking.message('stay_required'));
+  assert.equal(rowsOf(env).length, 3, 'the rows of the search that did happen stay');
+
+  // The next page belongs to the search those rows came from.
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  await env.settled();
+  const asked = listCalls(env)[1].url;
+  assert.ok(asked.indexOf('offset=3') > 0, asked);
+  assert.ok(asked.indexOf('check_in=' + LIST_QUERY.check_in) > 0, asked);
+  assert.ok(asked.indexOf('check_out=' + LIST_QUERY.check_out) > 0, asked);
+  assert.equal(rowsOf(env).length, 6);
+});
+
+test('a search in the address survives a form that does not ask about it', async () => {
+  // MUTACJA: read the form back over the link and every search parameter the
+  // form has no field for is dropped on open — a shared link opens the whole
+  // offer, and a reload loses the period of a form built around the calendar.
+  const link = '?check_in=' + LIST_QUERY.check_in + '&check_out=' + LIST_QUERY.check_out
+    + '&location=' + encodeURIComponent(LIST_QUERY.location);
+  const env = listPage({
+    search: link,
+    searchForm: { fields: ['adults'], values: { adults: 2 } },
+  });
+  await env.settled();
+
+  assert.equal(listCalls(env).length, 1);
+  const asked = listCalls(env)[0].url;
+  assert.ok(asked.indexOf('check_in=' + LIST_QUERY.check_in) > 0, asked);
+  assert.ok(asked.indexOf('check_out=' + LIST_QUERY.check_out) > 0, asked);
+  assert.ok(asked.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, asked);
+  assert.ok(asked.indexOf('guests=2') > 0, asked);
+
+  // And a submit in that form keeps them too, instead of searching the whole
+  // country because the guest changed the party.
+  searchFieldOf(env, 'adults').value = '3';
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  const again = listCalls(env)[1].url;
+  assert.ok(again.indexOf('check_in=' + LIST_QUERY.check_in) > 0, again);
+  assert.ok(again.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, again);
+  assert.ok(again.indexOf('guests=3') > 0, again);
+  // A field the form does carry still answers for its own key when the guest
+  // empties it: they can see it, so clearing it is an answer.
+  const dated = listPage({
+    search: link,
+    searchForm: { fields: ['check_in', 'check_out'] },
+  });
+  await dated.settled();
+  const only = listCalls(dated)[0].url;
+  assert.ok(only.indexOf('location=' + encodeURIComponent(LIST_QUERY.location)) > 0, only);
+  assert.ok(only.indexOf('check_in=' + LIST_QUERY.check_in) > 0, only);
+});
+
+test('two clicks on Szukaj ask the same question once', async () => {
+  // MUTACJA: let every submit start another first page and a double click
+  // spends two calls of the key's rate limit on one search, the second one
+  // abandoning the answer to the first.
+  const env = listPage({
+    searchForm: { values: { location: LIST_QUERY.location } },
+    products: answerOf(places(2), 2),
+  });
+  await env.settled();
+  assert.equal(listCalls(env).length, 1);
+
+  fire(env.searchForm, 'submit');
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 2, listCalls(env).map((c) => c.url).join(' | '));
+  assert.equal(rowsOf(env).length, 2);
+  assert.equal(listBox(env).getAttribute('d2-booking-results-state'), 'ready');
+  assert.equal(env.events.filter((e) => e.name === 'booking:search').length, 1);
+
+  // A list that is idle searches again: the same question after a refusal, or
+  // after reading a page, is a retry and has to go out.
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 3);
+});
+
+test('a search form with no list on the page says so in the console', async () => {
+  // MUTACJA: bind the submit and say nothing, and a hero search form on a page
+  // with no [d2-booking-results] is a button that cancels the submit and does
+  // nothing at all, with nothing anywhere to explain why.
+  const env = page({ forms: [], searchForm: { values: { location: LIST_QUERY.location } } });
+  await env.settled();
+
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, 0);
+  assert.ok(env.warnings.some((w) => w.indexOf('d2-booking-results') >= 0
+    && w.indexOf('d2-booking-search') >= 0), env.warnings.join(' | '));
 });

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: bramka wydania — d2-booking (lista obiektów)</title>
+
+<!--
+  Strona kontroli przed wydaniem (tests/browser/gate.spec.js). Moduł idzie
+  z dist/, czyli dokładnie to, co pójdzie na CDN po tagu.
+
+  Dwie listy, bo dwie drogi: pierwsza ma wzorzec karty zbudowany tutaj (moduł
+  go zabiera ze strony i klonuje pod każdy obiekt), druga jest pustym divem —
+  karty rysuje w niej moduł z własnego arkusza na zmiennych CSS. Przy dwóch
+  listach na stronie każda musi mieć swoje sterowanie w środku, bo przycisk
+  stojący między nimi nie należy do żadnej — pierwsza je ma, druga go nie
+  potrzebuje.
+
+  Nad listami stoi formularz szukania. Atrapa filtruje po mieście i liczbie
+  gości, więc bramka widzi, że szukanie naprawdę zawęża listę, zeruje
+  stronicowanie i ląduje w adresie strony. Druga lista ma miasto przypięte
+  atrybutem, więc szukanie jej nie rusza.
+
+  API jest zaatrapowane w przeglądarce: podmieniamy window.fetch PRZED
+  loaderem, a odpowiedzi bierzemy z tests/fixtures/booking-api/. Atrapa ma
+  pięć obiektów i oddaje je po `limit` i `offset`, żeby „pokaż więcej” miało
+  co dopisać i czym się skończyć. Nic nie wychodzi poza localhost; prawdziwe
+  API 2destate nie jest wołane ani razu. Klucz pk_sandbox_* jest wymyślony.
+
+  Ręcznie: npm run sandbox  ->  http://localhost:5179/sandbox/gate-booking-list.html
+-->
+
+<style>
+  body { margin: 0; background: #fbfaf8; font: 16px/1.5 "DejaVu Sans", Arial, sans-serif; }
+  .strona { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  h2 { font-size: 17px; margin: 32px 0 12px; }
+  /* Styl listy ze wzorcem jest w CAŁOŚCI stąd: moduł do niej nic nie wnosi. */
+  .lista { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); }
+  .karta { display: block; padding: 12px; text-decoration: none; color: #1a1d1c;
+    background: #fff; border: 1px solid #ded9d2; border-radius: 10px; }
+  .karta img { width: 100%; height: 120px; object-fit: cover; background: #efece7; }
+  .karta h3 { font-size: 16px; margin: 8px 0 2px; }
+  .karta .miasto { font-size: 14px; color: #6b6f6d; }
+  .karta .cena { font-weight: 600; }
+  [d2-booking-results-empty] { padding: 10px 12px; background: #f1efea; border-radius: 8px; }
+</style>
+
+<script>
+  // Atrapa API — zanim loader dociągnie moduł. Odpowiedzi z plików kontraktu.
+  (function () {
+    var realFetch = window.fetch.bind(window);
+    var FIXTURES = '../tests/fixtures/booking-api/';
+    var cache = {};
+    // Które trasy dostały żądanie — bramka czyta to z window.
+    window.__d2Calls = [];
+
+    function fixture(name) {
+      if (!cache[name]) {
+        cache[name] = realFetch(FIXTURES + name + '.json').then(function (r) { return r.json(); });
+      }
+      return cache[name];
+    }
+
+    function answer(body, status) {
+      return new Response(JSON.stringify(body), {
+        status: status || 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    function number(url, name, fallback) {
+      var m = new RegExp('[?&]' + name + '=(\\d+)').exec(String(url));
+      return m ? parseInt(m[1], 10) : fallback;
+    }
+
+    function textOf(url, name) {
+      var m = new RegExp('[?&]' + name + '=([^&]*)').exec(String(url));
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+
+    // Zdjęcie: jeden przezroczysty piksel pod adresem data:, bo z bramki nic
+    // nie wychodzi poza localhost, a adres z kontraktu (cdn.example.org)
+    // byłby żądaniem na zewnątrz. Moduł przyjmuje data:image/ tak samo jak
+    // https, więc to wciąż ta sama droga.
+    var PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAAB'
+      + 'AAEAAAIBRAA7';
+
+    // Pięć obiektów z jednego z kontraktu: każdy ma swój slug i swoją nazwę,
+    // żeby jedną kartę dało się odróżnić od sąsiedniej. Trzecie zdjęcie jest
+    // null, a czwarte miasto też — tak bramka widzi puste miejsce zamiast
+    // słowa „null”. Dwa pierwsze są w Krakowie, trzy kolejne we Wrocławiu,
+    // żeby wyszukiwanie po mieście miało co zawęzić.
+    var CITIES = ['Kraków', 'Kraków', 'Wrocław', 'Wrocław', 'Wrocław'];
+
+    function places(fx) {
+      var base = fx.response.data[0];
+      var out = [];
+      for (var i = 0; i < 5; i++) {
+        var one = JSON.parse(JSON.stringify(base));
+        one.id = 'id-' + i;
+        one.slug = 'apartament-' + i;
+        one.name = 'Apartament ' + i;
+        one.image_url = PIXEL;
+        one.city = CITIES[i];
+        one.city_line = '00-00' + i + ' ' + CITIES[i];
+        if (i === 2) one.image_url = null;
+        if (i === 3) one.city_line = null;
+        out.push(one);
+      }
+      return out;
+    }
+
+    // Filtr trasy: miasto i liczba gości. Daty atrapa tylko przyjmuje —
+    // kalendarza tu nie ma, a bramka sprawdza, że wychodzą w zapytaniu.
+    function filtered(all, url) {
+      var city = textOf(url, 'location');
+      var guests = number(url, 'guests', 0);
+      var out = [];
+      for (var i = 0; i < all.length; i++) {
+        if (city && all[i].city !== city) continue;
+        if (guests && all[i].max_guests && all[i].max_guests < guests) continue;
+        out.push(all[i]);
+      }
+      return out;
+    }
+
+    window.fetch = function (url, init) {
+      var text = String(url && url.url ? url.url : url);
+      if (text.indexOf('/public/sites/') < 0) return realFetch(url, init);
+      window.__d2Calls.push(((init && init.method) || 'GET') + ' ' + text);
+
+      if (text.indexOf('/config') >= 0) {
+        return fixture('config').then(function (fx) { return answer(fx.response); });
+      }
+      // GET /products/<ref> — jeden obiekt; w ścieżce stoi referencja.
+      if (/\/products\/[^/?]+$/.test(text)) {
+        return fixture('product').then(function (fx) { return answer(fx.response); });
+      }
+      // GET /products z zapytaniem — lista, strona po stronie.
+      if (text.indexOf('/products') >= 0) {
+        return fixture('products').then(function (fx) {
+          var all = filtered(places(fx), text);
+          var limit = number(text, 'limit', 24);
+          var offset = number(text, 'offset', 0);
+          var page = all.slice(offset, offset + limit);
+          return answer({
+            data: page,
+            count: all.length,
+            has_more: offset + page.length < all.length,
+          });
+        });
+      }
+      // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.
+      return answer({ detail: 'Not found in the sandbox stub' }, 404);
+    };
+  }());
+</script>
+
+<script src="../dist/digi2-loader.min.js"
+  d2-booking="pk_sandbox_0000"
+  d2-booking-api="http://127.0.0.1:5179/api/v1"></script>
+</head>
+<body>
+<div class="strona">
+  <h1>Lista apartamentów (atrapa API)</h1>
+
+  <h2>Wyszukiwanie</h2>
+  <!-- Formularz szukania: pola mówią, czym są, a moduł przejmuje submit.
+       Strona się nie przeładowuje, a to, co gość wpisał, ląduje w adresie. -->
+  <form id="szukaj" d2-booking-search>
+    <label>Przyjazd <input type="date" d2-booking-search-field="check_in"></label>
+    <label>Wyjazd <input type="date" d2-booking-search-field="check_out"></label>
+    <label>Dorośli <input type="number" min="1" value="2" d2-booking-search-field="adults"></label>
+    <label>Dzieci <input type="number" min="0" d2-booking-search-field="children"></label>
+    <label>Miasto
+      <select d2-booking-search-field="location">
+        <option value="">Wszędzie</option>
+        <option>Kraków</option>
+        <option>Wrocław</option>
+      </select>
+    </label>
+    <button type="submit">Szukaj</button>
+  </form>
+
+  <h2>Wzorzec karty ze strony</h2>
+  <!-- Sterowanie siedzi w liście, bo na stronie są dwie listy. Wiersze są
+       dopisywane na koniec, więc stają za nim. -->
+  <div class="lista" id="ze-wzorcem" d2-booking-results d2-booking-results-limit="3">
+    <a d2-booking-template d2-booking-link="/apartamenty/{slug}" class="karta">
+      <img d2-booking-bind="image">
+      <h3 d2-booking-bind="name"></h3>
+      <span class="miasto" d2-booking-bind="city_line"></span>
+      <span class="cena" d2-booking-bind="price"></span>
+      <span d2-booking-bind="price_unit"></span>
+    </a>
+    <button type="button" d2-booking-more>Pokaż więcej</button>
+    <span>Obiektów: <span d2-booking-count></span></span>
+    <div d2-booking-results-empty>Nic nie znaleźliśmy.</div>
+    <div d2-booking-results-message></div>
+  </div>
+
+  <h2>Pusty div — karty rysuje moduł, miasto przypięte</h2>
+  <!-- Strona nie daje tu nic: ani wzorca, ani CSS-u. Miasto jest przypięte na
+       samej liście, więc ta lista zostaje w Krakowie, cokolwiek wybierze gość
+       w formularzu wyżej — tak wygląda strona jednego miasta. -->
+  <div id="rysowana" d2-booking-results d2-booking-results-limit="2"
+    d2-booking-location="Kraków"></div>
+</div>
+</body>
+</html>

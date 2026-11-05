@@ -4171,6 +4171,260 @@ whole page (every form shares it): `form_fields`, `child_max_age`, `languages`,
 read never closes the form — the page keeps the fields the Designer built, logs
 a warning, and the backend decides on submit.
 
+### The list of places
+
+```html
+<div d2-booking-results>
+  <a d2-booking-template d2-booking-link class="karta">
+    <img d2-booking-bind="image">
+    <h3 d2-booking-bind="name"></h3>
+    <span d2-booking-bind="city_line"></span>
+    <span d2-booking-bind="price"></span>
+  </a>
+</div>
+
+<button d2-booking-more>Pokaż więcej</button>
+<span d2-booking-count></span>
+<div d2-booking-results-empty>Nic nie znaleźliśmy.</div>
+```
+
+`GET /products` answers the list, and the row the page built is the row the
+guest reads: `[d2-booking-template]` is remembered, **taken off the page**
+before anything shows, and cloned once per entry — markup, classes and nesting
+as the Designer wrote them. The clone loses `d2-booking-template` and gains
+`d2-booking-item`. A template left where it stood would be an empty card above
+every real one.
+
+**Every** pattern leaves the page, not only the first one, and the attribute is
+stripped from the inside of the clone as well: a card built inside a Webflow
+Collection List is rendered once per CMS item, so the published page carries
+`d2-booking-template` on every one of them, and a copy left standing would be a
+clickable placeholder card that no later render ever clears (only
+`[d2-booking-item]` rows are). The first one is the pattern, the rest are
+dropped, and the module says in the console how many it found.
+
+Rows are **appended** to the container, so a button, a count or an empty state
+belongs **next to** the list, not inside it — which is where a Webflow layout
+leaves them anyway. One put inside is still filled in and never removed (only
+`[d2-booking-item]` rows are cleared); the rows simply follow it. With one list
+on the page the controls may stand anywhere; with two, each list has to hold
+its own, because a button standing between them belongs to neither.
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-results` | any Div | The list, read once per visit. |
+| `d2-booking-results-limit="<n>"` | the list | How many places one page asks for. Default `24`; the key has its own maximum. |
+| `d2-booking-results-link="<shape>"` | the list | The address shape every card of this list leads to (below). Read raw — an address may legally contain `;` and `@`. |
+| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. |
+| `d2-booking-bind="<field>"` | any element in the row, the row itself included | One field of the entry, as text (below). |
+| `d2-booking-link[="<shape>"]` | Link, or the row itself | Where this card leads. A whole card is usually one link, so the attribute may sit on the template. |
+| `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. |
+| `d2-booking-count` | any element | The `count` the answer carries — every place that matches, not the ones on screen. |
+| `d2-booking-results-empty` | any element | Shown **only** when the answer has nothing. Hidden until the answer arrives, and hidden on a refusal. |
+| `d2-booking-results-message` | any element **inside** the list | The sentence of a refusal, in the module's own words. Unlike the button, the count and the empty state — which may also stand beside the list — this one is looked for inside it; a missing one is built there, with `role="status"` and `aria-live="polite"` and marked `d2-booking-built`. |
+| `d2-booking-item` | set by the module | On every rendered row. |
+| `d2-booking-empty` | set by the module | On a slot the answer had nothing for. |
+| `d2-booking-results-state` | set by the module | `loading` \| `ready` \| `empty` \| `error`. |
+| `d2-booking-results-drawn` | set by the module | This list had no template, so the module drew the cards itself. |
+| `d2-booking-busy` | set by the module | A page of the list is in flight. |
+
+**Every scalar field of the contract binds by its own name** — `name`,
+`project_name`, `city`, `city_line`, `address_line`, `rooms`, `area`, `floor`,
+`beds`, `max_guests`, `description`, `rental_kind`, `timezone`, `latitude`,
+`longitude`, `min_units`, `max_units`, `payment_mode`… — so a page is never
+limited to a list somebody hardcoded. Four values read differently:
+
+| Value | What the module writes |
+|---|---|
+| `image` | `image_url`. On an `<img>` the `src`, with the place's `name` as the `alt` (an unnamed picture gets an empty `alt` on purpose, so a screen reader skips it instead of reading an address out loud); anywhere else the `background-image`. |
+| `price` | The entry's own `price.price` in the entry's own `currency`, through the same `Intl` formatting as the quote. The module computes no amount here either. |
+| `price_unit` | What that amount is the price of ("za noc"). A unit this module does not know shows nothing rather than a bare code. |
+| a list of scalars (`amenities`, `allowed_units`, `image_urls`) | joined with commas |
+
+A missing or `null` field — eighteen fields of the contract are nullable, so
+this is most pages and not an edge case — leaves the element empty and marked
+`d2-booking-empty`, never the word `null`. So does `""`, an object (`pet_fee`,
+`prices`) rather than `[object Object]`, a name the answer does not carry at
+all (a typo, or `constructor` — the field has to be the entry's own, or a slot
+would read `function Object() { [native code] }`), and a flag that is `false`
+(`requires_approval`); a flag that is `true` leaves the slot **exactly as the
+Designer built it** — the text and the markup inside it, an icon beside the
+word "na zapytanie" included, and not marked `d2-booking-empty` either. A
+declared `0` (the ground `floor`) is an answer, not a gap, and is written.
+
+**Nothing out of the answer is ever markup**: a value goes in with
+`textContent`, an address with `setAttribute`, and a picture only once its
+address reads as one — `https:`, `/…` or `data:image/`, with no quote, bracket
+or backslash. A `src` is one click from running and a background goes into a
+style property, where a single quote ends the declaration and starts whatever
+came with the answer. These names come out of a CMS this module does not own.
+
+#### Where a card leads
+
+The default is `?apartament=<slug>` — the very query the booking page reads —
+so the list and the booking page fit together with nothing written. A client
+whose apartments are CMS pages under their own addresses writes the shape
+instead, on the link or on the whole list:
+
+| Shape | `href` |
+|---|---|
+| none | `?apartament=apartament-rynek-wroclaw` |
+| `/apartamenty/{slug}` | `/apartamenty/apartament-rynek-wroclaw` |
+| `/rezerwacja` (no placeholder) | `/rezerwacja?apartament=apartament-rynek-wroclaw` |
+
+`{slug}` and `{id}` are the two references the booking page can resolve, and
+both go out `encodeURIComponent`-escaped. Each placeholder is the field it
+names and nothing else: an entry whose `slug` is `null` (a nullable field of
+the contract) under a `/apartamenty/{slug}` shape leaves the card **without an
+`href`** and marked `d2-booking-empty`, rather than pointing at a CMS address
+built out of a UUID that cannot exist. So does an entry with neither reference
+under the default shape.
+
+#### Paging, and a page that was refused
+
+Paging is `limit` and `offset`. The first page replaces the rows and every
+later one is appended, so the guest keeps what they were already reading. A
+page that was refused **leaves the offset where it was** — the next click asks
+for that same page again instead of skipping it — and says why in
+`[d2-booking-results-message]`, in the module's own words (the backend's own
+sentence is for logs), with `[d2-booking-results-empty]` taken down: a refusal
+is not an offer with nothing in it. A `400` on this route is about what the
+filter asked for: the period (`invalid_stay`), or the period and the city once
+the search named one (`invalid_search`). An answer that said `has_more: false`
+is final: that button asks for nothing more.
+
+A `429` is the one refusal the button does **not** stay open for: it waits
+exactly `Retry-After` seconds, like every other button of this module that
+meets a rate limit, because opening it at once only buys the guest the next
+`429`. A click that gets past the disabled button spends no call either.
+
+`booking:list` reports every page — `{ count, shown, has_more }`, or
+`{ reason, status }` when the page was refused.
+
+#### The search above the list
+
+```html
+<form d2-booking-search>
+  <input type="date"   d2-booking-search-field="check_in">
+  <input type="date"   d2-booking-search-field="check_out">
+  <input type="number" d2-booking-search-field="adults" value="2">
+  <input type="number" d2-booking-search-field="children">
+  <select d2-booking-search-field="location">…</select>
+  <button type="submit">Szukaj</button>
+</form>
+```
+
+A submit searches **without reloading the page**: every `[d2-booking-results]`
+on the page goes back to its first page with the new filter, and the search
+goes into the page address, so a reload keeps it and the link is worth sharing.
+The module reads those parameters on start — **before** the first page of any
+list — and fills the form with them, so a shared link opens its own result
+under a form that shows what was asked for. Webflow's own form handler never
+runs: the module takes the submit.
+
+The form and the address are **merged**, not one or the other: a field the form
+carries answers for its own key even when it is empty (the guest can see that
+field, so clearing it is an answer), and so does anything the form knows
+without a field of its own — the calendar's period, a pinned city. Every key
+the form has no field for keeps what the address said. A search form built
+around the calendar and a party field therefore keeps the city of the link it
+was opened with, and a submit in it does not widen the list to the whole
+country.
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-search` | Form Block | The search. One form drives every list on the page. |
+| `d2-booking-search-field="<name>"` | Input, Select | `check_in` \| `check_out` \| `adults` \| `children` \| `location`. Any other name is ignored with a console warning. |
+| `d2-booking-location="<city>"` | the search form, or a list | Pins the city; the guest cannot change it. On a list it wins for that list. Read with raw `getAttribute`. |
+| `d2-booking-pinned` | set by the module | On a `location` field under a pin: the value is the pinned city and the field is `disabled`. |
+| `d2-booking-search-option` | set by the module | On an `<option>` the module added to a `<select>`, because the city it had to show — out of a link or a pin — was not among the page's own options. |
+| `d2-booking-search-bound` | set by the module | This form's submit is taken; a second `apply()` does not take it twice. |
+
+What goes out is what `GET /products` takes and nothing else:
+
+| Parameter | Rule |
+|---|---|
+| `check_in`, `check_out` | Both or neither — the route takes them together (`errors.json`: a 400 "check_in and check_out go together"). A typed time is dropped, because a filter asks about days, and text that is not a date narrows nothing. |
+| `guests` | **adults + children.** The route takes no `adults` and no `children`, so nothing can contradict the sum — a `guests` that does is a `422` (KONTRAKT.md). A page that asks about neither sends no `guests` at all. |
+| `location` | The pinned city if there is one, otherwise the `location` field. |
+| `limit`, `offset` | The list's own paging, back at `offset=0`. |
+
+The period may be **typed** into the two date fields or **picked** in a
+`[d2-booking-calendar]` standing inside the search form — the same calendar the
+booking form uses, and the only one: the search reads the stay that calendar
+already announced through `select()`. A typed field wins over it, because a
+value the guest can see on the page is what they think they are searching for.
+
+**Edge cases**
+
+- Half a period, or a departure that is not after the arrival, asks the API
+  **nothing** and says one sentence in `[d2-booking-results-message]`
+  (`stay_required` / `invalid_stay`). The route would answer a 400 whose
+  sentence is for logs, and the guest would see a list that went empty for no
+  reason they can read.
+- A **pinned** city beats the `location` field and the address alike, and is
+  never written into the address: it is the page's decision, not the guest's
+  search. A list may carry a pin with no search form anywhere near it — that is
+  how a page of one city is built. Two lists may pin two different cities; each
+  list's own pin wins for that list.
+- The city is read with raw `getAttribute`, never `digi2.attr`: a place name
+  may legally contain `;` or `@`, which the responsive syntax would cut.
+- The address keeps the two questions the page asked
+  (`?check_in=…&check_out=…&adults=2&children=1&location=Wrocław`), not the sum
+  we send, so a shared link can put the party back into the form. Everything
+  else the address carried — `?apartament=`, a campaign, a language — stays
+  exactly as it was written. The entry is **replaced** and not pushed
+  (`replaceState`), so Back still leaves the page instead of walking through
+  every narrowing of a filter.
+- A `<select>` takes only a value one of **its own** `<option>`s carries: a
+  browser answers anything else with `selectedIndex = -1`, so the field stands
+  blank and reads back empty. A link naming a city the page does not offer
+  (`?location=Gdańsk` over a select of two cities) would therefore lose that
+  city twice over — off the screen, and out of the merge, where a field answers
+  for its own key even when it is empty — and the guest would get the whole
+  offer under an address still promising one city. **The link wins:** the
+  module adds the one `<option>` it needs (marked `d2-booking-search-option`)
+  and selects it, so the result, the field and the address all name the same
+  city, even when that result is empty. The same repair serves a pinned city a
+  select does not offer; the page's own options stay what the guest can choose
+  between, and the added one is the search they arrived with. A text `<input>`
+  takes any city as it is and is never touched.
+- A link whose search carries half a period opens the **whole offer** rather
+  than a refusal: that sentence belongs to a guest who just pressed search, not
+  to a page that is only opening. The city in such a link still applies.
+- An answer still in flight when a new search goes out is **dropped**: it would
+  show places nobody asked about, and its `offset` would send the paging past
+  the rows now on screen, so the next "more" would skip apartments.
+- A refusal says the module's own sentence and never the API's: `invalid_stay`,
+  `invalid_search` when the filter also named a city, and a `429` that says how
+  long to wait from its `Retry-After`. `[d2-booking-results-empty]` goes down
+  with every refusal, the module's own included — "nothing found" and "we could
+  not ask" are not the same sentence and never stand together.
+- A search that **cannot go out** leaves the filter in force exactly as it was:
+  the rows on screen and the `offset` beside them belong to it, so the next
+  "more" still asks for the next page of the search the guest is reading rather
+  than mixing two result sets in one column.
+- Two clicks on "Szukaj" ask **once**: a submit repeating a question whose
+  first page is still in flight is ignored, so a double click spends one call
+  of the key's rate limit and not two. A submit after the answer came back —
+  the same question or another — always goes out, because that is a retry.
+- A `[d2-booking-search]` searches the lists **of its own page**. On a page with
+  no `[d2-booking-results]` the submit is still taken (nothing reloads) and the
+  console says so: a hero search form belongs on the page that holds the list.
+
+`booking:search` reports every search —
+`{ search: { check_in, check_out, guests, location } }`, plus `message` when
+the search was not sent at all.
+
+#### A page that brought no template
+
+A bare `<div d2-booking-results></div>` gets cards the module draws itself —
+picture, name, city line, price and its unit, all inside one link — out of the
+same injected stylesheet and the same `--d2-booking-*` variables as the drawn
+widget. Every rule is scoped to
+`[d2-booking-results][d2-booking-results-drawn]`, so a list the Designer built
+keeps its own look down to the last card.
+
 ### The form
 
 ```html
@@ -4425,9 +4679,10 @@ is booked for a group they cannot see.
 **The look is variables, not opinions.** One `<style d2-booking-styles>` is
 injected once. Every colour and spacing rule is scoped to `[d2-booking-widget]`
 (and to `[d2-booking-return]` / `[d2-booking-manage]` for the guest's own two
-blocks) — nothing can reach a calendar or a form styled by hand outside one —
-nothing is `!important`, and every colour and measure is a CSS variable with a
-default.
+blocks, and to `[d2-booking-results][d2-booking-results-drawn]` for a list that
+brought no template) — nothing can reach a calendar, a form or a list styled
+by hand outside one — nothing is `!important`, and every colour and measure is
+a CSS variable with a default.
 
 There is **one** unscoped rule, and it is layout, not look:
 `[d2-booking-calendar-grid] [role=row] { display: grid; grid-template-columns:
@@ -4710,6 +4965,8 @@ digi2.on('booking:created', ({ booking, form }) => {});
 digi2.on('booking:payment', ({ booking_id, url, session, form }) => {});  // leaving for the checkout
 digi2.on('booking:refused', ({ reason, status, form }) => {});
 digi2.on('booking:return',  ({ booking_id, state, status }) => {});
+digi2.on('booking:list',    ({ count, shown, has_more }) => {});  // or ({ reason, status })
+digi2.on('booking:search',  ({ search }) => {});          // + message when it was not sent
 digi2.on('booking:manage',  ({ booking_id, booking }) => {});
 digi2.on('booking:request', ({ booking_id, request }) => {});   // a request was saved
 ```

@@ -16,6 +16,168 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
+
+Lista apartamentów z `GET /products`, wpisana we wzorzec karty, który zbudował
+Designer, oraz formularz szukania nad nią: termin, liczba gości i miasto.
+Wychodzi tym samym tagiem co reszta modułu, więc wpis zostaje pod „Bez
+wydania”. (Słowniki językowe to osobny etap.)
+
+- `[d2-booking-results]` to lista obiektów, czytana **raz na wizytę**. Pierwszy
+  `[d2-booking-template]` w środku jest wzorcem karty: moduł pamięta go,
+  **zabiera ze strony**, zanim cokolwiek się pokaże, i klonuje pod każdy obiekt
+  odpowiedzi — z klasami i zagnieżdżeniem, jakie dał Designer. Klon traci
+  `d2-booking-template` (także w środku), a dostaje `d2-booking-item`. Wzorzec
+  zostawiony na stronie byłby pustą kartą nad każdą prawdziwą.
+- Ze strony schodzi **każdy** wzorzec, nie tylko pierwszy: karta zbudowana w
+  Collection List jest renderowana raz na element kolekcji, więc opublikowana
+  strona ma ten atrybut na każdej z nich, a kopia zostawiona na stronie byłaby
+  klikalną kartą-zaślepką, której kolejne wczytanie listy nigdy nie usuwa
+  (moduł czyści tylko własne `[d2-booking-item]`). Pierwszy jest wzorcem,
+  resztę moduł zabiera i mówi w konsoli, ile ich znalazł.
+- Wiersze są **dopisywane** na koniec listy, więc przycisk „pokaż więcej”,
+  licznik i komunikat „nic nie znaleźliśmy” stawia się **obok** listy, nie w
+  niej — tam, gdzie zostawia je układ Webflow. Ten w środku moduł też wypełni i
+  nigdy go nie usunie (czyści tylko własne `[d2-booking-item]`): wiersze staną
+  za nim. Przy jednej liście na stronie sterowanie może stać gdziekolwiek; przy
+  dwóch każda lista musi mieć swoje w środku.
+- `[d2-booking-bind="<pole>"]` wpisuje jedno pole obiektu jako **tekst**.
+  Wiąże się **każde** pole kontraktu po własnej nazwie — `name`,
+  `project_name`, `city`, `city_line`, `address_line`, `rooms`, `area`, `floor`,
+  `beds`, `max_guests`, `description`, `rental_kind`, `timezone`, `latitude`… —
+  więc strona nie jest ograniczona do listy, którą ktoś wpisał w moduł.
+- Cztery wartości czyta się inaczej: `image` to `image_url` (na `<img>` `src`, a
+  `alt` z nazwy obiektu; na czymkolwiek innym tło), `price` to cena obiektu w
+  **walucie obiektu** przez to samo `Intl`, co wycena — moduł i tu nic nie
+  liczy — `price_unit` mówi, za co jest ta kwota („za noc”), a lista wartości
+  (`amenities`, `allowed_units`, `image_urls`) jedzie po przecinku.
+- Brak wartości, `null`, `""` i obiekt (`pet_fee`, `prices`) zostawiają miejsce
+  **puste i oznaczone `d2-booking-empty`** — nigdy słowa „null” ani
+  „[object Object]”. W kontrakcie `null` może być w osiemnastu polach, więc to
+  nie przypadek brzegowy, a większość stron. Nazwa, której odpowiedź nie ma
+  wcale (literówka albo `constructor`), też nie wypisuje nic: pole musi być
+  własnym polem obiektu, inaczej w karcie stanąłby kod JavaScriptu. `false`
+  (`requires_approval`) czyści miejsce jak brak wartości, `true` zostawia je
+  **dokładnie takie, jakie zbudował Designer** — tekst i cały układ w środku,
+  razem z ikoną obok „na zapytanie” — i nie oznacza go jako puste. A
+  zadeklarowane `0` (parter) to odpowiedź i wchodzi na stronę.
+- Nic z odpowiedzi nie staje się kodem strony: wartość wchodzi przez
+  `textContent`, adres przez `setAttribute`, a zdjęcie dopiero wtedy, gdy
+  `image_url` czyta się jak adres zdjęcia (`https:`, `/…` albo `data:image/`,
+  bez cudzysłowu, nawiasu i odwrotnego ukośnika) — inny adres to ostrzeżenie w
+  konsoli i puste miejsce. `src` jest jedno kliknięcie od uruchomienia, a tło
+  wchodzi do właściwości stylu, gdzie jeden cudzysłów zamyka deklarację. Te
+  nazwy pochodzą z CMS-a, którego moduł nie prowadzi.
+- `[d2-booking-link]` (na karcie albo na linku w karcie) prowadzi domyślnie pod
+  `?apartament=<slug>` — dokładnie to zapytanie, które czyta strona rezerwacji,
+  więc lista i rezerwacja pasują do siebie bez ustawiania czegokolwiek. Klient,
+  u którego apartamenty są podstronami CMS pod własnymi adresami, wpisuje
+  kształt: `d2-booking-link="/apartamenty/{slug}"` na linku albo
+  `d2-booking-results-link` na całej liście. `{slug}` i `{id}` wychodzą
+  zakodowane, a kształt bez `{…}` dostaje referencję jako zapytanie. Każde
+  miejsce w kształcie bierze **swoje** pole: obiekt bez sluga pod kształtem
+  `/apartamenty/{slug}` zostaje **bez `href`** i z `d2-booking-empty` — tak jak
+  obiekt bez jednej i drugiej referencji — bo `slug` jest w kontrakcie
+  nullowalny, a UUID w ścieżce `{slug}` to adres CMS, którego nie ma.
+- Stronicowanie to `limit` i `offset`: `[d2-booking-more]` pobiera następną
+  stronę i **dopisuje** ją, więc gość nie traci tego, co już czytał, a chowa
+  się, gdy odpowiedź mówi `has_more: false`. `[d2-booking-count]` pokazuje
+  `count` z odpowiedzi (wszystkie obiekty spełniające warunki, nie te na
+  ekranie), a `d2-booking-results-limit="<n>"` zmienia wielkość strony
+  (domyślnie 24).
+- Strona, której odmówiono, **zostawia offset** tam, gdzie był — następne
+  kliknięcie pyta o tę samą stronę jeszcze raz, zamiast ją przeskoczyć — a
+  powód trafia do `[d2-booking-results-message]` naszymi słowami (element w
+  liście; brakujący moduł dokłada tam sam, z `role="status"`). `400` na tej
+  trasie dotyczy tego, o co pytał filtr: terminu (`invalid_stay`), a gdy
+  szukanie podało też miasto — terminu i miejsca (`invalid_search`).
+- Jedna odmowa **trzyma przycisk**: po `429` `[d2-booking-more]` czeka
+  dokładnie tyle sekund, ile powiedział `Retry-After` — tak jak każdy inny
+  przycisk tego modułu, który trafi na limit — bo otwarcie go od razu kupuje
+  gościowi tylko następne `429`. Kliknięcie, które w tym czasie przejdzie obok
+  wyłączonego przycisku, też nie wydaje żadnego zapytania.
+- `[d2-booking-results-empty]` pokazuje się **tylko** wtedy, gdy odpowiedź nic
+  nie przyniosła: do czasu odpowiedzi jest schowany, a przy **każdej** odmowie —
+  także tej, którą moduł wypisuje sam — chowa się z powrotem, bo odmowa to nie
+  oferta, w której nic nie ma, i „nic nie znaleźliśmy” nigdy nie stoi obok
+  zdania o odmowie. Stan listy czyta się z
+  `d2-booking-results-state="loading | ready | empty | error"`.
+- Lista **bez wzorca** (`<div d2-booking-results></div>`) dostaje karty, które
+  moduł rysuje sam: zdjęcie, nazwa, miasto i cena z jednostką w jednym linku, z
+  tego samego wstrzykiwanego arkusza i tych samych zmiennych `--d2-booking-*`,
+  co widget. Reguły są zawężone do
+  `[d2-booking-results][d2-booking-results-drawn]`, więc lista zbudowana w
+  Designerze zostaje przy swoim wyglądzie.
+- **Szukanie nad listą.** `<form d2-booking-search>` z polami
+  `d2-booking-search-field="check_in | check_out | adults | children |
+  location"` zawęża listę **bez przeładowania strony**: każda lista wraca na
+  pierwszą stronę z nowym filtrem. Własna wysyłka Webflow się nie wykonuje —
+  moduł przejmuje submit.
+- Trasa bierze termin, liczbę gości i miasto, więc `guests` to **zawsze suma
+  dorosłych i dzieci** (KONTRAKT.md): `adults` i `children` nie jadą w ogóle,
+  nic nie może więc sobie przeczyć (sprzeczne `guests` to `422`), a strona,
+  która nie pyta o żadne z nich, nie wysyła `guests` wcale.
+- Termin można **wpisać** w dwa pola albo **wybrać** kalendarzem
+  (`[d2-booking-calendar]`) stojącym w formularzu szukania — to ten sam
+  kalendarz co przy rezerwacji i jedyny: szukanie czyta termin, który ten już
+  ogłosił. Wpisane pole wygrywa z klikniętym terminem. Wpisana godzina jest
+  odrzucana (filtr pyta o dni), a tekst, który nie jest datą, nie zawęża
+  niczego. Pół terminu i wyjazd nie późniejszy od przyjazdu **nie pytają API** —
+  zostaje jedno krótkie zdanie w `[d2-booking-results-message]`.
+- `d2-booking-location="Wrocław"` na formularzu **albo na samej liście**
+  przypina miasto i gość go nie zmieni (prośba pilota). Na liście działa też
+  bez żadnego szukania — tak powstaje strona jednego miasta — a dwie listy mogą
+  mieć przypięte dwa różne miasta. Przypięcie wygrywa z polem `location` i z
+  adresem, a pole wyboru miasta dostaje tę wartość i jest `disabled`
+  (`d2-booking-pinned`). Wartość czytamy surowym `getAttribute`, bo nazwa
+  miejsca może legalnie zawierać `;` albo `@`, które `digi2.attr` by ucięło.
+- **Szukanie ląduje w adresie strony**
+  (`?check_in=…&check_out=…&adults=2&children=1&location=Wrocław`), więc
+  przeładowanie je zachowuje, a link otwiera ten sam wynik: moduł czyta te
+  parametry na starcie — przed pierwszą stroną listy — i wpisuje je do pól. W
+  adresie zostają dwa pytania, które zadała strona, a nie suma, którą wysyłamy.
+  Reszta adresu (`?apartament=`, kampania, język) zostaje nietknięta, a
+  przypięte miasto nie wchodzi tam wcale. Wpis jest **podmieniany**, nie
+  dokładany (`replaceState`), więc „wstecz” wychodzi ze strony, a nie
+  przechodzi przez każde zawężenie filtra.
+- Formularz i adres są **łączone**, a nie wykluczające się: pole, które
+  formularz ma, odpowiada za swój parametr nawet puste (gość je widzi, więc
+  wyczyszczenie go jest odpowiedzią), a parametr, o który formularz nie pyta
+  wcale, zostaje taki, jak w adresie. Szukanie zbudowane wokół kalendarza i
+  liczby osób nie gubi więc terminu ani miasta z linku — ani na starcie, ani po
+  wysyłce.
+- **Link z miastem, którego `<select>` nie oferuje, otwiera swój wynik.**
+  `<select>` przyjmuje tylko wartość, którą nosi któraś jego własna `<option>`;
+  każdą inną przeglądarka kwituje `selectedIndex = -1`, więc pole stoi puste i
+  czyta się jako puste. Udostępniony `?location=Gdańsk` nad selectem z dwoma
+  miastami gubiłby więc miasto dwa razy — z ekranu i z łączenia z adresem, w
+  którym pole odpowiada za swój parametr nawet puste — i gość dostawałby **całą
+  ofertę** pod adresem obiecującym jedno miasto. Wygrywa link: moduł dokłada tę
+  jedną opcję (`d2-booking-search-option`) i ją zaznacza, więc wynik, pole i
+  adres mówią o tym samym mieście, nawet gdy wynik jest pusty. Opcje napisane
+  przez stronę zostają tym, z czego gość wybiera; dołożona jest szukaniem, z
+  którym przyszedł. Tak samo pokazuje się przypięte miasto, którego select nie
+  oferuje. Tekstowego `<input>` to nie dotyczy.
+- Szukanie, które **nie może wyjść** (pół terminu), zostawia filtr listy
+  nietknięty: wiersze na ekranie i ich `offset` dalej należą do pytania, z
+  którego przyszły, więc „pokaż więcej” nie zmiesza dwóch wyników w jednej
+  kolumnie.
+- Dwa kliknięcia „Szukaj” pytają **raz**: wysyłka powtarzająca pytanie, którego
+  pierwsza strona jest jeszcze w drodze, jest pomijana, więc podwójny klik nie
+  wydaje dwóch zapytań z limitu klucza. Wysyłka po powrocie odpowiedzi idzie
+  zawsze — to ponowna próba.
+- Formularz szukania szuka po listach **własnej strony**. Na stronie bez
+  `[d2-booking-results]` nic się nie przeładowuje (moduł przejmuje submit) i
+  mówi o tym w konsoli, zamiast milczeć pod przyciskiem, który nic nie robi.
+- Odpowiedź, która była jeszcze w drodze, gdy poszło nowe szukanie, jest
+  **porzucana**: pokazałaby obiekty, o które nikt nie pytał, a jej `offset`
+  przesunąłby stronicowanie za wiersze, które gość ma na ekranie — następne
+  „pokaż więcej” przeskoczyłoby apartamenty.
+- Nowe zdarzenia: `digi2.on('booking:list', fn)` — `{ count, shown, has_more }`
+  po każdej stronie listy, a `{ reason, status }` przy odmowie — oraz
+  `digi2.on('booking:search', fn)` z `{ search: { check_in, check_out, guests,
+  location } }`, plus `message`, gdy szukanie nie wyszło na trasę.
+
 ## Bez wydania — nowy moduł `d2-booking` (etap 5, kroki A-D: klient API, formularz, kalendarz, cena, wygląd zapasowy, płatność, powrót z płatności i obsługa rezerwacji)
 
 Rezerwacja noclegu z poziomu strony. Moduł rozmawia z publicznym API klucza strony

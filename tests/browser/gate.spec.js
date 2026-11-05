@@ -369,6 +369,173 @@ test.describe('booking: the drawn widget and the payment', () => {
   });
 });
 
+// ---- booking: the list of places ------------------------------------------
+
+// Two lists on one page, because there are two ways to build one: the first
+// carries a template the page built (classes, nesting and CSS all its own),
+// the second is a bare div the module draws into. That is what the mini-DOM
+// cannot show — that a clone really keeps the site's styling, that the drawn
+// cards really get the stylesheet, and that "pokaż więcej" really appends.
+test.describe('booking: the list of places', () => {
+  const OWN = '#ze-wzorcem';
+  const DRAWN = '#rysowana';
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/sandbox/gate-booking-list.html');
+    await page.waitForFunction(() => !!(window.digi2 && window.digi2.booking), null, { timeout: 10000 });
+    await page.waitForSelector(OWN + '[d2-booking-results-state="ready"]');
+    await page.waitForSelector(DRAWN + '[d2-booking-results-state="ready"]');
+  });
+
+  test("the page's own template becomes the cards, with nothing left of itself", async ({ page }) => {
+    const cards = page.locator(OWN + ' [d2-booking-item]');
+    await expect(cards).toHaveCount(3);
+    // The pattern is gone from the page, so no empty card stands above the
+    // real ones, and every clone kept the class the Designer gave it.
+    await expect(page.locator('[d2-booking-template]')).toHaveCount(0);
+    await expect(cards.first()).toHaveClass('karta');
+    await expect(cards.first().locator('[d2-booking-bind="name"]')).toHaveText('Apartament 0');
+    // The amount is the entry's own, formatted like every other amount.
+    const price = await page.evaluate(() => new Intl.NumberFormat('pl', {
+      style: 'currency', currency: 'PLN',
+    }).format(250));
+    await expect(cards.first().locator('[d2-booking-bind="price"]')).toHaveText(price);
+    // The shape the page asked for, with the slug in it.
+    await expect(cards.first()).toHaveAttribute('href', '/apartamenty/apartament-0');
+    await expect(page.locator(OWN + ' [d2-booking-count]')).toHaveText('5');
+    // Something was found, so nothing says the offer is empty.
+    await expect(page.locator(OWN + ' [d2-booking-results-empty]')).toBeHidden();
+
+    // The stub's third place has no picture and the fourth no city line: an
+    // empty marked slot, never the word "null".
+    const noImage = cards.nth(2).locator('[d2-booking-bind="image"]');
+    await expect(noImage).toHaveAttribute('d2-booking-empty', '');
+    expect(await noImage.getAttribute('src')).toBe(null);
+  });
+
+  test('"pokaż więcej" appends the next page and then goes', async ({ page }) => {
+    const cards = page.locator(OWN + ' [d2-booking-item]');
+    const more = page.locator(OWN + ' [d2-booking-more]');
+    await expect(more).toBeVisible();
+
+    await more.click();
+    await expect(cards).toHaveCount(5);
+    // Appended, not re-rendered: the first page is still the first page.
+    await expect(cards.first().locator('[d2-booking-bind="name"]')).toHaveText('Apartament 0');
+    await expect(cards.nth(4).locator('[d2-booking-bind="name"]')).toHaveText('Apartament 4');
+    // The answer said there is no next page, so the button is not there to be
+    // clicked a third time.
+    await expect(more).toBeHidden();
+    expect(await page.evaluate(() => window.__d2Calls.filter((c) => /\/products\?/.test(c)).length))
+      .toBe(3);
+  });
+
+  test('a bare list gets the drawn cards, and a CSS variable repaints them', async ({ page }) => {
+    const cards = page.locator(DRAWN + ' [d2-booking-item]');
+    await expect(cards).toHaveCount(2);
+    await expect(page.locator(DRAWN)).toHaveAttribute('d2-booking-results-drawn', '');
+    await expect(cards.first()).toHaveAttribute('href', '?apartament=apartament-0');
+    // The stub's picture is a data: pixel, which the module accepts exactly
+    // like an https address — nothing in this gate leaves localhost.
+    expect(await cards.first().locator('[d2-booking-bind="image"]').getAttribute('src'))
+      .toMatch(/^data:image\/gif;base64,/);
+
+    // The default from the stylesheet — proof it reached the page at all.
+    await expect(cards.first()).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await page.evaluate(() => document.querySelector('#rysowana')
+      .style.setProperty('--d2-booking-bg', 'rgb(0, 0, 255)'));
+    await expect(cards.first()).toHaveCSS('background-color', 'rgb(0, 0, 255)');
+
+    // And the sheet never reaches the list the Designer built: that card keeps
+    // the page's own border radius.
+    await expect(page.locator(OWN + ' [d2-booking-item]').first())
+      .toHaveCSS('border-top-left-radius', '10px');
+  });
+
+  test('a search narrows the list, resets the paging and lands in the address', async ({ page }) => {
+    const cards = page.locator(OWN + ' [d2-booking-item]');
+    const more = page.locator(OWN + ' [d2-booking-more]');
+    // The guest is already reading the second page when they search.
+    await more.click();
+    await expect(cards).toHaveCount(5);
+
+    await page.locator('#szukaj [d2-booking-search-field="check_in"]').fill('2027-05-01');
+    await page.locator('#szukaj [d2-booking-search-field="check_out"]').fill('2027-05-04');
+    await page.locator('#szukaj [d2-booking-search-field="location"]').selectOption('Wrocław');
+    await page.locator('#szukaj button[type="submit"]').click();
+
+    // Three places are in that city, and the list starts again at the first
+    // page instead of appending them under the five it had.
+    await expect(cards).toHaveCount(3);
+    await expect(cards.first().locator('[d2-booking-bind="name"]')).toHaveText('Apartament 2');
+    await expect(page.locator(OWN + ' [d2-booking-count]')).toHaveText('3');
+    await expect(more).toBeHidden();
+    // The page never reloaded, and the address can be shared.
+    await expect(page).toHaveURL(/\?check_in=2027-05-01&check_out=2027-05-04&adults=2&location=Wroc/);
+    const asked = await page.evaluate(() => window.__d2Calls
+      .filter((c) => /\/products\?/.test(c)).pop());
+    expect(asked).toMatch(/offset=0/);
+    expect(asked).toMatch(/guests=2/);
+
+    // The list with its own city pinned stayed where the page put it.
+    await expect(page.locator(DRAWN + ' [d2-booking-item]')).toHaveCount(2);
+    await expect(page.locator(DRAWN + ' [d2-booking-item]').first()
+      .locator('[d2-booking-bind="city_line"]')).toContainText('Kraków');
+  });
+
+  test('a link with a search in it opens its own result', async ({ page }) => {
+    await page.goto('/sandbox/gate-booking-list.html?location=Krak%C3%B3w&adults=2');
+    await page.waitForSelector(OWN + '[d2-booking-results-state="ready"]');
+    await expect(page.locator(OWN + ' [d2-booking-item]')).toHaveCount(2);
+    // And the form shows the search the link carries, not an empty one.
+    await expect(page.locator('#szukaj [d2-booking-search-field="location"]'))
+      .toHaveValue('Kraków');
+    await expect(page.locator('#szukaj [d2-booking-search-field="adults"]')).toHaveValue('2');
+  });
+
+  // The one thing only a real browser shows: a <select> refuses a value no
+  // <option> of its own carries — it goes to selectedIndex -1 and reads back
+  // empty. A link naming a city this page does not offer must still open the
+  // result it promised, and the select must say which city that is.
+  // MUTACJA: drop the option the module adds for a value the select cannot
+  // show (showFieldValue in booking.js) — the select reads back empty, the
+  // merge takes that empty answer over the city in the link, and the list
+  // opens on the whole offer while the address still names that city.
+  test('a link naming a city the select does not offer still opens its own result',
+    async ({ page }) => {
+      await page.goto('/sandbox/gate-booking-list.html?location=Gda%C5%84sk&adults=2');
+      // An answered first page, whether it found anything or not: a city the
+      // page does not offer is a legitimate empty result.
+      await page.waitForFunction((sel) => {
+        const state = document.querySelector(sel).getAttribute('d2-booking-results-state');
+        return state === 'ready' || state === 'empty';
+      }, OWN, { timeout: 10000 });
+      await expect(page.locator(OWN)).toHaveAttribute('d2-booking-results-state', 'empty');
+      const select = page.locator('#szukaj [d2-booking-search-field="location"]');
+
+      // The city the link asked for went out, and the page offers nothing
+      // there: an empty result, not somebody else's city.
+      const asked = await page.evaluate(() => window.__d2Calls
+        .filter((c) => /\/products\?/.test(c))[0]);
+      expect(asked).toMatch(/location=Gda/);
+      await expect(page.locator(OWN + ' [d2-booking-item]')).toHaveCount(0);
+      await expect(page.locator(OWN + ' [d2-booking-results-empty]')).toBeVisible();
+      await expect(page.locator(OWN + ' [d2-booking-count]')).toHaveText('0');
+
+      // The select shows that city instead of standing blank over the result.
+      await expect(select).toHaveValue('Gdańsk');
+      expect(await select.evaluate((el) => el.selectedIndex)).toBeGreaterThan(-1);
+      expect(await select.evaluate((el) => el.options[el.selectedIndex].textContent))
+        .toBe('Gdańsk');
+      // The address still says what the guest is looking at.
+      await expect(page).toHaveURL(/location=Gda%C5%84sk/);
+
+      // The list with its own city pinned is the page's decision and not the
+      // link's: it stays on the city the page pinned.
+      await expect(page.locator(DRAWN + ' [d2-booking-item]')).toHaveCount(2);
+    });
+});
+
 // ---- booking: the return page and the manage page -------------------------
 
 // Both guest blocks on one page, as a real client's manage page carries them.

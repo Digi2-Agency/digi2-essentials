@@ -140,6 +140,149 @@
  * period all clear the price and leave one short sentence in the live region:
  * a price beside "this stay cannot be had" would be an offer nobody can keep.
  *
+ * ─── The list of places ─────────────────────────────────────────────────────
+ *
+ *   <div d2-booking-results>
+ *     <a d2-booking-template d2-booking-link>      the row, cloned per place
+ *       <img d2-booking-bind="image">
+ *       <h3 d2-booking-bind="name"></h3>
+ *       <span d2-booking-bind="city_line"></span>
+ *       <span d2-booking-bind="price"></span>
+ *     </a>
+ *   </div>
+ *   <button d2-booking-more>Pokaż więcej</button>
+ *   <span d2-booking-count></span>
+ *   <div d2-booking-results-empty>Nic nie znaleźliśmy.</div>
+ *
+ * GET /products answers the list, and the row the page built is the row the
+ * guest reads: [d2-booking-template] is remembered, taken off the page before
+ * anything shows and cloned once per entry — markup, classes and nesting as
+ * the Designer wrote them. A page that brought no template gets cards the
+ * module draws itself, out of the same stylesheet and the same CSS variables
+ * as the drawn widget.
+ *
+ *   d2-booking-results            The list. Its rows are appended, so a button
+ *                                 or a count belongs NEXT to it.
+ *   d2-booking-results-limit="n"  How many places one page asks for (24).
+ *   d2-booking-results-link="…"   The address shape every card of this list
+ *                                 leads to (below).
+ *   d2-booking-template           The row. Never shown itself; EVERY one of
+ *                                 them leaves the page (a Collection List
+ *                                 renders the card once per CMS item).
+ *   d2-booking-item               Set by the module on every rendered row.
+ *   d2-booking-bind="<field>"     One field of the entry, as text.
+ *   d2-booking-link[="…"]         The card's own address.
+ *   d2-booking-more               Asks for the next page and appends it;
+ *                                 hidden when has_more says there is none.
+ *   d2-booking-count              The count the answer carries.
+ *   d2-booking-results-empty      Shown only when the answer has nothing.
+ *   d2-booking-results-state      Set: loading | ready | empty | error
+ *   d2-booking-results-message    The sentence of a refusal (role="status")
+ *   d2-booking-results-drawn      Set when the module drew the cards itself.
+ *
+ * Every field of the contract binds by its own name — name, project_name,
+ * city, city_line, address_line, rooms, area, floor, beds, max_guests,
+ * description, rental_kind, timezone, latitude… — so a page is never limited
+ * to a list somebody hardcoded. Four fields read differently: `image` takes
+ * image_url (the src and the alt of an <img>, the background of anything
+ * else), `price` is the entry's price in the entry's currency through the same
+ * Intl formatting as the quote (the module computes no amount here either),
+ * `price_unit` says what that amount is the price of, and a field whose value
+ * is a list of scalars (amenities) is joined with commas. A missing or null
+ * field leaves the element empty and marked d2-booking-empty — never the word
+ * "null" — a flag that is false does the same, a name the answer does not
+ * carry at all does too (the field has to be the entry's own, or "constructor"
+ * would render JavaScript into the card), and an object (pet_fee, prices) says
+ * nothing rather than "[object Object]". A flag that is true leaves the slot
+ * exactly as the Designer built it, markup inside and all.
+ *
+ * Nothing out of the answer is ever markup: a value goes in with textContent,
+ * an address with setAttribute, and a picture only once its address reads as
+ * one — a src is one click from running and a background goes into a style
+ * property, where a single quote ends the declaration. These names come out of
+ * a CMS this module does not own.
+ *
+ * A card leads to ?apartament=<slug>, which is the query this module reads on
+ * the booking page, so the list and the booking page fit together with nothing
+ * written. A client whose apartments are CMS pages under their own addresses
+ * writes the shape instead — d2-booking-link="/apartamenty/{slug}" on the link
+ * or d2-booking-results-link on the whole list; {slug} and {id} are the two
+ * references the booking page can resolve, both escaped on the way out and
+ * each one the field it names. An entry with no reference for the shape it is
+ * given — a null slug under /apartamenty/{slug} — leaves the card without an
+ * href rather than pointing at a page that is not there.
+ *
+ * Paging is limit and offset: [d2-booking-more] asks for the next page and
+ * appends it, so the guest keeps what they were already reading, and goes when
+ * the answer says has_more is false. A page that was refused keeps the button
+ * and its offset — the next click asks for that same page again instead of
+ * skipping it — and says why in [d2-booking-results-message], in the module's
+ * own words, with the empty state taken down: a refusal is not an offer with
+ * nothing in it. One refusal holds the button: a 429 waits exactly
+ * Retry-After seconds, because opening it at once buys the next 429.
+ *
+ * ─── The search above the list ──────────────────────────────────────────────
+ *
+ *   <form d2-booking-search>
+ *     <input type="date"   d2-booking-search-field="check_in">
+ *     <input type="date"   d2-booking-search-field="check_out">
+ *     <input type="number" d2-booking-search-field="adults">
+ *     <input type="number" d2-booking-search-field="children">
+ *     <select d2-booking-search-field="location">…</select>
+ *     <button type="submit">Szukaj</button>
+ *   </form>
+ *
+ * A submit searches without leaving the page: every list goes back to its
+ * first page with the new filter, and the search goes into the page address
+ * (replaceState), so a reload keeps it and the link is worth sharing. The
+ * module reads those parameters on start — before the first page of any list —
+ * and fills the form with them. The form and the address are merged: a key the
+ * form has no field for keeps what the address said, so a search survives a
+ * form that asks about only half of it. A submit repeating a question whose
+ * first page is still in flight is ignored, and a search form on a page with
+ * no list says so in the console.
+ *
+ *   d2-booking-search             The form. Its submit is the module's.
+ *   d2-booking-search-field="…"   check_in | check_out | adults | children |
+ *                                 location
+ *   d2-booking-location="<city>"  Pins the city, on the form or on a list; the
+ *                                 guest cannot change it. Read raw.
+ *   d2-booking-pinned             Set on a location field under a pin, which
+ *                                 is also disabled.
+ *   d2-booking-search-option      Set on an <option> the module added to a
+ *                                 <select> for a city the page does not offer.
+ *   d2-booking-search-bound       Set when the submit is taken.
+ *
+ * A <select> takes only a value one of its own <option>s carries: a browser
+ * answers anything else with selectedIndex -1, so the field stands blank and
+ * reads back empty — and a field answers for its own key even when it is
+ * empty, so the city of a shared link would be lost off the screen AND out of
+ * the merge, serving the whole offer under an address promising one city. The
+ * link wins: the module adds the one option it needs and selects it, so the
+ * result, the field and the address name the same city even when that result
+ * is empty. The same repair shows a pinned city a select does not offer.
+ *
+ * GET /products takes a period, a guest count and a city, so guests is ALWAYS
+ * the sum of adults and children (KONTRAKT.md): adults and children are never
+ * sent, nothing can contradict the sum, and a page that asks about neither
+ * sends no guests at all. The period is both dates or none — half a period, or
+ * a departure that is not after the arrival, asks the API nothing and leaves
+ * one sentence in [d2-booking-results-message], because the route answers
+ * those with a 400 whose text is for logs — and it leaves the filter in force
+ * exactly as it was, so the rows on screen and the next page they will be
+ * paged with still belong to the same question.
+ *
+ * The period may be typed or picked in a [d2-booking-calendar] standing in the
+ * form — the same calendar the booking form uses, and the only one: the search
+ * reads the stay it already announced. A typed field wins over it.
+ *
+ * A pinned city beats the field and the address alike and is never written
+ * into the address: it is the page's decision, not the guest's search. A list
+ * may carry a pin with no search form anywhere near it, which is how a page of
+ * one city is built. An answer still in flight when a new search goes out is
+ * dropped: it would show places nobody asked about and move the paging past
+ * the rows on screen.
+ *
  * ─── The look the module draws itself ───────────────────────────────────────
  *
  *   <div d2-booking-widget></div>        an empty one is enough
@@ -302,6 +445,11 @@
  *   digi2.on('booking:refused', fn)  Refusal — fn({ reason, status, form })
  *   digi2.on('booking:return', fn)   Status read — fn({ booking_id, state,
  *                                    status })
+ *   digi2.on('booking:list', fn)     List answered — fn({ count, shown,
+ *                                    has_more }) or fn({ reason, status })
+ *   digi2.on('booking:search', fn)   Search performed — fn({ search }) or
+ *                                    fn({ search, message }) when it could
+ *                                    not go out
  *   digi2.on('booking:manage', fn)   Manage read — fn({ booking_id, booking })
  *   digi2.on('booking:request', fn)  Request saved — fn({ booking_id, request })
  */
@@ -362,6 +510,28 @@
   var CHECKOUT_URL_RE = /^https:\/\/[^\s"'<>]+$/;
   var LOCAL_CHECKOUT_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/[^\s"'<>]*)?$/;
 
+  // The address of a picture the answer carries. It goes into src and into a
+  // style property, so it is read as an address first: a quote, a bracket or a
+  // backslash inside url(…) ends the declaration and starts whatever came with
+  // the answer, and a javascript: address in a src is one click from running.
+  var IMAGE_URL_RE = /^(https?:\/\/|\/|data:image\/)[^\s"'()<>\\]*$/;
+  // One page of GET /products. The key has its own maximum; this is only what
+  // the module asks for when the page did not say.
+  var DEFAULT_LIST_LIMIT = 24;
+  // The query the booking page reads its product out of, and so the address a
+  // card of the list leads to when the page spelled no shape of its own.
+  var LIST_PARAM = 'apartament';
+  // What a search form may ask about. GET /products takes a period, a guest
+  // count and a city; adults and children are the page's own two questions and
+  // only their sum goes out.
+  var SEARCH_FIELDS = { check_in: 1, check_out: 1, adults: 1, children: 1, location: 1 };
+  // The same names in the page address, so a reload keeps the search and the
+  // link opens the same result. The party stays as the two questions the page
+  // asked: a shared link has to be able to put them back in the form.
+  var SEARCH_PARAMS = ['check_in', 'check_out', 'adults', 'children', 'location'];
+  // A day as the filter spells one (products.json: check_in "2027-05-01").
+  var DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
   // The guest-facing copy lives in one table; stage 8 swaps it for dictionaries.
   var MESSAGES = {
     required: 'Wypełnij to pole.',
@@ -383,6 +553,9 @@
     validation_error: 'Popraw zaznaczone pola.',
     invalid_request: 'Nie możemy użyć tych danych. Sprawdź termin i dane, potem spróbuj ponownie.',
     invalid_stay: 'Sprawdź daty pobytu.',
+    // The same 400, on a search that also named a city: the route's own
+    // sentence is for logs, and the guest cannot tell which half it was about.
+    invalid_search: 'Sprawdź daty i miejsce pobytu.',
     request_too_large: 'Wiadomość jest za długa. Skróć uwagi i spróbuj ponownie.',
     rental_rules: 'Tego pobytu nie można zarezerwować. Wybierz inny termin lub długość pobytu.',
     period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
@@ -451,6 +624,10 @@
     deposit_label: 'Teraz:',
     balance_label: '· później:',
     child_ages_hint: 'np. 7, 10',
+    // What the price of a place is the price of. The contract's only unit is a
+    // day, and a day of a rental is a night (allowed_units, products.json); a
+    // unit this table does not know shows nothing rather than a bare code.
+    unit_day: 'za noc',
     mark: 'Rezerwacje: digi2',
     // The calendar, said out loud: every one of these reaches the guest
     // through the live region or an aria-label.
@@ -1725,6 +1902,28 @@
     + '[d2-booking-widget] [d2-booking-hint][d2-booking-empty]{display:none}'
     + '[d2-booking-widget] [d2-booking-mark]{align-self:flex-end;font-size:.75em;text-decoration:none;'
     + 'color:var(--d2-booking-muted,#6b6f6d)}'
+    // The list of places, when the page gave no template and the module drew
+    // the cards itself. Every rule starts at the drawn list, so a list the
+    // Designer built keeps its own look down to the last card.
+    + '[d2-booking-results][d2-booking-results-drawn]{display:grid;gap:var(--d2-booking-gap,12px);'
+    + 'grid-template-columns:repeat(auto-fill,minmax(220px,1fr));'
+    + 'font-family:var(--d2-booking-font,inherit);color:var(--d2-booking-text,#1a1d1c)}'
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-item]{display:flex;'
+    + 'flex-direction:column;gap:4px;padding:var(--d2-booking-pad,16px);text-decoration:none;'
+    + 'color:inherit;background:var(--d2-booking-bg,#fff);'
+    + 'border:1px solid var(--d2-booking-border,#e0ded9);border-radius:var(--d2-booking-radius,12px)}'
+    + '[d2-booking-results][d2-booking-results-drawn] img{width:100%;height:160px;'
+    + 'object-fit:cover;background:var(--d2-booking-surface,#f6f5f3);'
+    + 'border-radius:var(--d2-booking-radius,10px)}'
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-bind=city_line]'
+    + '{font-size:.875em;color:var(--d2-booking-muted,#6b6f6d)}'
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-item] > div{display:flex;'
+    + 'align-items:baseline;gap:4px;font-weight:600}'
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-bind=price_unit]'
+    + '{font-size:.8125em;font-weight:400;color:var(--d2-booking-muted,#6b6f6d)}'
+    // A slot with nothing in it is a hole in a card we drew ourselves: no
+    // picture, no grey box where one would have been.
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-empty]{display:none}'
     // The return page and the manage page: the same box, the same variables.
     + '[d2-booking-return],[d2-booking-manage]{box-sizing:border-box;display:flex;'
     + 'flex-direction:column;gap:var(--d2-booking-gap,12px);max-width:var(--d2-booking-width,420px);'
@@ -3776,6 +3975,861 @@
   }
 
   // ---------------------------------------------------------------------------
+  // The list of places — GET /products into the template the page built
+  // ---------------------------------------------------------------------------
+
+  /**
+   * [d2-booking-results] is a list of places, filled from GET /products. The
+   * row the page built — [d2-booking-template] — is remembered and taken off
+   * the page before anything shows, then cloned once per entry of the answer,
+   * so the list keeps the styling of the site. A template left where it stood
+   * would be an empty card above every real one.
+   *
+   * Nothing out of the answer is ever markup: a value is written with
+   * textContent, an address with setAttribute, and a picture only once its
+   * address reads as the address of a picture. The names in this list come out
+   * of a CMS the module does not own.
+   *
+   * The rows are appended to the container, so a [d2-booking-more] or a
+   * [d2-booking-count] belongs NEXT to the list, not inside it — which is
+   * where a Webflow layout leaves a button anyway. One put inside is still
+   * filled in and never removed; the rows simply follow it.
+   */
+  function listBoxes() {
+    return allOf('d2-booking-results');
+  }
+
+  // Every control of a list: the ones inside it, and otherwise the ones the
+  // page put beside it. With two lists on a page each has to carry its own,
+  // because a button standing between them belongs to neither.
+  function listControls(box, name) {
+    var out = [];
+    var i;
+    var found = box.querySelectorAll('[' + name + '], [data-' + name + ']');
+    for (i = 0; i < found.length; i++) out.push(found[i]);
+    if (out.length || listBoxes().length !== 1) return out;
+    var beside = allOf(name);
+    for (i = 0; i < beside.length; i++) out.push(beside[i]);
+    return out;
+  }
+
+  function listState(box) {
+    if (!box._d2BookingList) box._d2BookingList = { offset: 0, more: false, busy: false };
+    return box._d2BookingList;
+  }
+
+  function listLimit(box) {
+    var given = parseInt(String(attr(box, 'd2-booking-results-limit') || ''), 10);
+    return isFinite(given) && given > 0 ? given : DEFAULT_LIST_LIMIT;
+  }
+
+  // The clone is a row and not a pattern any more — and neither is anything
+  // inside it, or every card would carry an empty pattern of its own.
+  function dropTemplateMark(el) {
+    var all = [el];
+    var found = el.querySelectorAll
+      ? el.querySelectorAll('[d2-booking-template], [data-d2-booking-template]') : [];
+    var i;
+    for (i = 0; i < found.length; i++) all.push(found[i]);
+    for (i = 0; i < all.length; i++) {
+      all[i].removeAttribute('d2-booking-template');
+      all[i].removeAttribute('data-d2-booking-template');
+    }
+  }
+
+  /**
+   * The row the Designer built, remembered and taken out of the page the first
+   * time the list is read. The clone is a row and not a pattern any more, so it
+   * loses the attribute that made it one and gains the one that marks an item.
+   *
+   * EVERY pattern leaves the page, not only the first: a card built inside a
+   * Webflow Collection List is rendered once per CMS item, so the published
+   * page carries the attribute on every one of them, and a copy left standing
+   * would be a placeholder card above the apartments that no render ever
+   * clears (only [d2-booking-item] rows are).
+   */
+  function listTemplate(box) {
+    if (box._d2BookingRow === undefined) {
+      var found = box.querySelectorAll('[d2-booking-template], [data-d2-booking-template]');
+      var tmpl = null;
+      var i;
+      if (found.length && found[0].cloneNode) {
+        tmpl = found[0].cloneNode(true);
+        dropTemplateMark(tmpl);
+        tmpl.setAttribute('d2-booking-item', '');
+      }
+      if (found.length > 1) {
+        _warn('the list has ' + found.length + ' elements with d2-booking-template; the first'
+          + ' one is the pattern and the rest are taken off the page too — a card built inside'
+          + ' a Webflow Collection List carries the attribute on every rendered item');
+      }
+      for (i = 0; i < found.length; i++) dropEl(found[i]);
+      box._d2BookingRow = tmpl;
+    }
+    return box._d2BookingRow;
+  }
+
+  // The row itself may be the slot — a whole card is usually one link — and a
+  // querySelectorAll never answers with the element it was asked on.
+  function slotsIn(row, name) {
+    var out = [];
+    if (row.getAttribute(name) !== null || row.getAttribute('data-' + name) !== null) out.push(row);
+    var found = row.querySelectorAll('[' + name + '], [data-' + name + ']');
+    for (var i = 0; i < found.length; i++) out.push(found[i]);
+    return out;
+  }
+
+  function writeBind(el, text) {
+    el.textContent = text || '';
+    if (text) el.removeAttribute('d2-booking-empty');
+    else el.setAttribute('d2-booking-empty', '');
+  }
+
+  /**
+   * One field of one entry, and only a field the answer really carries. A bind
+   * naming something off the prototype — a typo, or "constructor" — would
+   * otherwise render JavaScript source into the card instead of nothing.
+   */
+  function entryField(entry, field) {
+    if (!entry || !field) return undefined;
+    if (!Object.prototype.hasOwnProperty.call(entry, field)) return undefined;
+    var value = entry[field];
+    return typeof value === 'function' ? undefined : value;
+  }
+
+  /**
+   * One field of one entry, as the guest reads it. `price` is the entry's own
+   * amount in the entry's own currency through Intl — the module never computes
+   * a price, here least of all. Everything else is the answer's own scalar: a
+   * list of scalars is joined (amenities, and image_urls with it), and a value
+   * that is an object (pet_fee, prices) answers nothing, because
+   * "[object Object]" is not a sentence.
+   */
+  function bindValue(entry, field, language) {
+    var currency = entry.currency ? String(entry.currency) : null;
+    var price = entry.price && typeof entry.price === 'object' ? entry.price : null;
+    if (field === 'price') return price ? money(price.price, currency, language) : '';
+    if (field === 'price_unit') return price ? (MESSAGES['unit_' + String(price.unit)] || '') : '';
+    var value = entryField(entry, field);
+    if (value === null || value === undefined || value === '') return '';
+    if (isArray(value)) {
+      var parts = [];
+      for (var i = 0; i < value.length; i++) {
+        var one = value[i];
+        if (one !== null && one !== undefined && typeof one !== 'object') parts.push(String(one));
+      }
+      return parts.join(', ');
+    }
+    if (typeof value === 'object') return '';
+    return String(value);
+  }
+
+  /**
+   * The picture of a place: image_url, and nothing else. On an <img> it is the
+   * src and the alt is the name; anywhere else it is the background. An address
+   * that does not read as the address of a picture is no picture at all — a src
+   * is one click away from running, and a background goes into a style
+   * property, where one quote ends the declaration and starts the next.
+   */
+  function bindImage(el, entry) {
+    var url = entry.image_url === null || entry.image_url === undefined ? '' : String(entry.image_url);
+    var good = url && IMAGE_URL_RE.test(url) ? url : '';
+    if (url && !good) {
+      _warn('the picture of "' + String(entry.slug || entry.id || '')
+        + '" is not an address we can use: ' + url);
+    }
+    if (el.tagName === 'IMG') {
+      if (good) el.setAttribute('src', good);
+      else el.removeAttribute('src');
+      // An unnamed picture gets an empty alt on purpose: a screen reader skips
+      // it instead of reading an address out loud.
+      el.setAttribute('alt', entry.name ? String(entry.name) : '');
+    } else if (el.style) {
+      el.style.backgroundImage = good ? 'url("' + good + '")' : '';
+    }
+    if (good) el.removeAttribute('d2-booking-empty');
+    else el.setAttribute('d2-booking-empty', '');
+  }
+
+  function bindRow(row, entry, language) {
+    var slots = slotsIn(row, 'd2-booking-bind');
+    for (var i = 0; i < slots.length; i++) {
+      var el = slots[i];
+      var field = String(attr(el, 'd2-booking-bind') || '');
+      if (field === 'image') { bindImage(el, entry); continue; }
+      var value = entryField(entry, field);
+      // A flag is not a word: true leaves the slot exactly as the Designer
+      // built it ("na zapytanie", icon and all) and false empties it like a
+      // missing value. Nobody reads "false" in a list of apartments — and
+      // writing the slot's own text back into it would replace the markup
+      // inside with one text node, which is what textContent does.
+      if (typeof value === 'boolean') {
+        if (value) el.removeAttribute('d2-booking-empty');
+        else writeBind(el, '');
+        continue;
+      }
+      writeBind(el, bindValue(entry, field, language));
+    }
+  }
+
+  /**
+   * Where a card leads. The default is ?apartament=<slug> — the very query the
+   * booking page reads — and a page whose apartments are CMS pages under their
+   * own addresses writes the shape it needs, on the link or on the list:
+   * /apartamenty/{slug}. {slug} and {id} are the two references the booking
+   * page can resolve, and both go out escaped: a slug comes from a CMS this
+   * module does not own.
+   */
+  function placeUrl(pattern, slug, id) {
+    var ref = slug || id;
+    if (!pattern) return ref ? '?' + LIST_PARAM + '=' + encodeURIComponent(ref) : '';
+    if (/\{(slug|id)\}/.test(pattern)) {
+      // Each placeholder is the field it names and nothing else: a slug is
+      // nullable in the contract, and an id dropped into a {slug} path is a
+      // CMS address that cannot exist. A card with no address is better than a
+      // card that leads to a 404, so the shape with nothing to put in it is
+      // the same answer as an entry with no reference at all.
+      var missing = false;
+      var out = pattern.replace(/\{(slug|id)\}/g, function (all, name) {
+        var value = name === 'id' ? id : slug;
+        if (!value) { missing = true; return ''; }
+        return encodeURIComponent(value);
+      });
+      return missing ? '' : out;
+    }
+    if (!ref) return '';
+    // A shape with no placeholder is a page and not a pattern, so the
+    // reference goes on as the query the booking page reads: one address can
+    // still serve the whole collection.
+    return pattern + (pattern.indexOf('?') < 0 ? '?' : '&')
+      + LIST_PARAM + '=' + encodeURIComponent(ref);
+  }
+
+  function bindLinks(row, entry, box) {
+    // Read raw, like every other address the module takes from the page: a
+    // query may legally carry ';' and '@'.
+    var shape = raw(box, 'd2-booking-results-link');
+    var links = slotsIn(row, 'd2-booking-link');
+    for (var i = 0; i < links.length; i++) {
+      var own = raw(links[i], 'd2-booking-link');
+      var url = placeUrl(String(own || shape || ''),
+        entry.slug ? String(entry.slug) : '', entry.id ? String(entry.id) : '');
+      // An answer with neither a slug nor an id leads nowhere, and a link that
+      // leads nowhere is worse than a card that is not one.
+      if (url) {
+        links[i].setAttribute('href', url);
+        links[i].removeAttribute('d2-booking-empty');
+      } else {
+        links[i].removeAttribute('href');
+        links[i].setAttribute('d2-booking-empty', '');
+      }
+    }
+  }
+
+  /**
+   * The card the module draws for a page that gave no template: the picture,
+   * the name, the city line and the price with its unit, all inside one link —
+   * the same stylesheet and the same CSS variables as the rest of the drawn
+   * look.
+   */
+  function buildCard() {
+    var row = create('a', {
+      'd2-booking-item': '', 'd2-booking-built': '', 'd2-booking-link': ''
+    });
+    row.appendChild(create('img', { 'd2-booking-bind': 'image', alt: '' }));
+    row.appendChild(textEl('strong', '', { 'd2-booking-bind': 'name' }));
+    row.appendChild(textEl('span', '', { 'd2-booking-bind': 'city_line' }));
+    var price = create('div', {});
+    price.appendChild(create('span', { 'd2-booking-bind': 'price' }));
+    price.appendChild(create('span', { 'd2-booking-bind': 'price_unit' }));
+    row.appendChild(price);
+    return row;
+  }
+
+  function listRow(box, entry, language) {
+    var tmpl = listTemplate(box);
+    var row = tmpl && tmpl.cloneNode ? tmpl.cloneNode(true) : buildCard();
+    bindRow(row, entry, language);
+    bindLinks(row, entry, box);
+    return row;
+  }
+
+  // Only the rows we rendered go: a page may keep its own button or its empty
+  // state inside the list, and emptying the whole container would take them.
+  function clearRows(box) {
+    var rows = box.querySelectorAll('[d2-booking-item], [data-d2-booking-item]');
+    for (var i = 0; i < rows.length; i++) dropEl(rows[i]);
+  }
+
+  function renderList(box, list, append, cfg) {
+    var language = pageLanguage(cfg);
+    listTemplate(box);
+    if (!append) clearRows(box);
+    for (var i = 0; i < list.length; i++) box.appendChild(listRow(box, list[i] || {}, language));
+  }
+
+  function writeListCount(box, count) {
+    var n = Number(count);
+    var els = listControls(box, 'd2-booking-count');
+    for (var i = 0; i < els.length; i++) writeBind(els[i], isFinite(n) ? String(n) : '');
+  }
+
+  function showListControl(box, name, on) {
+    var els = listControls(box, name);
+    for (var i = 0; i < els.length; i++) {
+      if (on) els[i].removeAttribute('hidden');
+      else els[i].setAttribute('hidden', '');
+      if (els[i].style) els[i].style.display = on ? '' : 'none';
+    }
+  }
+
+  function lockMore(box, on) {
+    var els = listControls(box, 'd2-booking-more');
+    for (var i = 0; i < els.length; i++) {
+      els[i].disabled = !!on;
+      if (on) els[i].setAttribute('disabled', '');
+      else els[i].removeAttribute('disabled');
+    }
+  }
+
+  /**
+   * A 429 said how long: the button waits exactly that long, because opening
+   * it at once only buys the guest the next refusal. The wait is remembered on
+   * the list as well as on the button, so a click that got past a disabled
+   * button spends no call either, and only the newest wait may open it again.
+   */
+  function holdMore(box, state, seconds) {
+    var mark = (state.waitMark || 0) + 1;
+    state.waiting = true;
+    state.waitMark = mark;
+    lockMore(box, true);
+    setTimeout(function () {
+      if (state.waitMark !== mark) return;
+      state.waiting = false;
+      lockMore(box, false);
+    }, seconds * 1000);
+  }
+
+  /**
+   * One page of the list. The first page replaces the rows and every later one
+   * is appended, so the guest keeps what they were already reading. A page that
+   * was refused leaves the offset where it was: the next click asks for that
+   * same page again instead of skipping it, and the sentence is the module's
+   * own (the backend's text is for logs, never for a guest).
+   */
+  function askList(box, cfg) {
+    var state = listState(box);
+    if (state.busy) return Promise.resolve(null);
+    var append = state.offset > 0;
+    var filter = listFilter(box);
+    // Which question this answer belongs to. A search asked while a page was
+    // still in flight makes that page somebody else's answer.
+    var seq = state.seq || 0;
+    state.busy = true;
+    box.setAttribute('d2-booking-busy', '');
+    lockMore(box, true);
+    if (!append) box.setAttribute('d2-booking-results-state', 'loading');
+    return request('GET', '/products', {
+      // A 400 on this route is about what the filter asked for (KONTRAKT.md):
+      // the period, and the city too once the search named one.
+      badRequest: filter.located ? 'invalid_search' : 'invalid_stay',
+      query: 'limit=' + listLimit(box) + '&offset=' + state.offset
+        + (filter.query ? '&' + filter.query : '')
+    }).then(function (res) {
+      // The filter changed while this page was on its way: it would show
+      // apartments nobody asked about and move the offset past the ones the
+      // guest is reading now.
+      if ((state.seq || 0) !== seq) return res;
+      state.busy = false;
+      box.removeAttribute('d2-booking-busy');
+      if (!res.ok) {
+        box.setAttribute('d2-booking-results-state', 'error');
+        // A refusal is not an offer with nothing in it, so whatever an earlier
+        // answer put on the page about an empty offer goes.
+        showListControl(box, 'd2-booking-results-empty', false);
+        blockSlot(box, 'd2-booking-results-message', res.message);
+        if (res.reason === 'too_many_requests' && res.retryAfter > 0) {
+          holdMore(box, state, res.retryAfter);
+        } else {
+          lockMore(box, false);
+        }
+        _emit('booking:list', { reason: res.reason, status: res.status });
+        return res;
+      }
+      state.waiting = false;
+      lockMore(box, false);
+      var data = res.data && typeof res.data === 'object' ? res.data : {};
+      var list = isArray(data.data) ? data.data : [];
+      renderList(box, list, append, cfg);
+      state.offset += list.length;
+      state.more = !!data.has_more;
+      blockSlot(box, 'd2-booking-results-message', '');
+      writeListCount(box, data.count);
+      showListControl(box, 'd2-booking-more', state.more);
+      // Nothing found says so; a refusal does not, because a refusal is not an
+      // offer with nothing in it.
+      showListControl(box, 'd2-booking-results-empty', state.offset === 0);
+      box.setAttribute('d2-booking-results-state', state.offset === 0 ? 'empty' : 'ready');
+      _emit('booking:list', { count: data.count, shown: state.offset, has_more: state.more });
+      _log('list', { shown: state.offset, count: data.count, has_more: state.more });
+      return res;
+    });
+  }
+
+  function nextPage(box) {
+    var state = listState(box);
+    if (state.busy) return Promise.resolve(null);
+    // The rate limit said how long to wait, and a click during the wait earns
+    // nothing but the next 429 — the button is down, so this is a click that
+    // got past it.
+    if (state.waiting) return Promise.resolve(null);
+    // An answer that said there is no next page is final; a refusal is not, so
+    // a list that could not be read is still one click from another try.
+    if (state.offset > 0 && !state.more) return Promise.resolve(null);
+    return askList(box, currentConfig());
+  }
+
+  function bindMore(box) {
+    var els = listControls(box, 'd2-booking-more');
+    for (var i = 0; i < els.length; i++) {
+      if (els[i].getAttribute('d2-booking-bound') !== null) continue;
+      els[i].setAttribute('d2-booking-bound', '');
+      els[i].addEventListener('click', function (e) {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        nextPage(box);
+      });
+    }
+  }
+
+  function applyResults(cfg) {
+    var boxes = listBoxes();
+    var jobs = [];
+    for (var i = 0; i < boxes.length; i++) {
+      var box = boxes[i];
+      bindMore(box);
+      // A list already read is left alone: an apply() after a DOM change must
+      // not spend a second page of the key's rate limit on the same question.
+      if (box._d2BookingList) continue;
+      // The pattern leaves the page before anything shows, and a list that has
+      // none is drawn by the module — stylesheet and all.
+      if (!listTemplate(box)) {
+        box.setAttribute('d2-booking-results-drawn', '');
+        injectWidgetStyles();
+      }
+      showListControl(box, 'd2-booking-results-empty', false);
+      jobs.push(askList(box, cfg));
+    }
+    return Promise.all(jobs);
+  }
+
+  // ---------------------------------------------------------------------------
+  // The search above the list — the period, the party and the city
+  // ---------------------------------------------------------------------------
+
+  /**
+   * <form d2-booking-search> narrows the list. Its fields say which question
+   * they are with d2-booking-search-field="check_in|check_out|adults|children
+   * |location", and a submit searches without leaving the page: the lists
+   * start again from their first page and the address remembers what was
+   * asked for, so a reload keeps the search and the link is worth sharing.
+   *
+   * What goes out is what GET /products takes and nothing else. The party is
+   * two questions on the page and one number in the request: guests is the sum
+   * of adults and children (KONTRAKT.md), so a request can never contradict
+   * itself, and a page that asks about neither sends no guests at all.
+   *
+   * The period may be typed into two fields or picked in stage 5's calendar
+   * standing in the form — the calendar already tells the module what it has,
+   * so there is no second one here.
+   */
+  var searchState = null;
+
+  function searchForms() {
+    return allOf('d2-booking-search');
+  }
+
+  function searchFieldsOf(form) {
+    return form.querySelectorAll('[d2-booking-search-field], [data-d2-booking-search-field]');
+  }
+
+  function searchFieldName(el) {
+    var n = attr(el, 'd2-booking-search-field');
+    return n === null ? '' : String(n).trim().toLowerCase();
+  }
+
+  /**
+   * The city the page pinned, on the search form or on the list itself. Read
+   * raw and never through digi2.attr: a location is free text the route
+   * matches, so the responsive syntax would cut a name at its semicolon and
+   * send half a city.
+   */
+  function pinnedLocation(el) {
+    var given = raw(el, 'd2-booking-location');
+    return given === null || given === undefined ? '' : String(given).trim();
+  }
+
+  // The day a field holds, as the filter spells one. A typed time is dropped
+  // (the filter asks about days) and text that is not a day at all is no
+  // answer: half a typed date must not narrow the list by accident.
+  function dayValue(el) {
+    var stamp = naiveStamp(readValue(el));
+    return stamp ? stamp.slice(0, 10) : '';
+  }
+
+  /**
+   * The period the calendar in this form picked. It is the same calendar the
+   * booking form uses, and it has already said what it has through select(),
+   * so the search only reads it. A typed field still wins over it: a value the
+   * guest can see on the page is what they think they are searching for.
+   */
+  function stayPeriod(form) {
+    if (!firstIn(form, 'd2-booking-calendar')) return null;
+    if (!stayState || !stayState.starts_at || !stayState.units_count) return null;
+    var from = dayOfKey(String(stayState.starts_at));
+    if (from === null) return null;
+    return { check_in: dayKey(from), check_out: dayKey(from + stayState.units_count) };
+  }
+
+  // What one search form says, by the name the page gave each field.
+  function readSearch(form) {
+    var out = { check_in: '', check_out: '', adults: '', children: '', location: '' };
+    var els = searchFieldsOf(form);
+    var i;
+    for (i = 0; i < els.length; i++) {
+      var name = searchFieldName(els[i]);
+      if (!SEARCH_FIELDS[name]) {
+        _warn('unknown d2-booking-search-field="' + name + '" — it is not sent; use one of: '
+          + Object.keys(SEARCH_FIELDS).join(', '));
+        continue;
+      }
+      out[name] = name === 'check_in' || name === 'check_out'
+        ? dayValue(els[i]) : readValue(els[i]);
+    }
+    var picked = stayPeriod(form);
+    if (picked) {
+      if (!out.check_in) out.check_in = picked.check_in;
+      if (!out.check_out) out.check_out = picked.check_out;
+    }
+    // A pinned city answers for the location field whatever that field holds:
+    // the pin is the page's decision and the field is only a control.
+    var pin = pinnedLocation(form);
+    if (pin) out.location = pin;
+    out.pinned = !!pin;
+    return out;
+  }
+
+  // Which of the five questions this form actually asks. A key it has no field
+  // for is a key the page address goes on answering.
+  function searchAsked(form) {
+    var out = {};
+    var els = searchFieldsOf(form);
+    for (var i = 0; i < els.length; i++) {
+      var name = searchFieldName(els[i]);
+      if (SEARCH_FIELDS[name]) out[name] = true;
+    }
+    return out;
+  }
+
+  /**
+   * What the guest is searching for, out of the two sources that each know
+   * only part of it: the page address and the form. A field the form carries
+   * answers for its own key even when it is empty — the guest can see that
+   * field, so clearing it is an answer — and so does anything the form knows
+   * without a field of its own for it (the calendar's period, a pinned city).
+   * Every other key keeps what the address said, so a shared link opens its
+   * own result above a form that asks about only half of it, and a reload
+   * keeps the search instead of widening it to the whole offer.
+   */
+  function mergedSearch(form, fromLink) {
+    var out = {};
+    var i;
+    var key;
+    for (i = 0; i < SEARCH_PARAMS.length; i++) {
+      key = SEARCH_PARAMS[i];
+      if (fromLink && fromLink[key] !== undefined) out[key] = String(fromLink[key]);
+    }
+    if (!form) return out;
+    var own = readSearch(form);
+    var asked = searchAsked(form);
+    for (i = 0; i < SEARCH_PARAMS.length; i++) {
+      key = SEARCH_PARAMS[i];
+      if (asked[key] || (own[key] !== '' && own[key] !== undefined)) out[key] = own[key];
+    }
+    out.pinned = !!own.pinned;
+    return out;
+  }
+
+  /**
+   * The search as the route takes it: a period of two days or none, the sum of
+   * the party, and a city. Nothing is invented — a field left empty asks
+   * nothing, and a filter nobody filled in is the whole offer.
+   */
+  function normalizeSearch(input) {
+    var out = { check_in: '', check_out: '', guests: 0, location: '' };
+    if (!input) return out;
+    if (DAY_RE.test(String(input.check_in || ''))) out.check_in = String(input.check_in);
+    if (DAY_RE.test(String(input.check_out || ''))) out.check_out = String(input.check_out);
+    var adults = intOf(String(input.adults === null || input.adults === undefined
+      ? '' : input.adults).trim());
+    var children = intOf(String(input.children === null || input.children === undefined
+      ? '' : input.children).trim());
+    if (adults !== null || children !== null) out.guests = (adults || 0) + (children || 0);
+    out.location = String(input.location || '').trim();
+    return out;
+  }
+
+  // Two searches that ask the route the same question.
+  function sameSearch(a, b) {
+    return a.check_in === b.check_in && a.check_out === b.check_out
+      && a.guests === b.guests && a.location === b.location;
+  }
+
+  // A list whose FIRST page is in flight: the answer to a search nobody has
+  // seen yet. A later page is a different question, so it is not one of these.
+  function firstPageInFlight(boxes) {
+    for (var i = 0; i < boxes.length; i++) {
+      var state = boxes[i]._d2BookingList;
+      if (state && state.busy && state.offset === 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Why this search cannot go out as it stands. Caught here, because the route
+   * answers half a period with a 400 whose sentence is for logs ("check_in and
+   * check_out go together", errors.json) and the guest reads the one the
+   * module already has for a period that is not chosen yet.
+   */
+  function searchProblem(s) {
+    if (!s.check_in !== !s.check_out) return MESSAGES.stay_required;
+    if (s.check_in && dayOfKey(s.check_out) <= dayOfKey(s.check_in)) return MESSAGES.invalid_stay;
+    return '';
+  }
+
+  /**
+   * The filter of one list: the search the guest performed, with this list's
+   * own pinned city winning for this list. Two lists on a page may well be
+   * two cities, and a list may carry a pin with no search form anywhere near
+   * it — which is how a city landing page is built.
+   */
+  function listFilter(box) {
+    var s = searchState || normalizeSearch(null);
+    var city = pinnedLocation(box) || s.location;
+    var parts = [];
+    if (s.check_in && s.check_out) {
+      parts.push('check_in=' + encodeURIComponent(s.check_in));
+      parts.push('check_out=' + encodeURIComponent(s.check_out));
+    }
+    if (s.guests > 0) parts.push('guests=' + s.guests);
+    if (city) parts.push('location=' + encodeURIComponent(city));
+    return { query: parts.join('&'), located: !!city };
+  }
+
+  /**
+   * The search in the page address, so a reload keeps it and the link opens
+   * the same result. replaceState and not pushState: narrowing a filter is not
+   * walking through pages, and a Back button that steps through every
+   * narrowing is a trap on the way off the page. A pinned city is never
+   * written — it belongs to the page, not to the guest's search.
+   */
+  function writeSearchAddress(input) {
+    var loc = locationOf();
+    if (!loc) return;
+    var parts = [];
+    var was = String(loc.search || '').replace(/^\?/, '').split('&');
+    var i;
+    for (i = 0; i < was.length; i++) {
+      if (!was[i]) continue;
+      var eq = was[i].indexOf('=');
+      // Everything else the address carried stays exactly as it was written:
+      // the apartment query, a campaign, a language. Only the search is ours.
+      if (SEARCH_PARAMS.indexOf(eq < 0 ? was[i] : was[i].slice(0, eq)) < 0) parts.push(was[i]);
+    }
+    for (i = 0; i < SEARCH_PARAMS.length; i++) {
+      var key = SEARCH_PARAMS[i];
+      if (key === 'location' && input.pinned) continue;
+      var value = input[key] === null || input[key] === undefined ? '' : String(input[key]).trim();
+      if (value) parts.push(key + '=' + encodeURIComponent(value));
+    }
+    var query = parts.join('&');
+    try {
+      var past = window.history;
+      if (past && typeof past.replaceState === 'function') {
+        past.replaceState(null, '', (loc.pathname || '') + (query ? '?' + query : '')
+          + (loc.hash || ''));
+      }
+    } catch (e) {}
+  }
+
+  // The search a link carries, read before the first page of any list goes
+  // out, so a shared address opens its own result and not the whole offer.
+  function searchFromAddress() {
+    var out = null;
+    for (var i = 0; i < SEARCH_PARAMS.length; i++) {
+      var got = queryParam(SEARCH_PARAMS[i]);
+      if (got === null || String(got).trim() === '') continue;
+      if (!out) out = {};
+      out[SEARCH_PARAMS[i]] = String(got).trim();
+    }
+    return out;
+  }
+
+  /**
+   * A value into a field the guest reads, including the one case a browser
+   * refuses: a <select> takes only what one of its own <option>s carries, and
+   * anything else leaves it at selectedIndex -1 — blank on screen and empty
+   * when read back. A city that came with the link would then be lost twice
+   * over: off the screen, and out of the merge, because a field answers for
+   * its own key even when it is empty. So the module adds the one option it
+   * needs to be able to say what is being shown, and selects it.
+   *
+   * The options the page wrote are still the choice the guest can make: this
+   * one is the search already running, carried in by a link or pinned by the
+   * page, and it is marked d2-booking-search-option so the page can tell it
+   * apart. A field that takes the value on its own (every input) is untouched.
+   */
+  function showFieldValue(el, value) {
+    el.value = value;
+    var want = value === null || value === undefined ? '' : String(value).trim();
+    if (!want || readValue(el) === want) return;
+    if (String(el.tagName || '').toUpperCase() !== 'SELECT') return;
+    var option = create('option', { value: want, 'd2-booking-search-option': '' });
+    option.textContent = want;
+    el.appendChild(option);
+    el.value = want;
+  }
+
+  // The form shows the search the address carries: a shared link opens with
+  // its own dates in the fields, not with an empty form above a filtered list.
+  function fillSearchForm(form, input) {
+    var els = searchFieldsOf(form);
+    var pin = pinnedLocation(form);
+    for (var i = 0; i < els.length; i++) {
+      var name = searchFieldName(els[i]);
+      if (!SEARCH_FIELDS[name] || input[name] === undefined) continue;
+      if (name === 'location' && pin) continue;
+      showFieldValue(els[i], input[name]);
+    }
+  }
+
+  /**
+   * A pinned city, on the field the page built for choosing one: the value is
+   * the pin and the field is disabled. The pilot asked for a page of one city
+   * the guest cannot wander off, and a select still offering five cities over
+   * a list that only ever shows one is a lie.
+   */
+  function pinSearch(form) {
+    var pin = pinnedLocation(form);
+    if (!pin) return;
+    var els = searchFieldsOf(form);
+    for (var i = 0; i < els.length; i++) {
+      if (searchFieldName(els[i]) !== 'location') continue;
+      // A select that does not offer the pinned city gets an option for it:
+      // the page pinned that city, so a disabled field standing blank over a
+      // list of it says less than the city's own name.
+      showFieldValue(els[i], pin);
+      els[i].disabled = true;
+      els[i].setAttribute('disabled', '');
+      els[i].setAttribute('d2-booking-pinned', '');
+    }
+  }
+
+  /**
+   * The guest pressed search. The page stays where it is: every list goes back
+   * to its first page with the new filter, the address remembers the search,
+   * and a search that cannot go out says one sentence where the list's
+   * refusals already go.
+   */
+  function runSearch(form) {
+    var input = mergedSearch(form, searchFromAddress());
+    var next = normalizeSearch(input);
+    var boxes = listBoxes();
+    var bad = searchProblem(next);
+    var i;
+    if (bad) {
+      // The filter in force stays in force: the rows on screen and the offset
+      // beside them belong to it, and a list paged on a filter the guest never
+      // got would mix two result sets in one column — showing the apartments
+      // of the overlap twice and skipping the rest.
+      for (i = 0; i < boxes.length; i++) {
+        boxes[i].setAttribute('d2-booking-results-state', 'error');
+        showListControl(boxes[i], 'd2-booking-results-empty', false);
+        blockSlot(boxes[i], 'd2-booking-results-message', bad);
+      }
+      _emit('booking:search', { search: copy(next), message: bad });
+      return Promise.resolve(null);
+    }
+    // The same question, already on its way: a second click on Szukaj must not
+    // spend another call of the key's rate limit on an answer that is coming.
+    // A page further down the list is another question, and a list standing
+    // idle is a retry — both go out.
+    if (searchState && sameSearch(searchState, next) && firstPageInFlight(boxes)) {
+      return Promise.resolve(null);
+    }
+    searchState = next;
+    writeSearchAddress(input);
+    _emit('booking:search', { search: copy(searchState) });
+    var jobs = [];
+    for (i = 0; i < boxes.length; i++) {
+      var state = listState(boxes[i]);
+      // A new search is a new first page. The offset goes back to the start
+      // and the question changes number, so an answer still on its way is no
+      // longer the answer to what is on screen.
+      state.offset = 0;
+      state.more = false;
+      state.busy = false;
+      state.seq = (state.seq || 0) + 1;
+      jobs.push(askList(boxes[i], currentConfig()));
+    }
+    return Promise.all(jobs);
+  }
+
+  function bindSearch(form) {
+    if (form.getAttribute('d2-booking-search-bound') !== null) return;
+    form.setAttribute('d2-booking-search-bound', '');
+    form.addEventListener('submit', function (e) {
+      // The page stays: a search is the same page with another list in it, and
+      // a reload would throw away the rows the guest is already reading.
+      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      runSearch(form);
+    });
+  }
+
+  /**
+   * The search forms and the address, before any list asks for its first page:
+   * what the link says is what the list opens with.
+   */
+  function applySearch() {
+    var forms = searchForms();
+    var fromLink = searchFromAddress();
+    var input = null;
+    for (var i = 0; i < forms.length; i++) {
+      bindSearch(forms[i]);
+      pinSearch(forms[i]);
+      if (fromLink) fillSearchForm(forms[i], fromLink);
+      // The lists open with what the first form says, over what the address
+      // says about everything that form does not ask about; a second form is
+      // bound all the same, so searching in it works.
+      if (!input) input = mergedSearch(forms[i], fromLink);
+    }
+    if (!input) input = mergedSearch(null, fromLink);
+    // A search form searches the lists of its own page, so a page with no list
+    // on it takes the submit and has nothing to answer it with.
+    if (forms.length && !listBoxes().length) {
+      _warn('a [d2-booking-search] form searches the lists on its own page, and this page has'
+        + ' no [d2-booking-results]: the submit is taken and nothing can answer it');
+    }
+    searchState = normalizeSearch(input);
+    // A link carrying half a period opens the whole offer instead of nothing:
+    // the sentence belongs to a guest who just pressed search, not to a page
+    // that is only opening.
+    if (searchProblem(searchState)) {
+      searchState.check_in = '';
+      searchState.check_out = '';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Page
   // ---------------------------------------------------------------------------
 
@@ -3829,9 +4883,13 @@
         bind(list[j]);
         applyFields(list[j], cfg);
       }
-      // The guest's own two pages. Neither needs a form or a calendar, so a
-      // page may carry nothing but one of them.
-      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg)]);
+      // The search before the list: a link carrying one must narrow the first
+      // page the list ever asks for, not the second.
+      applySearch();
+      // The guest's own two pages and the list of places. None of them needs a
+      // form or a calendar, so a page may carry nothing but one of them.
+      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg),
+        applyResults(cfg)]);
       return guest.then(function () {
         // The mark signs the block, so it goes on last: a return block only
         // fills itself once the status has answered, and a mark appended
