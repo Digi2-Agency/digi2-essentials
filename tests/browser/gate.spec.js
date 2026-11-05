@@ -241,6 +241,16 @@ test.describe('booking: the calendar and the price', () => {
     expect(Date.parse(week) - Date.parse(next)).toBe(7 * 86400000);
   });
 
+  test('choosing a day with the keyboard leaves the focus on that day', async ({ page }) => {
+    // The grid is rebuilt on every pick, so the focused button really goes away
+    // here, which the mini-DOM cannot show: focus would fall to <body>.
+    const [day] = (await openDays(page)).slice(-1);
+    await page.locator('[d2-booking-day="' + day + '"]').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('[d2-booking-day="' + day + '"]')).toHaveAttribute('d2-booking-day-selected', '');
+    expect(await page.evaluate(() => document.activeElement.getAttribute('d2-booking-day'))).toBe(day);
+  });
+
   test('a busy night says it is taken and cannot be picked', async ({ page }) => {
     const taken = page.locator('[d2-booking-day="' + (await busyDay(page)) + '"]');
     await expect(taken).toHaveAttribute('d2-booking-day-busy', '');
@@ -305,6 +315,16 @@ test.describe('booking: the drawn widget and the payment', () => {
         await page.textContent('[d2-booking-calendar-month]')
       );
     }
+  });
+
+  test('a submit never reaches the document, where webflow.js listens for it', async ({ page }) => {
+    await page.evaluate(() => {
+      window.reachedDocument = 0;
+      document.addEventListener('submit', () => { window.reachedDocument += 1; });
+      document.querySelector('[d2-booking-form]').requestSubmit();
+    });
+    await expect(page.locator('[d2-booking-status]')).not.toHaveText('');
+    expect(await page.evaluate(() => window.reachedDocument)).toBe(0);
   });
 
   test('an empty widget becomes a whole booking form', async ({ page }) => {
