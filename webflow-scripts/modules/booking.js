@@ -1253,6 +1253,9 @@
       if (!data) {
         _warn('the product "' + key.slice(1) + '" could not be read (' + res.reason
           + ') — the reference goes to the API as the page wrote it');
+        // A blip is not an answer: the next caller asks again instead of
+        // sending a slug for the rest of the visit. A 404 is an answer.
+        if (res.reason !== 'product_not_found') delete productAsked[key];
       }
       productSeen[key] = data;
       return data;
@@ -1597,10 +1600,23 @@
       starts_at: stay.starts_at ? String(stay.starts_at) : null,
       units_count: Number(stay.units_count) || null
     } : null;
+    if (stayState) reopenClosed();
     _emit('booking:stay', { stay: stayState });
     // A new stay is a new price: asked for once the clicking has settled.
     scheduleQuote();
     return stayState;
+  }
+
+  // Another period is the way out of a `final` refusal, so picking one has to
+  // bring the button back. The state stays on the form: send() still refuses
+  // the very request that earned it, and lets any other through.
+  function reopenClosed() {
+    var forms = formsOf();
+    for (var i = 0; i < forms.length; i++) {
+      if (forms[i].getAttribute('d2-booking-payment') !== 'final') continue;
+      showMessage(forms[i], 'form', '');
+      lock(forms[i], false);
+    }
   }
 
   function stayFor(form) {
@@ -2063,7 +2079,10 @@
     return {
       timezone: data.timezone ? String(data.timezone) : null,
       currency: data.currency ? String(data.currency) : null,
-      unit: units.length ? String(units[0]) : 'day',
+      // What the calendar sends is always nights. units_count is counted in
+      // `unit`, so the first allowed unit would book 3 nights as 3 months.
+      unit: 'day',
+      nights: !units.length || units.indexOf('day') >= 0,
       min: wholeOr(data.min_units, 1),
       // No max_units means no cap, and 0 reads as "no cap" everywhere below.
       max: wholeOr(data.max_units, 0),
@@ -2155,23 +2174,30 @@
 
     function rules() {
       return state.rules
-        || { min: 1, max: 0, leadHours: 0, buffer: 0, timezone: null, unit: 'day' };
+        || { min: 1, max: 0, leadHours: 0, buffer: 0, timezone: null, unit: 'day', nights: true };
     }
 
     function lang() {
       return pageLanguage(currentConfig());
     }
 
+    // The first day a stay can start on. A stay starts at local midnight and
+    // the backend holds that moment against now + lead time, so the day that
+    // moment falls in is already too late: today is never on offer, and a lead
+    // of 24 h at 15:00 opens the day after tomorrow.
     function earliest() {
-      return todayIn(rules().timezone, rules().leadHours);
+      return todayIn(rules().timezone, rules().leadHours) + 1;
     }
 
     // Why a stay cannot start here: an availability code, or null when it can.
     function arrivalBlock(day) {
-      // A day the guest cannot start on because it is behind us, not because
-      // anybody holds it: `past` says exactly that, and only a lead time that
-      // really exists is reported as one.
-      if (day < earliest()) return rules().leadHours > 0 ? 'lead_time_too_short' : 'past';
+      // A calendar counts nights, so a product that does not rent by the day
+      // cannot be booked here at all: nothing else it could send means nights.
+      // After that, a day behind us is `past`, and one still ahead of us but
+      // too close is what the backend would call it.
+      if (rules().nights === false) return 'unit_not_allowed';
+      if (day < todayIn(rules().timezone, 0)) return 'past';
+      if (day < earliest()) return 'lead_time_too_short';
       // The code markBusy left on the night: taken, closed by the owner, or
       // the gap a buffer asks for. Each one reads as a different sentence.
       if (state.busy[day]) return state.busy[day];
@@ -2245,16 +2271,22 @@
       if (state.rules && addMonths(firstDay, 1) <= earliest()) return Promise.resolve(false);
       if (!state.product) return Promise.resolve(false);
       el.setAttribute('d2-booking-busy', '');
-      return request('GET', '/products/' + encodeURIComponent(productId(state.product)) + '/availability', {
-        query: 'date_from=' + encodeURIComponent(naiveOf(firstDay))
-          + '&date_to=' + encodeURIComponent(naiveOf(addMonths(firstDay, 1))),
-        notFound: 'product_not_found',
-        // On this route a plain-sentence 400 is always about the window we
-        // asked for, so the guest hears about dates and not about "data".
-        badRequest: 'invalid_stay'
+      // Answered from memory once the product is known; after a failed lookup
+      // this is the retry, so the window does not go out under a bare slug.
+      return product(state.product).then(function () {
+        return request('GET', '/products/' + encodeURIComponent(productId(state.product)) + '/availability', {
+          query: 'date_from=' + encodeURIComponent(naiveOf(firstDay))
+            + '&date_to=' + encodeURIComponent(naiveOf(addMonths(firstDay, 1))),
+          notFound: 'product_not_found',
+          // On this route a plain-sentence 400 is always about the window we
+          // asked for, so the guest hears about dates and not about "data".
+          badRequest: 'invalid_stay'
+        });
       }).then(function (res) {
         el.removeAttribute('d2-booking-busy');
         if (!res.ok) {
+          // Coming back to this month asks again: nothing was learned about it.
+          delete state.windows[key];
           // The page is not held hostage by the API: the month stays usable and
           // the backend refuses the stay on quote or on submit if it must.
           _warn('the availability window ' + key + ' could not be read (' + res.reason
@@ -2264,6 +2296,9 @@
         var data = res.data || {};
         state.rules = rulesOf(data);
         lastRules = state.rules;
+        if (!state.rules.nights) {
+          _warn('this product does not rent by the day, and a calendar can only book nights');
+        }
         markBusy(state.busy, data.busy, state.rules);
         return true;
       });
@@ -2427,6 +2462,10 @@
      * guest never has to guess which half of the range the calendar dropped.
      */
     function pick(day) {
+      // The grid is rebuilt below and the button holding the focus goes with
+      // it, so the focus is put back on the same day: a keyboard user would
+      // otherwise land on <body> between the arrival and the departure.
+      state.focusDay = day;
       if (!state.from || state.to || day <= state.from) {
         var why = arrivalBlock(day);
         if (why) {
@@ -2437,7 +2476,7 @@
         state.to = 0;
         select(null);
         announce(fill(MESSAGES.calendar_arrival, { date: dayText(day, lang()) }));
-        render(false);
+        render(true);
         return;
       }
       var blocked = departureBlock(state.from, day);
@@ -2459,7 +2498,7 @@
         count: nights,
         nights: nightsWord(nights)
       }));
-      render(false);
+      render(true);
     }
 
     function start() {
@@ -2537,6 +2576,8 @@
   // The question the last answer belongs to, so an identical one is not asked
   // twice (see askQuote).
   var lastQuoteKey = '';
+  // The question on its way: { key, seq, promise }. Asking it again joins it.
+  var quoteFlight = null;
 
   function scheduleQuote() {
     if (quoteTimer) clearTimeout(quoteTimer);
@@ -2564,6 +2605,10 @@
     var form = priceForm();
     var stay = stayFor(form);
     if (!stay || !stay.starts_at || !stay.units_count) {
+      // The sequence moves too: an answer still on its way is about a stay
+      // the guest has just let go of, and must not print its price.
+      quoteSeq++;
+      setPriceBusy(false);
       clearPrice();
       return Promise.resolve(null);
     }
@@ -2597,12 +2642,23 @@
     // answered from the reply we are holding instead of spending the key's
     // rate limit on the same answer again.
     var asked = productId(stay.product) + '|' + JSON.stringify(body);
+    // The same question still on its way is joined, not repeated: it answers
+    // for this newer sequence number, or a keystroke would throw its price away.
+    if (quoteFlight && quoteFlight.key === asked) {
+      quoteFlight.seq = seq;
+      return quoteFlight.promise;
+    }
+    // lastQuoteKey names the question lastQuote answers, so it is written with
+    // the answer and never with the asking. Back on the price already printed,
+    // nothing is coming for this sequence number to clear the busy mark.
     if (asked === lastQuoteKey && lastQuote) {
+      setPriceBusy(false);
       return Promise.resolve({ ok: true, status: 200, data: lastQuote });
     }
-    lastQuoteKey = asked;
     setPriceBusy(true);
-    return request('POST', '/products/' + encodeURIComponent(productId(stay.product)) + '/quote', {
+    var flight = { key: asked, seq: seq, promise: null };
+    quoteFlight = flight;
+    flight.promise = request('POST', '/products/' + encodeURIComponent(productId(stay.product)) + '/quote', {
       body: body,
       notFound: 'product_not_found',
       // The only values this route takes are the stay and the party, so a
@@ -2610,7 +2666,8 @@
       // sentence itself is for the log, never for the guest).
       badRequest: 'invalid_stay'
     }).then(function (res) {
-      if (seq !== quoteSeq) return res;
+      if (quoteFlight === flight) quoteFlight = null;
+      if (flight.seq !== quoteSeq) return res;
       setPriceBusy(false);
       if (!res.ok) {
         clearPrice();
@@ -2628,10 +2685,12 @@
         return res;
       }
       lastQuote = data;
+      lastQuoteKey = asked;
       renderPrice(data, cfg);
       _emit('booking:quote', { quote: data });
       return res;
     });
+    return flight.promise;
   }
 
   function setPriceBusy(on) {
@@ -2802,7 +2861,7 @@
   }
 
   // A state this form cannot leave by trying again: the sentence stays and the
-  // button stays down. `final` is remembered against the request it refused,
+  // button stays down until another period is picked (reopenClosed). `final` is remembered against the request it refused,
   // because a hold that expired is exactly the moment a guest reaches for
   // another period — and a form frozen for the whole visit would not let them.
   function closeForm(form, state, res, key) {
@@ -3257,6 +3316,16 @@
     return request('GET', '/bookings/' + encodeURIComponent(id) + '/status', {
       notFound: 'booking_not_found'
     }).then(function (res) {
+      // A dead network, a 429 or a 5xx says nothing about the payment, and this
+      // guest may have just been charged: a failure sentence now would send
+      // them back to pay again. The loop exists to ride this out; only an
+      // answer about the booking itself, or the last try, ends it.
+      var blip = !res.ok && (res.status === 0 || res.status === 429 || res.status >= 500);
+      if (blip && tries + 1 < RETURN_DELAYS.length) {
+        setTimeout(function () { pollStatus(host, id, payment, cfg, tries + 1); },
+          Math.max(RETURN_DELAYS[tries], (res.retryAfter || 0) * 1000));
+        return res;
+      }
       if (!res.ok) {
         returnSay(host, 'error', res.message, null, null, cfg);
         lastReturn = { state: 'error', status: null };
@@ -3806,11 +3875,17 @@
   function bind(form) {
     if (form.getAttribute('d2-booking-bound') !== null) return;
     form.setAttribute('d2-booking-bound', '');
+    // Capture, and stopped there: Webflow listens for this event on the
+    // document and does not care about preventDefault, so a Form Block would
+    // also post the guest's details to Webflow Forms and hide itself behind
+    // the success box. stopPropagation and not stopImmediatePropagation: other
+    // capture listeners on this form (d2-forms validation) still have to run.
     form.addEventListener('submit', function (e) {
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
       // Submit is the whole way: the booking and then the payment.
       checkout(form, stayFor(form));
-    });
+    }, true);
     // The party is part of the price, so a changed guest count asks again —
     // once the typing has settled, not once per keystroke.
     form.addEventListener('input', scheduleQuote);

@@ -4247,7 +4247,7 @@ the same month.
 | `d2-booking-status` | any element | Optional. Where the chosen range and every refusal about the stay is written, for eyes and for screen readers alike. The module builds one inside the calendar when the page has none (`role="status"`, `aria-live="polite"`); a page may put its own anywhere, and every one of them gets the sentence. |
 | `d2-booking-calendar-built` / `-head` / `-month` / `-grid` / `-prev` / `-next` / `-weekdays` | built by the module | The parts of the drawn calendar, so CSS can reach them. |
 | `d2-booking-day="YYYY-MM-DD"` | built by the module | One day, always a real `<button type="button">`. |
-| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (today plus `lead_time_hours`). |
+| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (the first local midnight after now plus `lead_time_hours`, so never today). |
 | `d2-booking-day-selected` / `-checkout` / `-in-range` / `-today` / `-blank` | set by the module | The arrival / the departure / a night between them / today / a leading or trailing empty square. |
 | `d2-booking-calendar-ready` / `d2-booking-busy` | set by the module | The month is drawn / a window is in flight. |
 
@@ -4259,6 +4259,22 @@ rules
 (`tests/fixtures/booking-api/availability.json`): there is **no check-in-day
 rule** in the contract, so the calendar never closes a week day on its own and
 every day of the week is a possible arrival.
+
+**The first day on offer is a midnight, not a date.** A stay starts at local
+midnight and `check_rental_rules` refuses `starts_at < now + lead_time`, so the
+day that moment falls in is already too late: today is never on offer, even with
+a lead of `0`, and 24 hours at 15:00 opens the day after tomorrow. It is counted
+in the rental's zone. The calendar can still go stale on an open page, which is
+why `lead_time_too_short` after submit has its own sentence too.
+
+**The calendar only speaks nights.** `units_count` is counted in `unit`, so
+sending the first of `allowed_units` would book 3 nights as 3 months. It always
+sends `day`, and a product without `day` answers `unit_not_allowed` on every day.
+
+**A month or a product that could not be read is asked for again.** A failed
+product lookup is dropped so the next caller retries instead of sending a slug
+to `{product_id}` routes for the whole visit; a 404 is an answer and is kept. A
+month whose window failed is read again on the way back.
 
 **`buffer_minutes` widens a booking, and only a booking.** Every entry of `busy`
 carries a `kind`: `booking` (someone's stay) or `blackout` (the owner closing

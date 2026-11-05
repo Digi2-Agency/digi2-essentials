@@ -314,6 +314,28 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
   do rezerwacji jest nieważny lub wygasł. Nowy znajdziesz w e-mailu.” — jedna
   odpowiedź na wszystkie odmowy tokenu.
 
+### Poprawki po recenzji #60 (ten sam etap, przed wydaniem)
+
+- **Formularz w Form Block nie wysyła się już do Webflow.** Wysyłka jest
+  zatrzymywana w fazie capture, więc dane gościa nie trafiają do Webflow Forms, a
+  formularz nie chowa się za `.w-form-done`. Walidacja `d2-forms` działa dalej.
+- **Dziś nie da się wybrać jako przyjazdu**, także przy `lead_time_hours: 0`.
+  Pobyt zaczyna się o lokalnej północy, a backend porównuje ją z „teraz plus
+  wyprzedzenie”, więc taki dzień i tak dostawał odmowę. Pierwszy dostępny dzień to
+  pierwsza północ po tej chwili, w strefie obiektu.
+- **Kalendarz zawsze wysyła noce** (`unit: "day"`). Wcześniej brał pierwszą
+  jednostkę z `allowed_units`, więc przy `month` 3 noce szły jako 3 miesiące.
+  Obiektu bez `day` nie da się zarezerwować kalendarzem.
+- **Cena zgadza się z wybranym pobytem.** Pisanie w czasie wyceny nie zostawia
+  już starej kwoty ani znacznika `d2-booking-busy`, a spóźniona odpowiedź nie drukuje
+  ceny pobytu, który gość porzucił.
+- **Po odmowie ostatecznej wybór innego terminu oddaje przycisk.** Wcześniej
+  zostawał wyłączony do przeładowania strony.
+- **Chwilowa awaria nie kończy sprawdzania płatności.** Brak sieci, 429 i 5xx na
+  stronie powrotu to kolejna próba, a nie zdanie o błędzie.
+- **Nieudane odczytanie produktu i miesiąca jest ponawiane**, a 404 nie.
+- **Wybór dnia klawiaturą zostawia fokus na tym dniu.**
+
 ### Poprawki po przeglądzie (ten sam etap, przed wydaniem)
 
 - **Obiekt można podać adresem: `?apartament=<slug>`.** Gdy `d2-booking-product`
