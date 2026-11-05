@@ -4611,7 +4611,7 @@ poll: the block is marked `d2-booking-return-ready` before the first call.
 | `status: "expired"`, or `awaiting_payment` with `hold_open: false` | `expired` + the `site_url` link | Nothing was paid and the period is back in the offer. Saying "still being checked" here would keep the guest waiting while the dates go to somebody else. |
 | `status: "cancelled"` / `"rejected"` | its own, + the link | |
 | `status: "pending"` | `pending`, settled | `payment_mode` tells a prepaid booking from an on-request one, and `pending` is where the second one sits: the booking is in and the owner decides. There is no payment to check, so there is nothing to poll — calling it "still being checked" would leave the guest watching a spinner for forty seconds over a payment that does not exist. |
-| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is pointed back at the link in their e-mail; once it is gone, at a new period. |
+| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is told the period is held for a moment, because no e-mail carries a payment link; once it is gone, at a new period. |
 | `payment=balance_success` | `balance_paid` only once `balance_due_minor` is gone | The webhook is what moves the money in our books, not what Stripe said in the address. |
 | anything else | `checking` | A status the module does not know is **never** guessed into a verdict. |
 

@@ -341,6 +341,9 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
   zmieni imię, e-mail albo telefon, moduł wysyła je do istniejącej rezerwacji przed
   płatnością, więc potwierdzenie idzie na aktualny adres. Wymaga trasy
   `POST /bookings/{id}/contact` po stronie 2destate (w budowie).
+- **Moduł nie obiecuje maili, których nie ma.** Gość dostaje wiadomość dopiero po
+  potwierdzeniu rezerwacji, a link do pierwszej płatności nie idzie mailem wcale,
+  więc zdania o powrocie z płatności mówią tylko to, co działa.
 - **Utracona odpowiedź nie blokuje terminu.** `POST /bookings` niesie
   `Idempotency-Key`, więc ponowienie po przekroczeniu czasu odzyskuje rezerwację.
 
