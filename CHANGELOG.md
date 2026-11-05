@@ -317,8 +317,10 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
 ### Poprawki po recenzji #60 (ten sam etap, przed wydaniem)
 
 - **Formularz w Form Block nie wysyła się już do Webflow.** Wysyłka jest
-  zatrzymywana w fazie capture, więc dane gościa nie trafiają do Webflow Forms, a
-  formularz nie chowa się za `.w-form-done`. Walidacja `d2-forms` działa dalej.
+  zatrzymywana na formularzu, więc dane gościa nie trafiają do Webflow Forms, a
+  formularz nie chowa się za `.w-form-done`. `d2-forms` dalej blokuje niepoprawny
+  formularz. **Uwaga:** listener `submit` na `document`, w tym wyzwalacz formularza
+  w GTM, tego nie usłyszy. Rezerwację mierz zdarzeniem `booking:created`.
 - **Dziś nie da się wybrać jako przyjazdu**, także przy `lead_time_hours: 0`.
   Pobyt zaczyna się o lokalnej północy, a backend porównuje ją z „teraz plus
   wyprzedzenie”, więc taki dzień i tak dostawał odmowę. Pierwszy dostępny dzień to
@@ -329,8 +331,8 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
 - **Cena zgadza się z wybranym pobytem.** Pisanie w czasie wyceny nie zostawia
   już starej kwoty ani znacznika `d2-booking-busy`, a spóźniona odpowiedź nie drukuje
   ceny pobytu, który gość porzucił.
-- **Po odmowie ostatecznej wybór innego terminu oddaje przycisk.** Wcześniej
-  zostawał wyłączony do przeładowania strony.
+- **Po odmowie ostatecznej inny termin albo inny skład grupy oddaje przycisk.**
+  Wcześniej zostawał wyłączony do przeładowania strony.
 - **Chwilowa awaria nie kończy sprawdzania płatności.** Brak sieci, 429 i 5xx na
   stronie powrotu to kolejna próba, a nie zdanie o błędzie.
 - **Nieudane odczytanie produktu i miesiąca jest ponawiane**, a 404 nie.

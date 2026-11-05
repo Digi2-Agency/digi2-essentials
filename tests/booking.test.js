@@ -3272,13 +3272,13 @@ function deferred() {
   return { promise, release };
 }
 
-test('submit is stopped in the capture phase, before the document handler of Webflow', async () => {
-  // MUTACJA: bind in the bubble phase, or only preventDefault. webflow.js
-  // listens on the document and ignores preventDefault, so the guest's name,
-  // e-mail and phone also go to Webflow Forms and the form hides itself.
+test('submit stops on the form, on the way up to the document handler of Webflow', async () => {
+  // MUTACJA: only preventDefault, and webflow.js, which listens on the document
+  // and ignores it, also posts the guest's details to Webflow Forms. Or bind in
+  // the capture phase, and d2-forms can no longer stop an invalid form.
   const env = calendarPage();
   await env.settled();
-  assert.equal(env.form.capturing.submit, true);
+  assert.equal(env.form.capturing.submit, false);
   let stopped = 0;
   fire(env.form, 'submit', { preventDefault() {}, stopPropagation() { stopped += 1; } });
   await env.settled();
@@ -3425,6 +3425,38 @@ test('a product the backend does not know is not asked for again', async () => {
   assert.equal(productCalls(env).length, 1);
 });
 
+test('a failed start is not repeated at once by the same page load', async () => {
+  // MUTACJA: forget the failed month, and start() asks for it twice in a row:
+  // five calls and up to 50 s before the calendar draws anything.
+  const down = { status: 503, body: { detail: 'Unavailable' } };
+  const env = calendarPage({ refuse: { availability: down } });
+  await env.settled();
+  assert.equal(availabilityCalls(env).length, 1);
+});
+
+test('a 429 on the product is not asked again before its wait is over', async () => {
+  // MUTACJA: retry at once, and an already limited key is hit again.
+  const env = calendarPage({
+    loaderAttrs: { 'd2-booking-product': 'rynek-1' },
+    script: { product: [{ status: 429, body: { detail: 'x' }, headers: { 'Retry-After': '30' } }] },
+  });
+  await env.settled();
+  assert.equal(productCalls(env).length, 1);
+});
+
+test('another party opens a final refusal too', async () => {
+  // MUTACJA: reopen only on select(), and the party is a dead end although
+  // send() would take it as a new request.
+  const env = payPage({ refuse: { checkout: 'booking_not_payable' } });
+  await paySubmit(env);
+  assert.equal(submitOf(env.form).disabled, true);
+  fire(env.form, 'input');
+  assert.equal(submitOf(env.form).disabled, true, 'the same request stays closed');
+  fieldOf(env.form, 'adults').value = '3';
+  fire(env.form, 'input');
+  assert.equal(submitOf(env.form).disabled, false);
+});
+
 test('a month that could not be read is asked for again on the way back', async () => {
   // MUTACJA: keep the mark, and the month shows every night free for the visit.
   const env = calendarPage({ script: { availability: [{ status: 503, body: { detail: 'Unavailable' } }] } });
@@ -3464,6 +3496,25 @@ test('a blip while polling the status does not end the poll', async () => {
   assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking', 'nor does the dead network');
   await env.tick();
   assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'confirmed');
+});
+
+test('a blip on the last try leaves the sentence that the payment is being checked', async () => {
+  // MUTACJA: end in the error sentence, and a guest who has just paid is sent
+  // back to pay again by the very last try.
+  const down = { status: 503, body: { detail: 'Unavailable' } };
+  const env = returnPage({ script: { status: [null, down, down, down, down, down, down, down] } });
+  await env.settled();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking');
+  for (let i = 0; i < 10; i += 1) await env.tick();
+  assert.equal(callsTo(env, '/status').length, 8);
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking');
+});
+
+test('a long Retry-After does not park the return page', async () => {
+  // MUTACJA: wait what the header says, and the guest watches "loading" for an hour.
+  const env = returnPage({ script: { status: [{ status: 429, body: { detail: 'x' }, headers: { 'Retry-After': '2976' } }] } });
+  await env.settled();
+  assert.ok(env.waits().filter((ms) => ms !== 10000).every((ms) => ms <= 30000), env.waits().join(','));
 });
 
 test('an answer about the booking ends the poll at once', async () => {
@@ -3547,12 +3598,14 @@ test('a recovered booking whose hold ran out is not paid, and the next try is ne
   // MUTACJA: treat the 200 as a live booking, and the guest is sent to pay a
   // hold that no longer exists.
   const dead = Object.assign({}, BOOKING.response, { status: 'expired' });
-  const env = payPage({ script: { bookings: ['offline', { status: 200, body: dead }] } });
+  const env = payPage({ status: true, script: { bookings: ['offline', { status: 200, body: dead }] } });
   await paySubmit(env);
   fire(env.form, 'submit');
   await env.settled();
   assert.equal(checkoutPosts(env).length, 0);
   assert.equal(submitOf(env.form).disabled, false);
+  assert.ok(env.events.some((e) => e.name === 'booking:refused' && e.data.reason === 'hold_expired'));
+  assert.ok(statusText(env).indexOf('Czas na opłacenie') >= 0, statusText(env));
   fire(env.form, 'submit');
   await env.settled();
   assert.notEqual(keyOf(bookingPosts(env)[2]), keyOf(bookingPosts(env)[1]));
