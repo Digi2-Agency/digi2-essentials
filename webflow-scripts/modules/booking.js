@@ -1206,7 +1206,9 @@
     var text = MESSAGES[reason];
     if (!text) return GENERIC_MESSAGE;
     if (reason === 'too_many_requests' && extra && extra.retryAfter > 0) {
-      return 'Zbyt wiele prób. Spróbuj ponownie za ' + extra.retryAfter + ' s.';
+      // Nobody reads "2976 s": past two minutes the wait is said in minutes.
+      return 'Zbyt wiele prób. Spróbuj ponownie za ' + (extra.retryAfter >= 120
+        ? Math.ceil(extra.retryAfter / 60) + ' min.' : extra.retryAfter + ' s.');
     }
     return text;
   }
@@ -1949,7 +1951,7 @@
     + '{font-size:.8125em;font-weight:400;color:var(--d2-booking-muted,#6b6f6d)}'
     // A slot with nothing in it is a hole in a card we drew ourselves: no
     // picture, no grey box where one would have been.
-    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-empty]{display:none}'
+    + '[d2-booking-results][d2-booking-results-drawn] [d2-booking-empty]:not([d2-booking-item]){display:none}'
     // The return page and the manage page: the same box, the same variables.
     + '[d2-booking-return],[d2-booking-manage]{box-sizing:border-box;display:flex;'
     + 'flex-direction:column;gap:var(--d2-booking-gap,12px);max-width:var(--d2-booking-width,420px);'
@@ -2179,6 +2181,15 @@
    * the page has somewhere to put it — a key whose form never mentions pets
    * must not spend a request on a sentence nobody reads.
    */
+  function dropThresholdField(cfg) {
+    var forms = formsOf();
+    for (var i = 0; i < forms.length; i++) {
+      var el = forms[i].querySelector('[d2-booking-field="pets_over_threshold"], '
+        + '[data-d2-booking-field="pets_over_threshold"]');
+      if (el) removeField(el, forms[i], cfg);
+    }
+  }
+
   function applyPetFee(cfg) {
     if (!hintSlots('pets_over_threshold').length) return Promise.resolve(null);
     // The form knows its product (the widget copies the attribute onto the one
@@ -2188,6 +2199,9 @@
     if (!ref) return Promise.resolve(null);
     return product(ref).then(function (data) {
       writeHint('pets_over_threshold', petFeeText(data, cfg));
+      // No pet_fee means no threshold anywhere on the page, so the question
+      // cannot be answered. Only an answer says so: a failed lookup keeps it.
+      if (data && !data.pet_fee) dropThresholdField(cfg);
       return data;
     });
   }
@@ -3094,9 +3108,13 @@
     }, res.retryAfter * 1000);
   }
 
+  // Nothing the guest did or can mend: the object has no payments yet. Their
+  // sentence is information, so it is not painted like a mistake.
+  var NOT_THE_GUEST = { stripe_not_connected: 1, stripe_account_not_ready: 1 };
+
   function paymentRefused(form, res, key) {
     _log('payment refused', { reason: res.reason, status: res.status });
-    if (form) showMessage(form, 'form', res.message);
+    if (form) showMessage(form, 'form', res.message, !!NOT_THE_GUEST[res.reason]);
     announce(res.message);
     _emit('booking:refused', { reason: res.reason, status: res.status, form: form || null });
     if (!form) return;
@@ -3374,7 +3392,7 @@
     if (state === 'final' && form._d2BookingClosedKey === key) {
       var closed = form._d2BookingLast || refusal('request_refused', 0);
       form.setAttribute('d2-booking-payment', 'final');
-      showMessage(form, 'form', closed.message);
+      showMessage(form, 'form', closed.message, !!NOT_THE_GUEST[closed.reason]);
       return closed;
     }
     var running = keptFor(flights, key);
@@ -4223,11 +4241,21 @@
    * would be a placeholder card above the apartments that no render ever
    * clears (only [d2-booking-item] rows are).
    */
+  function collectionItem(el) {
+    return !!el && (' ' + (el.getAttribute('class') || '') + ' ').indexOf(' w-dyn-item ') >= 0;
+  }
+
   function listTemplate(box) {
     if (box._d2BookingRow === undefined) {
       var found = box.querySelectorAll('[d2-booking-template], [data-d2-booking-template]');
       var tmpl = null;
       var i;
+      var host = found.length ? found[0].parentNode : null;
+      // A Collection Item holds nothing but the card: the rows go where the
+      // items stood, in the Designer's grid, and the empty items go too.
+      var wrapped = !!host && collectionItem(host);
+      if (wrapped) host = host.parentNode;
+      box._d2BookingHost = host || box;
       if (found.length && found[0].cloneNode) {
         tmpl = found[0].cloneNode(true);
         dropTemplateMark(tmpl);
@@ -4238,7 +4266,9 @@
           + ' one is the pattern and the rest are taken off the page too — a card built inside'
           + ' a Webflow Collection List carries the attribute on every rendered item');
       }
-      for (i = 0; i < found.length; i++) dropEl(found[i]);
+      for (i = 0; i < found.length; i++) {
+        dropEl(wrapped && collectionItem(found[i].parentNode) ? found[i].parentNode : found[i]);
+      }
       box._d2BookingRow = tmpl;
     }
     return box._d2BookingRow;
@@ -4316,6 +4346,10 @@
     if (el.tagName === 'IMG') {
       if (good) el.setAttribute('src', good);
       else el.removeAttribute('src');
+      // A browser prefers srcset, so the set a Webflow image comes with would
+      // show the Designer's placeholder on every card.
+      el.removeAttribute('srcset');
+      el.removeAttribute('sizes');
       // An unnamed picture gets an empty alt on purpose: a screen reader skips
       // it instead of reading an address out loud.
       el.setAttribute('alt', entry.name ? String(entry.name) : '');
@@ -4440,7 +4474,8 @@
     var language = pageLanguage(cfg);
     listTemplate(box);
     if (!append) clearRows(box);
-    for (var i = 0; i < list.length; i++) box.appendChild(listRow(box, list[i] || {}, language));
+    var host = box._d2BookingHost || box;
+    for (var i = 0; i < list.length; i++) host.appendChild(listRow(box, list[i] || {}, language));
   }
 
   function writeListCount(box, count) {
@@ -4467,6 +4502,19 @@
     }
   }
 
+  // The search asks the same route, so it waits with the list.
+  function lockSearch(on) {
+    var forms = searchForms();
+    for (var i = 0; i < forms.length; i++) {
+      var buttons = submitsOf(forms[i]);
+      for (var j = 0; j < buttons.length; j++) {
+        buttons[j].disabled = !!on;
+        if (on) buttons[j].setAttribute('disabled', '');
+        else buttons[j].removeAttribute('disabled');
+      }
+    }
+  }
+
   /**
    * A 429 said how long: the button waits exactly that long, because opening
    * it at once only buys the guest the next refusal. The wait is remembered on
@@ -4478,10 +4526,12 @@
     state.waiting = true;
     state.waitMark = mark;
     lockMore(box, true);
+    lockSearch(true);
     setTimeout(function () {
       if (state.waitMark !== mark) return;
       state.waiting = false;
       lockMore(box, false);
+      lockSearch(false);
     }, seconds * 1000);
   }
 
@@ -4523,6 +4573,14 @@
         // answer put on the page about an empty offer goes.
         showListControl(box, 'd2-booking-results-empty', false);
         blockSlot(box, 'd2-booking-results-message', res.message);
+        // A first page refused: the address and the form already name this
+        // search, so rows of the last one would be read as its answer. The
+        // button is the way to ask again, whatever the last answer said.
+        if (!append) {
+          clearRows(box);
+          writeListCount(box, NaN);
+          showListControl(box, 'd2-booking-more', true);
+        }
         if (res.reason === 'too_many_requests' && res.retryAfter > 0) {
           holdMore(box, state, res.retryAfter);
         } else {
@@ -4677,8 +4735,11 @@
           + Object.keys(SEARCH_FIELDS).join(', '));
         continue;
       }
-      out[name] = name === 'check_in' || name === 'check_out'
+      var value = name === 'check_in' || name === 'check_out'
         ? dayValue(els[i]) : readValue(els[i]);
+      // One question may stand on several elements: a radio group, or a field
+      // built twice for two breakpoints. An empty one does not unsay the rest.
+      if (value !== '') out[name] = value;
     }
     var picked = stayPeriod(form);
     if (picked) {
@@ -4864,8 +4925,13 @@
    * apart. A field that takes the value on its own (every input) is untouched.
    */
   function showFieldValue(el, value) {
-    el.value = value;
     var want = value === null || value === undefined ? '' : String(value).trim();
+    // A radio's value is what it offers, not what is chosen.
+    if (String(el.type || '').toLowerCase() === 'radio') {
+      el.checked = !!want && String(el.value).trim() === want;
+      return;
+    }
+    el.value = value;
     if (!want || readValue(el) === want) return;
     if (String(el.tagName || '').toUpperCase() !== 'SELECT') return;
     var option = create('option', { value: want, 'd2-booking-search-option': '' });
@@ -4921,6 +4987,20 @@
     var boxes = listBoxes();
     var bad = searchProblem(next);
     var i;
+    // The rate limit said how long, and a search is the same route: a click
+    // that got past the disabled button spends nothing.
+    for (i = 0; i < boxes.length; i++) {
+      if (listState(boxes[i]).waiting) return Promise.resolve(null);
+    }
+    // A bad period out of a link, on a form with no way of mending it: without
+    // this the guest is told to pick dates and has nowhere to pick them.
+    var asked = searchAsked(form);
+    if (bad && !asked.check_in && !asked.check_out && !stayPeriod(form)) {
+      delete input.check_in;
+      delete input.check_out;
+      next = normalizeSearch(input);
+      bad = searchProblem(next);
+    }
     if (bad) {
       // The filter in force stays in force: the rows on screen and the offset
       // beside them belong to it, and a list paged on a filter the guest never
@@ -4965,9 +5045,12 @@
     form.addEventListener('submit', function (e) {
       // The page stays: a search is the same page with another list in it, and
       // a reload would throw away the rows the guest is already reading.
+      // Capture and stopped there, for the reason bind() gives: without it a
+      // Form Block posts every search to Webflow and then hides itself.
       if (e && typeof e.preventDefault === 'function') e.preventDefault();
+      if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
       runSearch(form);
-    });
+    }, true);
   }
 
   /**
@@ -4978,15 +5061,21 @@
     var forms = searchForms();
     var fromLink = searchFromAddress();
     var input = null;
+    // An apply() after a DOM change binds what is new and nothing else: the rows
+    // on screen belong to the search in force, and what the form says now has
+    // not been asked yet.
+    var again = searchState !== null;
     for (var i = 0; i < forms.length; i++) {
       bindSearch(forms[i]);
       pinSearch(forms[i]);
+      if (again) continue;
       if (fromLink) fillSearchForm(forms[i], fromLink);
       // The lists open with what the first form says, over what the address
       // says about everything that form does not ask about; a second form is
       // bound all the same, so searching in it works.
       if (!input) input = mergedSearch(forms[i], fromLink);
     }
+    if (again) return;
     if (!input) input = mergedSearch(null, fromLink);
     // A search form searches the lists of its own page, so a page with no list
     // on it takes the submit and has nothing to answer it with.
@@ -5069,14 +5158,16 @@
       applySearch();
       // The guest's own two pages and the list of places. None of them needs a
       // form or a calendar, so a page may carry nothing but one of them.
-      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg),
-        applyResults(cfg)]);
+      // The list goes out now and nothing waits for it: a calendar has no use
+      // for /products, and a slow answer there must not leave it blank.
+      var places = applyResults(cfg);
+      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg)]);
       return guest.then(function () {
         // The mark signs the block, so it goes on last: a return block only
         // fills itself once the status has answered, and a mark appended
         // before that would sit in the middle of what came after it.
         applyMark(cfg, markHost());
-        return applyCalendars().then(function () { return cfg; });
+        return Promise.all([applyCalendars(), places]).then(function () { return cfg; });
       });
     });
   }

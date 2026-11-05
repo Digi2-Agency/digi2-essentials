@@ -242,6 +242,21 @@ function buildResults(spec) {
     // wants the link inside the row says so.
     if (spec.linkChild) row.appendChild(element({ 'd2-booking-link': spec.link || '' }, 'a'));
     else if (spec.link !== false) row.setAttribute('d2-booking-link', spec.link || '');
+    if (spec.collection) {
+      // What a published Collection List really is: the card sits two wrappers
+      // and a Collection Item down, and the grid is .w-dyn-items.
+      const list = element({ class: 'w-dyn-list' }, 'div');
+      const items = element({ class: 'w-dyn-items' }, 'div');
+      for (let i = 0; i < spec.collection; i++) {
+        const item = element({ class: 'w-dyn-item' }, 'div');
+        item.appendChild(i ? row.cloneNode(true) : row);
+        items.appendChild(item);
+      }
+      list.appendChild(items);
+      box.appendChild(list);
+      wrap.appendChild(box);
+      return wrap;
+    }
     box.appendChild(row);
     // A card built inside a Webflow Collection List is rendered once per CMS
     // item, so the published page carries the attribute on every one of them.
@@ -2838,9 +2853,17 @@ test('a per-night pet fee says so, and no pet fee says nothing at all', async ()
     productData: { pet_fee: null },
   });
   await none.settled();
-  const empty = none.document.querySelector('[d2-booking-hint="pets_over_threshold"]');
-  assert.equal(String(empty.textContent), '', 'nothing to say, so nothing is said');
-  assert.equal(empty.getAttribute('d2-booking-empty'), '');
+  assert.equal(none.document.querySelector('[d2-booking-field="pets_over_threshold"]'), null,
+    'a question nothing on the page can explain is not asked');
+  assert.ok(none.document.querySelector('[d2-booking-field="pets"]'), 'how many pets still is');
+
+  // A lookup that failed says nothing about the fee, so the field stays.
+  const failed = widgetPage({
+    config: { form_fields: { pets: 'optional' } },
+    refuse: { product: { status: 503, body: { detail: 'Unavailable' } } },
+  });
+  await failed.settled();
+  assert.ok(failed.document.querySelector('[d2-booking-field="pets_over_threshold"]'));
 
   // And a fee with no threshold keeps the amount without inventing a weight.
   const flat = widgetPage({
@@ -4659,4 +4682,235 @@ test('a hold that ended before the contact change closes the form like a payment
   fire(env.form, 'submit');
   await env.settled();
   assert.equal(env.form.getAttribute('d2-booking-payment'), 'final');
+});
+
+// ---------------------------------------------------------------------------
+// Review of #61
+// ---------------------------------------------------------------------------
+
+const REFUSED_503 = { status: 503, body: { detail: 'Unavailable' } };
+function refused429(seconds) {
+  return { status: 429, body: { detail: 'Too many' }, headers: { 'Retry-After': String(seconds) } };
+}
+function radio(form, value, checked) {
+  const el = element({ 'd2-booking-search-field': 'location', type: 'radio' }, 'input');
+  el.type = 'radio';
+  el.value = value;
+  el.checked = !!checked;
+  form.appendChild(el);
+  return el;
+}
+
+test('a search is stopped in the capture phase, before the document handler of Webflow', async () => {
+  // MUTACJA: bubble phase or preventDefault alone, and every search is posted
+  // to Webflow Forms and the form hides behind .w-form-done.
+  const env = listPage({ searchForm: true });
+  await env.settled();
+  assert.equal(env.searchForm.capturing.submit, true);
+  let stopped = 0;
+  fire(env.searchForm, 'submit', { preventDefault() {}, stopPropagation() { stopped += 1; } });
+  await env.settled();
+  assert.equal(stopped, 1);
+});
+
+test('the drawn stylesheet does not hide a whole card that has no address', async () => {
+  // MUTACJA: hide every d2-booking-empty. The card is its own link, so an entry
+  // with slug null vanishes while the count still counts it.
+  const env = listPage({ results: { template: false }, products: answerOf(places(1), 1) });
+  await env.settled();
+  const css = dumpTree(env.document.documentElement);
+  assert.ok(css.indexOf('[d2-booking-empty]:not([d2-booking-item]){display:none}') >= 0);
+});
+
+test('a picture drops the srcset the Webflow image came with', async () => {
+  // MUTACJA: set src alone. The browser prefers srcset, so every card shows the
+  // Designer's placeholder.
+  const env = listPage({ products: answerOf(places(1), 1) });
+  const row = env.document.querySelector('[d2-booking-template]');
+  const img = row.querySelector('[d2-booking-bind="image"]');
+  img.setAttribute('srcset', 'placeholder.png 500w');
+  img.setAttribute('sizes', '100vw');
+  await env.settled();
+  const shown = rowsOf(env)[0].querySelector('[d2-booking-bind="image"]');
+  assert.equal(shown.getAttribute('srcset'), null);
+  assert.equal(shown.getAttribute('sizes'), null);
+});
+
+test('rows go into the grid of a Collection List and the empty items leave', async () => {
+  // MUTACJA: append to the box, and the rows land outside the Designer's grid
+  // beside a column of blank cells.
+  const env = listPage({ results: { collection: 3 }, products: answerOf(places(2), 2) });
+  await env.settled();
+  const grid = listBox(env).children[0].children[0];
+  assert.equal(grid.getAttribute('class'), 'w-dyn-items');
+  assert.equal(rowsOf(env).length, 2);
+  assert.equal(grid.children.length, 2, 'the rows and nothing else: no empty Collection Item is left');
+  assert.equal(rowsOf(env)[0].parentNode, grid);
+});
+
+test('a repeat apply leaves the search in force alone', async () => {
+  // MUTACJA: re-read the form on apply(), and the next page goes out under a
+  // filter nobody searched for, appended to rows of the old one.
+  const env = listPage({
+    results: { inner: ['more'] },
+    searchForm: { values: { location: 'Sopot' } },
+    productsSeq: [answerOf(places(3), 5, true), answerOf(places(2, 3), 5, false)],
+  });
+  await env.settled();
+  searchFieldOf(env, 'location').value = 'Gdańsk';
+  await env.booking.apply();
+  await env.settled();
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  await env.settled();
+  assert.ok(listCalls(env)[1].url.indexOf('location=Sopot') >= 0, listCalls(env)[1].url);
+  assert.equal(searchFieldOf(env, 'location').value, 'Gdańsk', 'what the guest typed stays');
+});
+
+test('a refused first page takes the old rows away and leaves a way to ask again', async () => {
+  // MUTACJA: keep them, and rows of Wrocław stand under ?location=Gdańsk with
+  // no button, because the last answer said there was no next page.
+  const env = listPage({
+    results: { inner: ['more', 'count'] },
+    searchForm: true,
+    products: answerOf(places(2), 2, false),
+    script: { products: [null, REFUSED_503] },
+  });
+  await env.settled();
+  assert.equal(rowsOf(env).length, 2);
+  searchFieldOf(env, 'location').value = 'Gdańsk';
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(rowsOf(env).length, 0);
+  assert.equal(env.document.querySelector('[d2-booking-count]').textContent, '');
+  assert.equal(env.document.querySelector('[d2-booking-more]').getAttribute('hidden'), null);
+});
+
+test('a later page refused keeps the rows the guest is reading', async () => {
+  // MUTACJA: clear on every refusal, and a blip wipes three pages of reading.
+  const env = listPage({
+    results: { inner: ['more'] },
+    products: answerOf(places(2), 5, true),
+    script: { products: [null, REFUSED_503] },
+  });
+  await env.settled();
+  fire(env.document.querySelector('[d2-booking-more]'), 'click');
+  await env.settled();
+  assert.equal(rowsOf(env).length, 2);
+});
+
+test('a radio group answers with the checked one, wherever it stands', async () => {
+  // MUTACJA: let the last element win, and an unchecked radio clears the city.
+  const env = listPage({ searchForm: { fields: ['adults'] } });
+  await env.settled();
+  radio(env.searchForm, 'Wrocław', true);
+  radio(env.searchForm, 'Gdańsk', false);
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.ok(listCalls(env).pop().url.indexOf('location=' + encodeURIComponent('Wrocław')) >= 0);
+});
+
+test('a link checks the radio it names and leaves the values of the others', async () => {
+  // MUTACJA: write .value on each, and every radio becomes Gdańsk with none checked.
+  const env = listPage({ search: '?location=' + encodeURIComponent('Gdańsk'), searchForm: { fields: ['adults'] } });
+  const one = radio(env.searchForm, 'Wrocław', false);
+  const two = radio(env.searchForm, 'Gdańsk', false);
+  await env.settled();
+  assert.equal(one.value, 'Wrocław');
+  assert.equal(one.checked, false);
+  assert.equal(two.checked, true);
+});
+
+test('a bad period from a link does not trap a form with no date fields', async () => {
+  // MUTACJA: keep it, and the guest is told to pick dates with no field for it,
+  // on every submit, for good.
+  const env = listPage({
+    search: '?check_in=2027-05-01&location=Sopot',
+    searchForm: { fields: ['adults', 'location'], values: { location: 'Sopot' } },
+  });
+  await env.settled();
+  const before = listCalls(env).length;
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, before + 1, 'the search went out');
+  assert.equal(listCalls(env).pop().url.indexOf('check_in'), -1);
+});
+
+test('a bad period the guest can mend is still refused', async () => {
+  // MUTACJA: drop half a period on every form, and a guest who forgot the
+  // departure gets the whole offer without a word.
+  const env = listPage({ searchForm: { values: { check_in: '2027-05-01' } } });
+  await env.settled();
+  const before = listCalls(env).length;
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, before);
+});
+
+test('the calendar does not wait for the list', async () => {
+  // MUTACJA: put applyResults in the same Promise.all, and the calendar stays
+  // blank until /products answers, up to ten seconds on a slow API.
+  const held = deferred();
+  const env = calendarPage({
+    results: true,
+    forms: [],
+    script: { products: [({ response }) => held.promise.then(() => response(200, answerOf(places(1), 1)))] },
+  });
+  await env.settled();
+  assert.ok(availabilityCalls(env).length > 0, 'the calendar asked while the list was still out');
+  held.release();
+  await env.settled();
+});
+
+test('during a 429 wait the search spends no call and its button is down', async () => {
+  // MUTACJA: runSearch ignores the wait, and every click on Szukaj earns the
+  // next 429.
+  const env = listPage({
+    results: { inner: ['more'] },
+    searchForm: { submit: true },
+    script: { products: [refused429(30)] },
+  });
+  await env.settled();
+  const button = env.searchForm.querySelector('button');
+  assert.equal(button.disabled, true);
+  const before = listCalls(env).length;
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, before);
+
+  await env.tick();
+  assert.equal(button.disabled, false, 'the wait is over');
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).length, before + 1);
+});
+
+test('payments that are not switched on are not painted as the guest\'s mistake', async () => {
+  // MUTACJA: show it like any refusal, and a guest who did everything right
+  // reads a red error about the owner's Stripe account.
+  const env = payPage({ refuse: { checkout: 'stripe_not_connected' } });
+  await paySubmit(env);
+  const slot = env.form.querySelector('[d2-booking-error="form"]');
+  assert.equal(slot.getAttribute('d2-booking-ok'), '');
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(slot.getAttribute('d2-booking-ok'), '', 'and it stays so on the stored refusal');
+});
+
+test('a hold that ended is still a refusal to look at', async () => {
+  // MUTACJA: mark every final refusal, and a dead booking reads as information.
+  const env = payPage({ refuse: { checkout: 'booking_not_payable' } });
+  await paySubmit(env);
+  assert.equal(env.form.querySelector('[d2-booking-error="form"]').getAttribute('d2-booking-ok'), null);
+});
+
+test('a long wait is said in minutes', async () => {
+  // MUTACJA: print the seconds, and the guest reads "za 2976 s".
+  const long = page({ refuse: { bookings: 'too_many_requests' }, headers: { 'Retry-After': '2976' } });
+  await long.settled();
+  const waited = await long.booking.request('POST', '/products/x/bookings', { body: {} });
+  assert.equal(waited.message, 'Zbyt wiele prób. Spróbuj ponownie za 50 min.');
+  const short = page({ refuse: { bookings: 'too_many_requests' }, headers: { 'Retry-After': '45' } });
+  await short.settled();
+  const brief = await short.booking.request('POST', '/products/x/bookings', { body: {} });
+  assert.equal(brief.message, 'Zbyt wiele prób. Spróbuj ponownie za 45 s.');
 });
