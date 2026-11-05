@@ -1897,7 +1897,7 @@
     + 'border-radius:var(--d2-booking-radius,10px)}'
     + '[d2-booking-widget] [role=columnheader]{padding:4px 0;font-size:.75em;text-align:center;'
     + 'color:var(--d2-booking-muted,#6b6f6d)}'
-    + '[d2-booking-widget] [d2-booking-day]{width:100%;padding:8px 0;font:inherit;color:inherit;'
+    + '[d2-booking-widget] [d2-booking-day]{width:100%;padding:8px 0;font:inherit;color:inherit;text-align:center;'
     + 'cursor:pointer;background:var(--d2-booking-surface,#f6f5f3);border:1px solid transparent;'
     + 'border-radius:var(--d2-booking-radius,10px)}'
     + '[d2-booking-widget] [d2-booking-day][aria-disabled=true]{cursor:default;background:transparent;'
@@ -1935,7 +1935,7 @@
     // broken page. A browser without :has simply shows the empty row.
     + '[d2-booking-widget] [d2-booking-summary]:has([d2-booking-total][d2-booking-empty]){display:none}'
     + '[d2-booking-widget] [d2-booking-later]:has([d2-booking-deposit][d2-booking-empty]){display:none}'
-    + '[d2-booking-widget] [d2-booking-submit]{padding:12px 16px;font:inherit;font-weight:600;'
+    + '[d2-booking-widget] [d2-booking-submit]{padding:12px 16px;font:inherit;font-weight:600;text-align:center;'
     + 'cursor:pointer;border:0;border-radius:var(--d2-booking-radius,10px);'
     + 'background:var(--d2-booking-accent,#1f6f5c);color:var(--d2-booking-accent-text,#fff)}'
     + '[d2-booking-widget] [d2-booking-submit][disabled]{opacity:.6;cursor:default}'
