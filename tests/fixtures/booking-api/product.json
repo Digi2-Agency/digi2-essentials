@@ -1,0 +1,74 @@
+{
+  "contract_version": 1,
+  "route": "GET /api/v1/public/sites/{public_key}/products/{ref}",
+  "status": 200,
+  "nullable": [
+    "slug",
+    "name",
+    "project_name",
+    "city",
+    "latitude",
+    "longitude",
+    "rooms",
+    "area",
+    "floor",
+    "image_url",
+    "address_line",
+    "city_line",
+    "max_units",
+    "max_guests",
+    "beds",
+    "description",
+    "pet_fee",
+    "pet_fee.weight_threshold_kg"
+  ],
+  "response": {
+    "id": "3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10",
+    "slug": "apartament-rynek-wroclaw-3f2b7c1e",
+    "name": "Apartament Rynek",
+    "project_name": "Apartamenty Wrocław",
+    "city": "Wrocław",
+    "latitude": "51.109700",
+    "longitude": "17.031900",
+    "currency": "PLN",
+    "price": {
+      "unit": "day",
+      "price": "250.00"
+    },
+    "prices": [
+      {
+        "unit": "day",
+        "price": "250.00"
+      }
+    ],
+    "rooms": 2,
+    "area": "48.50",
+    "floor": 3,
+    "image_url": "https://cdn.example.org/rynek.jpg",
+    "image_urls": [
+      "https://cdn.example.org/rynek.jpg"
+    ],
+    "address_line": "Rynek 1",
+    "city_line": "50-001 Wrocław",
+    "allowed_units": [
+      "day"
+    ],
+    "min_units": 1,
+    "max_units": 30,
+    "payment_mode": "prepaid",
+    "requires_approval": false,
+    "timezone": "Europe/Warsaw",
+    "rental_kind": "apartment",
+    "max_guests": 4,
+    "beds": 2,
+    "amenities": [
+      "wifi"
+    ],
+    "description": "Dwa pokoje z widokiem na Rynek.",
+    "pet_fee": {
+      "amount": "50.00",
+      "weight_threshold_kg": "10.0",
+      "mode": "per_stay"
+    }
+  }
+}

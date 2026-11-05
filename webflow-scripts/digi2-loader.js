@@ -24,6 +24,10 @@
  *                                       Optional value picks the built-in bottom UI: d2-lightbox="thumbs" | "counter"
  *   d2-ma="URL" →  modules/ma.js        Marketing automation: unit views → profile in IndexedDB →
  *                                       scenario rules from digi2.app (popup, dataLayer, webhook)
+ *   d2-booking="pk_…"
+ *               →  modules/booking.js   Booking a rental from the page: form, calendar, price,
+ *                                       payment, the return from the checkout and the guest's own
+ *                                       manage page, answered by the 2destate public site API
  *
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
@@ -42,6 +46,11 @@
  *                                      ma.36: digi2.ma.leadToken / d2:lead-token for a real lead's ma_token
  *   d2-ma-video-consent="ad_storage …" Extra Consent Mode categories before a YouTube / Vimeo
  *                                      embed (ad_storage is always required, ma.5)
+ *   d2-booking="pk_…"                  Site key of the booking widget (public, non-secret: the
+ *                                      backend protects itself with the key's domain allowlist,
+ *                                      rate limits and server-side prices). Read raw, like d2-ma.
+ *   d2-booking-api="<base>"            API base address, default https://api.2destate.com/api/v1
+ *   d2-booking-product="<uuid|slug>"   Product (apartment) the page books by default
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
@@ -88,6 +97,25 @@
  *   digi2.ma.reload()                      Re-read it (new revision, CRM call result)
  *   digi2.ma.simulateReturn()              End the visit as if afterHours had passed (demo)
  *   digi2.ma.clear()                       Delete the d2ma database
+ *
+ *   digi2.booking.config()                 /config of the site key (read once per page)
+ *   digi2.booking.request(m, path, opts)   One API call → { ok, data } or a typed refusal
+ *   digi2.booking.values(form)             What this booking form would send right now
+ *   digi2.booking.validate(form)           Browser-side check of the form, marks the fields
+ *   digi2.booking.book(form, stay)         Validate and create the booking
+ *   digi2.booking.checkout(form, stay)     Create it and open the payment (what submit does)
+ *   digi2.booking.pay(bookingId)           Open the payment of a booking that exists
+ *   digi2.booking.select(stay)             The stay the form books
+ *   digi2.booking.stay()                   The stay chosen right now (a copy)
+ *   digi2.booking.quote()                  Ask for the price of that stay now
+ *   digi2.booking.price()                  The last quote answer the module printed
+ *   digi2.booking.money(amount, currency)  Amount in whole currency → guest text
+ *   digi2.booking.moneyMinor(n, currency)  Amount in minor units → guest text
+ *   digi2.booking.message(reason)          Human sentence for a refusal reason
+ *   digi2.booking.status(bookingId)        Status of one booking (the return page)
+ *   digi2.booking.returned()               The last status the return block printed
+ *   digi2.booking.managed()                The last manage answer (never the token)
+ *   digi2.booking.apply()                  Re-read the page after a DOM change
  *
  * ─── Popups Options ─────────────────────────────────────────────────────────
  *
@@ -552,6 +580,7 @@
     lightbox: 'lightbox',
     promo: 'promo',
     ma: 'ma',
+    booking: 'booking',
   };
 
   // The stub (Proxy or fallback object) each namespace holds until its module
@@ -789,6 +818,12 @@
         var maUrl = el.getAttribute('d2-ma');
         if (maUrl) window.digi2._maEndpoint = maUrl;
         _pushModule(into, 'ma');
+      } else if (name === 'd2-booking') {
+        // Site key of the booking widget — raw, because a key is not a
+        // responsive value and may carry characters digi2.attr would cut.
+        var bookingKey = el.getAttribute('d2-booking');
+        if (bookingKey) window.digi2._bookingKey = bookingKey;
+        _pushModule(into, 'booking');
       } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules') {
         // not a module flag
       } else if (name.indexOf('d2-') === 0) {
@@ -801,6 +836,7 @@
         if (m.indexOf('webflow-') === 0) m = 'webflow'; // webflow-interaction → module
         if (m.indexOf('datalayer-') === 0) m = 'datalayer'; // datalayer-only/-disable → module
         if (m.indexOf('ma-') === 0) m = 'ma'; // ma-consent/-highlight/-refresh → module
+        if (m.indexOf('booking-') === 0) m = 'booking'; // booking-api/-product/-form → module
         _pushModule(into, m);
       }
     }
@@ -819,6 +855,7 @@
         if (m.indexOf('webflow-') === 0) m = 'webflow';
         if (m.indexOf('datalayer-') === 0) m = 'datalayer';
         if (m.indexOf('ma-') === 0) m = 'ma';
+        if (m.indexOf('booking-') === 0) m = 'booking';
         _pushModule(into, m);
       });
     }

@@ -1,0 +1,88 @@
+{
+  "contract_version": 1,
+  "route": "GET /api/v1/public/sites/{public_key}/products",
+  "status": 200,
+  "query": {
+    "check_in": "2027-05-01",
+    "check_out": "2027-05-04",
+    "guests": 2,
+    "location": "Wrocław",
+    "limit": 24,
+    "offset": 0
+  },
+  "nullable": [
+    "data[].slug",
+    "data[].name",
+    "data[].project_name",
+    "data[].city",
+    "data[].latitude",
+    "data[].longitude",
+    "data[].rooms",
+    "data[].area",
+    "data[].floor",
+    "data[].image_url",
+    "data[].address_line",
+    "data[].city_line",
+    "data[].max_units",
+    "data[].max_guests",
+    "data[].beds",
+    "data[].description",
+    "data[].pet_fee",
+    "data[].pet_fee.weight_threshold_kg"
+  ],
+  "response": {
+    "data": [
+      {
+        "id": "3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10",
+        "slug": "apartament-rynek-wroclaw-3f2b7c1e",
+        "name": "Apartament Rynek",
+        "project_name": "Apartamenty Wrocław",
+        "city": "Wrocław",
+        "latitude": "51.109700",
+        "longitude": "17.031900",
+        "currency": "PLN",
+        "price": {
+          "unit": "day",
+          "price": "250.00"
+        },
+        "prices": [
+          {
+            "unit": "day",
+            "price": "250.00"
+          }
+        ],
+        "rooms": 2,
+        "area": "48.50",
+        "floor": 3,
+        "image_url": "https://cdn.example.org/rynek.jpg",
+        "image_urls": [
+          "https://cdn.example.org/rynek.jpg"
+        ],
+        "address_line": "Rynek 1",
+        "city_line": "50-001 Wrocław",
+        "allowed_units": [
+          "day"
+        ],
+        "min_units": 1,
+        "max_units": 30,
+        "payment_mode": "prepaid",
+        "requires_approval": false,
+        "timezone": "Europe/Warsaw",
+        "rental_kind": "apartment",
+        "max_guests": 4,
+        "beds": 2,
+        "amenities": [
+          "wifi"
+        ],
+        "description": "Dwa pokoje z widokiem na Rynek.",
+        "pet_fee": {
+          "amount": "50.00",
+          "weight_threshold_kg": "10.0",
+          "mode": "per_stay"
+        }
+      }
+    ],
+    "count": 1,
+    "has_more": false
+  }
+}

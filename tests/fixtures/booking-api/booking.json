@@ -1,0 +1,70 @@
+{
+  "contract_version": 1,
+  "route": "POST /api/v1/public/sites/{public_key}/products/{product_id}/bookings",
+  "status": 201,
+  "request": {
+    "unit": "day",
+    "starts_at": "2027-05-01T00:00:00",
+    "units_count": 2,
+    "guests": 3,
+    "adults": 2,
+    "children": 1,
+    "child_ages": [
+      7
+    ],
+    "pets": 1,
+    "pets_over_threshold": 1,
+    "customer_name": "Anna Nowak",
+    "customer_email": "anna@example.com",
+    "customer_phone": "+48 600 700 800",
+    "customer_note": "Przyjazd po 20:00",
+    "locale": "pl"
+  },
+  "nullable": [
+    "amount_total",
+    "guests",
+    "price_breakdown",
+    "price_breakdown[].label",
+    "price_breakdown[].percent",
+    "hold_expires_at",
+    "deposit_amount_minor",
+    "balance_amount_minor",
+    "balance_due_at"
+  ],
+  "response": {
+    "id": "9c1d4e77-52ab-4f0e-8b6c-7a3e2d1f0b98",
+    "product_id": "3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10",
+    "starts_at": "2027-04-30T22:00:00Z",
+    "ends_at": "2027-05-02T22:00:00Z",
+    "unit": "day",
+    "units_count": 2,
+    "status": "awaiting_payment",
+    "currency": "PLN",
+    "amount_total": "550.00",
+    "guests": 3,
+    "price_breakdown": [
+      {
+        "kind": "base",
+        "label": null,
+        "quantity": 2,
+        "unit_amount": "250.00",
+        "amount": "500.00",
+        "percent": null
+      },
+      {
+        "kind": "pet_fee",
+        "label": null,
+        "quantity": 1,
+        "unit_amount": "50.00",
+        "amount": "50.00",
+        "percent": null
+      }
+    ],
+    "hold_expires_at": "2027-04-01T12:30:00Z",
+    "customer_email": "anna@example.com",
+    "payment_required": true,
+    "deposit_amount_minor": 16500,
+    "balance_amount_minor": 38500,
+    "balance_due_at": "2027-04-16T22:00:00Z"
+  }
+}

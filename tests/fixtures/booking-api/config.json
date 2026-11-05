@@ -1,0 +1,25 @@
+{
+  "contract_version": 1,
+  "route": "GET /api/v1/public/sites/{public_key}/config",
+  "status": 200,
+  "nullable": [
+    "account_url"
+  ],
+  "response": {
+    "form_fields": {
+      "phone": "optional",
+      "children": "optional",
+      "child_ages": "optional",
+      "pets": "optional",
+      "note": "optional"
+    },
+    "child_max_age": 12,
+    "languages": [
+      "pl",
+      "en"
+    ],
+    "default_language": "pl",
+    "branding_hidden": false,
+    "account_url": "https://apartamenty.booking.2destate.com"
+  }
+}

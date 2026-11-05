@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: bramka wydania — d2-booking (wygląd zapasowy i płatność)</title>
+
+<!--
+  Strona kontroli przed wydaniem (tests/browser/gate.spec.js). Moduł idzie
+  z dist/, czyli dokładnie to, co pójdzie na CDN po tagu.
+
+  Tu strona NIE DAJE modułowi żadnego elementu: w środku jest samo
+  <div d2-booking-widget>. Wszystko, co widać — kalendarz, skład grupy,
+  rozbicie ceny, suma, formularz, przycisk i znak digi2 — rysuje moduł, a
+  styluje go tylko własny arkusz na zmiennych CSS. Strona celowo nie ma
+  swojego CSS-u do widgetu, żeby bramka pokazywała domyślny wygląd.
+
+  API jest zaatrapowane w przeglądarce: podmieniamy window.fetch PRZED
+  loaderem, a odpowiedzi bierzemy z tests/fixtures/booking-api/. Nic nie
+  wychodzi poza localhost; prawdziwe API 2destate nie jest wołane ani razu,
+  Stripe też nie: checkout_url atrapa ustawia na tę samą stronę z
+  ?payment=success, więc przekierowanie da się sprawdzić bez wyjścia na sieć.
+  Klucz pk_sandbox_* jest wymyślony.
+
+  Ręcznie: npm run sandbox  ->  http://localhost:5179/sandbox/gate-booking-widget.html
+-->
+
+<style>
+  body { margin: 0; background: #fbfaf8; font: 16px/1.5 "DejaVu Sans", Arial, sans-serif; }
+  .strona { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  #wrocil { margin: 0 0 16px; padding: 10px 12px; background: #e3f1ec; border-radius: 8px; }
+</style>
+
+<script>
+  // Atrapa API — zanim loader dociągnie moduł. Odpowiedzi z plików kontraktu.
+  (function () {
+    var realFetch = window.fetch.bind(window);
+    var FIXTURES = '../tests/fixtures/booking-api/';
+    var cache = {};
+    // Ile razy która trasa dostała żądanie — bramka czyta to z window.
+    window.__d2Calls = [];
+
+    function fixture(name) {
+      if (!cache[name]) {
+        cache[name] = realFetch(FIXTURES + name + '.json').then(function (r) { return r.json(); });
+      }
+      return cache[name];
+    }
+
+    function answer(body, status) {
+      return new Response(JSON.stringify(body), {
+        status: status || 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Zajęty termin w miesiącu, o który pyta kalendarz: noce 11 i 12. Obiekt
+    // atrapy stoi w strefie UTC, więc północ lokalna to północ w Z i bramka
+    // nie zależy od tego, czy jest zima, czy lato.
+    function busyFor(url) {
+      var m = /date_from=(\d{4})-(\d{2})/.exec(decodeURIComponent(url));
+      var year = m ? m[1] : '2027';
+      var month = m ? m[2] : '05';
+      return [{
+        starts_at: year + '-' + month + '-11T00:00:00Z',
+        ends_at: year + '-' + month + '-13T00:00:00Z',
+      }];
+    }
+
+    window.fetch = function (url, init) {
+      var text = String(url && url.url ? url.url : url);
+      if (text.indexOf('/public/sites/') < 0) return realFetch(url, init);
+      window.__d2Calls.push(((init && init.method) || 'GET') + ' ' + text);
+
+      if (text.indexOf('/config') >= 0) {
+        return fixture('config').then(function (fx) { return answer(fx.response); });
+      }
+      if (text.indexOf('/availability') >= 0) {
+        return fixture('availability').then(function (fx) {
+          var data = JSON.parse(JSON.stringify(fx.response));
+          data.timezone = 'UTC';
+          data.busy = busyFor(text);
+          return answer(data);
+        });
+      }
+      if (text.indexOf('/quote') >= 0) {
+        return fixture('quote').then(function (fx) { return answer(fx.response); });
+      }
+      // Kolejność ma znaczenie: ścieżka sesji płatności też zawiera /bookings.
+      if (text.indexOf('/checkout-session') >= 0) {
+        return fixture('checkout-session').then(function (fx) {
+          var data = JSON.parse(JSON.stringify(fx.response));
+          // Zamiast Stripe'a — ta sama strona z adnotacją. Adres jest lokalny,
+          // więc moduł go przyjmuje (https albo localhost) i nic nie wychodzi
+          // na sieć.
+          data.checkout_url = location.origin + location.pathname + '?payment=success';
+          return answer(data);
+        });
+      }
+      if (text.indexOf('/bookings') >= 0) {
+        return fixture('booking').then(function (fx) { return answer(fx.response, fx.status); });
+      }
+      // GET /products/<ref> — stąd moduł bierze pet_fee do zdania przy pytaniu
+      // o zwierzęta powyżej progu wagi.
+      if (/\/products\/[^/?]+$/.test(text)) {
+        return fixture('product').then(function (fx) { return answer(fx.response); });
+      }
+      // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.
+      return answer({ detail: 'Not found in the sandbox stub' }, 404);
+    };
+  }());
+</script>
+
+<script src="../dist/digi2-loader.min.js"
+  d2-booking="pk_sandbox_0000"
+  d2-booking-api="http://127.0.0.1:5179/api/v1"
+  d2-booking-product="3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"></script>
+</head>
+<body>
+<div class="strona">
+  <h1>Rezerwacja — sam widget (atrapa API)</h1>
+  <p id="wrocil" hidden>Wracamy z płatności.</p>
+
+  <!-- Strona nie daje nic poza tym pustym divem. -->
+  <div d2-booking-widget></div>
+</div>
+<script>
+  if (location.search.indexOf('payment=success') >= 0) {
+    document.getElementById('wrocil').removeAttribute('hidden');
+  }
+</script>
+</body>
+</html>

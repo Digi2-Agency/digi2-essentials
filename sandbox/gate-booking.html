@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: bramka wydania — d2-booking (kalendarz i cena)</title>
+
+<!--
+  Strona kontroli przed wydaniem (tests/browser/gate.spec.js). Moduł idzie
+  z dist/, czyli dokładnie to, co pójdzie na CDN po tagu.
+
+  API jest zaatrapowane w przeglądarce: podmieniamy window.fetch PRZED
+  loaderem, a odpowiedzi bierzemy z tests/fixtures/booking-api/ — z tych
+  samych plików kontraktu, na których stoją testy node. Żadne żądanie nie
+  wychodzi poza localhost, a prawdziwe API 2destate nie jest wołane ani razu.
+  Klucz pk_sandbox_* jest wymyślony.
+
+  Zajęty termin atrapa ustawia zawsze na noce 11 i 12 pokazywanego miesiąca,
+  żeby bramka nie zależała od tego, który jest dziś. Obiekt atrapy stoi w
+  strefie UTC, więc północ lokalna to północ w Z i zima nie przesuwa nocy.
+
+  Produkt tej strony nie stoi w atrybucie, tylko w adresie
+  (?apartament=<slug>) — tak jak na jednej stronie rezerwacji obsługującej
+  całą kolekcję CMS. Moduł rozwiązuje slug przez GET /products/<ref> i
+  dopiero jego id wysyła do /availability i /quote. Wejście bez parametru
+  samo się na niego przekierowuje, żeby strona działała też ręcznie.
+
+  Siatka miesiąca NIE jest stylowana tutaj: siedem kolumn ma dać sam moduł,
+  bo tyle dostaje Designer, który postawił na stronie goły d2-booking-calendar.
+
+  Ręcznie: npm run sandbox  ->  http://localhost:5179/sandbox/gate-booking.html
+-->
+
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fbfaf8; color: #1a1d1c; font: 16px/1.5 "DejaVu Sans", Arial, sans-serif; }
+  .strona { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  .karta { background: #fff; border: 1px solid #e5e3df; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  [d2-booking-calendar-head] { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  [d2-booking-calendar-month] { font-weight: 700; }
+  [d2-booking-calendar-prev], [d2-booking-calendar-next] { width: 32px; height: 32px; border: 1px solid #c9c6c0; border-radius: 8px; background: #fff; font: inherit; cursor: pointer; }
+  [role=columnheader] { font-size: 12px; text-align: center; color: #6b6f6d; padding: 4px 0; }
+  [d2-booking-day] { width: 100%; padding: 8px 0; border: 1px solid #e5e3df; border-radius: 8px; background: #fff; font: inherit; cursor: pointer; }
+  [d2-booking-day][aria-disabled=true] { color: #b4b8b6; background: #f4f3f1; cursor: default; text-decoration: line-through; }
+  [d2-booking-day-busy] { background: #fbe7e4; }
+  [d2-booking-day-selected], [d2-booking-day-checkout] { background: #1f6f5c; color: #fff; border-color: #1f6f5c; }
+  [d2-booking-day-in-range] { background: #e3f1ec; }
+  [d2-booking-day]:focus { outline: 2px solid #1f6f5c; outline-offset: 1px; }
+  [d2-booking-status] { margin-top: 10px; font-size: 14px; color: #3d4240; min-height: 1.5em; }
+  [d2-booking-line] { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid #f0efec; }
+  [d2-booking-line-detail] { color: #6b6f6d; font-size: 13px; }
+  .suma { display: flex; justify-content: space-between; margin-top: 10px; font-size: 18px; }
+  label { display: block; font-size: 14px; margin: 10px 0 4px; }
+  input { width: 100%; padding: 8px 10px; border: 1px solid #c9c6c0; border-radius: 8px; font: inherit; }
+</style>
+
+<script>
+  // Atrapa API — zanim loader dociągnie moduł. Odpowiedzi z plików kontraktu.
+  (function () {
+    var realFetch = window.fetch.bind(window);
+    window.__d2Calls = [];
+    var FIXTURES = '../tests/fixtures/booking-api/';
+    var cache = {};
+
+    function fixture(name) {
+      if (!cache[name]) {
+        cache[name] = realFetch(FIXTURES + name + '.json').then(function (r) { return r.json(); });
+      }
+      return cache[name];
+    }
+
+    function answer(body, status) {
+      return new Response(JSON.stringify(body), {
+        status: status || 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Zajęty termin w miesiącu, o który pyta kalendarz: noce 11 i 12.
+    // Kształt jak w kontrakcie (instant w UTC), a obiekt atrapy stoi w strefie
+    // UTC — wtedy północ lokalna to północ w Z w każdym miesiącu i bramka nie
+    // zależy od tego, czy jest zima, czy lato.
+    function busyFor(url) {
+      var m = /date_from=(\d{4})-(\d{2})/.exec(decodeURIComponent(url));
+      var year = m ? m[1] : '2027';
+      var month = m ? m[2] : '05';
+      return [{
+        starts_at: year + '-' + month + '-11T00:00:00Z',
+        ends_at: year + '-' + month + '-13T00:00:00Z',
+        // Każdy odcinek kontraktu niesie kind; bufor dotyczy tylko rezerwacji.
+        kind: 'booking',
+      }];
+    }
+
+    window.fetch = function (url, init) {
+      var text = String(url && url.url ? url.url : url);
+      if (text.indexOf('/public/sites/') < 0) return realFetch(url, init);
+      window.__d2Calls.push(((init && init.method) || 'GET') + ' ' + text);
+      if (text.indexOf('/config') >= 0) {
+        return fixture('config').then(function (fx) { return answer(fx.response); });
+      }
+      if (text.indexOf('/availability') >= 0) {
+        return fixture('availability').then(function (fx) {
+          var data = JSON.parse(JSON.stringify(fx.response));
+          data.timezone = 'UTC';
+          data.busy = busyFor(text);
+          return answer(data);
+        });
+      }
+      if (text.indexOf('/quote') >= 0) {
+        return fixture('quote').then(function (fx) { return answer(fx.response); });
+      }
+      // GET /products/<ref> — jedyna trasa kontraktu, która bierze slug.
+      if (/\/products\/[^/?]+$/.test(text)) {
+        return fixture('product').then(function (fx) { return answer(fx.response); });
+      }
+      // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.
+      return answer({ detail: 'Not found in the sandbox stub' }, 404);
+    };
+  }());
+</script>
+
+<script>
+  // Produkt siedzi w adresie, nie w atrybucie. Wejście bez parametru wraca tu
+  // z nim, żeby strona działała też otwarta ręcznie.
+  if (location.search.indexOf('apartament=') < 0) {
+    location.replace(location.pathname + '?apartament=apartament-rynek-wroclaw-3f2b7c1e');
+  }
+</script>
+
+<script src="../dist/digi2-loader.min.js"
+  d2-booking="pk_sandbox_0000"
+  d2-booking-api="http://127.0.0.1:5179/api/v1"></script>
+</head>
+<body>
+<div class="strona">
+  <h1>Rezerwacja (atrapa API)</h1>
+
+  <div class="karta">
+    <div d2-booking-calendar></div>
+  </div>
+
+  <div class="karta">
+    <div d2-booking-breakdown></div>
+    <div class="suma"><span>Razem</span> <strong d2-booking-total></strong></div>
+    <div style="font-size:14px;color:#6b6f6d">
+      Teraz: <span d2-booking-deposit></span> · później: <span d2-booking-balance></span>
+    </div>
+  </div>
+
+  <form class="karta" d2-booking-form>
+    <label for="imie">Imię i nazwisko</label>
+    <input id="imie" d2-booking-field="name" value="Anna Nowak" autocomplete="off">
+    <label for="mail">E-mail</label>
+    <input id="mail" type="email" d2-booking-field="email" value="anna@example.com" autocomplete="off">
+    <label for="dorosli">Dorośli</label>
+    <input id="dorosli" d2-booking-field="adults" value="2" autocomplete="off">
+    <div d2-booking-error="form"></div>
+  </form>
+</div>
+</body>
+</html>

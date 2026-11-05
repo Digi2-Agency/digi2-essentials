@@ -1,0 +1,20 @@
+{
+  "contract_version": 1,
+  "route": "POST /api/v1/public/sites/{public_key}/bookings/{booking_id}/checkout-session",
+  "status": 200,
+  "nullable": [
+    "checkout_url",
+    "amount_total",
+    "balance_amount_minor",
+    "balance_due_at"
+  ],
+  "response": {
+    "booking_id": "9c1d4e77-52ab-4f0e-8b6c-7a3e2d1f0b98",
+    "checkout_url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3",
+    "currency": "PLN",
+    "amount_total": "550.00",
+    "amount_charged_minor": 16500,
+    "balance_amount_minor": 38500,
+    "balance_due_at": "2027-04-16T22:00:00Z"
+  }
+}
