@@ -5042,3 +5042,14 @@ test('the threshold field goes even from a form with no hint slot', async () => 
   await env.settled();
   assert.equal(env.document.querySelector('[d2-booking-field="pets_over_threshold"]'), null);
 });
+
+test('no sentence sends the guest to an e-mail that does not exist', async () => {
+  // MUTACJA: bring back "link do płatności masz w e-mailu". No e-mail carries a
+  // first-payment link, so the guest searches their inbox for nothing.
+  const env = payPage();
+  await env.settled();
+  ['checkout_url_missing', 'return_cancelled_hold', 'booking_received'].forEach((name) => {
+    const said = env.booking.message(name);
+    assert.equal(/masz w e-mailu|Sprawdź e-mail|wysłaliśmy/.test(said), false, said);
+  });
+});

@@ -588,20 +588,20 @@
     pet_fee_flat_night: 'Dopłata za zwierzę: {amount} za każdą noc.',
     // Payment
     payment_opening: 'Przenosimy Cię do płatności…',
-    booking_received: 'Rezerwacja przyjęta. Potwierdzenie wysłaliśmy na Twój e-mail.',
-    checkout_url_missing: 'Rezerwacja jest zapisana, ale nie udało się otworzyć płatności. Sprawdź e-mail albo spróbuj ponownie.',
+    booking_received: 'Rezerwacja zapisana. Wyślemy potwierdzenie, gdy zostanie przyjęta.',
+    checkout_url_missing: 'Rezerwacja jest zapisana, ale nie udało się otworzyć płatności. Spróbuj ponownie.',
     // The return page — what became of the booking the guest just paid for
     return_loading: 'Sprawdzamy Twoją rezerwację…',
-    return_checking: 'Płatność jest jeszcze sprawdzana. Potwierdzenie wyślemy na Twój e-mail.',
-    return_pending: 'Rezerwacja przyjęta i czeka na decyzję obiektu. Odpowiedź wyślemy na Twój e-mail.',
+    return_checking: 'Płatność jest jeszcze sprawdzana. Gdy rezerwacja zostanie potwierdzona, napiszemy na Twój e-mail.',
+    return_pending: 'Rezerwacja przyjęta i czeka na decyzję obiektu. Po jej akceptacji napiszemy na Twój e-mail.',
     return_confirmed: 'Rezerwacja potwierdzona. Do zobaczenia!',
     return_paid: 'Płatność zaksięgowana. Czekamy jeszcze na potwierdzenie od obiektu.',
     return_rejected: 'Obiekt nie przyjął tej rezerwacji. Możesz wybrać inny termin.',
     return_cancelled: 'Płatność nie została dokończona, więc ten termin wrócił do oferty.',
-    return_cancelled_hold: 'Płatność nie została dokończona. Termin trzymamy jeszcze chwilę — link do płatności masz w e-mailu.',
+    return_cancelled_hold: 'Płatność nie została dokończona. Termin trzymamy jeszcze chwilę.',
     return_expired: 'Czas na opłacenie tej rezerwacji minął i termin wrócił do oferty.',
     return_balance_paid: 'Dopłata zaksięgowana. Dziękujemy!',
-    return_balance_cancelled: 'Dopłata nie została dokończona. Link do niej masz w e-mailu.',
+    return_balance_cancelled: 'Dopłata nie została dokończona. Możesz wrócić do niej tym samym linkiem.',
     return_balance: 'Do dopłaty {amount} — termin: {date}.',
     return_new_period: 'Wybierz nowy termin',
     return_unknown: 'Nie wiemy, o którą rezerwację chodzi. Otwórz link z e-maila jeszcze raz.',
@@ -3680,7 +3680,7 @@
         return res;
       }
       // Out of tries on a blip, with the payment already being checked: that
-      // sentence is still the truth, and the e-mail will carry the answer.
+      // sentence is still the truth, and the e-mail follows the confirmation.
       if (blip && lastReturn && lastReturn.state === 'checking') return res;
       if (!res.ok) {
         returnSay(host, 'error', res.message, null, null, cfg);
@@ -3699,7 +3699,7 @@
       if (said.done) return res;
       if (tries + 1 >= RETURN_DELAYS.length) {
         // Out of tries: the sentence already says the payment is still being
-        // checked, and the e-mail will carry the answer.
+        // checked, and the e-mail goes out once the booking is confirmed.
         return res;
       }
       setTimeout(function () { pollStatus(host, id, payment, cfg, tries + 1); }, RETURN_DELAYS[tries]);
