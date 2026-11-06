@@ -197,7 +197,7 @@ test.describe('booking: the calendar and the price', () => {
 
   test('the apartment comes out of the address and the slug is resolved to an id', async ({ page }) => {
     const calls = await page.evaluate(() => window.__d2Calls);
-    const asked = calls.filter((c) => /\/products\/[^/?]+$/.test(c));
+    const asked = calls.filter((c) => /\/products\/[^/?]+(?:\?|$)/.test(c));
     expect(asked.length, calls.join('\n')).toBe(1);
     expect(asked[0]).toContain('/products/' + SLUG);
     // And the {product_id} routes get the id of that answer, never the slug.
@@ -440,6 +440,52 @@ test.describe('booking: a page in another language', () => {
     }).format(550));
     await expect(page.locator('[d2-booking-total]')).toHaveText(expected);
     await expect(page.locator('[d2-booking-line]').first()).toContainText('Aufenthalt');
+  });
+
+  test('the language the page renders in goes out as ?lang= on the four routes that take it', async ({ page }) => {
+    // What no node test can show: the real dist/ module, in a real browser,
+    // putting the language into the address of the request. Without it the API
+    // answers in the key's default_language (KONTRAKT.md), so this German page
+    // would read German sentences around Polish names and descriptions — and
+    // the e-mails of a booking made here would go out in Polish.
+    const open = await openDays(page);
+    const [arrival, departure] = open.slice(-2);
+    await page.click('[d2-booking-day="' + arrival + '"]');
+    await page.click('[d2-booking-day="' + departure + '"]');
+    await expect(page.locator('[d2-booking-total]')).not.toHaveText('');
+
+    await page.fill('[d2-booking-field="name"]', 'Anna Müller');
+    await page.fill('[d2-booking-field="email"]', 'anna@beispiel.de');
+    // book() creates the booking without leaving for the payment, so the page
+    // — and its own record of the calls — survives the assertions.
+    const made = await page.evaluate(() => window.digi2.booking
+      .book(document.querySelector('[d2-booking-form]'), window.digi2.booking.stay())
+      .then((res) => (res.ok ? true : res.reason)));
+    expect(made).toBe(true);
+
+    const calls = await page.evaluate(() => window.__d2Calls);
+    const langOf = (call) => {
+      const found = /[?&]lang=([^&]*)/.exec(call);
+      return found ? found[1] : null;
+    };
+    const carries = (part) => calls.filter((c) => c.indexOf(part) >= 0);
+
+    // The three routes this page asks for, each in German.
+    const places = calls.filter((c) => /\/products\/[^/?]+(?:\?|$)/.test(c));
+    const windows = carries('/availability');
+    const created = calls.filter((c) => /\/products\/[^/?]+\/bookings(?:\?|$)/.test(c));
+    [places, windows, created].forEach((group) => {
+      expect(group.length, calls.join('\n')).toBeGreaterThan(0);
+      group.forEach((call) => expect(langOf(call), call).toBe('de'));
+    });
+
+    // And the two routes this page asks for whose contract has no language in
+    // the query get none — /config least of all, since its answer is what
+    // settles the language. The rest of that list is pinned in booking.test.js.
+    ['/config', '/quote'].forEach((part) => {
+      expect(carries(part).length, calls.join('\n')).toBeGreaterThan(0);
+      carries(part).forEach((call) => expect(langOf(call), call).toBe(null));
+    });
   });
 
   test('the form check answers in German as well', async ({ page }) => {

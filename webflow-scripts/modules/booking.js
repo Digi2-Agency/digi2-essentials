@@ -82,6 +82,17 @@
  * money, the percentages, the month names, the weekday names and which day a
  * week starts on.
  *
+ * And it is what the API is told: the four routes of the contract that accept
+ * it — GET /products, GET /products/{ref}, GET …/availability and
+ * POST …/bookings — are asked with ?lang=<code>, so a place's name and
+ * description come back translated. Without it an answer comes in the key's
+ * default_language, and Accept-Language the backend reads deliberately not.
+ * What goes out is the language the module really renders in, never the raw
+ * attribute. On POST …/bookings the language is kept on the booking: every
+ * later e-mail to that guest is written in it. No other route takes the
+ * parameter (/config least of all — its answer is what settles the language),
+ * and GET …/manage follows the language of the booking itself. See langQuery.
+ *
  * A key missing from one dictionary is read in the next language of the chain
  * (the asked language → the key's default → pl) instead of leaving a hole; a
  * key no dictionary has at all is reported in the console and renders nothing,
@@ -1778,6 +1789,28 @@
     return pageLanguage(currentConfig());
   }
 
+  /**
+   * The `lang` the four routes that accept it are asked with: GET /products,
+   * GET /products/{ref}, GET /products/{product_id}/availability and
+   * POST /products/{product_id}/bookings (the guest-language section of
+   * KONTRAKT.md). No other route takes it — the contract test on the API side
+   * pins the query each route accepts.
+   *
+   * What goes out is the language the module really renders in, never the raw
+   * d2-booking-lang: a page whose asked language the key refused reads the
+   * default, and a guest must not get German sentences around Polish names.
+   * The backend narrows the value to the key's own list all the same, so a
+   * value it cannot use is ignored and never a refusal.
+   *
+   * Every one of the four is asked only after /config has answered (that
+   * answer is what settles the language), so there is no chicken-and-egg:
+   * /config itself has no language in its query.
+   */
+  function langQuery(language) {
+    var code = language === undefined || language === null ? currentLanguage() : language;
+    return 'lang=' + encodeURIComponent(code);
+  }
+
   // ---------------------------------------------------------------------------
   // The address — what the e-mail link and the return from Stripe carry
   // ---------------------------------------------------------------------------
@@ -2140,8 +2173,14 @@
     var key = productSlot(ref);
     if (key === '#') return Promise.resolve(null);
     if (productAsked[key]) return productAsked[key];
-    productAsked[key] = request('GET', '/products/' + encodeURIComponent(key.slice(1)), {
-      notFound: 'product_not_found'
+    // The key's answer is what settles the language this place is asked for,
+    // so the call waits for it. /config is read once and kept, so this is the
+    // answer the page already has and not another request.
+    productAsked[key] = config().then(function () {
+      return request('GET', '/products/' + encodeURIComponent(key.slice(1)), {
+        query: langQuery(),
+        notFound: 'product_not_found'
+      });
     }).then(function (res) {
       var data = res.ok && res.data && typeof res.data === 'object' ? res.data : null;
       if (!data) {
@@ -3165,7 +3204,9 @@
       if (!state.product) return Promise.resolve(false);
       el.setAttribute('d2-booking-busy', '');
       return request('GET', '/products/' + encodeURIComponent(productId(state.product)) + '/availability', {
-        query: 'date_from=' + encodeURIComponent(naiveOf(firstDay))
+        // product_name comes back translated for the language we ask in.
+        query: langQuery(lang())
+          + '&date_from=' + encodeURIComponent(naiveOf(firstDay))
           + '&date_to=' + encodeURIComponent(naiveOf(addMonths(firstDay, 1))),
         notFound: 'product_not_found',
         // On this route a plain-sentence 400 is always about the window we
@@ -3967,6 +4008,9 @@
     var step = made
       ? Promise.resolve({ ok: true, status: 200, data: made })
       : request('POST', '/products/' + encodeURIComponent(productId(stay.product)) + '/bookings', {
+        // The fixture puts the language in the query of this POST too, and the
+        // booking keeps it: every later e-mail to this guest is written in it.
+        query: langQuery(pageLanguage(cfg)),
         body: body,
         notFound: 'product_not_found'
       });
@@ -5056,7 +5100,10 @@
       // A 400 on this route is about what the filter asked for (KONTRAKT.md):
       // the period, and the city too once the search named one.
       badRequest: filter.located ? 'invalid_search' : 'invalid_stay',
-      query: 'limit=' + listLimit(box) + '&offset=' + state.offset
+      // The list itself is the same everywhere (the same key shows the same
+      // places), but each card's name and description come translated.
+      query: langQuery(pageLanguage(cfg))
+        + '&limit=' + listLimit(box) + '&offset=' + state.offset
         + (filter.query ? '&' + filter.query : '')
     }).then(function (res) {
       // The filter changed while this page was on its way: it would show

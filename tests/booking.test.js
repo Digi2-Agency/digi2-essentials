@@ -459,7 +459,7 @@ function page(opts) {
                     : text.indexOf('/quote') >= 0 ? 'quote'
                       // GET /products/<ref>: the only route whose path takes
                       // a reference, so it is what is left of /products/.
-                      : /\/products\/[^/?]+$/.test(text) ? 'product'
+                      : /\/products\/[^/?]+(?:\?|$)/.test(text) ? 'product'
                         // GET /products with a query is the list; the single
                         // place is the one above, with a reference in the path.
                         : text.indexOf('/products') >= 0 ? 'products' : 'other';
@@ -834,7 +834,7 @@ test('a filled form sends exactly the body from booking.json', async () => {
   assert.equal(
     post.url,
     'https://api.2destate.com/api/v1/public/sites/pk_test_123/products/'
-      + BOOKING.response.product_id + '/bookings'
+      + BOOKING.response.product_id + '/bookings?lang=' + CONFIG.response.default_language
   );
   assert.equal(post.init.headers['Content-Type'], 'application/json');
   assert.deepEqual(post.body, BOOKING.request);
@@ -1148,7 +1148,7 @@ test('a double click sends one booking', async () => {
   fire(env.form, 'submit');
   await env.settled();
   // Submit also opens the payment, so the booking route is counted on its own.
-  assert.equal(env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url)).length, 1);
+  assert.equal(env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url)).length, 1);
 });
 
 test('an unknown d2-booking-field value is reported, not guessed', async () => {
@@ -1180,7 +1180,7 @@ function availabilityCalls(env) {
 }
 
 function productCalls(env) {
-  return env.calls.filter((c) => c.method === 'GET' && /\/products\/[^/?]+$/.test(c.url));
+  return env.calls.filter((c) => c.method === 'GET' && /\/products\/[^/?]+(?:\?|$)/.test(c.url));
 }
 
 test('the calendar asks for the shown month and draws it as real buttons', async () => {
@@ -1844,7 +1844,7 @@ test('the drawn widget books the stay it shows', async () => {
   fieldOf(form, 'email').value = 'anna@example.com';
   fire(form, 'submit');
   await env.settled();
-  const post = env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url))[0];
+  const post = env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url))[0];
   assert.ok(post, 'the drawn form submits the booking');
   assert.equal(post.body.starts_at, '2027-05-01T00:00:00');
   assert.equal(post.body.units_count, 2);
@@ -1866,7 +1866,7 @@ function payPage(extra) {
 }
 
 function bookingPosts(env) {
-  return env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url));
+  return env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url));
 }
 
 function checkoutPosts(env) {
@@ -4944,7 +4944,7 @@ test('a default language no dictionary covers is not what the page is formatted 
 
   await env.booking.book(env.form, STAY);
   // The quote is a POST too, so the booking is the one whose path ends there.
-  const created = env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url));
+  const created = env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url));
   assert.equal(created.length, 1);
   assert.equal(created[0].body.locale, 'pl',
     'and the booking carries the language the guest was really served');
@@ -5032,4 +5032,135 @@ test('the year of a child age is counted by the rule of its language', async () 
   await en.settled();
   assert.equal(en.booking.text('years', { count: 1 }), 'year');
   assert.equal(en.booking.text('years', { count: 12 }), 'years');
+});
+
+// ---------------------------------------------------------------------------
+// The language on the wire — ?lang= on the four routes that accept it
+// ---------------------------------------------------------------------------
+
+// The four routes whose query carries `lang` (KONTRAKT.md → Język gościa,
+// and the `query` field of the four fixtures), recognised in a URL exactly as
+// the contract spells the paths. Everything else must go out without it: the
+// contract test on the 2destate side pins the query every route accepts.
+const LANG_ROUTES = [
+  /\/products\?/,                            // GET /products
+  /\/products\/[^/?]+(?:\?|$)/,              // GET /products/{ref}
+  /\/products\/[^/?]+\/availability/,        // GET /products/{product_id}/availability
+  /\/products\/[^/?]+\/bookings(?:\?|$)/,    // POST /products/{product_id}/bookings
+];
+
+// Routes of the contract whose query has no language in it at all.
+const ROUTES_WITHOUT_LANG = [
+  '/config', '/quote', '/checkout-session', '/status', '/manage', '/requests', '/balance-checkout',
+];
+
+function langOf(url) {
+  const found = /[?&]lang=([^&]*)/.exec(String(url));
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+// A page in one language with everything that asks the API on it: the list,
+// the calendar, the price and a form that can be submitted.
+function wirePage(language, cfg) {
+  return page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': language, 'd2-booking-product': PRODUCT },
+    config: Object.assign({ languages: ['pl', 'en', 'de', 'uk'] }, cfg || {}),
+    calendar: true,
+    price: true,
+    results: true,
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+}
+
+test('the four routes that take a language are asked in the one the page renders in', async () => {
+  // MUTACJA: leave ?lang= off these calls and a German page gets the key's
+  // default_language back (KONTRAKT.md: without the parameter the answer is
+  // the default), so German sentences stand around Polish place names and
+  // descriptions, and the e-mails of that booking go out in Polish too.
+  const env = wirePage('de');
+  await env.settled();
+  await env.booking.book(env.form, STAY);
+
+  assert.equal(env.booking.language(), 'de', 'the language the guest really reads');
+  assert.equal(langOf(productCalls(env)[0].url), 'de', productCalls(env)[0].url);
+  assert.equal(langOf(availabilityCalls(env)[0].url), 'de', availabilityCalls(env)[0].url);
+  assert.equal(langOf(listCalls(env)[0].url), 'de', listCalls(env)[0].url);
+  assert.equal(langOf(bookingPosts(env)[0].url), 'de', bookingPosts(env)[0].url);
+  // The fixture puts it in the query of the POST as well, and `locale` in the
+  // body stays what it was: the contract reads the address first.
+  assert.equal(bookingPosts(env)[0].body.locale, 'de');
+});
+
+test('a language the key does not allow goes out as the default, never as the refused one', async () => {
+  // MUTACJA: send the raw d2-booking-lang instead of the language the module
+  // really renders in and a guest reads Polish sentences (the key refused
+  // German) beside German names and descriptions from the API.
+  const refused = wirePage('de', { languages: ['pl', 'en'] });
+  await refused.settled();
+  await refused.booking.book(refused.form, STAY);
+
+  const fallback = CONFIG.response.default_language;
+  assert.equal(refused.booking.language(), fallback);
+  assert.equal(langOf(productCalls(refused)[0].url), fallback);
+  assert.equal(langOf(availabilityCalls(refused)[0].url), fallback);
+  assert.equal(langOf(listCalls(refused)[0].url), fallback);
+  assert.equal(langOf(bookingPosts(refused)[0].url), fallback);
+  assert.deepEqual(refused.calls.filter((c) => langOf(c.url) === 'de').map((c) => c.url), [],
+    'the refused language never reaches the API');
+
+  // The same for a language the key allows but no dictionary of this module
+  // covers: the page is rendered in the default, so that is what is asked for.
+  const noDict = wirePage('fr', { languages: ['pl', 'fr'] });
+  await noDict.settled();
+  assert.equal(noDict.booking.language(), fallback);
+  assert.equal(langOf(productCalls(noDict)[0].url), fallback);
+  assert.deepEqual(noDict.calls.filter((c) => langOf(c.url) === 'fr').map((c) => c.url), []);
+});
+
+test('no other route of the contract is given a lang', async () => {
+  // MUTACJA: add the parameter to every call and the contract test on the
+  // 2destate side fails: each route pins the query set it accepts, and quote,
+  // checkout-session, status, manage, requests and balance-checkout do not
+  // take a language — /config least of all, since it is the answer that
+  // settles which language the page is in.
+  const german = { 'd2-booking-lang': 'de' };
+  const allowed = { languages: ['pl', 'en', 'de', 'uk'] };
+
+  // The booking page: /config, the quote and the payment session.
+  const booked = wirePage('de');
+  await booked.settled();
+  booked.booking.select({ unit: STAY.unit, starts_at: STAY.starts_at, units_count: STAY.units_count });
+  // The price is asked for once the typing has settled, so the debounce fires.
+  await booked.tick();
+  fire(booked.form, 'submit');
+  await booked.settled();
+
+  // The guest's own pages: the return (status), the manage block and a request.
+  const back = returnPage({ loaderAttrs: german, config: allowed });
+  await back.settled();
+  const managed = managePage({ loaderAttrs: german, config: allowed });
+  await managed.settled();
+  fire(manageAction(managed, 'refund'), 'click');
+  await managed.settled();
+  const balance = managePage({
+    loaderAttrs: german, config: allowed, hash: '#token=' + TOKEN + '&action=balance',
+  });
+  await balance.settled();
+  fire(manageAction(balance, 'balance'), 'click');
+  await balance.settled();
+
+  const every = [].concat(booked.calls, back.calls, managed.calls, balance.calls);
+  ROUTES_WITHOUT_LANG.forEach((part) => {
+    const asked = every.filter((c) => c.url.indexOf(part) >= 0);
+    assert.ok(asked.length > 0, 'the test never reached ' + part);
+    asked.forEach((c) => assert.equal(langOf(c.url), null, part + ' was given a language: ' + c.url));
+  });
+
+  // And nothing else carries one either: every call with a lang is one of the
+  // four routes whose fixture shows it.
+  every.filter((c) => langOf(c.url) !== null).forEach((c) => {
+    assert.ok(LANG_ROUTES.some((re) => re.test(c.url)), 'lang on a route that does not take it: ' + c.url);
+  });
+  assert.ok(every.some((c) => langOf(c.url) === 'de'), 'and the four routes really were asked');
 });

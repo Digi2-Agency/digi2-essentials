@@ -56,6 +56,19 @@ Nieznany `kind` moduł traktuje jak `booking`, czyli ostrożniej: lista rodzajó
 
 Rodzaje linii: `base`, `season`, `weekend`, `season_weekend`, `extra_guest_fee`, `pet_fee`, `cleaning_fee`, `length_discount`. Nieznany rodzaj moduł pokazuje po `label`.
 
+## Język gościa
+
+Trasy `GET /products`, `GET /products/{ref}`, `GET /products/{product_id}/availability` i `POST /products/{product_id}/bookings` przyjmują parametr `?lang=`. To jedno pole języka w całym kontrakcie: w przeglądarce nie ma po naszej stronie sesji, w której dałoby się zapamiętać wybór, a moduł zna język z `d2-booking-lang` albo z `<html lang>`.
+
+- Wartość to sam kod języka (`pl`, `en`, `de`, `uk`), bez regionu. `de-AT` i `de_DE` liczą się jako `de`.
+- Backend zawęża żądanie do listy `languages` z `config`. Język poza listą, pusty, bezsensowny (`?lang=klingon`) albo absurdalnie długi nie jest odmową: odpowiedź przychodzi w `default_language` klucza, a w ostatniej kolejności po polsku. Parametr nie ma limitu długości właśnie dlatego, że odmowa byłaby tu gorsza od zignorowania wartości.
+- **Bez parametru odpowiedź idzie w `default_language` klucza.** `Accept-Language` backend czyta celowo **nie**: to ta sama kolejność, którą ma moduł (`d2-booking-lang`, `<html lang>`, `default_language`), więc strona nie może wyjść w dwóch językach naraz, a rezerwacja nie zapamięta języka, którego gość nie widział. Odpowiedzi mają `Vary: Origin`. **Moduł, który chce innego języka niż domyślny klucza, musi wysyłać `?lang=`.**
+- Co zmienia język w odpowiedzi: `name` i `description` miejsca (na liście, w jednym miejscu i w `product_name` dostępności) pochodzą z tłumaczenia tego języka, a **każde pole osobno** wraca do wartości bazowej. Tłumaczenie z nazwą, ale bez opisu, nie zeruje opisu. Zdjęcia nie zależą od języka.
+- Wartość bazowa nazwy to nazwa własna mieszkania. Opisu własnego produkt nie ma, więc wartością bazową opisu jest pierwsze tłumaczenie po regule „polski najpierw, potem po kodzie języka" - i ta reguła zapasowa nie jest zawężona listą `languages`.
+- `POST …/bookings` zapisuje wybrany język na rezerwacji, bo w nim są pisane maile tej rezerwacji, a linki do naszego portalu w tych mailach otwierają go w tym samym języku (`?lang=`). Pole `locale` w ciele żądania działa jak dotąd i jest brane pod uwagę, gdy w adresie nie ma `lang`; klucz zawęża je tak samo.
+- `GET /bookings/{booking_id}/manage` parametru nie ma: `product_name` idzie tam za językiem tej rezerwacji, czyli za językiem maila, z którego gość kliknął link.
+- Lista miejsc nie zależy od języka: ta sama strona po niemiecku pokazuje te same mieszkania.
+
 ## Stan rezerwacji
 
 `status.json` po zaliczce podaje `balance_due_minor` (grosze, razem z `currency`) i `balance_due_at`. Oba są `null`, gdy nic nie zostało do zapłaty. `site_url` to strona klienta, na której gość może wybrać nowy termin, a `null` znaczy brak takiej strony.

@@ -2,6 +2,9 @@
   "contract_version": 1,
   "route": "POST /api/v1/public/sites/{public_key}/products/{product_id}/bookings",
   "status": 201,
+  "query": {
+    "lang": "de"
+  },
   "request": {
     "unit": "day",
     "starts_at": "2027-05-01T00:00:00",

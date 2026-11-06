@@ -4214,9 +4214,49 @@ dictionary while every `Intl` format — dates, month names, amounts, the first
 day of the week — followed a language nobody on the page reads.
 
 The chosen language is also what goes out as the booking's `locale` (so the
-portal's e-mails match the page) and what every `Intl` format follows: the
+portal's e-mails match the page), what every `Intl` format follows — the
 amounts, the percentages, the month and weekday names, and which day a week
-starts on.
+starts on — and what the module **tells the API** it is in (below).
+
+#### The language on the wire
+
+The module says which language it is in: four routes of the contract accept
+`?lang=<code>` and are asked with it.
+
+| Route | What the language changes |
+|---|---|
+| `GET /products` | the `name` and `description` of every card. The list itself does not depend on the language: the same page in German shows the same places |
+| `GET /products/{ref}` | the `name` and `description` of that one place |
+| `GET /products/{product_id}/availability` | the `product_name` of the window |
+| `POST /products/{product_id}/bookings` | the same — **and** the chosen language is recorded on the booking: every later e-mail that guest gets is written in it, and the portal links in those e-mails open in it (`?lang=`) |
+
+Each field falls back on its own, so a translation with a name but no
+description does not blank the description, and pictures never depend on the
+language.
+
+**Without the parameter an answer comes back in the key's `default_language`**,
+which is exactly why a page in any other language has to send it;
+`Accept-Language` the backend reads deliberately **not**, so the page cannot end
+up in two languages at once. What goes out is the language the module **really
+renders in**, never the raw `d2-booking-lang`: on a page whose asked language
+the key refused, the sentences are the default and so is the parameter — a guest
+must not read German sentences beside Polish names or the reverse. The backend
+narrows the value to the key's `languages` all the same, so a value it cannot
+use (empty, `klingon`, absurdly long) is **ignored and never a refusal**.
+
+**No other route takes it.** `/config`, `quote`, `checkout-session`, `status`,
+`manage`, `requests` and `balance-checkout` pin the query they accept in
+`tests/fixtures/booking-api/`, and a contract test on the API side compares each
+fixture with the real route — a parameter invented elsewhere would be a lie
+about the contract. `GET /bookings/{id}/manage` is deliberately without one: its
+`product_name` follows the language of that booking, which is the language of
+the e-mail the guest clicked.
+
+`/config` is asked **before** the language is settled — its own answer is what
+settles it — and takes no language either, so there is no chicken-and-egg.
+Everything else waits for that answer: all four routes are only ever asked after
+`/config` has returned, `GET /products/{ref}` included, which waits for it
+explicitly so a resolved place is never cached in the wrong language.
 
 | Case | What happens |
 |---|---|

@@ -113,7 +113,7 @@
         return fixture('quote').then(function (fx) { return answer(fx.response); });
       }
       // GET /products/<ref> — jedyna trasa kontraktu, która bierze slug.
-      if (/\/products\/[^/?]+$/.test(text)) {
+      if (/\/products\/[^/?]+(?:\?|$)/.test(text)) {
         return fixture('product').then(function (fx) { return answer(fx.response); });
       }
       // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.

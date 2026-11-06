@@ -53,10 +53,43 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   miesiąca i kwota byłyby sformatowane w języku, którego na stronie nikt nie
   czyta — strona w dwóch językach naraz.
 - Wybrany język idzie też jako **`locale` rezerwacji** (maile z portalu zgadzają
-  się ze stroną) i za nim idzie **każde formatowanie `Intl`**: kwoty, procenty,
-  nazwy miesięcy i dni tygodnia, i to, od którego dnia zaczyna się tydzień. Do
-  tej pory język brało się tylko z `<html lang>`, więc strona po angielsku na
-  polskim shellu nie miała jak poprosić o angielski.
+  się ze stroną), za nim idzie **każde formatowanie `Intl`** (kwoty, procenty,
+  nazwy miesięcy i dni tygodnia, i to, od którego dnia zaczyna się tydzień), a
+  od tej zmiany mówi nim też **API** — niżej. Do tej pory język brało się tylko
+  z `<html lang>`, więc strona po angielsku na polskim shellu nie miała jak
+  poprosić o angielski.
+- **Moduł mówi API, w jakim języku jest strona.** `?lang=<język>` dostają
+  **cztery trasy** kontraktu: `GET /products` (lista), `GET /products/<ref>`
+  (jeden obiekt), `GET …/availability` (kalendarz) i `POST …/bookings`
+  (zakładanie rezerwacji). Dzięki temu **nazwa i opis miejsca przychodzą w tym
+  języku, w którym gość czyta stronę** — do tej pory szły w `default_language`
+  klucza, więc niemiecka strona pokazywała niemieckie zdania wokół polskich
+  nazw. Każde pole wraca do wartości bazowej osobno (tłumaczenie z nazwą, ale
+  bez opisu, nie zeruje opisu), a zdjęcia od języka nie zależą; sama lista
+  miejsc też nie — ta sama strona po niemiecku pokazuje te same mieszkania.
+  Backend czyta `Accept-Language` celowo **nie**, więc bez tego parametru nie
+  da się dostać odpowiedzi w innym języku niż domyślny klucza.
+- Wysyłany jest **ten język, w którym moduł naprawdę renderuje**, a nie surowy
+  `d2-booking-lang`: gdy klucz odmówił niemieckiego, w zapytaniu jedzie
+  domyślny — gość nie ma czytać niemieckich zdań obok polskich nazw ani
+  odwrotnie. Backend i tak zawęża wartość do `languages` klucza, a wartości,
+  której nie może użyć (pustej, bezsensownej, absurdalnie długiej), **nie
+  odmawia — pomija ją**.
+- Przy `POST …/bookings` wybrany język **zapisuje się na rezerwacji**: w nim są
+  pisane **wszystkie jej późniejsze maile** do gościa, a linki do portalu w tych
+  mailach otwierają go w tym samym języku. `locale` w ciele żądania działa jak
+  dotąd (backend bierze je pod uwagę, gdy w adresie nie ma `lang`).
+- `?lang=` nie dostaje **żadna inna trasa**: `/config`, `quote`,
+  `checkout-session`, `status`, `manage`, `requests` i `balance-checkout` mają w
+  kontrakcie przypięty zbiór parametrów (test kontraktu po stronie API
+  porównuje z nim prawdziwą trasę), więc dopisanie języka gdzie indziej byłoby
+  kłamstwem o kontrakcie. `GET /bookings/<id>/manage` jest bez niego świadomie:
+  jego `product_name` idzie za językiem **tej rezerwacji**, czyli za językiem
+  maila, z którego gość kliknął link. `/config` czyta się **przed** ustaleniem
+  języka — to jego odpowiedź go ustala — i parametru nie ma, więc kury i jajka
+  tu nie ma: pozostałe cztery trasy pytają dopiero po `/config` (także
+  `GET /products/<ref>`, które czeka na nią wprost, żeby raz rozwiązany obiekt
+  nie został zapamiętany w złym języku).
 - Brakujący klucz w jednym słowniku czyta się w następnym języku łańcucha
   (proszony → domyślny klucza → `pl`), więc na stronie nie zostaje dziura.
   Klucza, którego nie ma **żaden** słownik, moduł nie wypisuje wcale i mówi w
@@ -112,7 +145,9 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   martwy klucz nie był tłumaczony cztery razy. W przeglądarce bramka wydania
   otwiera
   `sandbox/gate-booking-lang.html`: strona z polskim `<html lang>`, która prosi
-  o niemiecki, i cały widget wychodzi po niemiecku razem z kwotami i datami.
+  o niemiecki, i cały widget wychodzi po niemiecku razem z kwotami i datami —
+  a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
+  czterech trasach i na żadnej innej.
 
 ## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
 
