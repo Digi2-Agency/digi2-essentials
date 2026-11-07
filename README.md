@@ -4215,10 +4215,10 @@ its own, because a button standing between them belongs to neither.
 | `d2-booking-results` | any Div | The list, read once per visit. |
 | `d2-booking-results-limit="<n>"` | the list | How many places one page asks for. Default `24`; the key has its own maximum. |
 | `d2-booking-results-link="<shape>"` | the list | The address shape every card of this list leads to (below). Read raw — an address may legally contain `;` and `@`. |
-| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. |
+| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave. |
 | `d2-booking-bind="<field>"` | any element in the row, the row itself included | One field of the entry, as text (below). |
 | `d2-booking-link[="<shape>"]` | Link, or the row itself | Where this card leads. A whole card is usually one link, so the attribute may sit on the template. |
-| `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. |
+| `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a `429` wait it is down together with the search button. |
 | `d2-booking-count` | any element | The `count` the answer carries — every place that matches, not the ones on screen. |
 | `d2-booking-results-empty` | any element | Shown **only** when the answer has nothing. Hidden until the answer arrives, and hidden on a refusal. |
 | `d2-booking-results-message` | any element **inside** the list | The sentence of a refusal, in the module's own words. Unlike the button, the count and the empty state — which may also stand beside the list — this one is looked for inside it; a missing one is built there, with `role="status"` and `aria-live="polite"` and marked `d2-booking-built`. |
@@ -4445,7 +4445,7 @@ keeps its own look down to the last card.
 | `d2-booking-field="…"` | Input / Select / Textarea / Checkbox | `name`, `email`, `phone`, `note`, `adults`, `children`, `child_ages`, `pets`, `pets_over_threshold`. An unknown value is reported in the console and never sent. |
 | `d2-booking-field-group` | wrapper | Optional. Removed together with its field when the key does not ask for it, so the label goes too. Without it only the field itself is removed. A group holding **several** fields where the others stay keeps its place: only the switched-off field and its own message slot go, so one `off` field never takes its neighbours (e.g. the guest count) with it. |
 | `d2-booking-error="<field>"` | any element | Where the message for that field is written. `"form"` is the message for the whole form. A missing one is built next to the field and marked `d2-booking-built`. |
-| `d2-booking-hint="<field>"` | any element | Where a sentence the **key** decides goes. Today there is one: `pets_over_threshold` gets the product's `pet_fee` — the weight threshold, the amount and whether it is per stay or per night ("Zwierzę powyżej 10 kg: 50,00 zł za pobyt."). Without it the question is unanswerable: nothing on the page says what the threshold is. The drawn widget builds one; a Designer-built form gets the sentence by putting the attribute where they want it. A `pet_fee` of `null` (or an amount we cannot format) leaves the slot empty and marked `d2-booking-empty`, and a `weight_threshold_kg` of `null` drops the threshold wording instead of printing a hole. |
+| `d2-booking-hint="<field>"` | any element | Where a sentence the **key** decides goes. Today there is one: `pets_over_threshold` gets the product's `pet_fee` — the weight threshold, the amount and whether it is per stay or per night ("Zwierzę powyżej 10 kg: 50,00 zł za pobyt."). Without it the question is unanswerable: nothing on the page says what the threshold is. The drawn widget builds one; a Designer-built form gets the sentence by putting the attribute where they want it. No `pet_fee` in the answer takes the threshold field off the form, slot included: nothing on the page says what the threshold is. A failed product lookup keeps the field. An amount we cannot format leaves the slot empty and marked `d2-booking-empty`, and a `weight_threshold_kg` of `null` drops the threshold wording instead of printing a hole. |
 | `d2-booking-required` | set by the module | On every field the key requires (plus `aria-required="true"`). |
 | `d2-booking-invalid` | set by the module | On the field a message is pointing at (plus `aria-invalid="true"`). |
 | `d2-booking-ready` / `d2-booking-bound` / `d2-booking-busy` | set by the module | `/config` applied / submit bound / a booking is in flight (a second click is ignored, so one impatient guest never creates two holds). |
@@ -4501,7 +4501,7 @@ the same month.
 | `d2-booking-status` | any element | Optional. Where the chosen range and every refusal about the stay is written, for eyes and for screen readers alike. The module builds one inside the calendar when the page has none (`role="status"`, `aria-live="polite"`); a page may put its own anywhere, and every one of them gets the sentence. |
 | `d2-booking-calendar-built` / `-head` / `-month` / `-grid` / `-prev` / `-next` / `-weekdays` | built by the module | The parts of the drawn calendar, so CSS can reach them. |
 | `d2-booking-day="YYYY-MM-DD"` | built by the module | One day, always a real `<button type="button">`. |
-| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (today plus `lead_time_hours`). |
+| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (the first local midnight after now plus `lead_time_hours`, so never today). |
 | `d2-booking-day-selected` / `-checkout` / `-in-range` / `-today` / `-blank` | set by the module | The arrival / the departure / a night between them / today / a leading or trailing empty square. |
 | `d2-booking-calendar-ready` / `d2-booking-busy` | set by the module | The month is drawn / a window is in flight. |
 
@@ -4513,6 +4513,28 @@ rules
 (`tests/fixtures/booking-api/availability.json`): there is **no check-in-day
 rule** in the contract, so the calendar never closes a week day on its own and
 every day of the week is a possible arrival.
+
+**The first day on offer is a midnight, not a date.** A stay starts at local
+midnight and `check_rental_rules` refuses `starts_at < now + lead_time`, so the
+day that moment falls in is already too late: today is never on offer, even with
+a lead of `0`, and 24 hours at 15:00 opens the day after tomorrow. It is counted
+in the rental's zone. The calendar can still go stale on an open page, which is
+why `lead_time_too_short` after submit has its own sentence too.
+
+**The submit stops on the form, not earlier.** Webflow listens on the document
+and ignores `preventDefault`, so the module calls `stopPropagation` in the bubble
+phase. Capture would be wrong: d2-forms refuses an invalid form there, and that
+has to stop the booking whichever module loaded first. The price is that a
+document-level `submit` listener, a GTM form trigger included, hears nothing.
+
+**The calendar only speaks nights.** `units_count` is counted in `unit`, so
+sending the first of `allowed_units` would book 3 nights as 3 months. It always
+sends `day`, and a product without `day` answers `unit_not_allowed` on every day.
+
+**A month or a product that could not be read is asked for again.** A failed
+product lookup is dropped so the next caller retries instead of sending a slug
+to `{product_id}` routes for the whole visit; a 404 is an answer and is kept. A
+month whose window failed is read again on the way back.
 
 **`buffer_minutes` widens a booking, and only a booking.** Every entry of `busy`
 carries a `kind`: `booking` (someone's stay) or `blackout` (the owner closing
@@ -4766,6 +4788,21 @@ and the attempt is kept twice over:
   between the refusal and the retry must pay the booking they already hold, not
   ask for a second hold on the same nights. Change the period or the party and
   it is a different stay, so a different booking.
+- **A changed contact goes to the booking first.** Name, e-mail or phone that
+  differ from what the booking was made with go to `POST /bookings/{id}/contact`
+  before the checkout, under `X-Booking-Token: <contact_token>`. The token comes
+  with the booking answer and is taken off the object at once, because listeners
+  and the page get that object. The identifier alone must not move the
+  confirmation: it sits in the address, next to other people's scripts. No token,
+  or a 404, stops the payment with `contact_locked` instead of paying silently
+  under the old address; `booking_not_payable` and `booking_already_paid` close
+  the form like a payment refusal.
+- **`Idempotency-Key` on `POST /bookings`.** The fetch timeout rejects here while
+  the request can still land there, and `AbortController` would not undo it. The
+  key is a UUID v4 tied to the exact body, new on any changed field and after
+  24 h. A retry returns the same booking; one recovered as `expired` is not paid
+  and drops the key. Pinned by `contact.json` and `booking.json` in
+  `tests/fixtures/booking-api/`.
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.
@@ -4829,7 +4866,7 @@ poll: the block is marked `d2-booking-return-ready` before the first call.
 | `status: "expired"`, or `awaiting_payment` with `hold_open: false` | `expired` + the `site_url` link | Nothing was paid and the period is back in the offer. Saying "still being checked" here would keep the guest waiting while the dates go to somebody else. |
 | `status: "cancelled"` / `"rejected"` | its own, + the link | |
 | `status: "pending"` | `pending`, settled | `payment_mode` tells a prepaid booking from an on-request one, and `pending` is where the second one sits: the booking is in and the owner decides. There is no payment to check, so there is nothing to poll — calling it "still being checked" would leave the guest watching a spinner for forty seconds over a payment that does not exist. |
-| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is pointed back at the link in their e-mail; once it is gone, at a new period. |
+| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is told the period is held for a moment, because no e-mail carries a payment link; once it is gone, at a new period. |
 | `payment=balance_success` | `balance_paid` only once `balance_due_minor` is gone | The webhook is what moves the money in our books, not what Stripe said in the address. |
 | anything else | `checking` | A status the module does not know is **never** guessed into a verdict. |
 

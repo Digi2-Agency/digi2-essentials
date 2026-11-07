@@ -476,6 +476,63 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
   do rezerwacji jest nieważny lub wygasł. Nowy znajdziesz w e-mailu.” — jedna
   odpowiedź na wszystkie odmowy tokenu.
 
+### Poprawki po recenzji #60 (ten sam etap, przed wydaniem)
+
+- **Formularz w Form Block nie wysyła się już do Webflow.** Wysyłka jest
+  zatrzymywana na formularzu, więc dane gościa nie trafiają do Webflow Forms, a
+  formularz nie chowa się za `.w-form-done`. `d2-forms` dalej blokuje niepoprawny
+  formularz. **Uwaga:** listener `submit` na `document`, w tym wyzwalacz formularza
+  w GTM, tego nie usłyszy. Rezerwację mierz zdarzeniem `booking:created`.
+- **Dziś nie da się wybrać jako przyjazdu**, także przy `lead_time_hours: 0`.
+  Pobyt zaczyna się o lokalnej północy, a backend porównuje ją z „teraz plus
+  wyprzedzenie”, więc taki dzień i tak dostawał odmowę. Pierwszy dostępny dzień to
+  pierwsza północ po tej chwili, w strefie obiektu.
+- **Kalendarz zawsze wysyła noce** (`unit: "day"`). Wcześniej brał pierwszą
+  jednostkę z `allowed_units`, więc przy `month` 3 noce szły jako 3 miesiące.
+  Obiektu bez `day` nie da się zarezerwować kalendarzem.
+- **Cena zgadza się z wybranym pobytem.** Pisanie w czasie wyceny nie zostawia
+  już starej kwoty ani znacznika `d2-booking-busy`, a spóźniona odpowiedź nie drukuje
+  ceny pobytu, który gość porzucił.
+- **Po odmowie ostatecznej inny termin albo inny skład grupy oddaje przycisk.**
+  Wcześniej zostawał wyłączony do przeładowania strony.
+- **Chwilowa awaria nie kończy sprawdzania płatności.** Brak sieci, 429 i 5xx na
+  stronie powrotu to kolejna próba, a nie zdanie o błędzie.
+- **Nieudane odczytanie produktu i miesiąca jest ponawiane**, a 404 nie.
+- **Wybór dnia klawiaturą zostawia fokus na tym dniu.**
+- **Poprawiony e-mail trafia do rezerwacji.** Gdy gość po nieudanej płatności
+  zmieni imię, e-mail albo telefon, moduł wysyła je do istniejącej rezerwacji przed
+  płatnością, więc potwierdzenie idzie na aktualny adres. Wymaga trasy
+  `POST /bookings/{id}/contact` po stronie 2destate (w budowie).
+- **Rysowany kalendarz i przycisk trzymają wyrównanie na stronie Webflow.** Style
+  strony nie dosuwają już numerów dni i napisu do lewej.
+- **Moduł nie obiecuje maili, których nie ma.** Gość dostaje wiadomość dopiero po
+  potwierdzeniu rezerwacji, a link do pierwszej płatności nie idzie mailem wcale,
+  więc zdania o powrocie z płatności mówią tylko to, co działa.
+- **Utracona odpowiedź nie blokuje terminu.** `POST /bookings` niesie
+  `Idempotency-Key`, więc ponowienie po przekroczeniu czasu odzyskuje rezerwację.
+
+### Poprawki po recenzji #61 (ten sam etap, przed wydaniem)
+
+- **Wyszukiwarka w Form Block nie wysyła się do Webflow** i nie chowa formularza.
+- **Lista w Collection List zostaje w siatce Designera.** Wierszem jest cały
+  Collection Item, więc kolumny zostają, a puste pozycje znikają.
+- **Obrazek z Webflow pokazuje zdjęcie obiektu.** Moduł zdejmuje `srcset` i `sizes`.
+- **Karta bez adresu zostaje na liście**, tylko bez linku.
+- **Odrzucone wyszukiwanie zabiera stare wiersze** i zostawia przycisk ponowienia,
+  a `digi2.booking.apply()` nie zmienia już wyszukiwania w mocy.
+- **W czasie czekania po 429 wyszukiwarka czeka razem z listą.**
+- **Radio i pola zdublowane.** Radio odpowiada zaznaczoną wartością, a link je
+  zaznacza. Pole zbudowane dwa razy odpowiada widoczną kopią, więc można je wyczyścić.
+- **Zły termin z linku nie blokuje formularza bez pól dat.**
+- **Kalendarz nie czeka na listę obiektów.**
+
+### Po teście na lokalnym backendzie 2destate
+
+- **Niewłączone płatności nie wyglądają jak błąd gościa.** `stripe_not_connected`
+  i `stripe_account_not_ready` idą spokojnym stylem `d2-booking-ok`.
+- **Długie czekanie po 429 jest podane w minutach.**
+- **Bez `pet_fee` pole progu wagi znika z formularza.**
+
 ### Poprawki po przeglądzie (ten sam etap, przed wydaniem)
 
 - **Obiekt można podać adresem: `?apartament=<slug>`.** Gdy `d2-booking-product`
