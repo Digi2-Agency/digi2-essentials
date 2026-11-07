@@ -34,10 +34,15 @@ w 2destate (`MA_APPROVED_SCRIPT`) nie są ≥ ma.44.
   ostrzeżeniem w konsoli, zamiast pokazać popup szerzej. Starszy skrypt nie zna
   `page` i też nic nie pokaże.
 - Po innym wyzwalaczu (`unit_view → page`) liczy się następna pasująca odsłona,
-  nie ta, na której to się stało.
+  nie ta, na której to się stało — także gdy lokal obejrzano przy ładowaniu
+  strony. Wyjątek: `return_visit → page` odpala na stronie, która otworzyła
+  wizytę powrotną.
+- Wpis w `paths` z `/` na końcu (`"/kontakt/"`), z polskim znakiem wpisanym
+  wprost albo z wielką literą poza `%XX` wyłącza węzeł — tak samo odrzuca go
+  panel przy publikacji.
 - Strony bez wyzwalacza `page` nie dostają żadnego nowego nasłuchu.
 
-**Przypadki zgodności `tests/fixtures/ma-cases/`** (27 na start, wszystkie o
+**Przypadki zgodności `tests/fixtures/ma-cases/`** (32 na start, wszystkie o
 `page`). Ten sam plik czyta symulacja osi czasu popupów w panelu 2destate. Jest
 na CDN pod `@v1.9.0-ma.44/tests/fixtures/ma-cases/index.json`. Niespełniony
 przypadek zatrzymuje bramkę wydania.

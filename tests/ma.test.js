@@ -112,6 +112,7 @@ function element(attrs, tagName) {
  *   sciezka   location.pathname (domyślnie /oferta)
  *   uuidy     kolejne wyniki crypto.randomUUID (np. visitorId nowego profilu)
  *   wCzasie   tablica, do której trafia każde digi2.emit z czasem zegara { n, d, t }
+ *   poZaladowaniu  fn(window) zaraz po wykonaniu modułu, przed otwarciem magazynu
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
  *   dymek     { open, zostawiaKlase } - pełnoekranowy dymek mapy 2destate na telefonie;
@@ -350,6 +351,8 @@ function strona(opts) {
     };
   }
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
+  // Zdarzenia z chwili ładowania: moduł już stoi, magazyn jeszcze się otwiera (bufor).
+  if (o.poZaladowaniu) o.poZaladowaniu(window);
 
   const env = {
     window, zegar, dataLayer, popupy, zablokowane, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
@@ -6060,16 +6063,28 @@ async function symuluj(c) {
   };
   let env = null;
   let poprzednie = 0;
-  for (const krok of c.visit) {
+  for (let i = 0; i < c.visit.length; i++) {
+    const krok = c.visit[i];
     assert.ok(ZDARZENIA_WIZYTY.includes(krok.event), c.id + ': nieznane zdarzenie ' + krok.event);
     assert.ok(krok.t >= poprzednie, c.id + ': kroki w kolejności t');
     poprzednie = krok.t;
     const d = krok.data || {};
     if (krok.event === 'page') {
-      if (!env) env = await start(Object.assign({}, opts, { sciezka: krok.path }));
-      else env = await powrot(env, t0 + krok.t - zegar.t, { sciezka: krok.path });
+      // unit_view { atLoad: true } tuż za page: obejrzenie przy ładowaniu (deep link),
+      // trafia do bufora i wchodzi przy otwarciu magazynu, w passie tej odsłony.
+      const przyLadowaniu = [];
+      while (c.visit[i + 1] && c.visit[i + 1].event === 'unit_view' && c.visit[i + 1].data && c.visit[i + 1].data.atLoad) {
+        const n = c.visit[++i];
+        assert.equal(n.t, krok.t, c.id + ': unit_view atLoad ma t swojej odsłony');
+        assert.equal(n.path, krok.path, c.id + ': unit_view atLoad na swojej odsłonie');
+        przyLadowaniu.push(n.data.unit);
+      }
+      const poZaladowaniu = (w) => przyLadowaniu.forEach((u) => w.digi2.ma.track(u));
+      if (!env) env = await start(Object.assign({}, opts, { sciezka: krok.path, poZaladowaniu }));
+      else env = await powrot(env, t0 + krok.t - zegar.t, { sciezka: krok.path, poZaladowaniu });
       continue;
     }
+    assert.ok(!d.atLoad, c.id + ': atLoad tylko tuż za page');
     await env.minieDokladnie(t0 + krok.t - zegar.t);
     assert.equal(krok.path, env.window.location.pathname, c.id + ': ' + krok.event + ' na innej stronie niż otwarta');
     if (krok.event === 'scroll') {
@@ -6120,3 +6135,14 @@ for (const plik of indeksPrzypadkow.cases) {
     assert.deepEqual(doSekundy(akcje), doSekundy(c.expect.actions));
   });
 }
+
+test('ma.44: page z progiem nasłuchuje czasu i przewinięcia tylko na stronie, do której pasuje reszta filtra', async () => {
+  // MUTACJA: włączyć nasłuch dla każdego page z progiem, a strona /oferta słucha
+  // scrolla dla scenariusza, który i tak dotyczy tylko /kontakt.
+  const zProgiem = (sciezki) => koperta([scenariusz('p', { event: 'page', paths: { include: sciezki }, minScrollPct: 50 },
+    [{ do: 'datalayer', event: 'ma_segment', params: { segment: 'p' } }])], { minScript: 'ma.44' });
+  const obca = await start({ koperta: zProgiem(['/kontakt']), sciezka: '/oferta' });
+  assert.equal((obca.naOknie.scroll || []).length, 0, 'filtr ścieżki nie pasuje — bez nasłuchu');
+  const swoja = await start({ koperta: zProgiem(['/oferta']), sciezka: '/oferta' });
+  assert.equal((swoja.naOknie.scroll || []).length, 1, 'pasuje — nasłuch jest');
+});

@@ -1212,13 +1212,13 @@
   // kroku (reguły 1-2). Zwraca { at, ctx } albo null.
   function armOf(sc, st, node) {
     var inc = sc.inc[node.id];
-    if (!inc.length) return { at: -Infinity, ctx: { unit: null, segment: null } };
+    if (!inc.length) return { at: -Infinity, seq: -Infinity, ctx: { unit: null, segment: null } };
     var best = null;
     inc.forEach(function (id) {
       var d = st.nodes[id];
       if (d && (best === null || d.at < best.at)) best = d;
     });
-    return best ? { at: best.at, ctx: { unit: best.unit, segment: best.segment } } : null;
+    return best ? { at: best.at, seq: best.seq, ctx: { unit: best.unit, segment: best.segment } } : null;
   }
 
   function warsawHour(t) {
@@ -1242,9 +1242,12 @@
       return ctx;
     }
     if (evt.type === 'page') {
-      // Odsłona po poprzednim kroku (reguła 1): liczy się chwila jej otwarcia,
-      // nie chwila, w której dobiła do progu czasu albo przewinięcia.
-      if (pageAt == null || pageAt <= arm.at) return null;
+      // Odsłona po poprzednim kroku (reguła 1): granicą jest odsłona, nie
+      // milisekunda. Krok z tej samej odsłony (bufor, obejrzenie, lead) się nie
+      // liczy - wyjątek: return_visit, które ta odsłona otworzyła (seq − 0,5).
+      // Krok sprzed ma.44 (bez seq) porównujemy po czasie otwarcia odsłony.
+      if (pageAt == null) return null;
+      if (arm.seq != null ? arm.seq >= (state.pageSeq || 0) : pageAt <= arm.at) return null;
       var pk = sc.id + '/' + node.id;
       if (pageFired[pk]) return null;
       var pd = evt.data || {};
@@ -1332,6 +1335,8 @@
       });
       firing.forEach(function (f) {
         f.ctx.t = evt.t;
+        // ma.44: odsłona kroku dla wyzwalacza page; powrót otwarty tą odsłoną jest „przed" nią.
+        f.ctx.seq = (state.pageSeq || 0) - (evt.type === 'return_visit' && evt.atOpen ? 0.5 : 0);
         _log('trigger → ' + sc.id + '/' + f.node.id, evt.type);
         done(st, f.node, f.ctx, evt.t);
         propagate(sc, st, f.node, f.ctx, pass, {});
@@ -1345,7 +1350,8 @@
   function done(st, node, ctx, t) {
     var at = t != null ? t : now();
     if (ctx.t != null && ctx.t > at) at = ctx.t;
-    st.nodes[node.id] = { at: at, unit: ctx.unit || null, segment: ctx.segment || null };
+    st.nodes[node.id] = { at: at, seq: ctx.seq != null ? ctx.seq : (state.pageSeq || 0),
+      unit: ctx.unit || null, segment: ctx.segment || null };
   }
 
   function propagate(sc, st, node, ctx, pass, seen) {
@@ -3877,10 +3883,20 @@
     return roots <= 1 ? out : false;
   }
 
+  // Wpis paths jak w walidatorze publikacji (§13.8.2 „Postać ścieżki"): bez / na
+  // końcu (poza samym /), tylko ASCII, wielkie litery wyłącznie w %XX, a w %XX
+  // cyfry wielkie. Wpis, który nigdy nie spasuje, w exclude po cichu przestałby
+  // wykluczać - więc cały węzeł odpada.
+  function pathEntryOk(x) {
+    if (typeof x !== 'string' || x.length < 1 || x.length > 200 || x.charAt(0) !== '/') return false;
+    if (x.length > 1 && x.charAt(x.length - 1) === '/') return false;
+    if (/[^\x21-\x7e]/.test(x)) return false;
+    var rest = x.replace(/%[0-9A-F]{2}/g, '');
+    return !/[%A-Z]/.test(rest);
+  }
+
   function pathListOk(list) {
-    return Array.isArray(list) && list.length >= 1 && list.length <= 20 && list.every(function (x) {
-      return typeof x === 'string' && x.length >= 1 && x.length <= 200 && x.charAt(0) === '/';
-    });
+    return Array.isArray(list) && list.length >= 1 && list.length <= 20 && list.every(pathEntryOk);
   }
 
   // Powód odrzucenia when wyzwalacza page albo null.
@@ -3896,8 +3912,8 @@
       for (k in w.paths) {
         if (Object.prototype.hasOwnProperty.call(w.paths, k) && k !== 'include' && k !== 'exclude') return 'paths has an unknown field "' + k + '"';
       }
-      if (w.paths.include !== undefined && !pathListOk(w.paths.include)) return 'paths.include must be 1–20 paths starting with /';
-      if (w.paths.exclude !== undefined && !pathListOk(w.paths.exclude)) return 'paths.exclude must be 1–20 paths starting with /';
+      if (w.paths.include !== undefined && !pathListOk(w.paths.include)) return 'paths.include must be 1–20 paths: leading /, no trailing /, ASCII, upper case only in %XX';
+      if (w.paths.exclude !== undefined && !pathListOk(w.paths.exclude)) return 'paths.exclude must be 1–20 paths: leading /, no trailing /, ASCII, upper case only in %XX';
       if (w.paths.include !== undefined || w.paths.exclude !== undefined) any = true;
     }
     if (w.lang !== undefined) {
@@ -3930,9 +3946,13 @@
     return (num(w.minSeconds) || 0) > 0 || (num(w.minScrollPct) || 0) > 0;
   }
 
+  // Nasłuch czasu i przewinięcia tylko dla page z progiem, którego reszta
+  // filtra (ścieżka, język, urządzenie, numer odsłony, chance) pasuje do tej odsłony.
   function usesPageActivity() {
     return !!envelope && envelope.scenarios.some(function (sc) {
-      return sc.triggers.some(function (n) { return n.when.event === 'page' && pageHasActivity(n.when); });
+      return sc.triggers.some(function (n) {
+        return n.when.event === 'page' && pageHasActivity(n.when) && pageMatches(n.when, sc.id, n.id, Infinity, Infinity);
+      });
     });
   }
 
@@ -3974,7 +3994,7 @@
   // algorytm liczy symulacja w panelu 2destate.
   function fnv1a(text) {
     var h = 0x811c9dc5;
-    function byte(b) { h ^= b; h = Math.imul ? Math.imul(h, 0x01000193) : (h * 0x01000193) | 0; }
+    function byte(b) { h ^= b; h = Math.imul(h, 0x01000193); }
     for (var i = 0; i < text.length; i++) {
       var c = text.charCodeAt(i);
       if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
@@ -5729,8 +5749,11 @@
       // ma.33: jawna odmowa przed otwarciem kasuje historię źródeł; nieznana ją zostawia.
       if (!openedWithConsent && consentState() === 'denied') delete state.touchpoints;
       applyEnvelope(envelope);
+      // ma.44: numer odsłony - granica „po" dla wyzwalacza page, przed touch().
+      state.pageSeq = (state.pageSeq || 0) + 1;
       var visitsBefore = state.visits;
       var visit = touch();
+      if (visit) visit.atOpen = true;
       // ma.33: odsłona w trwającej wizycie - wpis tylko przy nowej kampanii.
       if (state.visits === visitsBefore) addTouchpoint(now(), false);
       // Odsłony tej wizyty - dla sygnału powrotu gorącego leada.

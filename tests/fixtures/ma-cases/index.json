@@ -27,6 +27,11 @@
     "024-page-consent-denied.json",
     "025-page-after-trigger.json",
     "026-page-after-trigger-threshold.json",
-    "027-page-invalid-closed.json"
+    "027-page-invalid-closed.json",
+    "028-page-after-return-visit.json",
+    "029-page-after-unit-view-at-load.json",
+    "030-page-paths-rejected.json",
+    "031-page-lang-prefixes-invalid.json",
+    "032-page-chance-utf8.json"
   ]
 }

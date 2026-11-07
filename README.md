@@ -1687,12 +1687,26 @@ view (`pageFired`, per `scenarioId/nodeId`).
   threshold; `engCheck` signals a `page` node once both are met, and `check()`
   re-tests every filter. Listeners go on only when some `page` node has a
   threshold.
-- **Arming (rule 1).** A non-root `page` counts a page view **opened** after
-  its predecessor (`pageAt > arm.at`), not the moment the page crossed a
-  threshold — `unit_view → page` waits for the next page view even when
-  `minSeconds` passes on the page the unit was viewed on.
+- **Arming (rule 1) — the boundary is the page view, not the millisecond.**
+  `state.pageSeq` goes up at the start of every store open, before `touch()`,
+  and every step records the `seq` of the page view it happened on
+  (`st.nodes[id].seq`). A non-root `page` fires only on a page view with a
+  higher `seq` than its predecessor's step: events of the same page view (the
+  buffer, a deep-link `unit_view`, a lead, a step that crossed a threshold)
+  never count, even when `minSeconds` passes after them. One exception
+  (architekt-it, review of #72): the `return_visit` dispatched by the page view
+  that **opened** the visit records `seq − 0.5`, so that page view counts as
+  after it — `return_visit → page` fires on the returning page. Steps stored
+  before ma.44 have no `seq` and fall back to the open time (`pageAt > at`).
+- **Listeners.** Time and scroll are watched only for a `page` with a
+  threshold whose static part (path, language, device, page number, chance)
+  matches this page view.
 - **Path.** Raw `location.pathname`, case-sensitive, not decoded; exactly one
-  trailing slash dropped, except `/`. Prefix match with a segment boundary
+  trailing slash dropped, except `/`. Entries in `paths` are checked like the
+  publish validator does: a trailing `/` (except `/` itself), anything outside
+  printable ASCII, an upper-case letter outside `%XX`, or `%xx` with lower-case
+  hex make the node invalid — such an entry never matches, and in `exclude` it
+  would silently stop excluding. Prefix match with a segment boundary
   (`p` matches `p` and `p/…`). `"/"` in `paths` is the home page only.
 - **Language.** `langPrefixes` on the envelope: 1–10 entries, code
   `^[a-z]{2}$`, prefix `/` or `^/[a-z]{2}(-[a-z]{2})?$`, unique, at most one
@@ -1705,7 +1719,8 @@ view (`pageFired`, per `scenarioId/nodeId`).
 - **`chance`.** FNV-1a 32-bit over the UTF-8 bytes of
   `visitorId + "\u001f" + scenarioId + "\u001f" + nodeId`, unsigned,
   `h % 100 < chance`. Part of the contract: changing it means a new node or
-  field and a higher `minScript`. `Math.imul`, with a fallback.
+  field and a higher `minScript`. `Math.imul` (no fallback: one without it
+  would lose precision and put visitors in other buckets than the panel).
 
 ### Compatibility cases (`tests/fixtures/ma-cases`, ma.44)
 
@@ -1726,8 +1741,10 @@ new case here.
   `expect.actions`.
 - **Visit events.** `page` (a load at `path`; first step, `t: 0`), `wait`
   (time passes, tab visible), `scroll` (`data.pct`), `hidden` / `visible`,
-  `unit_view` (`data.unit`, §13.1 shape), `exit_intent`, `lead`. Any other
-  step's `path` must equal the open page.
+  `unit_view` (`data.unit`, §13.1 shape; `data.atLoad: true` = viewed while
+  the page loads — a deep link, buffered and handled when the store opens;
+  only right after its `page`, same `t` and `path`), `exit_intent`, `lead`.
+  Any other step's `path` must equal the open page.
 - **Expectation.** Every `ma:action`, in order, as `{ t, scenarioId, nodeId,
   do }` (+ `status` when present); the whole list is compared. `t` is ms from
   the visit start, compared after flooring to the second: a threshold timer

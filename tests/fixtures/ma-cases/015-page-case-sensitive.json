@@ -1,6 +1,6 @@
 {
   "id": "015-page-case-sensitive",
-  "desc": "Ścieżka z rozróżnieniem wielkości liter i bez dekodowania: /O%C5%BCarow pasuje tylko do wpisu w tej samej postaci.",
+  "desc": "Ścieżka bez dekodowania: /o%C5%BCarow pasuje do wpisu w tej samej postaci; wpis z małymi cyframi %c5%bc odrzuca walidator, więc węzeł jest invalid.",
   "since": "v1.9.0-ma.44",
   "envelope": {
     "version": "0",

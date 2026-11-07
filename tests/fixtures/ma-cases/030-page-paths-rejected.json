@@ -1,0 +1,179 @@
+{
+  "id": "030-page-paths-rejected",
+  "desc": "Wpisy paths odrzucane jak przy publikacji: / na końcu, wielka litera poza %XX, znak spoza ASCII. Węzeł invalid, więc exclude \"/kontakt/\" nie przepuszcza popupu szerzej.",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "ex-trailing",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/kontakt/"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-trailing"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-upper",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/Kontakt"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-upper"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-non-ascii",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/żoliborz"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-non-ascii"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-ok",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/kontakt"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-ok"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 0,
+        "scenarioId": "ex-ok",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

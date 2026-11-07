@@ -1,6 +1,6 @@
 {
   "id": "027-page-invalid-closed",
-  "desc": "Zły when page = węzeł invalid, gałąź stoi: nieznane pole, lang bez langPrefixes, same zera, chance 0.",
+  "desc": "Zły when page = węzeł invalid, gałąź stoi: nieznane pole (w when i w paths), lang bez langPrefixes, same zera, chance 0.",
   "since": "v1.9.0-ma.44",
   "envelope": {
     "version": "0",
@@ -134,6 +134,43 @@
             "event": "ma_segment",
             "params": {
               "segment": "chance-zero"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "paths-unknown-field",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "include": [
+                  "/oferta"
+                ],
+                "prefix": [
+                  "/oferta"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "paths-unknown-field"
             }
           }
         ],
