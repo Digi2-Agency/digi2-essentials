@@ -16,7 +16,31 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
-## Bez wydania — `d2-booking`: słowniki językowe `pl`, `en`, `de`, `uk` (etap 8)
+## v1.9.0-ma.42 — 2026-11-07 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.41–ma.16)
+
+**Nowy moduł `d2-booking`**: rezerwacja apartamentu ze strony klienta przez
+publiczne API 2destate. Obejmuje formularz, kalendarz, cenę, płatność, powrót z
+płatności, obsługę rezerwacji z linku w mailu, listę obiektów z wyszukiwarką i
+słowniki `pl`/`en`/`de`/`uk`. Szczegóły w sekcjach „ma.42 — …” niżej (etapy 5,
+6 i 8 oraz poprawki po recenzjach). Poza bookingiem w `dist/` zmienia się tylko
+loader: atrybut `d2-booking` na tagu.
+
+- **Strona z bookingiem przypina wersję:** `@v1.9.0-ma.42/dist/...`, nie
+  `@latest`. `@latest` zostaje na loaderze 1.8.3, a `booking.min.js` dostaje z
+  tego tagu (plik nowy, patrz uwaga na górze). Uruchamia go tylko strona z
+  `d2-booking`.
+- **Język:** bez atrybutu widget mówi `default_language` klucza, a
+  `<html lang>` nie jest czytany. Strona wielojęzyczna (Webflow Localization)
+  dopisuje `d2-booking-lang="auto"`, a jeden język na sztywno to
+  `d2-booking-lang="de"`.
+- **Pomiar:** Form Block nie wysyła danych gościa do Webflow Forms, a trigger
+  formularza w GTM tego nie usłyszy. Rezerwację mierz zdarzeniem
+  `booking:created`, które nie niesie danych gościa.
+- Tłumaczenia `de` i `uk` są maszynowe i czekają na przeczytanie przez native
+  speakera.
+- Strony na `d2-ma` przypięte do `ma.N`: bez zmian (`ma.min.js` jak w ma.41).
+
+## ma.42 — `d2-booking`: słowniki językowe `pl`, `en`, `de`, `uk` (etap 8)
 
 Każde zdanie, które czyta gość, siedzi teraz w **słowniku językowym** — po
 jednym na język, płaski `klucz → zdanie`, w tym samym kształcie co pliki
@@ -154,7 +178,7 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
   czterech trasach i na żadnej innej.
 
-## Bez wydania — `d2-booking`: kontrakt zsynchronizowany z 2destate (868923b5f)
+## ma.42 — `d2-booking`: kontrakt zsynchronizowany z 2destate (868923b5f)
 
 - Kopia kontraktu w `tests/fixtures/booking-api/` = `docs/booking-client-site/kontrakt/`
   z 2destate `feat/d2-booking-9-i18n` @ `868923b5f` (zawiera ich #350, #351, #352).
@@ -173,7 +197,7 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
 - `<html lang>` nie zmienia języka widgetu bez `d2-booking-lang="auto"`, więc
   domyślne `lang="en"` z Webflow nie przestawi polskiej strony na angielski.
 
-## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
+## ma.42 — `d2-booking`: poprawki po recenzji etapów 5 i 6
 
 - **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**
   `Idempotency-Key` jest związany z blokadą (obiekt, termin, skład grupy), a nie
@@ -205,12 +229,12 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
 - Opis listy: wiersze trafiają do **rodzica wzorca** (w Collection List — do
   rodzica Collection Item), a do `[d2-booking-results]` tylko bez wzorca.
 
-## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
+## ma.42 — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
 
 Lista apartamentów z `GET /products`, wpisana we wzorzec karty, który zbudował
 Designer, oraz formularz szukania nad nią: termin, liczba gości i miasto.
-Wychodzi tym samym tagiem co reszta modułu, więc wpis zostaje pod „Bez
-wydania”. (Słowniki językowe to osobny etap.)
+Wychodzi tym samym tagiem co reszta modułu (`v1.9.0-ma.42`). (Słowniki
+językowe to osobny etap.)
 
 - `[d2-booking-results]` to lista obiektów, czytana **raz na wizytę**. Pierwszy
   `[d2-booking-template]` w środku jest wzorcem karty: moduł pamięta go,
@@ -367,7 +391,7 @@ wydania”. (Słowniki językowe to osobny etap.)
   `digi2.on('booking:search', fn)` z `{ search: { check_in, check_out, guests,
   location } }`, plus `message`, gdy szukanie nie wyszło na trasę.
 
-## Bez wydania — nowy moduł `d2-booking` (etap 5, kroki A-D: klient API, formularz, kalendarz, cena, wygląd zapasowy, płatność, powrót z płatności i obsługa rezerwacji)
+## ma.42 — nowy moduł `d2-booking` (etap 5, kroki A-D: klient API, formularz, kalendarz, cena, wygląd zapasowy, płatność, powrót z płatności i obsługa rezerwacji)
 
 Rezerwacja noclegu z poziomu strony. Moduł rozmawia z publicznym API klucza strony
 2destate (`/api/v1/public/sites/{public_key}/…`, kontrakt v1 z
@@ -376,8 +400,7 @@ formularz gościa, kalendarz wolnych terminów, cenę, wygląd rysowany przez mo
 płatność, podstronę powrotu z płatności i podstronę obsługi rezerwacji z linku
 w mailu. (Lista i wyszukiwarka obiektów oraz słowniki językowe to osobne etapy.)
 
-Numer wersji nada wydanie (`scripts/release.sh`) — cały moduł wychodzi jednym
-tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między numery.
+Cały moduł wychodzi jednym tagiem: `v1.9.0-ma.42`.
 
 - Nowa flaga `d2-booking="pk_…"` na tagu loadera dociąga moduł `booking`. Klucz
   strony jest **publiczny** — siedzi w HTML-u strony i tak ma być: backend broni

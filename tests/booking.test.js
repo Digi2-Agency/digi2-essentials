@@ -5109,6 +5109,28 @@ test('every counted word has every form its own rule can return', async () => {
   }
 });
 
+test('the edges of "auto": capitals, an empty attribute, no <html lang>, a key with no list', async () => {
+  // MUTACJA: compare "auto" case-sensitively, read <html lang> for an empty
+  // attribute, or police "auto" against an empty list — each changes which
+  // language a real page gets.
+  const F = [{ fields: { name: 'A', email: 'a@b.pl' } }];
+  const upper = page({ lang: 'en', loaderAttrs: { 'd2-booking-lang': 'AUTO' }, config: { languages: ['pl', 'en'] }, forms: F });
+  await upper.settled();
+  assert.equal(upper.booking.language(), 'en', 'AUTO is auto');
+
+  const empty = page({ lang: 'en', loaderAttrs: { 'd2-booking-lang': '' }, config: { languages: ['pl', 'en'] }, forms: F });
+  await empty.settled();
+  assert.equal(empty.booking.language(), CONFIG.response.default_language, 'an empty attribute is no attribute');
+
+  const bare = page({ lang: '', loaderAttrs: { 'd2-booking-lang': 'auto' }, config: { languages: ['pl', 'en'] }, forms: F });
+  await bare.settled();
+  assert.equal(bare.booking.language(), CONFIG.response.default_language, 'auto with no <html lang>');
+
+  const open = page({ lang: 'de', loaderAttrs: { 'd2-booking-lang': 'auto' }, config: { languages: [] }, forms: F });
+  await open.settled();
+  assert.equal(open.booking.language(), 'de', 'a key with no list does not police auto');
+});
+
 test('with "auto", <html lang> chooses the dictionary, not only the dates', async () => {
   // MUTACJA: let "auto" move only the formatting and a page that says
   // <html lang="en"> reads Polish sentences under English dates.

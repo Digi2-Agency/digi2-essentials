@@ -4205,7 +4205,11 @@ Which language a guest gets:
 projects by default, so reading it on its own would switch a Polish client's
 widget to English on a version bump, with nothing on the page to say why. A
 site that really sets `<html lang>` per language (Webflow Localization) opts in
-with one word on the loader tag.
+with one word on the loader tag. Until `/config` answers, the module knows no
+`languages` list, so it renders in what it would render in without one (the
+attribute, or under `"auto"` `<html lang>`). A language the key then refuses
+can therefore show for that first moment, before the page settles on the
+default.
 
 A language the key does not allow — or one no dictionary covers — is **refused
 in favour of the default**; an explicit `d2-booking-lang` refused that way says

@@ -1771,7 +1771,9 @@
    * The key decides what is on offer: /config carries the languages the owner
    * allowed and the default. The page asks for one of them with
    * d2-booking-lang on the loader tag; d2-booking-lang="auto" asks with
-   * <html lang> instead, quietly (a refusal there says nothing). A language the key does not allow — or one this
+   * <html lang> instead, quietly (a refusal there says nothing; a key with no
+   * languages list lets any <html lang> the module has a dictionary for
+   * stand, exactly as it lets an explicit attribute stand). A language the key does not allow — or one this
    * module has no dictionary for — is refused in favour of the key's default,
    * because half a page in German promises a service the owner cannot give;
    * an explicit attribute refused that way says so in the console.
