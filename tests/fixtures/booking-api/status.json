@@ -1,0 +1,22 @@
+{
+  "contract_version": 1,
+  "route": "GET /api/v1/public/sites/{public_key}/bookings/{booking_id}/status",
+  "status": 200,
+  "nullable": [
+    "hold_expires_at",
+    "balance_due_minor",
+    "balance_due_at",
+    "site_url"
+  ],
+  "response": {
+    "status": "awaiting_payment",
+    "payment_mode": "prepaid",
+    "hold_open": true,
+    "hold_expires_at": "2027-04-01T12:30:00Z",
+    "paid": false,
+    "currency": "PLN",
+    "balance_due_minor": 70000,
+    "balance_due_at": "2027-04-15T12:00:00Z",
+    "site_url": "https://client.example.org"
+  }
+}

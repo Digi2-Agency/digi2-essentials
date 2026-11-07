@@ -132,6 +132,20 @@ test('d2-ma and its d2-ma-* options load one module, the envelope URL is kept ra
   assert.equal(env.window.digi2._maEndpoint, url);
 });
 
+test('d2-booking and its d2-booking-* options load one module, the key is kept raw', () => {
+  // MUTACJA: drop the explicit d2-booking entry and d2-booking-api / -product
+  // each become a module of their own, so the page 404s on modules that do not
+  // exist and never loads booking.min.js.
+  const key = 'pk_live_abc;def@2';
+  const env = loadLoader({ scriptAttrs: {
+    'd2-booking': key,
+    'd2-booking-api': 'https://api.2destate.com/api/v1',
+    'd2-booking-product': '3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10',
+  } });
+  assert.deepEqual(env.injected, ['https://cdn.test/dist/modules/booking.min.js']);
+  assert.equal(env.window.digi2._bookingKey, key, 'the key is read with getAttribute, not digi2.attr');
+});
+
 // A module that throws while it loads never replaces its proxy. The proxy used
 // to replay the call on whatever sat on digi2.<ns> after loading — itself — and
 // every replay resolved at once, so the page spun in microtasks forever: the
