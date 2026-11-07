@@ -4916,6 +4916,35 @@ test('a German page formats its amounts and its dates in German too', async () =
   assert.equal(textIn(lineRows(env)[0], 'd2-booking-line-label'), DE_SAYS.line_base);
 });
 
+test('a season name is shown on a page in the key\'s language and replaced in any other', async () => {
+  // MUTACJA: let the line's label win whatever the language, and a German
+  // widget prints the owner's Polish season name (2destate: it exists in the
+  // key's default language only).
+  function seasonQuote() {
+    const body = clone(QUOTE.response);
+    body.line_items[0] = Object.assign({}, body.line_items[0], { kind: 'season', label: 'Sezon letni' });
+    return { status: 200, body };
+  }
+  async function labelOn(language) {
+    const env = page({
+      now: MAY_2027,
+      loaderAttrs: { 'd2-booking-lang': language, 'd2-booking-product': PRODUCT },
+      config: { languages: ['pl', 'en', 'de', 'uk'] },
+      calendar: true,
+      price: true,
+      script: { quote: [seasonQuote(), seasonQuote(), seasonQuote()] },
+      forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+    });
+    await env.settled();
+    clickDay(env, '2027-05-04');
+    clickDay(env, '2027-05-07');
+    await env.tick();
+    return textIn(lineRows(env)[0], 'd2-booking-line-label');
+  }
+  assert.equal(await labelOn('pl'), 'Sezon letni');
+  assert.equal(await labelOn('de'), DE_SAYS.line_season || 'Aufenthalt in der Saison');
+});
+
 // The reasons that only ever arrive from the backend. The module never writes
 // them down — message() looks up whatever the error answer named — so they are
 // the one family of keys a sweep of the source cannot find, and the only

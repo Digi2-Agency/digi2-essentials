@@ -4787,9 +4787,12 @@ amount is divided only by the number of digits `Intl` says that currency has
 is formatted with `Intl.NumberFormat` in the language of `/config` and the
 **currency of the answer**.
 
-Line labels: a `label` in the answer always wins; otherwise the `kind` gets a
-sentence from one table in the module, and an unknown kind is shown by its own
-name. `length_discount` carries its rate in the label when the answer has one —
+Line labels: a `label` in the answer wins **only on a page in the key's
+`default_language`** — it is the owner's season name, typed once and translated
+nowhere (2destate, `rental_pricing.py`), so `?lang=` on `/quote` could not help.
+On a page in any other language the dictionary's word for the `kind` stands in
+(`line_season` → "Stay in season"). Without a `label` the `kind` gets its
+word from the dictionary too, and an unknown kind is shown by its own name. `length_discount` carries its rate in the label when the answer has one —
 and without it when the answer says `null`, which is what a key with
 `merge_cleaning_fee` sends (`KONTRAKT.md`).
 

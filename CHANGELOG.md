@@ -76,7 +76,11 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   domyślny — gość nie ma czytać niemieckich zdań obok polskich nazw ani
   odwrotnie. Kody z regionem albo wielką literą (`de-DE`, `EN`) czytają
   słownik swojego języka także w łańcuchu zapasowym i w `digi2.booking.texts()`,
-  a `digi2.booking.message()` z powodem, którego zdanie wymaga wartości
+  Nazwa sezonu z odpowiedzi ceny (`label`, wpisana przez właściciela tylko w
+  języku domyślnym klucza) pokazuje się **tylko na stronie w
+  `default_language`**; na stronie w innym języku linia dostaje słowo ze
+  słownika („Aufenthalt in der Saison”) zamiast polskiej nazwy sezonu.
+  A `digi2.booking.message()` z powodem, którego zdanie wymaga wartości
   (np. `child_age_max`), mówi zdanie ogólne zamiast klamer `{max}`. Backend i
   tak zawęża wartość do `languages` klucza, a wartości,
   której nie może użyć (pustej, bezsensownej, absurdalnie długiej), **nie

@@ -3800,8 +3800,14 @@
     return box._d2BookingLine;
   }
 
+  // A line's own label is the owner's season name, typed once in the panel in
+  // the key's default language and translated nowhere (2destate: nothing to
+  // send ?lang= for). On a page in that language it is the better word; on a
+  // page in any other it would be a Polish name in an English widget, so the
+  // dictionary's word for the kind stands in.
   function lineLabel(line, language) {
-    if (line.label) return String(line.label);
+    var home = langCode(currentConfig().default_language) || BASE_LANGUAGE;
+    if (line.label && langCode(language || currentLanguage()) === home) return String(line.label);
     var text = lookup('line_' + String(line.kind), language) || String(line.kind || '');
     // A cleaning fee folded into the stay leaves length_discount without its
     // rate (contract): the label then goes out without one, and the amount
