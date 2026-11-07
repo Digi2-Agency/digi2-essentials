@@ -24,6 +24,9 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   poprawił e-mail, dostaje swoją rezerwację z powrotem zamiast „termin zajęty”,
   a nowy adres idzie do niej przez `/contact` przed płatnością. Zmieniona w tym
   jednym przypadku uwaga (`note`) zostaje taka, jak wysłana za pierwszym razem.
+  Pierwsza treść wraca **tylko** po odpowiedzi, której nie dało się odczytać
+  (brak sieci, 5xx); po każdej innej odmowie (np. 422 na e-mailu, 413 na
+  uwadze) poprawiony formularz idzie jako nowe żądanie.
 - **Wyczyszczony telefon albo imię są czyszczone także w rezerwacji** (idą do
   `/contact` jako `null`). Wcześniej puste pole było pomijane, a backend czytał
   to jako „zostaw stary numer”.
@@ -38,6 +41,10 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   dopiero po ostatnim czekaniu, nie po pierwszym.
 - Pole szukania zbudowane dwa razy, którego widoczna kopia stoi w panelu
   `position: fixed` (szuflada na telefonie), jest czytane z tej widocznej kopii.
+- **Przed wydaniem:** zsynchronizować fixture kontraktu z 2destate po ich
+  #350/#351 (`contact_token` nullable, `reason` w `/requests`).
+- Nie ukrywaj wzorca karty przez `display: none` na jego rodzicu — wiersze
+  trafiają do tego samego rodzica i byłyby niewidoczne.
 - Opis listy: wiersze trafiają do **rodzica wzorca** (w Collection List — do
   rodzica Collection Item), a do `[d2-booking-results]` tylko bez wzorca.
 

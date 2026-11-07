@@ -4683,6 +4683,32 @@ test('an e-mail corrected after a lost answer recovers the hold and follows thro
   assert.ok(env.calls.indexOf(sent[0]) < env.calls.indexOf(checkoutPosts(env)[0]), 'contact before payment');
 });
 
+test('an e-mail corrected after a 422 goes out as a new request, not the first body', async () => {
+  // MUTACJA: keep the first body after a refusal the backend did read, and the
+  // guest who fixed the e-mail it named is refused again for a day.
+  const env = payPage({
+    script: { bookings: [{ status: 422, body: { detail: [{ type: 'value_error', loc: ['body', 'customer_email'], msg: 'bad', input: {} }] } }] },
+  });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  const posts = bookingPosts(env);
+  assert.equal(posts.length, 2);
+  assert.equal(posts[1].body.customer_email, 'nowy@example.com');
+  assert.notEqual(keyOf(posts[1]), keyOf(posts[0]));
+});
+
+test('a note shortened after a 413 goes out shortened', async () => {
+  // MUTACJA: the same, for request_too_large: the long note goes out again.
+  const env = payPage({ script: { bookings: [{ status: 413, body: { detail: 'Too large' } }] } });
+  await paySubmit(env);
+  fieldOf(env.form, 'note').value = 'Krótko';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env)[1].body.customer_note, 'Krótko');
+});
+
 test('a phone the guest emptied is cleared, not left as it was', async () => {
   // MUTACJA: leave the empty phone out, and the backend keeps the old number,
   // which it reads as "unchanged".

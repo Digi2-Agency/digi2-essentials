@@ -4203,6 +4203,10 @@ clickable placeholder card that no later render ever clears (only
 `[d2-booking-item]` rows are). The first one is the pattern, the rest are
 dropped, and the module says in the console how many it found.
 
+Do not hide the pattern by hiding its wrapper (`display: none` on the parent):
+rows go into that same wrapper and would stay invisible. Hide nothing — the
+module takes the pattern off the page itself.
+
 Rows are **appended** to the element the pattern stood in — the template's
 parent, or in a Collection List the parent of its Collection Item (the
 `w-dyn-items` wrapper) — and to `[d2-booking-results]` itself only when the
@@ -4809,12 +4813,17 @@ and the attempt is kept twice over:
   who corrected their e-mail after a lost answer therefore gets their own hold
   back (not `period_taken`), and the corrected contact follows through
   `/contact` before anything is paid. A changed `note` in that one case stays as
-  first sent — `/contact` does not carry it. A retry returns the same booking;
-  one recovered as `expired` is not paid and drops the key.
+  first sent — `/contact` does not carry it. The first body is repeated **only
+  after an answer we never read** (`network_error`, `server_error`,
+  `bad_response`); any other refusal (a 422 on the e-mail, a 413 on the note…)
+  drops the key, so the corrected form goes out as a new request. A retry
+  returns the same booking; one recovered as `expired` is not paid and drops
+  the key. Pinned by `contact.json` and `booking.json` in
+  `tests/fixtures/booking-api/`.
 - **A cleared phone or name is sent as `null`** to `/contact`. The backend
   reads a field left out as "keep it", so an emptied field would otherwise keep
-  the old number. Pinned by `contact.json` and `booking.json` in
-  `tests/fixtures/booking-api/`.
+  the old number (the fixtures do not pin this yet — `SiteContactChange` in
+  2destate does).
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.
@@ -5033,7 +5042,6 @@ With two lists on the page waiting out a 429, the search forms open only when
 the **last** wait ends: they ask the same route for every list. A field built
 twice counts as visible when it has an `offsetParent` **or** client rects, so a
 copy inside a `position: fixed` drawer is the one the guest sees.
-
 
 Guest-facing copy lives in one table inside the module (Polish), so the i18n
 dictionaries can replace it in one place.

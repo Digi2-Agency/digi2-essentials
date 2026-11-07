@@ -3369,6 +3369,8 @@
   // first sent with travels with it, because the backend refuses a key it
   // already saw with another body (idempotency_key_reused). A contact changed
   // since then reaches the booking through sendContact() once it is back.
+  var UNSURE_OUTCOME = { network_error: 1, server_error: 1, bad_response: 1 };
+
   function attemptFor(form, key, body) {
     var kept = form._d2BookingAttempt;
     if (!kept || kept.said !== key || Date.now() - kept.at > ATTEMPT_MS) {
@@ -3478,6 +3480,9 @@
       }).then(function (res) {
         if (!res.ok || !res.data || res.data.status === 'expired') return res;
         rememberContact(res.data, attempt.body);
+        if ((attempt.body.customer_note || '') !== (body.customer_note || '')) {
+          _log('booking recovered with the note it was first sent with');
+        }
         keep(madeBookings, key, res.data);
         _log('booking created', { id: res.data && res.data.id });
         // A copy, like every other emit: a listener that reshapes the
@@ -3496,7 +3501,12 @@
         return res;
       }
       if (!res.ok) {
-        if (res.reason === 'idempotency_key_reused') form._d2BookingAttempt = null;
+        // Only an answer we never read may have landed there, so only then
+        // does the retry repeat the first body under the first key. Any other
+        // refusal is the backend's verdict on what was sent: the corrected
+        // form has to go out as a new request, or the guest who fixed the
+        // e-mail the 422 named is refused again, for a day.
+        if (!UNSURE_OUTCOME[res.reason]) form._d2BookingAttempt = null;
         applyRefusal(form, res, cfg);
         _emit('booking:refused', { reason: res.reason, status: res.status, form: form });
         // The limit said how long, so the button waits exactly that long
