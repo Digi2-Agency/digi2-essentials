@@ -4109,7 +4109,7 @@ refusal, `KONTRAKT.md` with the file format). Contract version **1**.
 | `d2-booking="pk_…"` | loader tag | **Site key.** Public, non-secret: it sits in the page's HTML on purpose. The backend protects itself with the key's domain allowlist, rate limits and server-side prices — there is nothing to hide here. Read with `getAttribute`, not `digi2.attr`: a key is not a responsive value. |
 | `d2-booking-api="<base>"` | loader tag | API base address. Default `https://api.2destate.com/api/v1`. `https` only (`http://localhost` and `http://127.0.0.1` are allowed while building); anything else is refused with a console warning and the default is used. Read raw — an address may legally contain `;` and `@`. |
 | `d2-booking-product="<uuid\|slug>"` | loader tag, the form, the calendar or the widget | Product (apartment) this page books — a uuid or a slug. The calendar may pick another one. **Optional:** with no attribute anywhere the module reads `?apartament=<slug>` off the address, which is how one booking page serves a whole CMS collection (`/rezerwacja?apartament=apartament-rynek-wroclaw`). An attribute always wins over the address; an empty or missing parameter is simply no product. |
-| `d2-booking-lang="<code>"` | loader tag | The language the guest reads — `pl`, `en`, `de` or `uk`, and one of the languages the key allows (`/config` `languages`). **Optional:** without it the key's `default_language` decides, and `<html lang>` is honoured the same way. A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default with a console warning. Read with `digi2.attr`. See [Languages](#languages). |
+| `d2-booking-lang="<code>"` | loader tag | The language the guest reads — `pl`, `en`, `de` or `uk`, and one of the languages the key allows (`/config` `languages`). **Optional:** without it the key's `default_language` decides and `<html lang>` is **not read**; `d2-booking-lang="auto"` follows `<html lang>` instead (a site that sets it per language, e.g. Webflow Localization). A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default with a console warning. Read with `digi2.attr`. See [Languages](#languages). |
 
 ### The API client
 
@@ -4196,16 +4196,21 @@ Polish web copy is.
 
 Which language a guest gets:
 
-1. `d2-booking-lang`, when the key allows it **and** the module has a dictionary
-2. `<html lang>` (`en-GB` → `en`), under the same two conditions
-3. the key's `default_language` from `/config`
+1. `d2-booking-lang`, when the key allows it **and** the module has a dictionary;
+   with `d2-booking-lang="auto"` that is `<html lang>` (`en-GB` → `en`), under
+   the same two conditions
+2. the key's `default_language` from `/config`
+
+**`<html lang>` is read only with `"auto"`.** Webflow writes `lang="en"` on many
+projects by default, so reading it on its own would switch a Polish client's
+widget to English on a version bump, with nothing on the page to say why. A
+site that really sets `<html lang>` per language (Webflow Localization) opts in
+with one word on the loader tag.
 
 A language the key does not allow — or one no dictionary covers — is **refused
 in favour of the default**; an explicit `d2-booking-lang` refused that way says
-so in the console (`<html lang>` is the quiet version of the question, so a
-refusal there is quiet too). When `<html lang>` **wins** over the key's default
-the console says so once — Webflow's default `lang="en"` would otherwise switch
-a Polish client's widget with nothing to find. Codes are compared without the
+so in the console (under `"auto"` a refused `<html lang>` is quiet: one site,
+many pages, and the key's list is the owner's choice). Codes are compared without the
 region and the case (`de-DE`, `EN`), in the fallback chain and in
 `digi2.booking.texts()` too; `message()` with a reason whose sentence needs
 values answers the generic sentence, never a `{brace}`. Half a page in German promises a service the owner
@@ -4623,8 +4628,9 @@ sends a `guests` of its own next to a different sum. With `children` off,
 booking must not claim two adults for a stay priced for a different group. A
 form with a `children` field but no `adults` field sends `guests` only.
 
-`locale` is the page's own language (`<html lang>`) when the key speaks it
-(`languages`), otherwise `default_language`.
+`locale` is the language the module renders in (`d2-booking-lang`, or
+`<html lang>` under `"auto"`, when the key speaks it), otherwise
+`default_language`.
 
 ### The calendar
 

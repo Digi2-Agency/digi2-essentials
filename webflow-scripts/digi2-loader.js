@@ -52,8 +52,9 @@
  *   d2-booking-api="<base>"            API base address, default https://api.2destate.com/api/v1
  *   d2-booking-product="<uuid|slug>"   Product (apartment) the page books by default
  *   d2-booking-lang="<code>"           The language the guest reads — pl | en | de | uk, and one
- *                                      of the ones the key allows (/config languages); without
- *                                      it the key's default_language decides
+ *                                      of the ones the key allows (/config languages); "auto"
+ *                                      follows <html lang>; without it the key's
+ *                                      default_language decides (<html lang> is not read)
  *
  * ─── Module APIs ────────────────────────────────────────────────────────────
  *
