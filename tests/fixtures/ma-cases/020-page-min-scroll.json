@@ -1,0 +1,89 @@
+{
+  "id": "020-page-min-scroll",
+  "desc": "minScrollPct: 50 odpala przy przewinięciu 60%, nie przy 40%.",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "sc50",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "minScrollPct": 50,
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "sc50"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    },
+    {
+      "t": 3000,
+      "path": "/oferta",
+      "event": "scroll",
+      "data": {
+        "pct": 40
+      }
+    },
+    {
+      "t": 5000,
+      "path": "/oferta",
+      "event": "scroll",
+      "data": {
+        "pct": 60
+      }
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 5000,
+        "scenarioId": "sc50",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

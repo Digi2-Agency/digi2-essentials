@@ -1,0 +1,185 @@
+{
+  "id": "013-page-segment-boundary",
+  "desc": "/kontakt w exclude nie wycina /kontakty-handlowe, a w include nie łapie /kontakty-handlowe; \"/\" to tylko strona główna.",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "ex-kontakt",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/kontakt"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-kontakt"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "in-kontakt",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "include": [
+                  "/kontakt"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "in-kontakt"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "in-root",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "include": [
+                  "/"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "in-root"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "in-kontakty",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "include": [
+                  "/kontakty-handlowe"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "in-kontakty"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/kontakty-handlowe",
+      "event": "page",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 0,
+        "scenarioId": "ex-kontakt",
+        "nodeId": "a1",
+        "do": "datalayer"
+      },
+      {
+        "t": 0,
+        "scenarioId": "in-kontakty",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

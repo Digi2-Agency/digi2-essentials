@@ -1,0 +1,103 @@
+{
+  "id": "016-page-device-desktop",
+  "desc": "device: mobile = (hover: none); gość desktop.",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "dev-desktop",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "device": "desktop",
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "dev-desktop"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "dev-mobile",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "device": "mobile",
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "dev-mobile"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 0,
+        "scenarioId": "dev-desktop",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

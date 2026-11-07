@@ -135,6 +135,14 @@
  *   trigger engagement            Active seconds on this page (tab visible) and the
  *                                 deepest scroll; optional utm filter (first entry of
  *                                 the visit). Once a page view.
+ *   trigger page (ma.44)          Audience filters of this page view, all in when: paths
+ *                                 { include, exclude } (segment boundary, exclude wins,
+ *                                 "/" = home only), lang (keys of the envelope's
+ *                                 langPrefixes; paths compared after the prefix), device
+ *                                 desktop|mobile ((hover: none)), minPageViews, minSeconds,
+ *                                 minScrollPct, chance (FNV-1a of visitorId␟scenarioId␟nodeId
+ *                                 % 100). Once a page view; after another trigger, the next
+ *                                 page view opened. Unknown field / bad value = node skipped.
  *   trigger form_abandon          Focus in a form, no submit, then idleSeconds or
  *                                 pagehide (stored, run on the next page view). Only the
  *                                 form id and the number of fields touched — never values
@@ -250,7 +258,7 @@
   }
 
   var TRIGGERS = { unit_view: 1, type_view: 1, return_visit: 1, lead: 1, crm_call_result: 1,
-    exit_intent: 1, engagement: 1, form_abandon: 1, search_filter: 1 };
+    exit_intent: 1, engagement: 1, form_abandon: 1, search_filter: 1, page: 1 };
   var ACTIONS = { popup: 1, datalayer: 1, webhook: 1, content: 1, map_mark: 1, map_order: 1, prefer_filters: 1 };
   // Akcje stanu strony: żyją do przeładowania, every_time wolno tylko im (§13.8.3a).
   var STATE_ACTIONS = { content: 1, map_mark: 1, map_order: 1 };
@@ -259,7 +267,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 43;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 44;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -831,7 +839,7 @@
       if (state.exitVisit === state.visits) return;
       state.exitVisit = state.visits;
       dispatch({ type: 'exit_intent', t: t }, pass);
-    } else if (evt.type === 'engagement' || evt.type === 'form_abandon') {
+    } else if (evt.type === 'engagement' || evt.type === 'form_abandon' || evt.type === 'page') {
       dispatch({ type: evt.type, t: t, data: evt.data }, pass);
     } else if (evt.type === 'search_filter') {
       var f = evt.filter || {};
@@ -863,6 +871,9 @@
       _warn('envelope version "' + raw.version + '" is not "' + CONTRACT_VERSION + '" — no scenario runs');
       return env;
     }
+    // ma.44: prefiksy języków dla wyzwalacza page (§13.8.2); false = pole jest, ale złe.
+    env.langPrefixes = raw.langPrefixes === undefined ? null : langPrefixesOf(raw.langPrefixes);
+    if (env.langPrefixes === false) _warn('envelope langPrefixes is not valid — page triggers are skipped');
     env.contentTemplates = contentLibrary(raw.templates);
     env.popupTemplates = popupLibrary(raw.templates);
     compiling = env;
@@ -1055,6 +1066,10 @@
         _warn(where + ' — engagement needs minSeconds, minScrollPct or utm, skipped');
         return false;
       }
+      if (ev === 'page') {
+        var bad = pageWhenProblem(w, compiling && compiling.langPrefixes);
+        if (bad) { _warn(where + ' — page ' + bad + ', skipped'); return false; }
+      }
       return true;
     }
     if (node.type === 'condition') {
@@ -1224,6 +1239,18 @@
       var count = views.filter(function (v) { return v.ts > arm.at && viewMatches(w, v.unit); }).length;
       if (count < minCount(w)) return null;
       ctx.unit = evt.unit;
+      return ctx;
+    }
+    if (evt.type === 'page') {
+      // Odsłona po poprzednim kroku (reguła 1): liczy się chwila jej otwarcia,
+      // nie chwila, w której dobiła do progu czasu albo przewinięcia.
+      if (pageAt == null || pageAt <= arm.at) return null;
+      var pk = sc.id + '/' + node.id;
+      if (pageFired[pk]) return null;
+      var pd = evt.data || {};
+      if (!pageMatches(w, sc.id, node.id, pd.seconds || 0, pd.scrollPct || 0)) return null;
+      pageFired[pk] = true;
+      ctx.signal = { path: pageView().path, lang: pageView().lang };
       return ctx;
     }
     // Reguła 1: „po" znaczy później, nie w tej samej milisekundzie.
@@ -3812,6 +3839,176 @@
     return seconds >= (num(w.minSeconds) || 0) && scrollPct >= (num(w.minScrollPct) || 0) && utmMatches(w.utm);
   }
 
+  // ---------------------------------------------------------------------------
+  // Wyzwalacz page (ma.44, §13.8.2): filtry odbiorców bieżącej odsłony - ścieżka,
+  // język, urządzenie, numer odsłony w wizycie, aktywny czas, przewinięcie,
+  // odsetek gości. Wszystko w when, nigdy w if (§13.8.1 pkt 3). Nieznane pole
+  // albo zła wartość = węzeł invalid: filtr odbiorców działa „na zamknięte".
+  // ---------------------------------------------------------------------------
+
+  var pageAt = null;         // chwila otwarcia tej odsłony (po touch)
+  var pageFired = {};        // wyzwalacz page, który odpalił na tej odsłonie
+  var PAGE_KEYS = { event: 1, paths: 1, lang: 1, device: 1, minPageViews: 1, minSeconds: 1, minScrollPct: 1, chance: 1 };
+  var LANG_CODE_RE = /^[a-z]{2}$/;
+  var LANG_PREFIX_RE = /^\/[a-z]{2}(-[a-z]{2})?$/;
+
+  function intIn(v, lo, hi) {
+    return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi;
+  }
+
+  // { kod: prefiks } po walidacji z §13.8.2 albo false.
+  function langPrefixesOf(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+    var keys = Object.keys(raw);
+    if (keys.length < 1 || keys.length > 10) return false;
+    var seen = {};
+    var roots = 0;
+    var out = {};
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var p = raw[k];
+      if (!LANG_CODE_RE.test(k) || typeof p !== 'string') return false;
+      if (p === '/') roots++;
+      else if (!LANG_PREFIX_RE.test(p)) return false;
+      if (seen[p]) return false;
+      seen[p] = true;
+      out[k] = p;
+    }
+    return roots <= 1 ? out : false;
+  }
+
+  function pathListOk(list) {
+    return Array.isArray(list) && list.length >= 1 && list.length <= 20 && list.every(function (x) {
+      return typeof x === 'string' && x.length >= 1 && x.length <= 200 && x.charAt(0) === '/';
+    });
+  }
+
+  // Powód odrzucenia when wyzwalacza page albo null.
+  function pageWhenProblem(w, prefixes) {
+    var k;
+    for (k in w) {
+      if (Object.prototype.hasOwnProperty.call(w, k) && !PAGE_KEYS[k]) return 'has an unknown field "' + k + '"';
+    }
+    if (prefixes === false) return 'needs valid langPrefixes on the envelope';
+    var any = false;
+    if (w.paths !== undefined) {
+      if (!w.paths || typeof w.paths !== 'object' || Array.isArray(w.paths)) return 'paths must be { include, exclude }';
+      for (k in w.paths) {
+        if (Object.prototype.hasOwnProperty.call(w.paths, k) && k !== 'include' && k !== 'exclude') return 'paths has an unknown field "' + k + '"';
+      }
+      if (w.paths.include !== undefined && !pathListOk(w.paths.include)) return 'paths.include must be 1–20 paths starting with /';
+      if (w.paths.exclude !== undefined && !pathListOk(w.paths.exclude)) return 'paths.exclude must be 1–20 paths starting with /';
+      if (w.paths.include !== undefined || w.paths.exclude !== undefined) any = true;
+    }
+    if (w.lang !== undefined) {
+      if (!Array.isArray(w.lang) || w.lang.length < 1 || w.lang.length > 10) return 'lang must be a list of 1–10 codes';
+      if (!prefixes) return 'lang needs langPrefixes on the envelope';
+      for (var i = 0; i < w.lang.length; i++) {
+        if (typeof w.lang[i] !== 'string' || !Object.prototype.hasOwnProperty.call(prefixes, w.lang[i])) return 'lang "' + w.lang[i] + '" is not in langPrefixes';
+      }
+      any = true;
+    }
+    if (w.device !== undefined) {
+      if (w.device !== 'desktop' && w.device !== 'mobile') return 'device must be desktop or mobile';
+      any = true;
+    }
+    if (w.minPageViews !== undefined) {
+      if (!intIn(w.minPageViews, 1, 50)) return 'minPageViews must be an integer 1–50';
+      any = true;
+    }
+    if (w.minSeconds !== undefined && !intIn(w.minSeconds, 0, 1800)) return 'minSeconds must be an integer 0–1800';
+    if (w.minScrollPct !== undefined && !intIn(w.minScrollPct, 0, 100)) return 'minScrollPct must be an integer 0–100';
+    if (w.minSeconds > 0 || w.minScrollPct > 0) any = true;
+    if (w.chance !== undefined) {
+      if (!intIn(w.chance, 1, 99)) return 'chance must be an integer 1–99';
+      any = true;
+    }
+    return any ? null : 'needs at least one filter (minSeconds: 0 and minScrollPct: 0 do not count)';
+  }
+
+  function pageHasActivity(w) {
+    return (num(w.minSeconds) || 0) > 0 || (num(w.minScrollPct) || 0) > 0;
+  }
+
+  function usesPageActivity() {
+    return !!envelope && envelope.scenarios.some(function (sc) {
+      return sc.triggers.some(function (n) { return n.when.event === 'page' && pageHasActivity(n.when); });
+    });
+  }
+
+  // Prefiks p (inny niż /) z granicą segmentu: /en pasuje do /en i /en/x, nie do /energia.
+  function underPrefix(path, p) {
+    return path === p || path.indexOf(p + '/') === 0;
+  }
+
+  // Ścieżka i język tej odsłony (§13.8.2): surowe pathname bez jednego końcowego
+  // ukośnika, najdłuższy pasujący prefiks języka, / jako ostatnia opcja.
+  function pageView() {
+    var raw = '';
+    try { raw = String(window.location.pathname || ''); } catch (e) { raw = ''; }
+    if (!raw) raw = '/';
+    var path = raw.length > 1 && raw.charAt(raw.length - 1) === '/' ? raw.slice(0, -1) : raw;
+    var prefixes = envelope && envelope.langPrefixes;
+    if (!prefixes) return { path: path, lang: null };
+    var lang = null;
+    var best = '';
+    var root = null;
+    Object.keys(prefixes).forEach(function (k) {
+      var p = prefixes[k];
+      if (p === '/') { root = k; return; }
+      if (underPrefix(path, p) && p.length > best.length) { best = p; lang = k; }
+    });
+    if (lang) return { path: path.slice(best.length) || '/', lang: lang };
+    return { path: path, lang: root };
+  }
+
+  function pathListed(path, list) {
+    return list.some(function (p) { return p === '/' ? path === '/' : underPrefix(path, p); });
+  }
+
+  function isTouch() {
+    try { return !!(window.matchMedia && window.matchMedia('(hover: none)').matches); } catch (e) { return false; }
+  }
+
+  // FNV-1a 32-bit na bajtach UTF-8 - część kontraktu chance (§13.8.2); ten sam
+  // algorytm liczy symulacja w panelu 2destate.
+  function fnv1a(text) {
+    var h = 0x811c9dc5;
+    function byte(b) { h ^= b; h = Math.imul ? Math.imul(h, 0x01000193) : (h * 0x01000193) | 0; }
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+        var d = text.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) { c = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00); i++; }
+      }
+      if (c < 0x80) byte(c);
+      else if (c < 0x800) { byte(0xc0 | (c >> 6)); byte(0x80 | (c & 63)); }
+      else if (c < 0x10000) { byte(0xe0 | (c >> 12)); byte(0x80 | ((c >> 6) & 63)); byte(0x80 | (c & 63)); }
+      else { byte(0xf0 | (c >> 18)); byte(0x80 | ((c >> 12) & 63)); byte(0x80 | ((c >> 6) & 63)); byte(0x80 | (c & 63)); }
+    }
+    return h >>> 0;
+  }
+
+  function inChance(chance, scId, nodeId) {
+    if (!state || !state.visitorId) return false;
+    return fnv1a(String(state.visitorId) + '\u001f' + scId + '\u001f' + nodeId) % 100 < chance;
+  }
+
+  function pageMatches(w, scId, nodeId, seconds, scroll) {
+    var pv = pageView();
+    if (w.paths) {
+      if (w.paths.include && !pathListed(pv.path, w.paths.include)) return false;
+      if (w.paths.exclude && pathListed(pv.path, w.paths.exclude)) return false;
+    }
+    if (w.lang && (pv.lang == null || w.lang.indexOf(pv.lang) < 0)) return false;
+    if (w.device === 'mobile' && !isTouch()) return false;
+    if (w.device === 'desktop' && isTouch()) return false;
+    if (w.minPageViews != null && (state.visitPageviews || 1) < w.minPageViews) return false;
+    if (seconds < (num(w.minSeconds) || 0) || scroll < (num(w.minScrollPct) || 0)) return false;
+    if (w.chance != null && !inChance(w.chance, scId, nodeId)) return false;
+    return true;
+  }
+
   var exitHooked = false;
   function hookExitIntent() {
     if (exitHooked || !usesTrigger('exit_intent') || !document.addEventListener) return;
@@ -3848,10 +4045,21 @@
     var ms = activeMs();
     var seconds = Math.floor(ms / 1000);
     var hit = false;
+    var pageHit = false;
     var wait = null;
     envelope.scenarios.forEach(function (sc) {
       sc.triggers.forEach(function (n) {
         var key = sc.id + '/' + n.id;
+        if (n.when.event === 'page') {
+          // Progi page: sygnał raz, gdy oba są spełnione; resztę warunków sprawdza check().
+          if (pageFired[key] || eng.signalled[key] || !pageHasActivity(n.when)) return;
+          if (seconds >= (num(n.when.minSeconds) || 0) && eng.scroll >= (num(n.when.minScrollPct) || 0)) {
+            eng.signalled[key] = true; pageHit = true; return;
+          }
+          var pleft = (num(n.when.minSeconds) || 0) * 1000 - ms;
+          if (pleft > 0 && eng.since != null && (wait === null || pleft < wait)) wait = pleft;
+          return;
+        }
         if (n.when.event !== 'engagement' || eng.signalled[key]) return;
         if (engagementMet(n.when, seconds, eng.scroll)) { eng.signalled[key] = true; hit = true; return; }
         var left = (num(n.when.minSeconds) || 0) * 1000 - ms;
@@ -3860,10 +4068,11 @@
     });
     if (wait !== null) eng.timer = setTimeout(engCheck, wait + 20);
     if (hit) intake({ type: 'engagement', data: { seconds: seconds, scrollPct: eng.scroll } });
+    if (pageHit) intake({ type: 'page', data: { seconds: seconds, scrollPct: eng.scroll } });
   }
 
   function hookEngagement() {
-    if (eng || !usesTrigger('engagement') || !document.addEventListener) return;
+    if (eng || !(usesTrigger('engagement') || usesPageActivity()) || !document.addEventListener) return;
     eng = { active: 0, since: document.visibilityState === 'hidden' ? null : Date.now(), scroll: scrollPct(),
       timer: null, signalled: {} };
     document.addEventListener('visibilitychange', function () {
@@ -4092,6 +4301,7 @@
     forms.forEach(function (ent) { ent.timers.forEach(clearTimeout); });
     forms = [];
     engFired = {};
+    pageFired = {};
     if (eng) {
       if (eng.timer) { clearTimeout(eng.timer); eng.timer = null; }
       eng.signalled = {};
@@ -5537,6 +5747,10 @@
         if (required && !q.consent) return;
         handle(q.evt, q.real + (state.shift || 0), pass);
       });
+      // ma.44: wyzwalacz page - otwarcie tej odsłony, w tym samym passie co wizyta
+      // (jeden popup naraz). Progi czasu i przewinięcia sprawdza potem engCheck.
+      pageAt = now();
+      if (usesTrigger('page')) dispatch({ type: 'page', t: pageAt, data: { seconds: 0, scrollPct: scrollPct() } }, pass);
       // Po touch(): UTM wizyty już jest w stanie, gdy wyzwalacz „z kampanii" sprawdza go od razu.
       hookSignals();
       replayFormExits();

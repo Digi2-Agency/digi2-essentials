@@ -784,6 +784,7 @@
       <a href="#ma">Overview</a>
       <a href="#ma-scenarios">Scenarios &amp; Rules</a>
       <a href="#ma-v1">Exit, Engagement, Forms, Content, Map</a>
+      <a href="#ma-cases">Compatibility Cases</a>
       <a href="#ma-lead-context">Lead Context in Forms</a>
       <a href="#ma-touchpoints">Touchpoints (visit sources)</a>
       <a href="#ma-search">Search: Filters &amp; Sort</a>
@@ -2801,6 +2802,7 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><th>Trigger</th><th>Parameters</th><th>Fires when</th></tr>
       <tr><td><code>exit_intent</code></td><td>—</td><td>The mouse leaves the window through the top edge. Once a visit. <strong>Never on touch screens</strong> — there is no reliable signal; use <code>engagement</code> there</td></tr>
       <tr><td><code>engagement</code></td><td><code>minSeconds</code> (0–1800), <code>minScrollPct</code> (0–100), <code>utm: { source?, medium?, campaign? }</code> — at least one</td><td>On this page view: active time (tab visible) ≥ <code>minSeconds</code> <strong>and</strong> deepest scroll ≥ <code>minScrollPct</code> <strong>and</strong> the visit's UTM matches. Once a page view</td></tr>
+      <tr><td><code>page</code> <span class="muted">(ma.44)</span></td><td><code>paths: { include?, exclude? }</code> (1–20 paths starting with <code>/</code>), <code>lang</code> (keys of the envelope's <code>langPrefixes</code>), <code>device</code> (<code>desktop</code> | <code>mobile</code>), <code>minPageViews</code> (1–50), <code>minSeconds</code> (0–1800), <code>minScrollPct</code> (0–100), <code>chance</code> (1–99) — at least one that isn't a default</td><td>On this page view, all given filters hold: the path is under one <code>include</code> and no <code>exclude</code> (exclude wins), the page's language is listed, the device matches, it's at least the <code>minPageViews</code>-th page of the visit, the active time and scroll thresholds are met, and the visitor's fixed <code>chance</code> bucket is in. Once a page view. After another trigger: the first matching page view <strong>opened after</strong> it</td></tr>
       <tr><td><code>form_abandon</code></td><td><code>formIds</code> (form <code>id</code> / <code>data-name</code>, 1–20; leave the field out for any form — an empty list is an error), <code>idleSeconds</code> (10–600, default 60)</td><td>A field got focus, the form wasn't sent, and nothing happened for <code>idleSeconds</code> — or the visitor left the page. Once per form per visit</td></tr>
     </table>
     <table>
@@ -2812,6 +2814,25 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <tr><td>Visitor leaves the page with a half-filled form</td><td>Nothing is sent while the page closes. The fact is stored and the scenario runs on the next page view (void after 24 h)</td></tr>
       <tr><td>Forms left out</td><td>Any form inside <code>[d2-ma-ignore]</code>; hidden fields and buttons don't count as touching</td></tr>
     </table>
+
+    <h3>The <code>page</code> trigger: who sees it (ma.44, §13.8.2)</h3>
+    <p>Audience filters live only in <code>when</code> of <code>page</code>, never in <code>if</code>: a script older than ma.44 doesn't know <code>page</code>, stops the branch and shows nothing — it never shows the popup to more people than intended. For the same reason an unknown field or a bad value makes the node invalid (<code>console.warn</code>) instead of being ignored.</p>
+    <pre><code>{ <span class="prop">"langPrefixes"</span>: { <span class="prop">"pl"</span>: <span class="string">"/"</span>, <span class="prop">"en"</span>: <span class="string">"/en"</span> } }   <span class="comment">// on the envelope</span>
+
+{ <span class="prop">"event"</span>: <span class="string">"page"</span>, <span class="prop">"paths"</span>: { <span class="prop">"exclude"</span>: [<span class="string">"/kontakt"</span>] }, <span class="prop">"lang"</span>: [<span class="string">"pl"</span>],
+  <span class="prop">"minPageViews"</span>: <span class="num">2</span>, <span class="prop">"chance"</span>: <span class="num">50</span> }   <span class="comment">// 2nd page, Polish, not the contact page, half of the visitors</span></code></pre>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>Path form</td><td>Raw <code>location.pathname</code>: case-sensitive, not decoded (<code>%C5%BC</code>, upper-case hex like the browser gives it). One trailing slash is dropped (<code>/oferta/</code> = <code>/oferta</code>), except <code>/</code></td></tr>
+      <tr><td>Prefix</td><td>With a segment boundary: <code>/oferta</code> matches <code>/oferta</code> and <code>/oferta/a1</code>; <code>/kontakt</code> does not match <code>/kontakty-handlowe</code>. <code>"/"</code> in <code>include</code> or <code>exclude</code> means the home page only</td></tr>
+      <tr><td>Language</td><td>The longest matching prefix of <code>langPrefixes</code>; a <code>/</code> entry (at most one) takes every path no longer prefix took. With <code>{ pl: "/", en: "/en" }</code>: <code>/en/oferta</code> → en, <code>/oferta</code>; <code>/energooszczedne</code> → pl. No <code>/</code> entry and no match → language unknown, a <code>lang</code> filter fails, and the path is compared in full</td></tr>
+      <tr><td>Which path <code>paths</code> sees</td><td>With <code>langPrefixes</code>, the path <strong>after</strong> the language prefix: <code>/oferta</code> covers <code>/en/oferta</code> too — pick the language with <code>lang</code></td></tr>
+      <tr><td><code>device: "mobile"</code></td><td><code>matchMedia("(hover: none)")</code>, the same test <code>exit_intent</code> uses</td></tr>
+      <tr><td><code>chance</code></td><td>FNV-1a 32-bit over the UTF-8 bytes of <code>visitorId + "\u001f" + scenarioId + "\u001f" + nodeId</code>; in when <code>hash % 100 &lt; chance</code>. Fixed per visitor, no <code>Math.random</code>. <strong>Wyczyść</strong> gives a new <code>visitorId</code>, so a new bucket. Part of the contract — the 2destate panel computes the same</td></tr>
+      <tr><td>Envelope with bad <code>langPrefixes</code></td><td>Every <code>page</code> trigger is skipped (with a warning); <code>lang</code> without <code>langPrefixes</code> or with a key not in it — that node is skipped</td></tr>
+      <tr><td>Every page view</td><td>That's a scenario without <code>page</code>. <code>paths.include: ["/"]</code> is the home page only — hence the rule "at least one filter"</td></tr>
+    </table>
+    <p class="muted">An envelope using <code>page</code> needs <code>minScript: "ma.44"</code>; the panel refuses to publish it while the site or the approved script is older (filters are never "soft").</p>
 
     <h3>Actions</h3>
     <table>
@@ -2843,6 +2864,36 @@ digi2.<span class="fn">on</span>(<span class="string">'ma:change'</span>, <span 
       <div class="wf-el"><span class="wf-elname">Form <code>form_abandon</code> must never count (and gets no lead context)</span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-ignore</span></div>
       <div class="wf-el"><span class="wf-elname">Form that should also carry <code>d2ma_context_json</code></span><span class="chip chip--attr"><span class="k">attr</span> d2-ma-context</span><span class="chip"><span class="k">value</span> json</span></div>
     </div>
+  </section>
+
+  <section id="ma-cases">
+    <h2>Compatibility Cases (ma-cases)</h2>
+    <p>From ma.44 the repository carries test cases that pin what <code>ma.js</code> does: an envelope, a visitor, a visit as a timeline, and the exact list of actions it must produce. The 2destate panel runs the same files in its popup-timeline simulation (<code>simulate(envelope, visitor, visit, now)</code>) and must get the same list. A behaviour change in the script starts with a new case; a case the script fails stops the release gate.</p>
+    <pre><code><span class="comment">// tests/fixtures/ma-cases/index.json lists the files; also on the CDN at</span>
+<span class="comment">// https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.N/tests/fixtures/ma-cases/</span>
+{
+  <span class="prop">"id"</span>: <span class="string">"019-page-min-seconds"</span>, <span class="prop">"since"</span>: <span class="string">"v1.9.0-ma.44"</span>, <span class="prop">"now"</span>: <span class="string">"2026-11-08T12:00:00+01:00"</span>,
+  <span class="prop">"envelope"</span>: { <span class="comment">/* 1:1, consentRequired only in storage */</span> },
+  <span class="prop">"visitor"</span>: { <span class="prop">"visitorId"</span>: <span class="string">"…"</span>, <span class="prop">"consent"</span>: <span class="string">"granted"</span>, <span class="prop">"device"</span>: <span class="string">"desktop"</span>, <span class="prop">"lead"</span>: <span class="keyword">null</span>, <span class="prop">"profile"</span>: <span class="keyword">null</span> },
+  <span class="prop">"visit"</span>: [ { <span class="prop">"t"</span>: <span class="num">0</span>, <span class="prop">"path"</span>: <span class="string">"/oferta"</span>, <span class="prop">"event"</span>: <span class="string">"page"</span>, <span class="prop">"data"</span>: {} },
+             { <span class="prop">"t"</span>: <span class="num">45000</span>, <span class="prop">"path"</span>: <span class="string">"/oferta"</span>, <span class="prop">"event"</span>: <span class="string">"wait"</span>, <span class="prop">"data"</span>: {} } ],
+  <span class="prop">"expect"</span>: { <span class="prop">"actions"</span>: [ { <span class="prop">"t"</span>: <span class="num">30000</span>, <span class="prop">"scenarioId"</span>: <span class="string">"s30"</span>, <span class="prop">"nodeId"</span>: <span class="string">"a1"</span>, <span class="prop">"do"</span>: <span class="string">"datalayer"</span> } ] }
+}</code></pre>
+    <table>
+      <tr><th>Visit event</th><th>Meaning</th></tr>
+      <tr><td><code>page</code></td><td>A page load at <code>path</code> (the first step, at <code>t: 0</code>)</td></tr>
+      <tr><td><code>wait</code></td><td>Time passes on the open page until <code>t</code> (tab visible)</td></tr>
+      <tr><td><code>scroll</code></td><td><code>data.pct</code>: deepest scroll so far, 0–100</td></tr>
+      <tr><td><code>hidden</code> / <code>visible</code></td><td>The tab is hidden / shown again (active time stops / goes on)</td></tr>
+      <tr><td><code>unit_view</code></td><td><code>data.unit</code> in the §13.1 shape</td></tr>
+      <tr><td><code>exit_intent</code>, <code>lead</code></td><td>The mouse leaves through the top edge; a lead</td></tr>
+    </table>
+    <table>
+      <tr><th>Rule</th><th>Detail</th></tr>
+      <tr><td><code>expect.actions</code></td><td>The complete list in order, compared as a whole; no action = <code>[]</code>. Each <code>{ t, scenarioId, nodeId, do }</code>, plus <code>status</code> when the script reports one (<code>skipped</code>)</td></tr>
+      <tr><td>Time</td><td><code>t</code> in ms from the visit start, compared to the whole second (rounded down) — a time threshold fires a few ms after it in the browser</td></tr>
+      <tr><td>Not yet supported</td><td><code>visitor.profile</code> other than <code>null</code> and <code>visitor.lead</code> — the runner fails such a case loudly instead of running it half-way</td></tr>
+    </table>
   </section>
 
   <section id="ma-lead-context">

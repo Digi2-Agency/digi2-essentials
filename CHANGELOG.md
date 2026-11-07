@@ -16,6 +16,32 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.44 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+**`d2-ma`: nowy wyzwalacz `page` — popup tylko dla wybranych stron i gości**
+(spec silnika §13.8.2, PR #1903). Koperta, która go używa, ma `minScript: "ma.44"`.
+Panel nie pozwoli jej opublikować, dopóki strona i zatwierdzona wersja skryptu
+w 2destate (`MA_APPROVED_SCRIPT`) nie są ≥ ma.44.
+
+- Filtry w `when`: `paths` (`include` / `exclude`), `lang` (klucze nowego pola
+  koperty `langPrefixes`, np. `{ "pl": "/", "en": "/en" }`), `device`
+  (`desktop` | `mobile`), `minPageViews`, `minSeconds`, `minScrollPct`,
+  `chance` (odsetek gości, stały dla gościa). Raz na odsłonę.
+- Ścieżka z granicą segmentu: `/kontakt` nie łapie `/kontakty-handlowe`, `"/"`
+  to tylko strona główna. Wielkość liter ma znaczenie, polskie znaki wpisuje się
+  zakodowane (`%C5%BC`).
+- Działa „na zamknięte”: nieznane pole albo zła wartość wyłącza ten węzeł z
+  ostrzeżeniem w konsoli, zamiast pokazać popup szerzej. Starszy skrypt nie zna
+  `page` i też nic nie pokaże.
+- Po innym wyzwalaczu (`unit_view → page`) liczy się następna pasująca odsłona,
+  nie ta, na której to się stało.
+- Strony bez wyzwalacza `page` nie dostają żadnego nowego nasłuchu.
+
+**Przypadki zgodności `tests/fixtures/ma-cases/`** (27 na start, wszystkie o
+`page`). Ten sam plik czyta symulacja osi czasu popupów w panelu 2destate. Jest
+na CDN pod `@v1.9.0-ma.44/tests/fixtures/ma-cases/index.json`. Niespełniony
+przypadek zatrzymuje bramkę wydania.
+
 ## v1.9.0-ma.43 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 **`d2-booking`: płatność niedostępna, bo wdrożenie nie ma strony powrotu**
