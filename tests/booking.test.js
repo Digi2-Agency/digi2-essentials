@@ -3146,6 +3146,35 @@ test('every refusal in errors.json has a sentence of its own', async () => {
   assert.ok(shared.length <= 1, 'sentences doing double duty: ' + JSON.stringify(shared));
 });
 
+test('a 5xx with a reason beside it stays an unknown outcome, and the retry keeps its key', async () => {
+  // MUTACJA: read body.reason at any status, and a proxy's JSON 500 becomes a
+  // sure refusal: the key is dropped and the retry may book the stay twice.
+  const env = payPage({
+    script: { bookings: [{ status: 500, body: { detail: 'Internal', reason: 'period_taken' } }] },
+  });
+  await paySubmit(env);
+  const first = bookingPosts(env)[0];
+  fire(env.form, 'submit');
+  await env.settled();
+  const posts = bookingPosts(env);
+  assert.equal(posts.length, 2);
+  assert.equal(keyOf(posts[1]), keyOf(first), 'the same key: the first may have landed');
+});
+
+test('a 5xx whose detail names a reason keeps the key too', async () => {
+  // MUTACJA: trust the reason over the status, and a 503 with
+  // detail.reason drops the key the first, maybe landed, request holds.
+  const env = payPage({
+    script: { bookings: [{ status: 503, body: { detail: { reason: 'maintenance' } } }] },
+  });
+  await paySubmit(env);
+  fire(env.form, 'submit');
+  await env.settled();
+  const posts = bookingPosts(env);
+  assert.equal(posts.length, 2);
+  assert.equal(keyOf(posts[1]), keyOf(posts[0]));
+});
+
 test('a 502 anywhere but the payment is a server error, not a Stripe outage', async () => {
   // MUTACJA: map every 502 to payment_provider_unavailable and a gateway
   // hiccup on the price tells a guest who has not touched a payment that the

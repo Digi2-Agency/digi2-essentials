@@ -4135,7 +4135,7 @@ about its own route (`notFound`, `conflict`, `badRequest` options):
 | Answer | `reason` |
 |---|---|
 | `detail.reason` / `detail.code` | that string (`period_taken`, `rental_rules`, `field_required`, `request_too_large`, …) |
-| `detail` is a sentence and `reason` stands beside it | that `reason` (the two 409s of `/requests`) |
+| `detail` is a sentence and `reason` stands beside it, **on a 409** | that `reason` (the two 409s of `/requests`); on any other status it is ignored — a 5xx stays an unknown outcome |
 | `detail` is a list (FastAPI 422) | `validation_error`, and `field` from `loc` (`["body","customer_email"]` → the `email` field). A `loc` that ends in an array index is walked past it, so `["body","child_ages",0]` still marks `child_ages`, and an entry naming nothing we know leaves the next entry its chance. |
 | 400 | `invalid_request` (or the caller's `badRequest`, e.g. `invalid_stay`) |
 | 403 | `origin_not_allowed` |
@@ -4794,7 +4794,8 @@ nowhere (2destate, `rental_pricing.py`), so `?lang=` on `/quote` could not help.
 On a page in any other language the dictionary's word for the `kind` stands in
 (`line_season` → "Stay in season"). Without a `label` the `kind` gets its
 word from the dictionary too. A kind the dictionary has no word for is named by
-the `label` (in any language) and, with neither, by its own identifier. `length_discount` carries its rate in the label when the answer has one —
+the `label` (in any language, with no rate added — the label is the owner's whole
+name) and, with neither, by its own identifier. `length_discount` carries its rate in the label when the answer has one —
 and without it when the answer says `null`, which is what a key with
 `merge_cleaning_fee` sends (`KONTRAKT.md`).
 
@@ -4955,7 +4956,7 @@ and the attempt is kept twice over:
   `/contact` before anything is paid. A changed `note` in that one case stays as
   first sent — `/contact` does not carry it. The first body is repeated **only
   after an answer we never read** (`network_error`, `server_error`,
-  `bad_response`); any other refusal (a 422 on the e-mail, a 413 on the note…)
+  `bad_response`, and any status 0 or ≥ 500 whatever reason it names); any other refusal (a 422 on the e-mail, a 413 on the note…)
   drops the key, so the corrected form goes out as a new request. A retry
   returns the same booking; one recovered as `expired` is not paid and drops
   the key. Pinned by `contact.json` and `booking.json` in

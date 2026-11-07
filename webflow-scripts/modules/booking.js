@@ -2149,7 +2149,11 @@
           // A sentence for logs in detail, and (on /requests, by the contract)
           // the reason itself beside it: the two 409s of that route read the
           // same in English and only the reason tells them apart.
-          var beside = body && typeof body === 'object' && typeof body.reason === 'string' ? body.reason : '';
+          // Only on a 409: a 5xx is an outcome nobody knows, and a reason some
+          // proxy put beside it must not turn it into a sure refusal — that
+          // would drop the Idempotency-Key and risk a second booking.
+          var beside = r.status === 409 && body && typeof body === 'object'
+            && typeof body.reason === 'string' ? body.reason : '';
           reason = beside || statusReason(r.status, opts);
         }
         if (r.status === 429) extra.retryAfter = retryAfterSeconds(r);
@@ -3812,10 +3816,13 @@
   function lineLabel(line, language) {
     var home = langCode(currentConfig().default_language) || BASE_LANGUAGE;
     if (line.label && langCode(language || currentLanguage()) === home) return String(line.label);
-    // A kind with no word of its own is better named by the owner's label, even
-    // in the key's language, than by its bare identifier.
-    var text = lookup('line_' + String(line.kind), language) || (line.label ? String(line.label) : '')
-      || String(line.kind || '');
+    // On a page in another language a kind with no word of its own is better
+    // named by the owner's label than by its bare identifier. The label is
+    // the owner's whole name for the line, so it gets no rate added — exactly
+    // as on a page in the key's language above.
+    var word = lookup('line_' + String(line.kind), language);
+    if (!word && line.label) return String(line.label);
+    var text = word || String(line.kind || '');
     // A cleaning fee folded into the stay leaves length_discount without its
     // rate (contract): the label then goes out without one, and the amount
     // beside it is still the answer's.
@@ -4316,7 +4323,9 @@
         // refusal is the backend's verdict on what was sent: the corrected
         // form has to go out as a new request, or the guest who fixed the
         // e-mail the 422 named is refused again, for a day.
-        if (!UNSURE_OUTCOME[res.reason]) form._d2BookingAttempt = null;
+        if (!UNSURE_OUTCOME[res.reason] && res.status > 0 && res.status < 500) {
+          form._d2BookingAttempt = null;
+        }
         applyRefusal(form, res, cfg);
         _emit('booking:refused', { reason: res.reason, status: res.status, form: form });
         // The limit said how long, so the button waits exactly that long
