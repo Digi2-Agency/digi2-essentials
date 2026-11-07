@@ -113,6 +113,7 @@ function element(attrs, tagName) {
  *   uuidy     kolejne wyniki crypto.randomUUID (np. visitorId nowego profilu)
  *   wCzasie   tablica, do której trafia każde digi2.emit z czasem zegara { n, d, t }
  *   poZaladowaniu  fn(window) zaraz po wykonaniu modułu, przed otwarciem magazynu
+ *   tykajacy  każde Date.now() przesuwa zegar o 1 ms
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
  *   dymek     { open, zostawiaKlase } - pełnoekranowy dymek mapy 2destate na telefonie;
@@ -154,7 +155,8 @@ function strona(opts) {
 
   class FakeDate extends Date {
     constructor(...a) { if (a.length) super(...a); else super(zegar.t); }
-    static now() { return zegar.t; }
+    // tykajacy: każde Date.now() o 1 ms później - jak prawdziwy zegar między wywołaniami.
+    static now() { return o.tykajacy ? zegar.t++ : zegar.t; }
   }
 
   const popupsApi = {
@@ -6145,4 +6147,20 @@ test('ma.44: page z progiem nasłuchuje czasu i przewinięcia tylko na stronie, 
   assert.equal((obca.naOknie.scroll || []).length, 0, 'filtr ścieżki nie pasuje — bez nasłuchu');
   const swoja = await start({ koperta: zProgiem(['/oferta']), sciezka: '/oferta' });
   assert.equal((swoja.naOknie.scroll || []).length, 1, 'pasuje — nasłuch jest');
+});
+
+test('ma.45: granicą page jest odsłona, nie milisekunda — obejrzenie przy ładowaniu nie uzbraja page na tej samej odsłonie, także na tykającym zegarze', async () => {
+  // MUTACJA: porównać chwilę otwarcia odsłony z czasem kroku (ma.44 przed recenzją).
+  // Na zegarze stojącym 029 przechodzi i na starym kodzie; tu każde now() jest o 1 ms
+  // później, więc obejrzenie z bufora wypada przed otwarciem i stary kod odpaliłby page od razu.
+  const k = koperta([{ scenarioId: 'c', revision: 1, active: true,
+    nodes: [{ id: 't1', type: 'trigger', when: { event: 'unit_view', unitIds: [], minCount: 1 } },
+      { id: 't2', type: 'trigger', when: { event: 'page', paths: { include: ['/oferta'] } } },
+      { id: 'a1', type: 'action', do: 'datalayer', event: 'ma_segment', params: { segment: 'c' } }],
+    edges: [['t1', 't2'], ['t2', 'a1']] }], { minScript: 'ma.45' });
+  const p1 = await start({ koperta: k, tykajacy: true, poZaladowaniu: (w) => w.digi2.ma.track({ unitId: 'A1', rooms: 2, floor: 1 }) });
+  assert.equal(p1.ma.history().length, 1, 'obejrzenie weszło');
+  assert.equal(p1.segmenty().length, 0, 'ta sama odsłona — page czeka');
+  const p2 = await powrot(p1, 5000, { poZaladowaniu: null });
+  assert.deepEqual(p2.segmenty().map((e) => e.segment), ['c'], 'następna odsłona odpala');
 });

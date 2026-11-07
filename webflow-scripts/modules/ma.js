@@ -267,7 +267,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 44;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 45;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -1350,7 +1350,11 @@
   function done(st, node, ctx, t) {
     var at = t != null ? t : now();
     if (ctx.t != null && ctx.t > at) at = ctx.t;
-    st.nodes[node.id] = { at: at, seq: ctx.seq != null ? ctx.seq : (state.pageSeq || 0),
+    // ma.45: akcja dzieje się na tej odsłonie - zapisuje bieżący pageSeq, także
+    // za return_visit otwartym tą odsłoną (return_visit → akcja → page czeka do
+    // następnej). Wyzwalacz i warunek niosą seq zdarzenia.
+    var seq = node.type !== 'action' && ctx.seq != null ? ctx.seq : (state.pageSeq || 0);
+    st.nodes[node.id] = { at: at, seq: seq,
       unit: ctx.unit || null, segment: ctx.segment || null };
   }
 
@@ -3887,10 +3891,16 @@
   // końcu (poza samym /), tylko ASCII, wielkie litery wyłącznie w %XX, a w %XX
   // cyfry wielkie. Wpis, który nigdy nie spasuje, w exclude po cichu przestałby
   // wykluczać - więc cały węzeł odpada.
+  // ma.45: tylko znaki, które surowe pathname może zawierać. Parser URL (WHATWG,
+  // path percent-encode set) koduje spację, " # < > ? ` { }, a \ zamienia na /;
+  // | ^ [ ] zostawia surowe, więc te przechodzą. Wpis ze znakiem, którego
+  // pathname nie ma (np. wklejone /kontakt?utm_source=fb), nigdy nie pasuje.
+  var PATH_CHARS_RE = /^[A-Za-z0-9\-._~!$&'()*+,;=:@\/%|^\[\]]+$/;
+
   function pathEntryOk(x) {
     if (typeof x !== 'string' || x.length < 1 || x.length > 200 || x.charAt(0) !== '/') return false;
     if (x.length > 1 && x.charAt(x.length - 1) === '/') return false;
-    if (/[^\x21-\x7e]/.test(x)) return false;
+    if (!PATH_CHARS_RE.test(x)) return false;
     var rest = x.replace(/%[0-9A-F]{2}/g, '');
     return !/[%A-Z]/.test(rest);
   }

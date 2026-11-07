@@ -1696,17 +1696,25 @@ view (`pageFired`, per `scenarioId/nodeId`).
   never count, even when `minSeconds` passes after them. One exception
   (architekt-it, review of #72): the `return_visit` dispatched by the page view
   that **opened** the visit records `seq − 0.5`, so that page view counts as
-  after it — `return_visit → page` fires on the returning page. Steps stored
-  before ma.44 have no `seq` and fall back to the open time (`pageAt > at`).
+  after it — `return_visit → page` fires on the returning page. Triggers and
+  conditions carry the `seq` of their event; an **action** always records the
+  current page view (ma.45, explicit in `done()`), so `return_visit → action →
+  page` waits for the next page view (case 033). Steps stored before ma.44
+  have no `seq` and fall back to the open time (`pageAt > at`).
 - **Listeners.** Time and scroll are watched only for a `page` with a
   threshold whose static part (path, language, device, page number, chance)
   matches this page view.
 - **Path.** Raw `location.pathname`, case-sensitive, not decoded; exactly one
   trailing slash dropped, except `/`. Entries in `paths` are checked like the
-  publish validator does: a trailing `/` (except `/` itself), anything outside
-  printable ASCII, an upper-case letter outside `%XX`, or `%xx` with lower-case
-  hex make the node invalid — such an entry never matches, and in `exclude` it
-  would silently stop excluding. Prefix match with a segment boundary
+  publish validator does: a trailing `/` (except `/` itself), an upper-case
+  letter outside `%XX`, `%xx` with lower-case hex, and — from ma.45 — any
+  character a raw `pathname` never holds. The URL parser (WHATWG path
+  percent-encode set) encodes space, `" # < > ? \` { }` and turns `\` into `/`;
+  it leaves `| ^ [ ]` raw, so those pass. Allowed: `A–Z a–z 0–9 - . _ ~ ! $ &
+  ' ( ) * + , ; = : @ / | ^ [ ]` and `%XX`; anything else, non-ASCII included,
+  makes the node invalid. Such an entry
+  never matches, and in `exclude` it would silently stop excluding (a pasted
+  `/kontakt?utm_source=fb`). Prefix match with a segment boundary
   (`p` matches `p` and `p/…`). `"/"` in `paths` is the home page only.
 - **Language.** `langPrefixes` on the envelope: 1–10 entries, code
   `^[a-z]{2}$`, prefix `/` or `^/[a-z]{2}(-[a-z]{2})?$`, unique, at most one
