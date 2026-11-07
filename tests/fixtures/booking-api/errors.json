@@ -140,6 +140,20 @@
       }
     },
     {
+      "name": "payment_return_unavailable",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "payment_return_unavailable",
+          "message": "Payments are unavailable: this deployment has no public page to return a guest to"
+        }
+      },
+      "routes": [
+        "POST /products/{product_id}/bookings",
+        "POST /bookings/{booking_id}/checkout-session"
+      ]
+    },
+    {
       "name": "payment_provider_unavailable",
       "status": 502,
       "exact": true,

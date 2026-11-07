@@ -2025,7 +2025,7 @@ test('every payment refusal gets a sentence of its own', async () => {
   // MUTACJA: answer every payment refusal with one generic sentence and the
   // guest cannot tell "already paid" from "the owner has no Stripe yet".
   const reasons = ['booking_not_payable', 'booking_already_paid', 'stripe_not_connected',
-    'stripe_account_not_ready', 'payment_provider_unavailable'];
+    'stripe_account_not_ready', 'payment_provider_unavailable', 'payment_return_unavailable'];
   const said = {};
   for (const name of reasons) {
     const env = await paySubmit(payPage({ refuse: { checkout: name } }));
@@ -2052,6 +2052,47 @@ test('a final payment refusal does not offer a retry', async () => {
   await env.settled();
   assert.equal(bookingPosts(env).length, 1, 'no second booking');
   assert.equal(checkoutPosts(env).length, 1, 'and no second session');
+});
+
+test('no page to return to, at the checkout: final, unpaid, and not the guest\'s mistake', async () => {
+  // MUTACJA: leave payment_return_unavailable out of PAYMENT_FINAL and the
+  // button opens again, so the guest keeps clicking into the same 409.
+  const env = payPage({ refuse: { checkout: 'payment_return_unavailable' } });
+  await paySubmit(env);
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'final');
+  assert.equal(submitOf(env.form).disabled, true);
+  const slot = env.form.querySelector('[d2-booking-error="form"]');
+  assert.equal(slot.getAttribute('d2-booking-ok'), '', 'information, not a red error');
+  assert.equal(errorTextOf(env.form, 'form'), env.booking.message('payment_return_unavailable'));
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 1, 'no second booking');
+  assert.equal(checkoutPosts(env).length, 1, 'and no second session');
+});
+
+test('no page to return to, before the booking: final, and the guest reads that nothing was booked', async () => {
+  // MUTACJA: treat it like any refusal of the bookings route and the button
+  // opens again; or say the checkout's sentence and the guest reads about an
+  // unpaid booking that was never made.
+  const env = payPage({ refuse: { bookings: 'payment_return_unavailable' } });
+  await paySubmit(env);
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'final');
+  assert.equal(submitOf(env.form).disabled, true);
+  assert.equal(checkoutPosts(env).length, 0, 'there is no booking to pay');
+  const text = errorTextOf(env.form, 'form');
+  const pl = env.booking.texts('pl');
+  assert.equal(text, pl.payment_return_unavailable_unbooked);
+  assert.notEqual(text, env.booking.message('payment_return_unavailable'));
+  assert.equal(env.form.querySelector('[d2-booking-error="form"]').getAttribute('d2-booking-ok'), '');
+  assert.ok(
+    env.events.some((e) => e.name === 'booking:refused' && e.data.reason === 'payment_return_unavailable'),
+    'the page is told which refusal it was'
+  );
+  assert.ok(!env.events.some((e) => e.name === 'booking:created'), 'nothing was created');
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 1, 'the same stay is not sent again');
+  assert.equal(errorTextOf(env.form, 'form'), text, 'and the stored refusal says the same');
 });
 
 test('a provider that is only unavailable offers a retry and pays the booking it has', async () => {
