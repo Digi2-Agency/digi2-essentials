@@ -3160,7 +3160,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td>400</td><td><code>invalid_request</code> (<code>invalid_stay</code> where the caller says so)</td></tr>
       <tr><td>403</td><td><code>origin_not_allowed</code></td></tr>
       <tr><td>404</td><td>per route: <code>site_key_not_found</code>, <code>product_not_found</code>, <code>booking_not_found</code></td></tr>
-      <tr><td>409 with a plain sentence</td><td>per route: <code>request_not_allowed</code>, <code>request_already_waiting</code></td></tr>
+      <tr><td>409 with a plain sentence</td><td>the top-level <code>reason</code> beside it when there is one (<code>/requests</code>: <code>request_not_allowed</code> or <code>request_already_waiting</code>), otherwise per route</td></tr>
       <tr><td>413 / 429</td><td><code>request_too_large</code> / <code>too_many_requests</code> (+ <code>retryAfter</code> seconds from <code>Retry-After</code>)</td></tr>
       <tr><td>502</td><td><code>payment_provider_unavailable</code> on the <strong>two payment routes only</strong> — <code>errors.json</code> documents that refusal for them alone. A bad gateway on the calendar or the price is a <code>server_error</code>: telling a guest who has not touched a payment that the payment provider is down is a lie.</td></tr>
       <tr><td>5xx, unreadable body</td><td><code>server_error</code>, <code>bad_response</code></td></tr>

@@ -2652,16 +2652,17 @@ test('a refused request says why without naming the token', async () => {
   // about a decision they never heard of.
   //
   // The two 409s of this route — a booking that is closed and a request of
-  // this kind already waiting — both answer a plain English sentence meant for
-  // logs (errors.json), so the module cannot tell them apart and gets one
-  // sentence that covers both. Either way the kind is closed.
+  // this kind already waiting — answer a plain English sentence meant for logs
+  // and, beside it, the reason (errors.json): each gets its own sentence.
+  // MUTACJA: read the reason from detail only, and request_already_waiting is
+  // never said. Either way the kind is closed.
   for (const name of ['request_not_allowed', 'request_already_waiting']) {
     const env = managePage({ refuse: { requests: name } });
     await env.settled();
     fire(manageAction(env, 'refund'), 'click');
     await env.settled();
     const said = slotText(env, 'd2-booking-manage-message');
-    assert.equal(said, env.booking.message('request_not_allowed'), name);
+    assert.equal(said, env.booking.message(name), name);
     assert.equal(said.indexOf(TOKEN), -1);
     assert.equal(said.indexOf(refusalFixture(name).body.detail), -1, 'not the backend text');
     assert.equal(manageAction(env, 'refund'), null, 'and the kind is closed either way');
@@ -4943,6 +4944,27 @@ test('a season name is shown on a page in the key\'s language and replaced in an
   }
   assert.equal(await labelOn('pl'), 'Sezon letni');
   assert.equal(await labelOn('de'), DE_SAYS.line_season || 'Aufenthalt in der Saison');
+});
+
+test('a kind the dictionary has no word for keeps the owner\'s label in any language', async () => {
+  // MUTACJA: fall back to the bare kind, and a German page prints
+  // "promo_bundle" where the owner wrote a name.
+  const body = clone(QUOTE.response);
+  body.line_items[0] = Object.assign({}, body.line_items[0], { kind: 'promo_bundle', label: 'Pakiet majówka' });
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': 'de', 'd2-booking-product': PRODUCT },
+    config: { languages: ['pl', 'en', 'de', 'uk'] },
+    calendar: true,
+    price: true,
+    script: { quote: [{ status: 200, body }, { status: 200, body }, { status: 200, body }] },
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+  await env.settled();
+  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-07');
+  await env.tick();
+  assert.equal(textIn(lineRows(env)[0], 'd2-booking-line-label'), 'Pakiet majówka');
 });
 
 // The reasons that only ever arrive from the backend. The module never writes
