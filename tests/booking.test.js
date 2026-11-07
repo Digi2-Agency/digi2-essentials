@@ -3153,6 +3153,10 @@ test('a 5xx with a reason beside it stays an unknown outcome, and the retry keep
     script: { bookings: [{ status: 500, body: { detail: 'Internal', reason: 'period_taken' } }] },
   });
   await paySubmit(env);
+  // And the guest reads a server error, not "these dates are taken".
+  const refused = env.events.filter((e) => e.name === 'booking:refused');
+  assert.equal(refused.length, 1);
+  assert.equal(refused[0].data.reason, 'server_error');
   const first = bookingPosts(env)[0];
   fire(env.form, 'submit');
   await env.settled();
@@ -4979,7 +4983,9 @@ test('a kind the dictionary has no word for keeps the owner\'s label in any lang
   // MUTACJA: fall back to the bare kind, and a German page prints
   // "promo_bundle" where the owner wrote a name.
   const body = clone(QUOTE.response);
-  body.line_items[0] = Object.assign({}, body.line_items[0], { kind: 'promo_bundle', label: 'Pakiet majówka' });
+  // With a rate on the line: the label is the owner's whole name and gets none
+  // added (MUTACJA: append the rate and it reads "Pakiet majówka (10 %)").
+  body.line_items[0] = Object.assign({}, body.line_items[0], { kind: 'promo_bundle', label: 'Pakiet majówka', percent: 10 });
   const env = page({
     now: MAY_2027,
     loaderAttrs: { 'd2-booking-lang': 'de', 'd2-booking-product': PRODUCT },
