@@ -22,7 +22,8 @@ Poprawka wyzwalacza `page` z ma.44 (warunek architekt-it z recenzji #72).
 **Zatwierdzaj w 2destate ma.45, nie ma.44.**
 
 - Wpis w `paths` ze znakiem, którego adres strony nigdy nie zawiera
-  (`? # " < > \ ` { } | ^ [ ]` albo spacja), wyłącza węzeł. Dotyczy to np.
+  (`? # " < > \ ` { }` albo spacja), wyłącza węzeł. `| ^ [ ]` przechodzą,
+  bo przeglądarka zostawia je w adresie bez kodowania. Dotyczy to np.
   wklejonego `/kontakt?utm_source=fb` albo `/oferta#formularz`. W ma.44 taki
   wpis w `exclude` po cichu nie wykluczał, więc popup pokazywał się szerzej.
 - `return_visit → akcja → page`: akcja należy do bieżącej odsłony, więc `page`

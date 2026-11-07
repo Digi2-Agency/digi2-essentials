@@ -1,6 +1,6 @@
 {
   "id": "030-page-paths-rejected",
-  "desc": "Wpisy paths, które nigdy nie pasują do surowego pathname, są odrzucane: / na końcu, wielka litera poza %XX, znak spoza ASCII, a od ma.45 także ? # \" < > \\ ` { } | ^ [ ] i spacja (np. wklejone /kontakt?utm_source=fb). Węzeł invalid, więc exclude nie przepuszcza popupu szerzej.",
+  "desc": "Wpisy paths, które nigdy nie pasują do surowego pathname, są odrzucane: / na końcu, wielka litera poza %XX, znak spoza ASCII, a od ma.45 także ? # \" < > \\ ` { } i spacja (np. wklejone /kontakt?utm_source=fb); | ^ [ ] przechodzą, bo pathname je zostawia. Węzeł invalid, więc exclude nie przepuszcza popupu szerzej.",
   "since": "v1.9.0-ma.45",
   "envelope": {
     "version": "0",
@@ -319,6 +319,40 @@
         ]
       },
       {
+        "scenarioId": "ok-raw-in-pathname",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/a|b^c[1]"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ok-raw-in-pathname"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
         "scenarioId": "ex-ok",
         "revision": 1,
         "active": true,
@@ -375,6 +409,12 @@
       {
         "t": 0,
         "scenarioId": "ok-sub-delims",
+        "nodeId": "a1",
+        "do": "datalayer"
+      },
+      {
+        "t": 0,
+        "scenarioId": "ok-raw-in-pathname",
         "nodeId": "a1",
         "do": "datalayer"
       },

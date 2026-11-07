@@ -1708,9 +1708,11 @@ view (`pageFired`, per `scenarioId/nodeId`).
   trailing slash dropped, except `/`. Entries in `paths` are checked like the
   publish validator does: a trailing `/` (except `/` itself), an upper-case
   letter outside `%XX`, `%xx` with lower-case hex, and — from ma.45 — any
-  character a raw `pathname` never holds: only RFC 3986 path characters pass
-  (`A–Z a–z 0–9 - . _ ~ ! $ & ' ( ) * + , ; = : @ /` and `%XX`), so `? # " < >
-  \ ` { } | ^ [ ]`, space and non-ASCII make the node invalid. Such an entry
+  character a raw `pathname` never holds. The URL parser (WHATWG path
+  percent-encode set) encodes space, `" # < > ? \` { }` and turns `\` into `/`;
+  it leaves `| ^ [ ]` raw, so those pass. Allowed: `A–Z a–z 0–9 - . _ ~ ! $ &
+  ' ( ) * + , ; = : @ / | ^ [ ]` and `%XX`; anything else, non-ASCII included,
+  makes the node invalid. Such an entry
   never matches, and in `exclude` it would silently stop excluding (a pasted
   `/kontakt?utm_source=fb`). Prefix match with a segment boundary
   (`p` matches `p` and `p/…`). `"/"` in `paths` is the home page only.

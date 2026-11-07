@@ -3891,10 +3891,11 @@
   // końcu (poza samym /), tylko ASCII, wielkie litery wyłącznie w %XX, a w %XX
   // cyfry wielkie. Wpis, który nigdy nie spasuje, w exclude po cichu przestałby
   // wykluczać - więc cały węzeł odpada.
-  // ma.45: tylko znaki, które surowe pathname może zawierać (RFC 3986: unreserved,
-  // sub-delims, : @ / i %XX). ? # " < > \ ` { } | ^ [ ] i spacja nigdy w nim
-  // nie stoją - wpis z nimi (np. wklejone /kontakt?utm_source=fb) nigdy nie pasuje.
-  var PATH_CHARS_RE = /^[A-Za-z0-9\-._~!$&'()*+,;=:@\/%]+$/;
+  // ma.45: tylko znaki, które surowe pathname może zawierać. Parser URL (WHATWG,
+  // path percent-encode set) koduje spację, " # < > ? ` { }, a \ zamienia na /;
+  // | ^ [ ] zostawia surowe, więc te przechodzą. Wpis ze znakiem, którego
+  // pathname nie ma (np. wklejone /kontakt?utm_source=fb), nigdy nie pasuje.
+  var PATH_CHARS_RE = /^[A-Za-z0-9\-._~!$&'()*+,;=:@\/%|^\[\]]+$/;
 
   function pathEntryOk(x) {
     if (typeof x !== 'string' || x.length < 1 || x.length > 200 || x.charAt(0) !== '/') return false;
