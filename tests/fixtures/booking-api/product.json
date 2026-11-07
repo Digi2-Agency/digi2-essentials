@@ -2,6 +2,9 @@
   "contract_version": 1,
   "route": "GET /api/v1/public/sites/{public_key}/products/{ref}",
   "status": 200,
+  "query": {
+    "lang": "de"
+  },
   "nullable": [
     "slug",
     "name",

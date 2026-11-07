@@ -203,7 +203,8 @@
       "name": "request_not_allowed",
       "status": 409,
       "body": {
-        "detail": "This booking is already closed"
+        "detail": "This booking is already closed",
+        "reason": "request_not_allowed"
       }
     },
     {
@@ -211,7 +212,8 @@
       "status": 409,
       "exact": true,
       "body": {
-        "detail": "A request of this kind is already waiting for a decision"
+        "detail": "A request of this kind is already waiting for a decision",
+        "reason": "request_already_waiting"
       }
     },
     {

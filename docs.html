@@ -802,6 +802,8 @@
     <div class="sidebar-group-items">
       <a href="#booking">Overview</a>
       <a href="#booking-api">API Client &amp; Refusals</a>
+      <a href="#booking-languages">Languages</a>
+      <a href="#booking-list">The List and the Search</a>
       <a href="#booking-form">The Guest Form</a>
       <a href="#booking-calendar">The Calendar</a>
       <a href="#booking-price">The Price</a>
@@ -3126,13 +3128,15 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
     <p>Booking a rental straight from the page — the guest's form, the stay and the payment — answered by the <strong>public site API</strong> of 2destate (<code>/api/v1/public/sites/{public_key}/…</code>, contract <strong>v1</strong>). One flag on the loader tag loads the module.</p>
     <pre><code>&lt;script src=<span class="string">"…/digi2-loader.min.js"</span>
   <span class="attr">d2-booking</span>=<span class="string">"pk_live_…"</span>
-  <span class="attr">d2-booking-product</span>=<span class="string">"3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"</span>&gt;&lt;/script&gt;</code></pre>
+  <span class="attr">d2-booking-product</span>=<span class="string">"3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"</span>
+  <span class="attr">d2-booking-lang</span>=<span class="string">"en"</span>&gt;&lt;/script&gt;</code></pre>
 
     <table>
       <tr><th>Attribute</th><th>Element</th><th>What it does</th></tr>
       <tr><td><code>d2-booking="pk_…"</code></td><td>loader tag</td><td><strong>Site key.</strong> Public and non-secret — it belongs in the page's HTML. The backend protects itself with the key's domain allowlist, rate limits and prices computed server-side, so there is nothing to hide. Read with <code>getAttribute</code>, never <code>digi2.attr</code>: a key is not a responsive value.</td></tr>
       <tr><td><code>d2-booking-api="&lt;base&gt;"</code></td><td>loader tag</td><td>API base address. Default <code>https://api.2destate.com/api/v1</code>. <code>https</code> only (<code>http://localhost</code> while building); anything else is a console warning and the default. Read raw — an address may legally contain <code>;</code> and <code>@</code>.</td></tr>
       <tr><td><code>d2-booking-product="&lt;uuid|slug&gt;"</code></td><td>loader tag, form, calendar or widget</td><td>Product (apartment) this page books — a uuid or a slug. The calendar may pick another one. <strong>Optional:</strong> with no attribute anywhere the module reads <code>?apartament=&lt;slug&gt;</code> off the address, which is how one booking page serves a whole CMS collection (<code>/rezerwacja?apartament=apartament-rynek-wroclaw</code>). An attribute always beats the address.</td></tr>
+      <tr><td><code>d2-booking-lang="&lt;code&gt;"</code></td><td>loader tag</td><td>The language the guest reads — <code>pl</code>, <code>en</code>, <code>de</code> or <code>uk</code>, and one of the languages the key allows (<code>/config</code> <code>languages</code>). <strong>Optional:</strong> without it the key's <code>default_language</code> decides, and <code>&lt;html lang&gt;</code> is honoured the same way. A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default — an explicit attribute refused that way says so in the console, <code>&lt;html lang&gt;</code> quietly. When <code>&lt;html lang&gt;</code> <strong>wins</strong> over the key's default, the console says so once (Webflow's default <code>lang="en"</code> would otherwise switch the widget unnoticed). Read with <code>digi2.attr</code>. See <a href="#booking-languages">Languages</a>.</td></tr>
       <tr><td class="muted" colspan="3">A reference is resolved <strong>once per visit</strong> through <code>GET /products/&lt;ref&gt;</code> — the only route of the contract whose path takes a reference — and the <code>id</code> of that answer is what availability, quote and bookings get, since all three are spelled <code>{product_id}</code>. The same answer carries <code>pet_fee</code>. A lookup that is refused is logged and the reference goes out as the page wrote it; the backend then decides, exactly as it would have anyway.</td></tr>
     </table>
     <p class="muted">Every <code>d2-booking-*</code> attribute loads the one <code>booking</code> module — like the <code>d2-ma-*</code> family, and unlike an unknown <code>d2-x</code>, which the loader still turns into a module <code>x</code>.</p>
@@ -3147,7 +3151,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
     <pre><code>{ <span class="prop">ok</span>: <span class="keyword">true</span>,  <span class="prop">status</span>: <span class="num">200</span>, <span class="prop">data</span>: { … } }
 { <span class="prop">ok</span>: <span class="keyword">false</span>, <span class="prop">status</span>: <span class="num">409</span>, <span class="prop">reason</span>: <span class="string">'period_taken'</span>, <span class="prop">message</span>: <span class="string">'Ten termin…'</span>,
   <span class="prop">field</span>: <span class="string">'phone'</span>, <span class="prop">violations</span>: [<span class="string">'period_taken'</span>], <span class="prop">retryAfter</span>: <span class="num">45</span> }</code></pre>
-    <p><code>reason</code> is the typed reason from the contract's <code>errors.json</code> and the only thing the module acts on. The backend's own <code>detail</code> / <code>detail.message</code> sentence is <strong>never shown to the guest</strong> — it is written for logs, in whatever language the API speaks. <code>message</code> is always our own sentence, and a reason the module has never heard of still gets one.</p>
+    <p><code>reason</code> is the typed reason from the contract's <code>errors.json</code> and the only thing the module acts on. The backend's own <code>detail</code> / <code>detail.message</code> sentence is <strong>never shown to the guest</strong> — it is written for logs, in whatever language the API speaks. <code>message</code> is always our own sentence, in the language the guest reads (<a href="#booking-languages">Languages</a>), and a reason the module has never heard of still gets one.</p>
 
     <table>
       <tr><th>Answer</th><th><code>reason</code></th></tr>
@@ -3156,13 +3160,235 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td>400</td><td><code>invalid_request</code> (<code>invalid_stay</code> where the caller says so)</td></tr>
       <tr><td>403</td><td><code>origin_not_allowed</code></td></tr>
       <tr><td>404</td><td>per route: <code>site_key_not_found</code>, <code>product_not_found</code>, <code>booking_not_found</code></td></tr>
-      <tr><td>409 with a plain sentence</td><td>per route: <code>request_not_allowed</code>, <code>request_already_waiting</code></td></tr>
+      <tr><td>409 with a plain sentence</td><td>the top-level <code>reason</code> beside it when there is one (<code>/requests</code>: <code>request_not_allowed</code> or <code>request_already_waiting</code>), otherwise per route</td></tr>
       <tr><td>413 / 429</td><td><code>request_too_large</code> / <code>too_many_requests</code> (+ <code>retryAfter</code> seconds from <code>Retry-After</code>)</td></tr>
       <tr><td>502</td><td><code>payment_provider_unavailable</code> on the <strong>two payment routes only</strong> — <code>errors.json</code> documents that refusal for them alone. A bad gateway on the calendar or the price is a <code>server_error</code>: telling a guest who has not touched a payment that the payment provider is down is a lie.</td></tr>
       <tr><td>5xx, unreadable body</td><td><code>server_error</code>, <code>bad_response</code></td></tr>
       <tr><td><code>fetch</code> rejected</td><td><code>network_error</code></td></tr>
     </table>
     <p class="muted">A refusal from a domain outside the key's allowlist carries no <code>Access-Control-Allow-Origin</code>, so the browser never lets the page read it — in a browser it looks exactly like a dead connection and is shown as one. That is the single refusal the module cannot name.</p>
+  </section>
+
+  <section id="booking-languages">
+    <h2>Booking — Languages</h2>
+    <p>Every sentence a guest reads lives in a <strong>dictionary</strong>, one per language: a flat <code>key → sentence</code> table in the same shape as the portal's i18next JSON, so the same key is greppable on both sides. The module has no dependencies, so these tables are the whole of its translation. Shipped today: <strong>pl, en, de, uk</strong> — the four languages the portal starts with. Polish is the original wording and English was written beside it; <strong>German and Ukrainian are machine translations awaiting a native reading</strong>, so read them before you put a German or Ukrainian page in front of guests.</p>
+    <pre><code>&lt;script src=<span class="string">"…/digi2-loader.min.js"</span> <span class="attr">d2-booking</span>=<span class="string">"pk_live_…"</span> <span class="attr">d2-booking-lang</span>=<span class="string">"en"</span>&gt;&lt;/script&gt;</code></pre>
+    <table>
+      <tr><th>Order</th><th>Where the language comes from</th></tr>
+      <tr><td>1</td><td><code>d2-booking-lang</code> — when the key allows it <strong>and</strong> the module has a dictionary for it</td></tr>
+      <tr><td>2</td><td><code>&lt;html lang&gt;</code> (<code>en-GB</code> → <code>en</code>) — under the same two conditions</td></tr>
+      <tr><td>3</td><td>the key's <code>default_language</code> from <code>/config</code></td></tr>
+      <tr><td class="muted" colspan="2">A language the key does not allow — or one no dictionary covers — is refused in favour of the default, and an explicit <code>d2-booking-lang</code> refused that way says so in the console: half a page in German promises a service the owner cannot give. A key whose <code>/config</code> lists no <code>languages</code> at all is not policed (nothing to check against): the attribute stands and everything else stays on the key's default. The default itself is held to the same rule: a <code>default_language</code> no dictionary covers falls back to <code>pl</code> and says so in the console, so the sentences and every <code>Intl</code> format stay in one language.</td></tr>
+    </table>
+    <p>The chosen language is also the booking's <code>locale</code> (so the portal's e-mails match the page), what every <code>Intl</code> format follows — the amounts, the percentages, the month and weekday names, and which day a week starts on — and what the module <strong>tells the API</strong> it is in.</p>
+    <h3>What the API is told</h3>
+    <p>Four routes of the contract take <code>?lang=&lt;code&gt;</code> and get it, so the answers come back in the language the guest is reading. Without it an answer comes back in the key's <code>default_language</code>, which is why a page in any other language has to send it; <code>Accept-Language</code> the backend reads deliberately <strong>not</strong>.</p>
+    <table>
+      <tr><th>Route</th><th>What the language changes</th></tr>
+      <tr><td><code>GET /products</code></td><td>the <code>name</code> and <code>description</code> of every card. The list itself does not depend on the language: the same page in German shows the same places</td></tr>
+      <tr><td><code>GET /products/&lt;ref&gt;</code></td><td>the <code>name</code> and <code>description</code> of that one place</td></tr>
+      <tr><td><code>GET /products/&lt;id&gt;/availability</code></td><td>the <code>product_name</code> of the window</td></tr>
+      <tr><td><code>POST /products/&lt;id&gt;/bookings</code></td><td>the same — <strong>and</strong> the language is recorded on the booking: every later e-mail that guest gets is written in it, and the portal links in those e-mails open in it</td></tr>
+      <tr><td class="muted" colspan="2">Each field falls back on its own: a translation with a name but no description does not blank the description, and pictures never depend on the language. <strong>No other route takes the parameter</strong> — <code>/config</code>, <code>quote</code>, <code>checkout-session</code>, <code>status</code>, <code>manage</code>, <code>requests</code> and <code>balance-checkout</code> pin the query they accept, and <code>GET /bookings/&lt;id&gt;/manage</code> is deliberately without it: its <code>product_name</code> follows the language of that booking, which is the language of the e-mail the guest clicked. <code>/config</code> is read <em>before</em> the language is settled (its own answer is what settles it) and carries none either.</td></tr>
+    </table>
+    <p>What goes out is the language the module <strong>really renders in</strong>, never the raw <code>d2-booking-lang</code>: on a page whose asked language the key refused, the sentences are the default and so is the parameter, because a guest must not read German sentences beside Polish names or the reverse. The backend narrows the value to the key's <code>languages</code> all the same, so a value it cannot use (empty, <code>klingon</code>, absurdly long) is <strong>ignored and never a refusal</strong>.</p>
+    <table>
+      <tr><th>Case</th><th>What happens</th></tr>
+      <tr><td>a key missing from one dictionary</td><td>read in the next language of the chain (asked → the key's default → <code>pl</code>), so the page has no hole</td></tr>
+      <tr><td>a key no dictionary has</td><td>nothing is rendered and the console names the key — a guest must never read <code>manage_label_nights</code></td></tr>
+      <tr><td>a <code>{placeholder}</code> with no value</td><td>the whole sentence is dropped and the caller falls back to one that needs none — never a printed brace</td></tr>
+      <tr><td>a counted word</td><td>one key per form (<code>nights_one</code> / <code>nights_few</code> / <code>nights_many</code> in Polish and Ukrainian, <code>nights_one</code> / <code>nights_other</code> in English and German); which one a number takes is the <code>plural</code> function <strong>of that dictionary</strong>, which is why Ukrainian can keep its own three-form rule — it says <em>21 ніч</em> where Polish says <em>21 nocy</em>. Counted today: <code>nights</code> and <code>years</code> (the child-age limit)</td></tr>
+      <tr><td>a <code>reason</code>, a price-line <code>kind</code>, a booking <code>status</code>, a request kind or a price unit the dictionary does not know</td><td>shown as the answer's own value (a line kind) or not at all (a status), and never reported: those come from the backend, which may name things this version has not heard of</td></tr>
+    </table>
+    <p>The <strong>browser-side form check</strong> says its sentences out of the same tables, the four it writes itself included: <code>adults_required</code> (children count into the party), <code>child_age_max</code>, <code>child_ages_count</code> and <code>too_many_pets_over_threshold</code> next to <code>required</code>, <code>email</code> and <code>number</code>. Nothing a guest can read is a literal in the code.</p>
+    <p>One sentence quotes a label of the portal's e-mail, so the two have to agree: <code>manage_balance_elsewhere</code> names the balance link — <code>„Dopłata”</code> (pl), <code>“Balance”</code> (en), <code>„Restzahlung“</code> (de), <code>«Доплата»</code> (uk). Those four strings are the contract for the portal's own translation; an e-mail that labels that link anything else sends the guest hunting in his inbox.</p>
+    <pre><code><span class="fn">digi2.booking.language</span>();                <span class="comment">// 'pl' | 'en' | 'de' | 'uk' — what the guest reads</span>
+<span class="fn">digi2.booking.text</span>(<span class="string">'submit_label'</span>);      <span class="comment">// one sentence out of the dictionary</span>
+<span class="fn">digi2.booking.text</span>(<span class="string">'nights'</span>, { <span class="prop">count</span>: <span class="num">21</span> }); <span class="comment">// 'nocy' / 'nights' / 'Nächte' / 'ніч'</span>
+<span class="fn">digi2.booking.texts</span>(<span class="string">'uk'</span>);               <span class="comment">// that language's own table (a copy)</span></code></pre>
+  </section>
+
+  <section id="booking-list">
+    <h2>Booking — The List of Places and the Search</h2>
+    <pre><code>&lt;div <span class="attr">d2-booking-results</span>&gt;
+  &lt;a <span class="attr">d2-booking-template</span> <span class="attr">d2-booking-link</span>&gt;
+    &lt;img <span class="attr">d2-booking-bind</span>=<span class="string">"image"</span>&gt;
+    &lt;h3 <span class="attr">d2-booking-bind</span>=<span class="string">"name"</span>&gt;&lt;/h3&gt;
+    &lt;span <span class="attr">d2-booking-bind</span>=<span class="string">"city_line"</span>&gt;&lt;/span&gt;
+    &lt;span <span class="attr">d2-booking-bind</span>=<span class="string">"price"</span>&gt;&lt;/span&gt;
+  &lt;/a&gt;
+&lt;/div&gt;
+&lt;button <span class="attr">d2-booking-more</span>&gt;Pokaż więcej&lt;/button&gt;
+&lt;span <span class="attr">d2-booking-count</span>&gt;&lt;/span&gt;
+&lt;div <span class="attr">d2-booking-results-empty</span>&gt;Nic nie znaleźliśmy.&lt;/div&gt;</code></pre>
+    <p><code>GET /products</code> answers the list, and the row <em>you</em> built is the row the guest reads: <code>[d2-booking-template]</code> is remembered, taken off the page before anything shows, and cloned once per entry — markup, classes and nesting exactly as the Designer wrote them. The clone loses <code>d2-booking-template</code> and gains <code>d2-booking-item</code>, so a template never stands as an empty card above the real ones.</p>
+    <p>Rows are <strong>appended</strong> to the element the pattern stood in — the template's parent, or in a Collection List the parent of its Collection Item — and to <code>[d2-booking-results]</code> itself only without a template, so a button, a count or an empty state belongs <strong>next to</strong> the list, not inside it — which is where a Webflow layout leaves them anyway. One put inside is still filled in and never removed; the rows simply follow it. With one list on the page the controls may stand anywhere; with two, each list has to hold its own, because a button standing between them belongs to neither.</p>
+
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Section <span class="muted">— your layout</span></span>
+      </div>
+      <div class="wf-children">
+        <div class="wf-el">
+          <span class="wf-elname">Form Block <span class="muted">(the search, optional)</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search</span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-location = Wrocław <span class="muted">(optional, pins the city)</span></span>
+        </div>
+        <div class="wf-children">
+          <div class="wf-el">
+            <span class="wf-elname">Input <span class="muted">(type date)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search-field = check_in</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Input <span class="muted">(type date)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search-field = check_out</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Input <span class="muted">(type number)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search-field = adults</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Input <span class="muted">(type number)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search-field = children</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Select <span class="muted">— your own list of cities</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-search-field = location</span>
+          </div>
+          <div class="wf-el"><span class="wf-elname">Submit button <span class="muted">— "Szukaj"</span></span></div>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Div block <span class="muted">(the list; Grid or Flex)</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-results</span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-results-limit = 24 <span class="muted">(optional)</span></span>
+        </div>
+        <div class="wf-children">
+          <div class="wf-el">
+            <span class="wf-elname">Link block <span class="muted">— one card, styled by you</span></span>
+            <span class="chip chip--class"><span class="k">class</span> karta</span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-template</span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-link = /apartamenty/{slug}</span>
+          </div>
+          <div class="wf-children">
+            <div class="wf-el">
+              <span class="wf-elname">Image</span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-booking-bind = image</span>
+            </div>
+            <div class="wf-el">
+              <span class="wf-elname">Heading</span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-booking-bind = name</span>
+            </div>
+            <div class="wf-el">
+              <span class="wf-elname">Text block</span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-booking-bind = city_line</span>
+            </div>
+            <div class="wf-el">
+              <span class="wf-elname">Text block</span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-booking-bind = price</span>
+            </div>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Text block <span class="muted">(the refusal sentence — inside the list)</span></span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-booking-results-message</span>
+          </div>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Button <span class="muted">— "Pokaż więcej"</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-more</span>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Text block</span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-count</span>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Div block <span class="muted">— "Nic nie znaleźliśmy."</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-booking-results-empty</span>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <tr><th>Attribute</th><th>Element</th><th>What it does</th></tr>
+      <tr><td><code>d2-booking-results</code></td><td>any Div</td><td>The list. Read once per visit, on load.</td></tr>
+      <tr><td><code>d2-booking-results-limit="&lt;n&gt;"</code></td><td>the list</td><td>How many places one page asks for. Default <code>24</code>; the key has its own maximum.</td></tr>
+      <tr><td><code>d2-booking-results-link="&lt;shape&gt;"</code></td><td>the list</td><td>The address shape every card of this list leads to — see below. Read raw: an address may legally contain <code>;</code> and <code>@</code>.</td></tr>
+      <tr><td><code>d2-booking-template</code></td><td>any element</td><td>The row. Taken out of the page and cloned per place; never shown itself. <strong>Every</strong> one of them leaves the page, the first is the pattern — a card built inside a Collection List carries the attribute on every rendered item, and the module says in the console how many it found. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave.</td></tr>
+      <tr><td><code>d2-booking-bind="&lt;field&gt;"</code></td><td>any element, incl. the row</td><td>One field of the entry, as text — see the table below.</td></tr>
+      <tr><td><code>d2-booking-link[="&lt;shape&gt;"]</code></td><td>Link, or the row itself</td><td>Where this card leads. A whole card is usually one link, so the attribute may sit on the template itself.</td></tr>
+      <tr><td><code>d2-booking-more</code></td><td>Button</td><td>Asks for the next page and <strong>appends</strong> it. Hidden once the answer says <code>has_more</code> is false. Disabled while a page is in flight, and after a <code>429</code> for exactly <code>Retry-After</code> seconds. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a <code>429</code> wait it is down together with the search button.</td></tr>
+      <tr><td><code>d2-booking-count</code></td><td>any element</td><td>The <code>count</code> the answer carries — all the places that match, not the ones on screen.</td></tr>
+      <tr><td><code>d2-booking-results-empty</code></td><td>any element</td><td>Shown only when the answer has nothing. Hidden until the answer arrives, and hidden on a refusal: a refusal is not an offer with nothing in it.</td></tr>
+      <tr><td><code>d2-booking-results-message</code></td><td>any element <strong>inside</strong> the list</td><td>The sentence of a refusal, in the module's own words. A missing one is built inside the list, with <code>role="status"</code> and <code>aria-live="polite"</code>, and marked <code>d2-booking-built</code>.</td></tr>
+      <tr><td><code>d2-booking-item</code></td><td>set by the module</td><td>On every rendered row. Only these are cleared when the list is read again.</td></tr>
+      <tr><td><code>d2-booking-empty</code></td><td>set by the module</td><td>On a slot the answer had nothing for.</td></tr>
+      <tr><td><code>d2-booking-results-state</code></td><td>set by the module</td><td><code>loading</code> | <code>ready</code> | <code>empty</code> | <code>error</code>.</td></tr>
+      <tr><td><code>d2-booking-results-drawn</code></td><td>set by the module</td><td>This list had no template, so the module drew the cards itself.</td></tr>
+      <tr><td><code>d2-booking-busy</code></td><td>set by the module</td><td>A page of the list is in flight; the more-button is disabled meanwhile.</td></tr>
+    </table>
+
+    <h3>What binds, and how</h3>
+    <p><strong>Every scalar field of the contract binds by its own name</strong> — <code>name</code>, <code>project_name</code>, <code>city</code>, <code>city_line</code>, <code>address_line</code>, <code>rooms</code>, <code>area</code>, <code>floor</code>, <code>beds</code>, <code>max_guests</code>, <code>description</code>, <code>rental_kind</code>, <code>timezone</code>, <code>latitude</code>, <code>longitude</code>, <code>min_units</code>, <code>max_units</code>, <code>payment_mode</code>… — so a page is never limited to a list somebody hardcoded. Four read differently:</p>
+    <table>
+      <tr><th>Value</th><th>What the module writes</th></tr>
+      <tr><td><code>image</code></td><td><code>image_url</code>. On an <code>&lt;img&gt;</code> the <code>src</code>, with the place's <code>name</code> as the <code>alt</code>; anywhere else the <code>background-image</code>. An address that does not read as the address of a picture (<code>https:</code>, <code>/…</code> or <code>data:image/</code>, and no quote, bracket or backslash) is <strong>no picture at all</strong> and is reported in the console.</td></tr>
+      <tr><td><code>price</code></td><td>The entry's own <code>price.price</code> in the entry's own <code>currency</code>, through the same <code>Intl</code> formatting as the quote. The module computes no amount here either.</td></tr>
+      <tr><td><code>price_unit</code></td><td>What that amount is the price of ("za noc"). A unit the module does not know shows nothing rather than a bare code.</td></tr>
+      <tr><td>a list of scalars (<code>amenities</code>, <code>allowed_units</code>, <code>image_urls</code>)</td><td>joined with commas</td></tr>
+      <tr><td><code>null</code>, missing, <code>""</code>, an object (<code>pet_fee</code>, <code>prices</code>)</td><td>nothing, and the slot is marked <code>d2-booking-empty</code> — never the word <code>null</code> and never <code>[object Object]</code>. Eighteen fields of the contract are nullable, so this is most pages, not an edge case. A name the answer does not carry at all (a typo, or <code>constructor</code>) answers nothing too: the field has to be the entry's own.</td></tr>
+      <tr><td><code>false</code> (<code>requires_approval</code>)</td><td>empties the slot like a missing value; <code>true</code> leaves the slot <strong>exactly as you built it</strong> — the text and whatever markup stands in it, an icon beside "na zapytanie" included — and does not mark it empty. Nobody reads "false" in a list of apartments.</td></tr>
+      <tr><td><code>0</code> (the ground <code>floor</code>)</td><td><code>0</code>. A declared zero is an answer, not a gap.</td></tr>
+    </table>
+    <p class="muted">Nothing out of the answer is ever markup: a value goes in with <code>textContent</code>, an address with <code>setAttribute</code>, and a picture only once its address reads as one. These names come out of a CMS this module does not own.</p>
+
+    <h3>Where a card leads</h3>
+    <p>By default <code>?apartament=&lt;slug&gt;</code> — the very query the booking page reads — so the list and the booking page fit together with nothing written. A client whose apartments are CMS pages under their own addresses writes the shape instead, on the link or on the whole list:</p>
+    <table>
+      <tr><th>Shape</th><th>href</th></tr>
+      <tr><td>none</td><td><code>?apartament=apartament-rynek-wroclaw</code></td></tr>
+      <tr><td><code>/apartamenty/{slug}</code></td><td><code>/apartamenty/apartament-rynek-wroclaw</code></td></tr>
+      <tr><td><code>/rezerwacja</code> (no placeholder)</td><td><code>/rezerwacja?apartament=apartament-rynek-wroclaw</code></td></tr>
+    </table>
+    <p><code>{slug}</code> and <code>{id}</code> are the two references the booking page can resolve, both escaped on the way out, and each placeholder is the field it names and nothing else. An entry with no reference for the shape it is given — <code>slug</code> is <code>null</code> in the contract and a UUID in a <code>{slug}</code> path is a CMS address that cannot exist — leaves the card <strong>without an <code>href</code></strong> and marked <code>d2-booking-empty</code>, rather than pointing at a page that is not there.</p>
+
+    <h3>Paging, and a page that was refused</h3>
+    <p>Paging is <code>limit</code> and <code>offset</code>. The first page replaces the rows; every later one is appended, so the guest keeps what they were already reading. A page that was refused <strong>leaves the offset where it was</strong> — the next click asks for that same page again instead of skipping it — and says why in <code>[d2-booking-results-message]</code>, in the module's own words, with <code>[d2-booking-results-empty]</code> taken down: "nothing found" and "we could not ask" never stand together. A <code>400</code> on this route is about what the filter asked for: the period (<code>invalid_stay</code>), or the period and the city once the search named one (<code>invalid_search</code>). A <code>429</code> is the one refusal that holds the button: it waits exactly <code>Retry-After</code> seconds (read up to 3600), because opening it at once only buys the next <code>429</code>. With two lists waiting, the search opens when the <strong>last</strong> wait ends. A field built twice counts as visible when it has an <code>offsetParent</code> or client rects, so a copy in a <code>position: fixed</code> drawer is the one the guest sees.</p>
+    <pre><code>digi2.<span class="fn">on</span>(<span class="string">'booking:list'</span>, fn)   <span class="comment">// ({ count, shown, has_more }) or ({ reason, status })</span></code></pre>
+
+    <h3>The search above the list</h3>
+    <pre><code>&lt;form <span class="attr">d2-booking-search</span>&gt;
+  &lt;input type=<span class="string">"date"</span>   <span class="attr">d2-booking-search-field</span>=<span class="string">"check_in"</span>&gt;
+  &lt;input type=<span class="string">"date"</span>   <span class="attr">d2-booking-search-field</span>=<span class="string">"check_out"</span>&gt;
+  &lt;input type=<span class="string">"number"</span> <span class="attr">d2-booking-search-field</span>=<span class="string">"adults"</span> value=<span class="string">"2"</span>&gt;
+  &lt;input type=<span class="string">"number"</span> <span class="attr">d2-booking-search-field</span>=<span class="string">"children"</span>&gt;
+  &lt;select <span class="attr">d2-booking-search-field</span>=<span class="string">"location"</span>&gt;…&lt;/select&gt;
+  &lt;button type=<span class="string">"submit"</span>&gt;Szukaj&lt;/button&gt;
+&lt;/form&gt;</code></pre>
+    <p>A submit searches <strong>without reloading the page</strong>: every list on the page goes back to its first page with the new filter, and the search goes into the page address — so a reload keeps it and the link opens the same result. The module reads those parameters on start, before the first page of any list, and fills the form with them. The form and the address are <strong>merged</strong>: a field the form carries answers for its own key even when it is empty (you can see that field, so clearing it is an answer), and every key the form has no field for keeps what the address said — so a form built around the calendar and a party field keeps the city of the link it was opened with.</p>
+    <table>
+      <tr><th>Attribute</th><th>Element</th><th>What it does</th></tr>
+      <tr><td><code>d2-booking-search</code></td><td>Form Block</td><td>The search. The module takes the submit; Webflow's own form handler never runs.</td></tr>
+      <tr><td><code>d2-booking-search-field="&lt;name&gt;"</code></td><td>Input, Select</td><td><code>check_in</code> | <code>check_out</code> | <code>adults</code> | <code>children</code> | <code>location</code>. Any other name is ignored and reported in the console.</td></tr>
+      <tr><td><code>d2-booking-location="&lt;city&gt;"</code></td><td>the search form, or a list</td><td>Pins the city: the guest cannot change it. On a list it wins for that list — which is how a page of one city is built, with no search on it at all. Read raw: a name may legally contain <code>;</code> and <code>@</code>.</td></tr>
+      <tr><td><code>d2-booking-pinned</code></td><td>set by the module</td><td>On a <code>location</code> field under a pin: its value is the pinned city and the field is <code>disabled</code>.</td></tr>
+      <tr><td><code>d2-booking-search-option</code></td><td>set by the module</td><td>On an <code>&lt;option&gt;</code> the module added to a <code>&lt;select&gt;</code>, because the city it had to show — out of a link or a pin — was not among the page's own options.</td></tr>
+      <tr><td><code>d2-booking-search-bound</code></td><td>set by the module</td><td>This form's submit is taken; a second <code>apply()</code> does not take it twice.</td></tr>
+    </table>
+    <table>
+      <tr><th>What goes out</th><th>Rule</th></tr>
+      <tr><td><code>check_in</code> + <code>check_out</code></td><td>Both or neither — the route takes them together. A typed time is dropped (a filter asks about days) and text that is not a date narrows nothing. Half a period, or a departure that is not after the arrival, asks the API <strong>nothing</strong> and says one sentence in <code>[d2-booking-results-message]</code>.</td></tr>
+      <tr><td><code>guests</code></td><td><strong>adults + children.</strong> The route takes no <code>adults</code> and no <code>children</code>, so nothing can contradict the sum (a <code>guests</code> that does is a <code>422</code>). A page that asks about neither sends no <code>guests</code> at all.</td></tr>
+      <tr><td><code>location</code></td><td>The pinned city if there is one, otherwise whatever the <code>location</code> field says. A pin beats the field and the address alike.</td></tr>
+      <tr><td><code>limit</code>, <code>offset</code></td><td>The list's own paging, back at the first page.</td></tr>
+    </table>
+    <p>The period may be <strong>typed</strong> into the two date fields or <strong>picked</strong> in a <code>[d2-booking-calendar]</code> standing inside the search form — the same calendar the booking form uses, and the only one: the search reads what it already announced. A typed field wins over it, because a value the guest can see is what they think they are searching for.</p>
+    <p>The address keeps the two questions the page asked (<code>?check_in=…&amp;check_out=…&amp;adults=2&amp;children=1&amp;location=Wrocław</code>), not the sum we send, so a shared link can put the party back into the form. Everything else the address carried — <code>?apartament=</code>, a campaign, a language — stays exactly as it was, and a pinned city is never written: it belongs to the page, not to the guest's search. The entry is <strong>replaced</strong>, not pushed, so Back still leaves the page instead of walking through every narrowing of a filter.</p>
+    <p>A <code>&lt;select&gt;</code> takes only a value one of <strong>its own</strong> <code>&lt;option&gt;</code>s carries — a browser answers anything else with <code>selectedIndex = -1</code>, leaving the field blank and reading back empty. So a shared link naming a city the page does not offer (<code>?location=Gdańsk</code> over a select of two cities) would lose that city both off the screen and out of the merge, and the guest would get the whole offer under an address still promising one city. <strong>The link wins:</strong> the module adds the one <code>&lt;option&gt;</code> it needs (marked <code>d2-booking-search-option</code>) and selects it, so the result, the field and the address name the same city — even when that result is empty. The same repair shows a pinned city a select does not offer. The options the page wrote stay the choice the guest makes; the added one is the search they arrived with. A text <code>&lt;input&gt;</code> takes any city as it is and is never touched.</p>
+    <pre><code>digi2.<span class="fn">on</span>(<span class="string">'booking:search'</span>, fn)   <span class="comment">// ({ search: { check_in, check_out, guests, location } [, message] })</span></code></pre>
+    <p class="muted">A search that is refused says the module's own sentence and never the API's: <code>invalid_stay</code> ("Sprawdź daty pobytu."), <code>invalid_search</code> when the filter also named a city, and a <code>429</code> says how long to wait from its <code>Retry-After</code>. An answer still in flight when a new search goes out is dropped: it would show places nobody asked about and move the paging past the ones on screen.</p>
+    <p class="muted">A search that <strong>cannot go out</strong> leaves the filter in force exactly as it was: the rows on screen and the <code>offset</code> beside them keep belonging to the search they came from, so the next "more" cannot mix two result sets in one column. Two clicks on "Szukaj" ask <strong>once</strong> — a submit repeating a question whose first page is still in flight is ignored — while a submit after the answer came back always goes out, because that is a retry. A <code>[d2-booking-search]</code> searches the lists of its own page: on a page with no <code>[d2-booking-results]</code> nothing reloads and the console says so.</p>
+
+    <h3>A page that brought no template</h3>
+    <p>A bare <code>&lt;div d2-booking-results&gt;&lt;/div&gt;</code> gets cards the module draws itself — picture, name, city line, price and its unit, all inside one link — out of the same injected stylesheet and the same <code>--d2-booking-*</code> variables as the drawn widget. The rules are scoped to <code>[d2-booking-results][d2-booking-results-drawn]</code>, so a list you built keeps its own look down to the last card.</p>
   </section>
 
   <section id="booking-form">
@@ -3182,7 +3408,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td><code>d2-booking-field="…"</code></td><td>Input / Select / Textarea / Checkbox</td><td><code>name</code>, <code>email</code>, <code>phone</code>, <code>note</code>, <code>adults</code>, <code>children</code>, <code>child_ages</code>, <code>pets</code>, <code>pets_over_threshold</code>. Anything else is reported in the console and never sent.</td></tr>
       <tr><td><code>d2-booking-field-group</code></td><td>wrapper</td><td>Optional. Removed together with its field when the key does not ask for it, so the label goes with it. Without it only the field is removed. A group holding <strong>several</strong> fields where the others stay keeps its place: only the switched-off field and its own message slot go, so one <code>off</code> field never takes the guest count with it.</td></tr>
       <tr><td><code>d2-booking-error="&lt;field&gt;"</code></td><td>any element</td><td>Where that field's message is written; <code>"form"</code> is the message for the whole form. A missing one is built next to the field, marked <code>d2-booking-built</code>.</td></tr>
-      <tr><td><code>d2-booking-hint="&lt;field&gt;"</code></td><td>any element</td><td>Where a sentence the <strong>key</strong> decides goes. Today there is one: <code>pets_over_threshold</code> gets the product's <code>pet_fee</code> — the weight threshold, the amount and whether it is per stay or per night. Without it the question is unanswerable, because nothing on the page says what the threshold is. The drawn widget builds one; a form you built gets the sentence wherever you put the attribute. No <code>pet_fee</code> leaves the slot empty and marked <code>d2-booking-empty</code>, and a <code>weight_threshold_kg</code> of <code>null</code> drops the threshold wording instead of printing a hole.</td></tr>
+      <tr><td><code>d2-booking-hint="&lt;field&gt;"</code></td><td>any element</td><td>Where a sentence the <strong>key</strong> decides goes. Today there is one: <code>pets_over_threshold</code> gets the product's <code>pet_fee</code> — the weight threshold, the amount and whether it is per stay or per night. Without it the question is unanswerable, because nothing on the page says what the threshold is. The drawn widget builds one; a form you built gets the sentence wherever you put the attribute. No <code>pet_fee</code> in the answer takes the threshold field off the form, slot included: nothing on the page says what the threshold is. A failed product lookup keeps the field. A <code>weight_threshold_kg</code> of <code>null</code> drops the threshold wording instead of printing a hole.</td></tr>
       <tr><td><code>d2-booking-required</code></td><td>set by the module</td><td>On every field the key requires, with <code>aria-required="true"</code>.</td></tr>
       <tr><td><code>d2-booking-invalid</code></td><td>set by the module</td><td>On the field a message points at, with <code>aria-invalid="true"</code>.</td></tr>
       <tr><td><code>d2-booking-ready</code> / <code>-bound</code> / <code>-busy</code></td><td>set by the module</td><td><code>/config</code> applied / submit bound / a booking in flight — a second click is ignored, so an impatient guest never creates two holds on one period.</td></tr>
@@ -3225,10 +3451,12 @@ digi2.booking.<span class="fn">apply</span>()                       <span class=
 digi2.<span class="fn">on</span>(<span class="string">'booking:ready'</span>,   fn)          <span class="comment">// ({ config })</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:stay'</span>,    fn)          <span class="comment">// ({ stay }) — chosen or cleared</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:quote'</span>,   fn)          <span class="comment">// ({ quote, reason }) — price answered or refused</span>
-digi2.<span class="fn">on</span>(<span class="string">'booking:created'</span>, fn)          <span class="comment">// ({ booking, form })</span>
+digi2.<span class="fn">on</span>(<span class="string">'booking:created'</span>, fn)          <span class="comment">// ({ booking, form }) — booking without customer_* fields</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:payment'</span>, fn)          <span class="comment">// ({ booking_id, url, session, form }) — leaving for the checkout</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:refused'</span>, fn)          <span class="comment">// ({ reason, status, form })</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:return'</span>,  fn)          <span class="comment">// ({ booking_id, state, status }) — the return page read it</span>
+digi2.<span class="fn">on</span>(<span class="string">'booking:list'</span>,    fn)          <span class="comment">// ({ count, shown, has_more }) or ({ reason, status })</span>
+digi2.<span class="fn">on</span>(<span class="string">'booking:search'</span>,  fn)          <span class="comment">// ({ search: { check_in, check_out, guests, location } [, message] })</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:manage'</span>,  fn)          <span class="comment">// ({ booking_id, booking })</span>
 digi2.<span class="fn">on</span>(<span class="string">'booking:request'</span>, fn)          <span class="comment">// ({ booking_id, request }) — a request was saved</span></code></pre>
   </section>
@@ -3295,7 +3523,7 @@ digi2.<span class="fn">on</span>(<span class="string">'booking:request'</span>, 
       <tr><th>Attribute</th><th>Element</th><th>What it does</th></tr>
       <tr><td><code>d2-booking-breakdown</code></td><td>any Div</td><td>Where the rows of the price go.</td></tr>
       <tr><td><code>d2-booking-line</code></td><td>row inside the breakdown</td><td>Optional <strong>template</strong>: the first one the page carries is remembered and cloned per line of the answer, so the price list keeps the styling of the site. Without one the module draws plain rows marked <code>d2-booking-built</code>.</td></tr>
-      <tr><td><code>d2-booking-line-label</code> / <code>-detail</code> / <code>-amount</code></td><td>inside the row</td><td>The name of the line / the quantity and the rate / the amount. A slot the template does not have is simply not filled.</td></tr>
+      <tr><td><code>d2-booking-line-label</code> / <code>-detail</code> / <code>-amount</code></td><td>inside the row</td><td>The name of the line / the quantity and the rate / the amount. A slot the template does not have is simply not filled. The answer's own <code>label</code> (the owner's season name, in the key's default language only) is shown only on a page in the key's <code>default_language</code>; on any other the dictionary's word for the <code>kind</code> stands in.</td></tr>
       <tr><td><code>d2-booking-line-kind</code> / <code>-negative</code></td><td>set by the module</td><td>The <code>kind</code> from the answer / the amount is below zero, so a discount can be coloured.</td></tr>
       <tr><td><code>d2-booking-total</code></td><td>any element</td><td>The total of the answer.</td></tr>
       <tr><td><code>d2-booking-deposit</code> / <code>d2-booking-balance</code></td><td>any element</td><td>What is paid now and what is left for later, from the <code>…_minor</code> fields.</td></tr>
@@ -3344,7 +3572,7 @@ digi2.<span class="fn">on</span>(<span class="string">'booking:request'</span>, 
     </table>
 
     <h3>The look is variables, not opinions</h3>
-    <p>Every colour and spacing rule in the stylesheet is scoped to <code>[d2-booking-widget]</code> (and to <code>[d2-booking-return]</code> / <code>[d2-booking-manage]</code>), nothing is <code>!important</code>, and every colour and measure is a CSS variable with a default. There is <strong>one</strong> unscoped rule and it is layout, not look: <code>[d2-booking-calendar-grid] [role=row] { display: grid; grid-template-columns: repeat(7, 1fr) }</code>. A month is seven columns or it is nothing, and that grid is markup the module built itself, so it can reach nothing you wrote. A page that only wants other colours sets one variable; a page that wants something else entirely writes its own CSS and wins on sight. The drawn parts never reach a calendar or a form you styled yourself.</p>
+    <p>Every colour and spacing rule in the stylesheet is scoped to <code>[d2-booking-widget]</code> (and to <code>[d2-booking-return]</code> / <code>[d2-booking-manage]</code> / <code>[d2-booking-results][d2-booking-results-drawn]</code>), nothing is <code>!important</code>, and every colour and measure is a CSS variable with a default. There is <strong>one</strong> unscoped rule and it is layout, not look: <code>[d2-booking-calendar-grid] [role=row] { display: grid; grid-template-columns: repeat(7, 1fr) }</code>. A month is seven columns or it is nothing, and that grid is markup the module built itself, so it can reach nothing you wrote. A page that only wants other colours sets one variable; a page that wants something else entirely writes its own CSS and wins on sight. The drawn parts never reach a calendar or a form you styled yourself.</p>
     <pre><code><span class="prop">[d2-booking-widget]</span> {
   <span class="attr">--d2-booking-accent</span>: <span class="string">#1f6f5c</span>;        <span class="comment">/* chosen days, the button */</span>
   <span class="attr">--d2-booking-accent-text</span>: <span class="string">#fff</span>;
@@ -3375,7 +3603,8 @@ digi2.<span class="fn">on</span>(<span class="string">'booking:request'</span>, 
     <h3>One booking per request</h3>
     <p>The submit button is really <code>disabled</code> on the first click, and the attempt is kept under the key of what the hold stands on: the product, the stay and the party. A second submit is handed the answer of the attempt already running, and a retry after a payment hiccup <strong>pays the booking that already exists</strong> instead of holding the period twice. Change the dates or the party and it is a different stay, so a different booking.</p>
     <p><strong>A corrected contact follows the booking.</strong> When the name, e-mail or phone changed since the booking was made, the module sends them to <code>POST /bookings/&lt;id&gt;/contact</code> before paying, so the confirmation and the link reach the address typed last. The route is proved with a <code>contact_token</code> from the booking answer, which stays inside the module: it is never on the booking object, in an event, in the address or in the log. Without a valid token (<code>404</code>) nothing is paid and the guest is told the details can no longer be changed.</p>
-    <p><strong>A lost answer is recovered.</strong> Every <code>POST …/bookings</code> carries an <code>Idempotency-Key</code> (UUID v4) tied to the exact body and at most 24 hours old, so a request that timed out here but landed there returns the same booking on retry, instead of being refused by the guest's own hold. A recovered booking with <code>status: "expired"</code> is not paid: the guest is told, and the next submit is a new request under a new key.</p>
+    <p><strong>A lost answer is recovered.</strong> Every <code>POST …/bookings</code> carries an <code>Idempotency-Key</code> (UUID v4) tied to the <strong>hold</strong> — product, period and party — and at most 24 hours old, and the retry repeats the body that key was first sent with. A request that timed out here but landed there returns the same booking on retry, instead of being refused by the guest's own hold — even when the guest corrected their e-mail in between: the booking comes back and the corrected contact follows through <code>/contact</code> before payment. A phone or name the guest emptied is sent as <code>null</code>, which is what clears it. A recovered booking with <code>status: "expired"</code> is not paid: the guest is told, and the next submit is a new request under a new key.</p>
+    <p class="muted"><code>booking:created</code> carries the booking without <code>customer_name</code>, <code>customer_email</code>, <code>customer_phone</code> and <code>customer_note</code>, so a GTM listener pushing it to the dataLayer sends no guest data. <code>Retry-After</code> is read up to 3600 seconds everywhere: past ~24.8 days a timer overflows and would open the button at once.</p>
     <p class="muted">Coming back from the checkout with the Back button re-opens the form: the browser may restore the page exactly as we left it, disabled button and all. The booking is remembered, so the next submit pays that one.</p>
 
     <h3>Every refusal by its reason</h3>
@@ -3509,6 +3738,31 @@ digi2.<span class="fn">on</span>(<span class="string">'booking:request'</span>, 
         <span class="wf-elname">Button (ask the owner / pay the balance)</span>
         <span class="chip chip--attr"><span class="k">Name</span> d2-booking-manage-action</span>
         <span class="chip chip--value"><span class="k">Value</span> refund | date_change | balance</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Div block — the list of places (Grid / Flex)</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-booking-results</span>
+        <span class="chip chip--note">← no value; one card inside it carries d2-booking-template</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Text block / Image inside the card</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-booking-bind</span>
+        <span class="chip chip--value"><span class="k">Value</span> name | city_line | price | price_unit | image | rooms | area | …</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Form block — the search above the list</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-booking-search</span>
+        <span class="chip chip--note">← no value; the submit searches without leaving the page</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Input / Select inside the search</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-booking-search-field</span>
+        <span class="chip chip--value"><span class="k">Value</span> check_in | check_out | adults | children | location</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">The search form, or the list itself (one city only)</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-booking-location</span>
+        <span class="chip chip--value"><span class="k">Value</span> Wrocław</span>
       </div>
     </div>
     <p class="muted">Webflow's own form handler never runs for a <code>[d2-booking-form]</code>: the module stops the submit on the form, before it reaches the document where Webflow listens, and sends the booking itself. d2-forms still blocks an invalid form, and listeners on the form itself still run. <strong>Anything that listens for <code>submit</code> on the document will not hear it</strong>, which includes a GTM form trigger: measure the booking with the <code>booking:created</code> event instead. Leave the Form block's success and error states in place — nothing on the page depends on them.</p>

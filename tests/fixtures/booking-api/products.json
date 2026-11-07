@@ -3,6 +3,7 @@
   "route": "GET /api/v1/public/sites/{public_key}/products",
   "status": 200,
   "query": {
+    "lang": "de",
     "check_in": "2027-05-01",
     "check_out": "2027-05-04",
     "guests": 2,

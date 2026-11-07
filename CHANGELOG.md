@@ -16,6 +16,364 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## Bez wydania — `d2-booking`: słowniki językowe `pl`, `en`, `de`, `uk` (etap 8)
+
+Każde zdanie, które czyta gość, siedzi teraz w **słowniku językowym** — po
+jednym na język, płaski `klucz → zdanie`, w tym samym kształcie co pliki
+i18next portalu (decyzja D7), żeby ten sam klucz dał się znaleźć po obu
+stronach. Moduł nie ma zależności, więc i18next w nim być nie może: te małe
+tablice to całość jego tłumaczenia. Są cztery języki, te same, z którymi
+startuje portal: **`pl`, `en`, `de`, `uk`**. Polskie zdania **nie zmieniły się
+ani o literę** — są przepisane jeden do jednego i przypięte w testach.
+
+- **`d2-booking-lang="de"`** na tagu loadera ustawia język, w którym gość czyta
+  stronę (`pl`, `en`, `de`, `uk`). Bez atrybutu decyduje `<html lang>`, gdy
+  klucz tym językiem mówi, a inaczej `default_language` klucza. Czytane przez
+  `digi2.attr`.
+- **Przeczytaj przed podbiciem wersji.** `<html lang>` wybiera teraz **słownik**,
+  a nie tylko formatowanie. Do tej pory moduł miał jedną tablicę zdań — polską —
+  więc `<html lang>` ustawiał wyłącznie `Intl` i `locale` rezerwacji, a gość
+  czytał polski tekst niezależnie od niego. Po tej zmianie strona z
+  Designerowym domyślnym `<html lang="en">`, której klucz ma włączony `en`
+  (dokładnie to, co ma przykładowy klucz kontraktu), przestawi **cały widget**
+  na angielski — bez żadnego atrybutu. Konsola mówi o tym raz („<html lang="en">
+  sets the booking language…”), gdy `<html lang>` odsuwa stronę od
+  `default_language` klucza. Jeśli strona ma
+  mówić po polsku, popraw `<html lang>` albo dopisz `d2-booking-lang="pl"`
+  **przed** podbiciem wersji.
+- Kolejność jest jedna: `d2-booking-lang` → `<html lang>` → `default_language`.
+  Język, na który **klucz nie pozwala** (`languages` z `/config`) — albo taki,
+  którego moduł nie ma w słowniku — wraca do domyślnego: pół strony po
+  niemiecku obiecuje usługę, której właściciel nie da. **W konsoli mówi o tym
+  wpisany atrybut** `d2-booking-lang`; `<html lang>` to cichsza wersja tego
+  samego pytania, więc odmowa tam jest cicha. Klucz, którego `/config` nie ma
+  `languages` wcale, nie jest pilnowany (nie ma z czym porównać): atrybut
+  zostaje w mocy, a wszystko inne działa jak dotąd.
+- Sam **domyślny język klucza jest pilnowany tak samo**: `default_language`,
+  którego moduł nie ma w słowniku (np. `fr`), wraca do `pl` i mówi o tym w
+  konsoli. Inaczej zdania wychodziłyby z polskiej tablicy, a każda data, nazwa
+  miesiąca i kwota byłyby sformatowane w języku, którego na stronie nikt nie
+  czyta — strona w dwóch językach naraz.
+- Wybrany język idzie też jako **`locale` rezerwacji** (maile z portalu zgadzają
+  się ze stroną), za nim idzie **każde formatowanie `Intl`** (kwoty, procenty,
+  nazwy miesięcy i dni tygodnia, i to, od którego dnia zaczyna się tydzień), a
+  od tej zmiany mówi nim też **API** — niżej. Do tej pory język brało się tylko
+  z `<html lang>`, więc strona po angielsku na polskim shellu nie miała jak
+  poprosić o angielski.
+- **Moduł mówi API, w jakim języku jest strona.** `?lang=<język>` dostają
+  **cztery trasy** kontraktu: `GET /products` (lista), `GET /products/<ref>`
+  (jeden obiekt), `GET …/availability` (kalendarz) i `POST …/bookings`
+  (zakładanie rezerwacji). Dzięki temu **nazwa i opis miejsca przychodzą w tym
+  języku, w którym gość czyta stronę** — do tej pory szły w `default_language`
+  klucza, więc niemiecka strona pokazywała niemieckie zdania wokół polskich
+  nazw. Każde pole wraca do wartości bazowej osobno (tłumaczenie z nazwą, ale
+  bez opisu, nie zeruje opisu), a zdjęcia od języka nie zależą; sama lista
+  miejsc też nie — ta sama strona po niemiecku pokazuje te same mieszkania.
+  Backend czyta `Accept-Language` celowo **nie**, więc bez tego parametru nie
+  da się dostać odpowiedzi w innym języku niż domyślny klucza.
+- Wysyłany jest **ten język, w którym moduł naprawdę renderuje**, a nie surowy
+  `d2-booking-lang`: gdy klucz odmówił niemieckiego, w zapytaniu jedzie
+  domyślny — gość nie ma czytać niemieckich zdań obok polskich nazw ani
+  odwrotnie. Kody z regionem albo wielką literą (`de-DE`, `EN`) czytają
+  słownik swojego języka także w łańcuchu zapasowym i w `digi2.booking.texts()`,
+  Nazwa sezonu z odpowiedzi ceny (`label`, wpisana przez właściciela tylko w
+  języku domyślnym klucza) pokazuje się **tylko na stronie w
+  `default_language`**; na stronie w innym języku linia dostaje słowo ze
+  słownika („Aufenthalt in der Saison”) zamiast polskiej nazwy sezonu.
+  A `digi2.booking.message()` z powodem, którego zdanie wymaga wartości
+  (np. `child_age_max`), mówi zdanie ogólne zamiast klamer `{max}`. Backend i
+  tak zawęża wartość do `languages` klucza, a wartości,
+  której nie może użyć (pustej, bezsensownej, absurdalnie długiej), **nie
+  odmawia — pomija ją**.
+- Przy `POST …/bookings` wybrany język **zapisuje się na rezerwacji**: w nim są
+  pisane **wszystkie jej późniejsze maile** do gościa, a linki do portalu w tych
+  mailach otwierają go w tym samym języku. `locale` w ciele żądania działa jak
+  dotąd (backend bierze je pod uwagę, gdy w adresie nie ma `lang`).
+- `?lang=` nie dostaje **żadna inna trasa**: `/config`, `quote`,
+  `checkout-session`, `status`, `manage`, `requests` i `balance-checkout` mają w
+  kontrakcie przypięty zbiór parametrów (test kontraktu po stronie API
+  porównuje z nim prawdziwą trasę), więc dopisanie języka gdzie indziej byłoby
+  kłamstwem o kontrakcie. `GET /bookings/<id>/manage` jest bez niego świadomie:
+  jego `product_name` idzie za językiem **tej rezerwacji**, czyli za językiem
+  maila, z którego gość kliknął link. `/config` czyta się **przed** ustaleniem
+  języka — to jego odpowiedź go ustala — i parametru nie ma, więc kury i jajka
+  tu nie ma: pozostałe cztery trasy pytają dopiero po `/config` (także
+  `GET /products/<ref>`, które czeka na nią wprost, żeby raz rozwiązany obiekt
+  nie został zapamiętany w złym języku).
+- Brakujący klucz w jednym słowniku czyta się w następnym języku łańcucha
+  (proszony → domyślny klucza → `pl`), więc na stronie nie zostaje dziura.
+  Klucza, którego nie ma **żaden** słownik, moduł nie wypisuje wcale i mówi w
+  konsoli który to — gość nie ma czytać `manage_label_nights`. Zdanie, do
+  którego brakuje wartości `{w nawiasie}`, wraca do zdania, które jej nie
+  potrzebuje — nigdy do wypisanego nawiasu.
+- Liczby **odmienia słownik, nie kod**: `nights_one` / `nights_few` /
+  `nights_many` po polsku i ukraińsku, `nights_one` / `nights_other` po
+  angielsku i niemiecku, a który z nich wybrać, mówi funkcja `plural` tego
+  słownika. Ukraiński ma **własną** regułę trzech form, nie polską: mówi
+  „21 ніч” tam, gdzie polski mówi „21 nocy”.
+- **Niemiecki i ukraiński to tłumaczenia maszynowe, które czekają na czytanie
+  przez native speakera.** Zanim postawisz niemiecką albo ukraińską stronę
+  przed gośćmi, przeczytaj zwłaszcza zdania o pieniądzach i o skutkach:
+  dopłatę (`manage_label_balance`, `return_balance`, `manage_pay_balance`),
+  zwrot (`request_kind_refund`, `manage_refund`),
+  anulowanie i wygaśnięcie blokady terminu (`return_cancelled`,
+  `return_cancelled_hold`, `return_expired`), prośby do właściciela
+  (`request_not_allowed`, `manage_request_sent`) i dopłatę za zwierzę
+  (`pet_fee_*`). Niemiecki mówi do gościa przez „Sie”, ukraiński przez „ви”,
+  a polski oryginał jest na „ty”, bo tak pisze się polskie teksty w sieci.
+  Zdania są przypięte w testach, więc poprawka native speakera będzie świadomą
+  zmianą zdania, a nie cichym dryfem.
+- **Sprawdzanie formularza w przeglądarce też mówi ze słownika** — cztery
+  zdania, które pisze samo: `adults_required` („podaj liczbę dorosłych — dzieci
+  liczą się razem z nimi”), `child_age_max`, `child_ages_count` i
+  `too_many_pets_over_threshold`, obok `required`, `email` i `number`. Żadne
+  zdanie, które czyta gość, nie jest już napisem w kodzie.
+- Odmieniane są **dwa** słowa: `nights` i `years` — granica wieku dziecka mówi
+  „2 lata” i „12 lat”, a po ukraińsku „2 роки” i „12 років”.
+- Jedno zdanie **cytuje nazwę linku z maila portalu**, więc oba muszą się
+  zgadzać: `manage_balance_elsewhere` wysyła gościa do dopłaty po nazwie —
+  „Dopłata” (pl), „Balance” (en), „Restzahlung” (de), «Доплата» (uk). To są
+  cztery napisy, do których portal (etap 9) musi przetłumaczyć swój przycisk;
+  mail nazwany inaczej każe gościowi szukać w skrzynce linku, którego nie ma.
+- Nowe w API modułu: **`digi2.booking.language()`** (w jakim języku czyta gość),
+  **`digi2.booking.text(klucz, wartości)`** (jedno zdanie ze słownika, z
+  wstawionymi `{wartościami}`) i **`digi2.booking.texts(język)`** (cała tablica
+  tego języka, kopia) — strona, która dopisuje własny przycisk, ma czym go
+  podpisać w języku gościa.
+- Powód odmowy, rodzaj wiersza ceny, stan rezerwacji, rodzaj prośby i jednostka
+  ceny, których słownik nie zna, nadal pokazują się tak jak dotąd (po nazwie z
+  odpowiedzi albo wcale) i **nie trafiają do konsoli**: to nazwy od backendu,
+  który może nazwać rzecz, o której ta wersja nie słyszała.
+- Pilnują tego testy: wszystkie cztery słowniki mają **dokładnie ten sam zbiór
+  kluczy** (język nie wyjdzie wypełniony w połowie), a każdy klucz, o który
+  moduł pyta, jest **wyczytany ze źródła** i sprawdzony w każdym słowniku —
+  klucz z gałęzi, której nie chodzi żaden inny test, to dokładnie ten, który
+  ginie w tłumaczeniu. Do tego każda reguła `plural` jest przepytana liczbami
+  0–150 i musi mieć w swoim słowniku każdą formę, którą potrafi wskazać
+  (brakującego `nights_few` zbiór kluczy nie widzi, bo składa formy w jeden
+  klucz), a zdanie, o które **nic w module nie pyta**, jest błędem — żeby
+  martwy klucz nie był tłumaczony cztery razy. W przeglądarce bramka wydania
+  otwiera
+  `sandbox/gate-booking-lang.html`: strona z polskim `<html lang>`, która prosi
+  o niemiecki, i cały widget wychodzi po niemiecku razem z kwotami i datami —
+  a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
+  czterech trasach i na żadnej innej.
+
+## Bez wydania — `d2-booking`: kontrakt zsynchronizowany z 2destate (868923b5f)
+
+- Kopia kontraktu w `tests/fixtures/booking-api/` = `docs/booking-client-site/kontrakt/`
+  z 2destate `feat/d2-booking-9-i18n` @ `868923b5f` (zawiera ich #350, #351, #352).
+  `contract_version` dalej 1.
+- **Prośba o zwrot albo zmianę terminu, która już czeka, mówi teraz o tym
+  wprost** („Taka prośba już czeka na decyzję właściciela”). Odpowiedź 409 z
+  `/requests` niesie `reason` obok zdania w `detail`, a moduł go czyta;
+  wcześniej obie odmowy 409 kończyły się jednym zdaniem ogólnym.
+- Linia ceny o rodzaju, którego słownik nie zna, nosi nazwę od właściciela
+  (`label`, bez dopisanej stawki) także na stronie w innym języku, zamiast
+  surowego identyfikatora.
+- `reason` obok zdania jest czytany **tylko przy 409**. Odpowiedź 5xx (także
+  z JSON-em od proxy, z jakimkolwiek `reason`) zostaje wynikiem niepewnym:
+  ponowienie idzie pod tym samym `Idempotency-Key`, więc nie powstanie druga
+  rezerwacja.
+- **Przed podbiciem wersji na stronie klienta:** Webflow ustawia często
+  domyślnie `<html lang="en">`, więc polska strona, której klucz ma `en` w
+  `languages`, może po cichu przejść na angielski (sygnał tylko w konsoli). Sprawdź `<html lang>` albo dopisz
+  `d2-booking-lang`.
+
+## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
+
+- **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**
+  `Idempotency-Key` jest związany z blokadą (obiekt, termin, skład grupy), a nie
+  z całym formularzem. Gość, któremu zapis przekroczył czas, a który potem
+  poprawił e-mail, dostaje swoją rezerwację z powrotem zamiast „termin zajęty”,
+  a nowy adres idzie do niej przez `/contact` przed płatnością. Zmieniona w tym
+  jednym przypadku uwaga (`note`) zostaje taka, jak wysłana za pierwszym razem.
+  Pierwsza treść wraca **tylko** po odpowiedzi, której nie dało się odczytać
+  (brak sieci, 5xx); po każdej innej odmowie (np. 422 na e-mailu, 413 na
+  uwadze) poprawiony formularz idzie jako nowe żądanie.
+- **Wyczyszczony telefon albo imię są czyszczone także w rezerwacji** (idą do
+  `/contact` jako `null`). Wcześniej puste pole było pomijane, a backend czytał
+  to jako „zostaw stary numer”.
+- **`booking:created` nie niesie już danych gościa**: `customer_name`,
+  `customer_email`, `customer_phone` i `customer_note` są zdjęte z kopii.
+  Jeśli tag GTM wypycha to zdarzenie do dataLayer, nie wyśle e-maila gościa.
+  Kto czytał stamtąd e-mail, musi go wziąć z własnego formularza.
+- `Retry-After` jest czytany najwyżej do **3600 s** we wszystkich miejscach
+  (przycisk formularza, panel obsługi, lista). Wartość ponad ~24,8 dnia
+  przepełniała `setTimeout`, który wtedy odblokowywał przycisk od razu.
+- Przy **dwóch listach** czekających po `429` przycisk szukania odblokowuje się
+  dopiero po ostatnim czekaniu, nie po pierwszym.
+- Pole szukania zbudowane dwa razy, którego widoczna kopia stoi w panelu
+  `position: fixed` (szuflada na telefonie), jest czytane z tej widocznej kopii.
+- **Przed wydaniem:** zsynchronizować fixture kontraktu z 2destate po ich
+  #350/#351 (`contact_token` nullable, `reason` w `/requests`).
+- Nie ukrywaj wzorca karty przez `display: none` na jego rodzicu — wiersze
+  trafiają do tego samego rodzica i byłyby niewidoczne.
+- Opis listy: wiersze trafiają do **rodzica wzorca** (w Collection List — do
+  rodzica Collection Item), a do `[d2-booking-results]` tylko bez wzorca.
+
+## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
+
+Lista apartamentów z `GET /products`, wpisana we wzorzec karty, który zbudował
+Designer, oraz formularz szukania nad nią: termin, liczba gości i miasto.
+Wychodzi tym samym tagiem co reszta modułu, więc wpis zostaje pod „Bez
+wydania”. (Słowniki językowe to osobny etap.)
+
+- `[d2-booking-results]` to lista obiektów, czytana **raz na wizytę**. Pierwszy
+  `[d2-booking-template]` w środku jest wzorcem karty: moduł pamięta go,
+  **zabiera ze strony**, zanim cokolwiek się pokaże, i klonuje pod każdy obiekt
+  odpowiedzi — z klasami i zagnieżdżeniem, jakie dał Designer. Klon traci
+  `d2-booking-template` (także w środku), a dostaje `d2-booking-item`. Wzorzec
+  zostawiony na stronie byłby pustą kartą nad każdą prawdziwą.
+- Ze strony schodzi **każdy** wzorzec, nie tylko pierwszy: karta zbudowana w
+  Collection List jest renderowana raz na element kolekcji, więc opublikowana
+  strona ma ten atrybut na każdej z nich, a kopia zostawiona na stronie byłaby
+  klikalną kartą-zaślepką, której kolejne wczytanie listy nigdy nie usuwa
+  (moduł czyści tylko własne `[d2-booking-item]`). Pierwszy jest wzorcem,
+  resztę moduł zabiera i mówi w konsoli, ile ich znalazł.
+- Wiersze są **dopisywane** na koniec listy, więc przycisk „pokaż więcej”,
+  licznik i komunikat „nic nie znaleźliśmy” stawia się **obok** listy, nie w
+  niej — tam, gdzie zostawia je układ Webflow. Ten w środku moduł też wypełni i
+  nigdy go nie usunie (czyści tylko własne `[d2-booking-item]`): wiersze staną
+  za nim. Przy jednej liście na stronie sterowanie może stać gdziekolwiek; przy
+  dwóch każda lista musi mieć swoje w środku.
+- `[d2-booking-bind="<pole>"]` wpisuje jedno pole obiektu jako **tekst**.
+  Wiąże się **każde** pole kontraktu po własnej nazwie — `name`,
+  `project_name`, `city`, `city_line`, `address_line`, `rooms`, `area`, `floor`,
+  `beds`, `max_guests`, `description`, `rental_kind`, `timezone`, `latitude`… —
+  więc strona nie jest ograniczona do listy, którą ktoś wpisał w moduł.
+- Cztery wartości czyta się inaczej: `image` to `image_url` (na `<img>` `src`, a
+  `alt` z nazwy obiektu; na czymkolwiek innym tło), `price` to cena obiektu w
+  **walucie obiektu** przez to samo `Intl`, co wycena — moduł i tu nic nie
+  liczy — `price_unit` mówi, za co jest ta kwota („za noc”), a lista wartości
+  (`amenities`, `allowed_units`, `image_urls`) jedzie po przecinku.
+- Brak wartości, `null`, `""` i obiekt (`pet_fee`, `prices`) zostawiają miejsce
+  **puste i oznaczone `d2-booking-empty`** — nigdy słowa „null” ani
+  „[object Object]”. W kontrakcie `null` może być w osiemnastu polach, więc to
+  nie przypadek brzegowy, a większość stron. Nazwa, której odpowiedź nie ma
+  wcale (literówka albo `constructor`), też nie wypisuje nic: pole musi być
+  własnym polem obiektu, inaczej w karcie stanąłby kod JavaScriptu. `false`
+  (`requires_approval`) czyści miejsce jak brak wartości, `true` zostawia je
+  **dokładnie takie, jakie zbudował Designer** — tekst i cały układ w środku,
+  razem z ikoną obok „na zapytanie” — i nie oznacza go jako puste. A
+  zadeklarowane `0` (parter) to odpowiedź i wchodzi na stronę.
+- Nic z odpowiedzi nie staje się kodem strony: wartość wchodzi przez
+  `textContent`, adres przez `setAttribute`, a zdjęcie dopiero wtedy, gdy
+  `image_url` czyta się jak adres zdjęcia (`https:`, `/…` albo `data:image/`,
+  bez cudzysłowu, nawiasu i odwrotnego ukośnika) — inny adres to ostrzeżenie w
+  konsoli i puste miejsce. `src` jest jedno kliknięcie od uruchomienia, a tło
+  wchodzi do właściwości stylu, gdzie jeden cudzysłów zamyka deklarację. Te
+  nazwy pochodzą z CMS-a, którego moduł nie prowadzi.
+- `[d2-booking-link]` (na karcie albo na linku w karcie) prowadzi domyślnie pod
+  `?apartament=<slug>` — dokładnie to zapytanie, które czyta strona rezerwacji,
+  więc lista i rezerwacja pasują do siebie bez ustawiania czegokolwiek. Klient,
+  u którego apartamenty są podstronami CMS pod własnymi adresami, wpisuje
+  kształt: `d2-booking-link="/apartamenty/{slug}"` na linku albo
+  `d2-booking-results-link` na całej liście. `{slug}` i `{id}` wychodzą
+  zakodowane, a kształt bez `{…}` dostaje referencję jako zapytanie. Każde
+  miejsce w kształcie bierze **swoje** pole: obiekt bez sluga pod kształtem
+  `/apartamenty/{slug}` zostaje **bez `href`** i z `d2-booking-empty` — tak jak
+  obiekt bez jednej i drugiej referencji — bo `slug` jest w kontrakcie
+  nullowalny, a UUID w ścieżce `{slug}` to adres CMS, którego nie ma.
+- Stronicowanie to `limit` i `offset`: `[d2-booking-more]` pobiera następną
+  stronę i **dopisuje** ją, więc gość nie traci tego, co już czytał, a chowa
+  się, gdy odpowiedź mówi `has_more: false`. `[d2-booking-count]` pokazuje
+  `count` z odpowiedzi (wszystkie obiekty spełniające warunki, nie te na
+  ekranie), a `d2-booking-results-limit="<n>"` zmienia wielkość strony
+  (domyślnie 24).
+- Strona, której odmówiono, **zostawia offset** tam, gdzie był — następne
+  kliknięcie pyta o tę samą stronę jeszcze raz, zamiast ją przeskoczyć — a
+  powód trafia do `[d2-booking-results-message]` naszymi słowami (element w
+  liście; brakujący moduł dokłada tam sam, z `role="status"`). `400` na tej
+  trasie dotyczy tego, o co pytał filtr: terminu (`invalid_stay`), a gdy
+  szukanie podało też miasto — terminu i miejsca (`invalid_search`).
+- Jedna odmowa **trzyma przycisk**: po `429` `[d2-booking-more]` czeka
+  dokładnie tyle sekund, ile powiedział `Retry-After` — tak jak każdy inny
+  przycisk tego modułu, który trafi na limit — bo otwarcie go od razu kupuje
+  gościowi tylko następne `429`. Kliknięcie, które w tym czasie przejdzie obok
+  wyłączonego przycisku, też nie wydaje żadnego zapytania.
+- `[d2-booking-results-empty]` pokazuje się **tylko** wtedy, gdy odpowiedź nic
+  nie przyniosła: do czasu odpowiedzi jest schowany, a przy **każdej** odmowie —
+  także tej, którą moduł wypisuje sam — chowa się z powrotem, bo odmowa to nie
+  oferta, w której nic nie ma, i „nic nie znaleźliśmy” nigdy nie stoi obok
+  zdania o odmowie. Stan listy czyta się z
+  `d2-booking-results-state="loading | ready | empty | error"`.
+- Lista **bez wzorca** (`<div d2-booking-results></div>`) dostaje karty, które
+  moduł rysuje sam: zdjęcie, nazwa, miasto i cena z jednostką w jednym linku, z
+  tego samego wstrzykiwanego arkusza i tych samych zmiennych `--d2-booking-*`,
+  co widget. Reguły są zawężone do
+  `[d2-booking-results][d2-booking-results-drawn]`, więc lista zbudowana w
+  Designerze zostaje przy swoim wyglądzie.
+- **Szukanie nad listą.** `<form d2-booking-search>` z polami
+  `d2-booking-search-field="check_in | check_out | adults | children |
+  location"` zawęża listę **bez przeładowania strony**: każda lista wraca na
+  pierwszą stronę z nowym filtrem. Własna wysyłka Webflow się nie wykonuje —
+  moduł przejmuje submit.
+- Trasa bierze termin, liczbę gości i miasto, więc `guests` to **zawsze suma
+  dorosłych i dzieci** (KONTRAKT.md): `adults` i `children` nie jadą w ogóle,
+  nic nie może więc sobie przeczyć (sprzeczne `guests` to `422`), a strona,
+  która nie pyta o żadne z nich, nie wysyła `guests` wcale.
+- Termin można **wpisać** w dwa pola albo **wybrać** kalendarzem
+  (`[d2-booking-calendar]`) stojącym w formularzu szukania — to ten sam
+  kalendarz co przy rezerwacji i jedyny: szukanie czyta termin, który ten już
+  ogłosił. Wpisane pole wygrywa z klikniętym terminem. Wpisana godzina jest
+  odrzucana (filtr pyta o dni), a tekst, który nie jest datą, nie zawęża
+  niczego. Pół terminu i wyjazd nie późniejszy od przyjazdu **nie pytają API** —
+  zostaje jedno krótkie zdanie w `[d2-booking-results-message]`.
+- `d2-booking-location="Wrocław"` na formularzu **albo na samej liście**
+  przypina miasto i gość go nie zmieni (prośba pilota). Na liście działa też
+  bez żadnego szukania — tak powstaje strona jednego miasta — a dwie listy mogą
+  mieć przypięte dwa różne miasta. Przypięcie wygrywa z polem `location` i z
+  adresem, a pole wyboru miasta dostaje tę wartość i jest `disabled`
+  (`d2-booking-pinned`). Wartość czytamy surowym `getAttribute`, bo nazwa
+  miejsca może legalnie zawierać `;` albo `@`, które `digi2.attr` by ucięło.
+- **Szukanie ląduje w adresie strony**
+  (`?check_in=…&check_out=…&adults=2&children=1&location=Wrocław`), więc
+  przeładowanie je zachowuje, a link otwiera ten sam wynik: moduł czyta te
+  parametry na starcie — przed pierwszą stroną listy — i wpisuje je do pól. W
+  adresie zostają dwa pytania, które zadała strona, a nie suma, którą wysyłamy.
+  Reszta adresu (`?apartament=`, kampania, język) zostaje nietknięta, a
+  przypięte miasto nie wchodzi tam wcale. Wpis jest **podmieniany**, nie
+  dokładany (`replaceState`), więc „wstecz” wychodzi ze strony, a nie
+  przechodzi przez każde zawężenie filtra.
+- Formularz i adres są **łączone**, a nie wykluczające się: pole, które
+  formularz ma, odpowiada za swój parametr nawet puste (gość je widzi, więc
+  wyczyszczenie go jest odpowiedzią), a parametr, o który formularz nie pyta
+  wcale, zostaje taki, jak w adresie. Szukanie zbudowane wokół kalendarza i
+  liczby osób nie gubi więc terminu ani miasta z linku — ani na starcie, ani po
+  wysyłce.
+- **Link z miastem, którego `<select>` nie oferuje, otwiera swój wynik.**
+  `<select>` przyjmuje tylko wartość, którą nosi któraś jego własna `<option>`;
+  każdą inną przeglądarka kwituje `selectedIndex = -1`, więc pole stoi puste i
+  czyta się jako puste. Udostępniony `?location=Gdańsk` nad selectem z dwoma
+  miastami gubiłby więc miasto dwa razy — z ekranu i z łączenia z adresem, w
+  którym pole odpowiada za swój parametr nawet puste — i gość dostawałby **całą
+  ofertę** pod adresem obiecującym jedno miasto. Wygrywa link: moduł dokłada tę
+  jedną opcję (`d2-booking-search-option`) i ją zaznacza, więc wynik, pole i
+  adres mówią o tym samym mieście, nawet gdy wynik jest pusty. Opcje napisane
+  przez stronę zostają tym, z czego gość wybiera; dołożona jest szukaniem, z
+  którym przyszedł. Tak samo pokazuje się przypięte miasto, którego select nie
+  oferuje. Tekstowego `<input>` to nie dotyczy.
+- Szukanie, które **nie może wyjść** (pół terminu), zostawia filtr listy
+  nietknięty: wiersze na ekranie i ich `offset` dalej należą do pytania, z
+  którego przyszły, więc „pokaż więcej” nie zmiesza dwóch wyników w jednej
+  kolumnie.
+- Dwa kliknięcia „Szukaj” pytają **raz**: wysyłka powtarzająca pytanie, którego
+  pierwsza strona jest jeszcze w drodze, jest pomijana, więc podwójny klik nie
+  wydaje dwóch zapytań z limitu klucza. Wysyłka po powrocie odpowiedzi idzie
+  zawsze — to ponowna próba.
+- Formularz szukania szuka po listach **własnej strony**. Na stronie bez
+  `[d2-booking-results]` nic się nie przeładowuje (moduł przejmuje submit) i
+  mówi o tym w konsoli, zamiast milczeć pod przyciskiem, który nic nie robi.
+- Odpowiedź, która była jeszcze w drodze, gdy poszło nowe szukanie, jest
+  **porzucana**: pokazałaby obiekty, o które nikt nie pytał, a jej `offset`
+  przesunąłby stronicowanie za wiersze, które gość ma na ekranie — następne
+  „pokaż więcej” przeskoczyłoby apartamenty.
+- Nowe zdarzenia: `digi2.on('booking:list', fn)` — `{ count, shown, has_more }`
+  po każdej stronie listy, a `{ reason, status }` przy odmowie — oraz
+  `digi2.on('booking:search', fn)` z `{ search: { check_in, check_out, guests,
+  location } }`, plus `message`, gdy szukanie nie wyszło na trasę.
+
 ## Bez wydania — nowy moduł `d2-booking` (etap 5, kroki A-D: klient API, formularz, kalendarz, cena, wygląd zapasowy, płatność, powrót z płatności i obsługa rezerwacji)
 
 Rezerwacja noclegu z poziomu strony. Moduł rozmawia z publicznym API klucza strony
@@ -348,6 +706,28 @@ tagiem, więc wpis zostaje pod „Bez wydania”, zamiast dzielić go między nu
   więc zdania o powrocie z płatności mówią tylko to, co działa.
 - **Utracona odpowiedź nie blokuje terminu.** `POST /bookings` niesie
   `Idempotency-Key`, więc ponowienie po przekroczeniu czasu odzyskuje rezerwację.
+
+### Poprawki po recenzji #61 (ten sam etap, przed wydaniem)
+
+- **Wyszukiwarka w Form Block nie wysyła się do Webflow** i nie chowa formularza.
+- **Lista w Collection List zostaje w siatce Designera.** Wierszem jest cały
+  Collection Item, więc kolumny zostają, a puste pozycje znikają.
+- **Obrazek z Webflow pokazuje zdjęcie obiektu.** Moduł zdejmuje `srcset` i `sizes`.
+- **Karta bez adresu zostaje na liście**, tylko bez linku.
+- **Odrzucone wyszukiwanie zabiera stare wiersze** i zostawia przycisk ponowienia,
+  a `digi2.booking.apply()` nie zmienia już wyszukiwania w mocy.
+- **W czasie czekania po 429 wyszukiwarka czeka razem z listą.**
+- **Radio i pola zdublowane.** Radio odpowiada zaznaczoną wartością, a link je
+  zaznacza. Pole zbudowane dwa razy odpowiada widoczną kopią, więc można je wyczyścić.
+- **Zły termin z linku nie blokuje formularza bez pól dat.**
+- **Kalendarz nie czeka na listę obiektów.**
+
+### Po teście na lokalnym backendzie 2destate
+
+- **Niewłączone płatności nie wyglądają jak błąd gościa.** `stripe_not_connected`
+  i `stripe_account_not_ready` idą spokojnym stylem `d2-booking-ok`.
+- **Długie czekanie po 429 jest podane w minutach.**
+- **Bez `pet_fee` pole progu wagi znika z formularza.**
 
 ### Poprawki po przeglądzie (ten sam etap, przed wydaniem)
 

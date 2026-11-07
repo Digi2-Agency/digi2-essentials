@@ -104,7 +104,7 @@
       }
       // GET /products/<ref> — stąd moduł bierze pet_fee do zdania przy pytaniu
       // o zwierzęta powyżej progu wagi.
-      if (/\/products\/[^/?]+$/.test(text)) {
+      if (/\/products\/[^/?]+(?:\?|$)/.test(text)) {
         return fixture('product').then(function (fx) { return answer(fx.response); });
       }
       // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.

@@ -2,6 +2,9 @@
   "contract_version": 1,
   "route": "POST /api/v1/public/sites/{public_key}/products/{product_id}/bookings",
   "status": 201,
+  "query": {
+    "lang": "de"
+  },
   "headers": {
     "Idempotency-Key": "6f1c2a4e-3b7d-4f09-8a21-5d9e0c7b1a34"
   },
@@ -32,7 +35,8 @@
     "hold_expires_at",
     "deposit_amount_minor",
     "balance_amount_minor",
-    "balance_due_at"
+    "balance_due_at",
+    "contact_token"
   ],
   "response": {
     "id": "9c1d4e77-52ab-4f0e-8b6c-7a3e2d1f0b98",
