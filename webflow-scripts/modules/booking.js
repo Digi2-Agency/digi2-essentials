@@ -328,9 +328,12 @@
  * address they typed last. Its contact_token lives only in this module, never
  * on the booking object, in an event or in the address.
  *
- * Every POST /bookings carries an Idempotency-Key tied to the exact body, so a
- * request that timed out here but landed there is recovered by the retry
- * instead of being refused by the guest's own hold.
+ * Every POST /bookings carries an Idempotency-Key tied to the hold — the
+ * product, the period and the party — and the retry repeats the body that key
+ * was first sent with. A request that timed out here but landed there is
+ * recovered by the retry instead of being refused by the guest's own hold, even
+ * when the guest corrected their e-mail in between: the booking comes back
+ * under its old contact and the corrected one follows through /contact.
  *
  * Every payment refusal is answered by its reason (contract: the module reads
  * reason, never the message):
@@ -446,7 +449,8 @@
  *   digi2.on('booking:ready', fn)    /config answered — fn({ config })
  *   digi2.on('booking:stay', fn)     Stay chosen or cleared — fn({ stay })
  *   digi2.on('booking:quote', fn)    Price answered — fn({ quote, reason? })
- *   digi2.on('booking:created', fn)  Booking created — fn({ booking, form })
+ *   digi2.on('booking:created', fn)  Booking created — fn({ booking, form }); the
+ *                                    booking without customer_* (guest) fields
  *   digi2.on('booking:payment', fn)  Leaving for the checkout — fn({ booking_id,
  *                                    url, session, form })
  *   digi2.on('booking:refused', fn)  Refusal — fn({ reason, status, form })
@@ -1166,6 +1170,19 @@
       + ':' + (m[6] || '00');
   }
 
+  // What the booking says about the guest stays out of every event. The page
+  // measures bookings with them, and a GTM listener that pushes the detail to
+  // the dataLayer would otherwise hand the guest's e-mail to every tag.
+  var GUEST_KEYS = ['customer_name', 'customer_email', 'customer_phone', 'customer_note'];
+
+  function withoutGuest(booking) {
+    var out = copy(booking);
+    if (out && typeof out === 'object') {
+      for (var i = 0; i < GUEST_KEYS.length; i++) delete out[GUEST_KEYS[i]];
+    }
+    return out;
+  }
+
   function copy(value) {
     try { return JSON.parse(JSON.stringify(value)); } catch (e) { return null; }
   }
@@ -1271,10 +1288,16 @@
     return FIELDS[key] ? key : null;
   }
 
+  // The longest wait anything here takes from a Retry-After. The backend's
+  // limits stay under an hour; a bigger number is a mistake, and past ~24.8
+  // days setTimeout overflows and fires at once — the very click the limit was
+  // meant to stop. One cap here covers the button, the panel and the list.
+  var RETRY_AFTER_MAX_S = 3600;
+
   function retryAfterSeconds(r) {
     var given = r && r.headers && typeof r.headers.get === 'function' ? r.headers.get('Retry-After') : null;
     var s = parseInt(given, 10);
-    return isFinite(s) && s > 0 ? s : 0;
+    return isFinite(s) && s > 0 ? Math.min(s, RETRY_AFTER_MAX_S) : 0;
   }
 
   function timeoutFetch(url, init, ms) {
@@ -3296,11 +3319,20 @@
    */
   function sendContact(made, body) {
     var kept = bookingContacts[String(made.id)] || { token: null, sent: '' };
-    var now = JSON.stringify(contactOf(body));
+    var change = contactOf(body);
+    var now = JSON.stringify(change);
     if (kept.sent === now) return Promise.resolve({ ok: true, status: 200, data: made });
     if (!kept.token) return Promise.resolve(refusal('contact_locked', 0));
+    // A field left out is one the backend leaves as it was, so a phone or a
+    // name the guest emptied is sent as null: that is what clears it.
+    var before = {};
+    try { before = JSON.parse(kept.sent) || {}; } catch (e) { before = {}; }
+    for (var i = 0; i < CONTACT_KEYS.length; i++) {
+      var k = CONTACT_KEYS[i];
+      if (before[k] && !change.hasOwnProperty(k)) change[k] = null;
+    }
     return request('POST', '/bookings/' + encodeURIComponent(String(made.id)) + '/contact', {
-      body: contactOf(body),
+      body: change,
       token: kept.token,
       notFound: 'contact_locked',
       conflict: 'booking_not_payable'
@@ -3332,16 +3364,18 @@
     return hex;
   }
 
-  // The key belongs to the exact body: a retry of the same request repeats it,
-  // and any changed field is a new request with a new key.
-  function attemptKey(form, product, body) {
-    var said = productId(product) + '|' + JSON.stringify(body);
+  // The key belongs to the hold (requestKey): the same product, period and
+  // party is the same request, whatever the contact says. The body it was
+  // first sent with travels with it, because the backend refuses a key it
+  // already saw with another body (idempotency_key_reused). A contact changed
+  // since then reaches the booking through sendContact() once it is back.
+  function attemptFor(form, key, body) {
     var kept = form._d2BookingAttempt;
-    if (!kept || kept.said !== said || Date.now() - kept.at > ATTEMPT_MS) {
-      kept = { said: said, key: uuid(), at: Date.now() };
+    if (!kept || kept.said !== key || Date.now() - kept.at > ATTEMPT_MS) {
+      kept = { said: key, key: uuid(), at: Date.now(), body: body };
       form._d2BookingAttempt = kept;
     }
-    return kept.key;
+    return kept;
   }
 
   function requestKey(product, body) {
@@ -3434,12 +3468,25 @@
     }
 
     var made = keptFor(madeBookings, key);
+    var attempt = made ? null : attemptFor(form, key, body);
     var step = made
       ? sendContact(made, body)
       : request('POST', '/products/' + encodeURIComponent(productId(stay.product)) + '/bookings', {
-        body: body,
+        body: attempt.body,
         notFound: 'product_not_found',
-        idempotencyKey: attemptKey(form, stay.product, body)
+        idempotencyKey: attempt.key
+      }).then(function (res) {
+        if (!res.ok || !res.data || res.data.status === 'expired') return res;
+        rememberContact(res.data, attempt.body);
+        keep(madeBookings, key, res.data);
+        _log('booking created', { id: res.data && res.data.id });
+        // A copy, like every other emit: a listener that reshapes the
+        // payload must not change which booking the next step pays.
+        _emit('booking:created', { booking: withoutGuest(res.data), form: form });
+        // Recovered under the contact it was first sent with: the one the
+        // guest typed since goes after it, before anything is paid.
+        made = res.data;
+        return sendContact(made, body);
       });
 
     var chain = step.then(function (res) {
@@ -3471,14 +3518,6 @@
         _emit('booking:refused', { reason: expired.reason, status: expired.status, form: form });
         lock(form, false);
         return expired;
-      }
-      if (!made) {
-        rememberContact(res.data, body);
-        keep(madeBookings, key, res.data);
-        _log('booking created', { id: res.data && res.data.id });
-        // A copy, like every other emit: a listener that reshapes the
-        // payload must not change which booking the next step pays.
-        _emit('booking:created', { booking: copy(res.data), form: form });
       }
       if (!withPayment) {
         lock(form, false);
@@ -4556,8 +4595,14 @@
    * the list as well as on the button, so a click that got past a disabled
    * button spends no call either, and only the newest wait may open it again.
    */
+  // How many lists are waiting out a 429 right now. The search forms serve
+  // every list on the page, so they open only when the last wait is over —
+  // not when the first list's timer runs out under a second one still waiting.
+  var listsWaiting = 0;
+
   function holdMore(box, state, seconds) {
     var mark = (state.waitMark || 0) + 1;
+    if (!state.waiting) listsWaiting++;
     state.waiting = true;
     state.waitMark = mark;
     lockMore(box, true);
@@ -4565,8 +4610,9 @@
     setTimeout(function () {
       if (state.waitMark !== mark) return;
       state.waiting = false;
+      listsWaiting = Math.max(0, listsWaiting - 1);
       lockMore(box, false);
-      lockSearch(false);
+      if (!listsWaiting) lockSearch(false);
     }, seconds * 1000);
   }
 
@@ -4758,6 +4804,15 @@
     return { check_in: dayKey(from), check_out: dayKey(from + stayState.units_count) };
   }
 
+  // Whether the guest can see this element. offsetParent alone says no for a
+  // field inside a position: fixed panel (a mobile search drawer, say), which
+  // is on screen; its client rects say yes. Without a layout (no offsetParent
+  // at all) everything counts as shown.
+  function isShown(el) {
+    if (el.offsetParent !== null) return true;
+    return typeof el.getClientRects === 'function' && el.getClientRects().length > 0;
+  }
+
   // What one search form says, by the name the page gave each field.
   function readSearch(form) {
     var out = { check_in: '', check_out: '', adults: '', children: '', location: '' };
@@ -4779,7 +4834,7 @@
       // hidden copy only speaks when no visible one does.
       if (String(els[i].type || '').toLowerCase() === 'radio') {
         if (value !== '') out[name] = value;
-      } else if (els[i].offsetParent !== null) {
+      } else if (isShown(els[i])) {
         out[name] = value;
         shown[name] = true;
       } else if (!shown[name] && out[name] === '') {

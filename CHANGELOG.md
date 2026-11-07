@@ -16,6 +16,31 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
+
+- **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**
+  `Idempotency-Key` jest związany z blokadą (obiekt, termin, skład grupy), a nie
+  z całym formularzem. Gość, któremu zapis przekroczył czas, a który potem
+  poprawił e-mail, dostaje swoją rezerwację z powrotem zamiast „termin zajęty”,
+  a nowy adres idzie do niej przez `/contact` przed płatnością. Zmieniona w tym
+  jednym przypadku uwaga (`note`) zostaje taka, jak wysłana za pierwszym razem.
+- **Wyczyszczony telefon albo imię są czyszczone także w rezerwacji** (idą do
+  `/contact` jako `null`). Wcześniej puste pole było pomijane, a backend czytał
+  to jako „zostaw stary numer”.
+- **`booking:created` nie niesie już danych gościa**: `customer_name`,
+  `customer_email`, `customer_phone` i `customer_note` są zdjęte z kopii.
+  Jeśli tag GTM wypycha to zdarzenie do dataLayer, nie wyśle e-maila gościa.
+  Kto czytał stamtąd e-mail, musi go wziąć z własnego formularza.
+- `Retry-After` jest czytany najwyżej do **3600 s** we wszystkich miejscach
+  (przycisk formularza, panel obsługi, lista). Wartość ponad ~24,8 dnia
+  przepełniała `setTimeout`, który wtedy odblokowywał przycisk od razu.
+- Przy **dwóch listach** czekających po `429` przycisk szukania odblokowuje się
+  dopiero po ostatnim czekaniu, nie po pierwszym.
+- Pole szukania zbudowane dwa razy, którego widoczna kopia stoi w panelu
+  `position: fixed` (szuflada na telefonie), jest czytane z tej widocznej kopii.
+- Opis listy: wiersze trafiają do **rodzica wzorca** (w Collection List — do
+  rodzica Collection Item), a do `[d2-booking-results]` tylko bez wzorca.
+
 ## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
 
 Lista apartamentów z `GET /products`, wpisana we wzorzec karty, który zbudował
