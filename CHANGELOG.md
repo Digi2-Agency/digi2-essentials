@@ -159,6 +159,22 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
   czterech trasach i na żadnej innej.
 
+## Bez wydania — `d2-booking`: kontrakt zsynchronizowany z 2destate (868923b5f)
+
+- Kopia kontraktu w `tests/fixtures/booking-api/` = `docs/booking-client-site/kontrakt/`
+  z 2destate `feat/d2-booking-9-i18n` @ `868923b5f` (zawiera ich #350, #351, #352).
+  `contract_version` dalej 1.
+- **Prośba o zwrot albo zmianę terminu, która już czeka, mówi teraz o tym
+  wprost** („Taka prośba już czeka na decyzję właściciela”). Odpowiedź 409 z
+  `/requests` niesie `reason` obok zdania w `detail`, a moduł go czyta;
+  wcześniej obie odmowy 409 kończyły się jednym zdaniem ogólnym.
+- Linia ceny o rodzaju, którego słownik nie zna, nosi nazwę od właściciela
+  (`label`) także na stronie w innym języku, zamiast surowego identyfikatora.
+- **Przed podbiciem wersji na stronie klienta:** Webflow ustawia często
+  domyślnie `<html lang="en">`, więc polska strona może po cichu przejść na
+  angielski (sygnał tylko w konsoli). Sprawdź `<html lang>` albo dopisz
+  `d2-booking-lang`.
+
 ## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
 
 - **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**

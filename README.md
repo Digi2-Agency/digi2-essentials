@@ -4135,6 +4135,7 @@ about its own route (`notFound`, `conflict`, `badRequest` options):
 | Answer | `reason` |
 |---|---|
 | `detail.reason` / `detail.code` | that string (`period_taken`, `rental_rules`, `field_required`, `request_too_large`, …) |
+| `detail` is a sentence and `reason` stands beside it | that `reason` (the two 409s of `/requests`) |
 | `detail` is a list (FastAPI 422) | `validation_error`, and `field` from `loc` (`["body","customer_email"]` → the `email` field). A `loc` that ends in an array index is walked past it, so `["body","child_ages",0]` still marks `child_ages`, and an entry naming nothing we know leaves the next entry its chance. |
 | 400 | `invalid_request` (or the caller's `badRequest`, e.g. `invalid_stay`) |
 | 403 | `origin_not_allowed` |
@@ -4792,7 +4793,8 @@ Line labels: a `label` in the answer wins **only on a page in the key's
 nowhere (2destate, `rental_pricing.py`), so `?lang=` on `/quote` could not help.
 On a page in any other language the dictionary's word for the `kind` stands in
 (`line_season` → "Stay in season"). Without a `label` the `kind` gets its
-word from the dictionary too, and an unknown kind is shown by its own name. `length_discount` carries its rate in the label when the answer has one —
+word from the dictionary too. A kind the dictionary has no word for is named by
+the `label` (in any language) and, with neither, by its own identifier. `length_discount` carries its rate in the label when the answer has one —
 and without it when the answer says `null`, which is what a key with
 `merge_cleaning_fee` sends (`KONTRAKT.md`).
 
@@ -5101,9 +5103,10 @@ Edge cases:
   closes its kind) and the request joins the list — that list is the only place
   the owner's decision ever reaches the guest, because no e-mail goes out.
 - A `409` on `/requests` is either "this booking is closed" or "a request of
-  this kind is already waiting". Both answer a plain English sentence meant for
-  logs, so the module cannot tell them apart and must not try: one sentence
-  covers both, and the kind is closed either way.
+  this kind is already waiting". Both carry a plain English sentence in
+  `detail` meant for logs and, beside it, a top-level `reason`
+  (`request_not_allowed` / `request_already_waiting`, `errors.json`), so each
+  gets its own sentence. The kind is closed either way.
 - `requested_starts_at` is sent as the rental's **local** time with no zone
   (`2027-05-10T14:00:00`). A zone marker on the input is dropped, not converted
   — the guest picked a day at the rental, not an instant. A `type="date"` input

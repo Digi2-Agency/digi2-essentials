@@ -2146,7 +2146,11 @@
           reason = 'validation_error';
           extra.field = fieldFromLoc(detail);
         } else {
-          reason = statusReason(r.status, opts);
+          // A sentence for logs in detail, and (on /requests, by the contract)
+          // the reason itself beside it: the two 409s of that route read the
+          // same in English and only the reason tells them apart.
+          var beside = body && typeof body === 'object' && typeof body.reason === 'string' ? body.reason : '';
+          reason = beside || statusReason(r.status, opts);
         }
         if (r.status === 429) extra.retryAfter = retryAfterSeconds(r);
         _log('refused', { status: r.status, reason: reason });
@@ -3808,7 +3812,10 @@
   function lineLabel(line, language) {
     var home = langCode(currentConfig().default_language) || BASE_LANGUAGE;
     if (line.label && langCode(language || currentLanguage()) === home) return String(line.label);
-    var text = lookup('line_' + String(line.kind), language) || String(line.kind || '');
+    // A kind with no word of its own is better named by the owner's label, even
+    // in the key's language, than by its bare identifier.
+    var text = lookup('line_' + String(line.kind), language) || (line.label ? String(line.label) : '')
+      || String(line.kind || '');
     // A cleaning fee folded into the stay leaves length_discount without its
     // rate (contract): the label then goes out without one, and the amount
     // beside it is still the answer's.
