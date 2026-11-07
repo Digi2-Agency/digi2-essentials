@@ -169,10 +169,15 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   `/requests` niesie `reason` obok zdania w `detail`, a moduł go czyta;
   wcześniej obie odmowy 409 kończyły się jednym zdaniem ogólnym.
 - Linia ceny o rodzaju, którego słownik nie zna, nosi nazwę od właściciela
-  (`label`) także na stronie w innym języku, zamiast surowego identyfikatora.
+  (`label`, bez dopisanej stawki) także na stronie w innym języku, zamiast
+  surowego identyfikatora.
+- `reason` obok zdania jest czytany **tylko przy 409**. Odpowiedź 5xx (także
+  z JSON-em od proxy, z jakimkolwiek `reason`) zostaje wynikiem niepewnym:
+  ponowienie idzie pod tym samym `Idempotency-Key`, więc nie powstanie druga
+  rezerwacja.
 - **Przed podbiciem wersji na stronie klienta:** Webflow ustawia często
-  domyślnie `<html lang="en">`, więc polska strona może po cichu przejść na
-  angielski (sygnał tylko w konsoli). Sprawdź `<html lang>` albo dopisz
+  domyślnie `<html lang="en">`, więc polska strona, której klucz ma `en` w
+  `languages`, może po cichu przejść na angielski (sygnał tylko w konsoli). Sprawdź `<html lang>` albo dopisz
   `d2-booking-lang`.
 
 ## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
