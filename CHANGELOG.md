@@ -16,6 +16,28 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.43 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+**`d2-booking`: płatność niedostępna, bo wdrożenie nie ma strony powrotu**
+(kontrakt 2destate: nowy błąd 409 `payment_return_unavailable`, PR 2destate #358;
+`contract_version` bez zmian, 1).
+
+- **Z płatności** (rezerwacja już jest): stan `d2-booking-payment="final"`,
+  przycisk zostaje wyłączony, nie ma ponawiania. Do tej pory moduł brał ten
+  powód za nieznany, pokazywał „Spróbuj ponownie” i oddawał przycisk, więc gość
+  klikał w kółko w ten sam błąd. Zdanie: „Płatność online jest chwilowo
+  niedostępna. Rezerwacja jest wstępna i nieopłacona — skontaktuj się z
+  obiektem, aby ją potwierdzić.” Rezerwacja wygasa jak zwykła blokada, a
+  właściciel może ją do tego czasu zatwierdzić albo oznaczyć jako opłaconą w panelu.
+- **Z zakładania rezerwacji przedpłaconej** (zanim zajmie termin): ten sam stan
+  końcowy, rezerwacja nie powstaje, `booking:created` nie leci, płatność się nie
+  otwiera. Zdanie mówi, że termin nie został zarezerwowany.
+- W obu przypadkach komunikat ma spokojny styl `d2-booking-ok` (to nie błąd
+  gościa), a `booking:refused` niesie `reason: 'payment_return_unavailable'`.
+- Słowniki `pl`/`en`/`de`/`uk`: nowe klucze `payment_return_unavailable` i
+  `payment_return_unavailable_unbooked` (`de`/`uk` maszynowe, jak reszta).
+- `digi2.ma.version` = 43. W `ma.js` nic poza numerem się nie zmienia.
+
 ## v1.9.0-ma.42 — 2026-11-07 (przedpremierowa, `@latest`: patrz uwaga na górze; zawiera ma.41–ma.16)
 
 **Nowy moduł `d2-booking`**: rezerwacja apartamentu ze strony klienta przez

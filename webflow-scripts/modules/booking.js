@@ -411,8 +411,13 @@
  * Every payment refusal is answered by its reason (contract: the module reads
  * reason, never the message):
  *   booking_not_payable, booking_already_paid, stripe_not_connected,
- *   stripe_account_not_ready   final — its own sentence, and the button stays
+ *   stripe_account_not_ready, payment_return_unavailable
+ *                              final — its own sentence, and the button stays
  *                              down, because no retry can mend them
+ *   payment_return_unavailable (409) also comes from POST …/bookings of a
+ *                              prepaid booking, before it holds the dates: the
+ *                              same final state, but the sentence says nothing
+ *                              was booked (payment_return_unavailable_unbooked)
  *   payment_provider_unavailable (502)  a retry: the button opens again and the
  *                              next submit pays the same booking
  *   too_many_requests (429)    the button waits exactly Retry-After seconds
@@ -585,7 +590,10 @@
     booking_not_payable: 1,
     booking_already_paid: 1,
     stripe_not_connected: 1,
-    stripe_account_not_ready: 1
+    stripe_account_not_ready: 1,
+    // The deployment has no public page Stripe could send the guest back to.
+    // Nothing on the guest's side, and the same answer on every retry.
+    payment_return_unavailable: 1
   };
 
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -704,6 +712,10 @@
         no_balance: 'Nie ma teraz nic do dopłaty.',
         stripe_not_connected: 'Płatności nie są włączone w tym obiekcie. Skontaktuj się z nim.',
         stripe_account_not_ready: 'Płatności nie są jeszcze gotowe w tym obiekcie. Skontaktuj się z nim.',
+        // The checkout refused it: the booking is in, unpaid, and lapses like any hold.
+        payment_return_unavailable: 'Płatność online jest chwilowo niedostępna. Rezerwacja jest wstępna i nieopłacona — skontaktuj się z obiektem, aby ją potwierdzić.',
+        // The bookings route refused it first: nothing was created, the dates stay free.
+        payment_return_unavailable_unbooked: 'Płatność online jest chwilowo niedostępna — skontaktuj się z obiektem. Termin nie został zarezerwowany.',
         payment_provider_unavailable: 'Operator płatności jest chwilowo niedostępny. Spróbuj ponownie za chwilę.',
         request_not_allowed: 'Tej prośby nie można teraz złożyć — rezerwacja jest zamknięta albo prośba już czeka na decyzję.',
         request_already_waiting: 'Taka prośba już czeka na decyzję właściciela.',
@@ -912,6 +924,8 @@
         no_balance: 'There is nothing left to pay right now.',
         stripe_not_connected: 'Payments are not switched on at this property. Please contact them.',
         stripe_account_not_ready: 'Payments are not ready at this property yet. Please contact them.',
+        payment_return_unavailable: 'Online payment is temporarily unavailable. Your booking is provisional and unpaid — please contact the property to confirm it.',
+        payment_return_unavailable_unbooked: 'Online payment is temporarily unavailable — please contact the property. These dates have not been booked.',
         payment_provider_unavailable: 'The payment provider is temporarily unavailable. Please try again in a moment.',
         request_not_allowed: 'This request cannot be made now — the booking is closed, or a request is already waiting for a decision.',
         request_already_waiting: 'A request like this is already waiting for the owner to decide.',
@@ -1078,6 +1092,8 @@
         no_balance: 'Es ist derzeit nichts nachzuzahlen.',
         stripe_not_connected: 'Zahlungen sind in dieser Unterkunft nicht aktiviert. Wenden Sie sich an sie.',
         stripe_account_not_ready: 'Zahlungen sind in dieser Unterkunft noch nicht bereit. Wenden Sie sich an sie.',
+        payment_return_unavailable: 'Die Online-Zahlung ist vorübergehend nicht verfügbar. Ihre Buchung ist vorläufig und unbezahlt — wenden Sie sich an die Unterkunft, um sie zu bestätigen.',
+        payment_return_unavailable_unbooked: 'Die Online-Zahlung ist vorübergehend nicht verfügbar — wenden Sie sich an die Unterkunft. Der Zeitraum wurde nicht gebucht.',
         payment_provider_unavailable: 'Der Zahlungsanbieter ist vorübergehend nicht verfügbar. Versuchen Sie es in einem Moment erneut.',
         request_not_allowed: 'Diese Anfrage ist jetzt nicht möglich — die Buchung ist abgeschlossen oder eine Anfrage wartet bereits auf eine Entscheidung.',
         request_already_waiting: 'Eine solche Anfrage wartet bereits auf die Entscheidung des Gastgebers.',
@@ -1241,6 +1257,8 @@
         no_balance: 'Зараз нічого доплачувати не потрібно.',
         stripe_not_connected: 'Платежі в цьому помешканні не ввімкнені. Зв’яжіться з власником.',
         stripe_account_not_ready: 'Платежі в цьому помешканні ще не готові. Зв’яжіться з власником.',
+        payment_return_unavailable: 'Онлайн-оплата тимчасово недоступна. Бронювання попереднє й неоплачене — зв’яжіться з власником, щоб його підтвердити.',
+        payment_return_unavailable_unbooked: 'Онлайн-оплата тимчасово недоступна — зв’яжіться з власником. Ці дати не заброньовано.',
         payment_provider_unavailable: 'Платіжний оператор тимчасово недоступний. Спробуйте ще раз трохи пізніше.',
         request_not_allowed: 'Цей запит зараз неможливий — бронювання закрите або запит уже очікує рішення.',
         request_already_waiting: 'Такий запит уже очікує рішення власника.',
@@ -3979,7 +3997,11 @@
 
   // Nothing the guest did or can mend: the object has no payments yet. Their
   // sentence is information, so it is not painted like a mistake.
-  var NOT_THE_GUEST = { stripe_not_connected: 1, stripe_account_not_ready: 1 };
+  var NOT_THE_GUEST = {
+    stripe_not_connected: 1,
+    stripe_account_not_ready: 1,
+    payment_return_unavailable: 1
+  };
 
   function paymentRefused(form, res, key) {
     _log('payment refused', { reason: res.reason, status: res.status });
@@ -4319,6 +4341,16 @@
     var chain = step.then(function (res) {
       // A contact refused for good says what a refused payment says.
       if (!res.ok && made && PAYMENT_FINAL[res.reason]) {
+        paymentRefused(form, res, key);
+        return res;
+      }
+      // A prepaid booking refused before it was made, because the deployment
+      // has nowhere to send the guest back from Stripe: as final as the same
+      // refusal at the checkout, but no booking exists and no dates are held,
+      // so the guest reads that, and not "your booking is unpaid".
+      if (!res.ok && !made && res.reason === 'payment_return_unavailable') {
+        form._d2BookingAttempt = null;
+        res.message = t('payment_return_unavailable_unbooked', null, currentLanguage()) || res.message;
         paymentRefused(form, res, key);
         return res;
       }
