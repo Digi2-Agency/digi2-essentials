@@ -16,6 +16,22 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.45 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+Poprawka wyzwalacza `page` z ma.44 (warunek architekt-it z recenzji #72).
+**Zatwierdzaj w 2destate ma.45, nie ma.44.**
+
+- Wpis w `paths` ze znakiem, którego adres strony nigdy nie zawiera
+  (`? # " < > \ ` { } | ^ [ ]` albo spacja), wyłącza węzeł. Dotyczy to np.
+  wklejonego `/kontakt?utm_source=fb` albo `/oferta#formularz`. W ma.44 taki
+  wpis w `exclude` po cichu nie wykluczał, więc popup pokazywał się szerzej.
+- `return_visit → akcja → page`: akcja należy do bieżącej odsłony, więc `page`
+  odpala na następnej. Zachowanie się nie zmienia, teraz jest zapisane wprost
+  i ma swój przypadek.
+- ma-cases: 36 przypadków. Rozszerzony 030 (nowe znaki) i nowe 033–036:
+  akcja przed `page`, powtórzony prefiks, 11 wpisów `langPrefixes`, `chance`
+  ze znakiem spoza BMP.
+
 ## v1.9.0-ma.44 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 **`d2-ma`: nowy wyzwalacz `page` — popup tylko dla wybranych stron i gości**

@@ -1,0 +1,103 @@
+{
+  "id": "036-page-chance-non-bmp",
+  "desc": "chance na UTF-8 ze znakiem spoza BMP (para zastępcza w JS = 4 bajty). Kubełki: promo-🏠=0, okazja-🔥=71.",
+  "since": "v1.9.0-ma.45",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "promo-🏠",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "chance": 1,
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "promo-🏠"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "okazja-🔥",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "chance": 71,
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "okazja-🔥"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 0,
+        "scenarioId": "promo-🏠",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

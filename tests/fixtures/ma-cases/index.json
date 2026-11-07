@@ -32,6 +32,10 @@
     "029-page-after-unit-view-at-load.json",
     "030-page-paths-rejected.json",
     "031-page-lang-prefixes-invalid.json",
-    "032-page-chance-utf8.json"
+    "032-page-chance-utf8.json",
+    "033-page-after-action.json",
+    "034-page-lang-prefixes-duplicate.json",
+    "035-page-lang-prefixes-too-many.json",
+    "036-page-chance-non-bmp.json"
   ]
 }

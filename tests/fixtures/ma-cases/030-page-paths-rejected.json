@@ -1,7 +1,7 @@
 {
   "id": "030-page-paths-rejected",
-  "desc": "Wpisy paths odrzucane jak przy publikacji: / na końcu, wielka litera poza %XX, znak spoza ASCII. Węzeł invalid, więc exclude \"/kontakt/\" nie przepuszcza popupu szerzej.",
-  "since": "v1.9.0-ma.44",
+  "desc": "Wpisy paths, które nigdy nie pasują do surowego pathname, są odrzucane: / na końcu, wielka litera poza %XX, znak spoza ASCII, a od ma.45 także ? # \" < > \\ ` { } | ^ [ ] i spacja (np. wklejone /kontakt?utm_source=fb). Węzeł invalid, więc exclude nie przepuszcza popupu szerzej.",
+  "since": "v1.9.0-ma.45",
   "envelope": {
     "version": "0",
     "site": "osiedle-demo",
@@ -115,6 +115,210 @@
         ]
       },
       {
+        "scenarioId": "ex-query",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/kontakt?utm_source=fb"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-query"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-hash",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/oferta#formularz"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-hash"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-braces",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/a{b}"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-braces"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-backslash",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/a\\b"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-backslash"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ex-space",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/a b"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ex-space"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
+        "scenarioId": "ok-sub-delims",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "paths": {
+                "exclude": [
+                  "/a;b=c,d@e:f(1)"
+                ]
+              },
+              "event": "page"
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "ok-sub-delims"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "a1"
+          ]
+        ]
+      },
+      {
         "scenarioId": "ex-ok",
         "revision": 1,
         "active": true,
@@ -168,6 +372,12 @@
   "now": "2026-11-08T12:00:00+01:00",
   "expect": {
     "actions": [
+      {
+        "t": 0,
+        "scenarioId": "ok-sub-delims",
+        "nodeId": "a1",
+        "do": "datalayer"
+      },
       {
         "t": 0,
         "scenarioId": "ex-ok",
