@@ -4945,6 +4945,44 @@ test('every sentence a dictionary carries is one the module can really show', as
   assert.deepEqual(dead, [], 'nothing in the module asks for: ' + dead.join(', '));
 });
 
+test('a reason whose sentence needs values says the generic sentence, never a brace', async () => {
+  // MUTACJA: hand the dictionary sentence on as it is, and a backend reason
+  // that shares a key with a templated sentence prints "{max} {years}".
+  const env = langPage('pl');
+  await env.settled();
+  const said = env.booking.message('child_age_max');
+  assert.equal(said.indexOf('{'), -1, said);
+  assert.equal(said, env.booking.text('generic'));
+});
+
+test('a regional or capitalised code reads its own dictionary', async () => {
+  // MUTACJA: look the code up as given, and texts('en-GB') answers {} while
+  // pageLanguage reads en-GB as English.
+  const env = langPage('pl');
+  await env.settled();
+  const en = env.booking.texts('en');
+  assert.ok(Object.keys(en).length > 10);
+  assert.deepEqual(env.booking.texts('en-GB'), en);
+  assert.deepEqual(env.booking.texts('EN'), en);
+});
+
+test('<html lang> moving the page off the key\'s default says so once in the console', async () => {
+  // MUTACJA: switch in silence, and the Webflow default lang="en" turns a
+  // Polish client's widget English with nothing for anyone to find.
+  const env = page({ lang: 'en', config: { languages: ['pl', 'en'] }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  await env.settled();
+  assert.equal(env.booking.language(), 'en');
+  env.booking.language();
+  const said = env.warnings.filter((w) => w.indexOf('<html lang="en">') >= 0);
+  assert.equal(said.length, 1, env.warnings.join(' | '));
+  assert.ok(said[0].indexOf('d2-booking-lang') >= 0);
+
+  const asked = langPage('en', { lang: 'en' });
+  await asked.settled();
+  assert.equal(asked.warnings.filter((w) => w.indexOf('<html lang=') >= 0).length, 0,
+    'the attribute chose it: nothing to warn about');
+});
+
 test('every counted word has every form its own rule can return', async () => {
   // MUTACJA: drop nights_few from the Ukrainian table. Both key-set tests fold
   // the forms off the keys and stay green, while a Ukrainian page reads the

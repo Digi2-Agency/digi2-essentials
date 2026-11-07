@@ -1426,8 +1426,10 @@
       for (var i = 0; i < out.length; i++) if (out[i] === dict) return;
       out.push(dict);
     }
-    add(dictOf(language));
-    add(dictOf(currentConfig().default_language));
+    // 'de-DE' and 'EN' are the de and en dictionaries, exactly as in
+    // pageLanguage: a region or a capital must not skip a table of the chain.
+    add(dictOf(langCode(language)));
+    add(dictOf(langCode(currentConfig().default_language)));
     add(DICTIONARIES[BASE_LANGUAGE]);
     return out;
   }
@@ -1806,7 +1808,17 @@
     var html = null;
     try { html = document.documentElement; } catch (e) { html = null; }
     var code = langCode(html ? html.getAttribute('lang') : '');
-    if (code && keySpeaks(langs, code) && dictOf(code)) return code;
+    if (code && keySpeaks(langs, code) && dictOf(code)) {
+      // Webflow sets lang="en" on many projects by default, and since the
+      // dictionaries that switches every sentence. Said once, so whoever bumps
+      // the version on a client's page finds out in the console.
+      if (code !== fallback && lastConfig && !_langWarned['html:' + code]) {
+        _langWarned['html:' + code] = true;
+        _warn('<html lang="' + code + '"> sets the booking language to ' + code + ' (the key\'s'
+          + ' default is ' + fallback + ') — put d2-booking-lang on the loader tag to choose it');
+      }
+      return code;
+    }
     return fallback;
   }
 
@@ -1984,7 +1996,11 @@
     var lang = currentLanguage();
     // A reason comes from the backend, so an unknown one is an answer we have
     // no words for and not a bug: the generic sentence, with nothing in the log.
+    // A sentence that needs values (child_age_max wants {max}) would print its
+    // braces here, where there are none to give: fill answers null and the
+    // guest reads the generic sentence instead.
     var text = lookup(String(reason), lang);
+    if (text !== null) text = fill(text, null);
     if (text === null) return t('generic', null, lang);
     if (reason === 'too_many_requests' && extra && extra.retryAfter > 0) {
       // Nobody reads "2976 s": past two minutes the wait is said in minutes.
@@ -6117,7 +6133,7 @@
     language: currentLanguage,
     text: function (key, vars) { return t(String(key), vars) || ''; },
     texts: function (lang) {
-      var dict = dictOf(lang === undefined || lang === null ? currentLanguage() : lang);
+      var dict = dictOf(lang === undefined || lang === null ? currentLanguage() : langCode(lang));
       return dict ? copy(dict.texts) : {};
     },
     status: function (bookingId) {

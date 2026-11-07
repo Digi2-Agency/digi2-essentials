@@ -36,7 +36,9 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   czytał polski tekst niezależnie od niego. Po tej zmianie strona z
   Designerowym domyślnym `<html lang="en">`, której klucz ma włączony `en`
   (dokładnie to, co ma przykładowy klucz kontraktu), przestawi **cały widget**
-  na angielski — bez żadnego atrybutu i bez słowa w konsoli. Jeśli strona ma
+  na angielski — bez żadnego atrybutu. Konsola mówi o tym raz („<html lang="en">
+  sets the booking language…”), gdy `<html lang>` odsuwa stronę od
+  `default_language` klucza. Jeśli strona ma
   mówić po polsku, popraw `<html lang>` albo dopisz `d2-booking-lang="pl"`
   **przed** podbiciem wersji.
 - Kolejność jest jedna: `d2-booking-lang` → `<html lang>` → `default_language`.
@@ -72,7 +74,11 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
 - Wysyłany jest **ten język, w którym moduł naprawdę renderuje**, a nie surowy
   `d2-booking-lang`: gdy klucz odmówił niemieckiego, w zapytaniu jedzie
   domyślny — gość nie ma czytać niemieckich zdań obok polskich nazw ani
-  odwrotnie. Backend i tak zawęża wartość do `languages` klucza, a wartości,
+  odwrotnie. Kody z regionem albo wielką literą (`de-DE`, `EN`) czytają
+  słownik swojego języka także w łańcuchu zapasowym i w `digi2.booking.texts()`,
+  a `digi2.booking.message()` z powodem, którego zdanie wymaga wartości
+  (np. `child_age_max`), mówi zdanie ogólne zamiast klamer `{max}`. Backend i
+  tak zawęża wartość do `languages` klucza, a wartości,
   której nie może użyć (pustej, bezsensownej, absurdalnie długiej), **nie
   odmawia — pomija ją**.
 - Przy `POST …/bookings` wybrany język **zapisuje się na rezerwacji**: w nim są

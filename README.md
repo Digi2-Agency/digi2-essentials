@@ -4202,7 +4202,12 @@ Which language a guest gets:
 A language the key does not allow — or one no dictionary covers — is **refused
 in favour of the default**; an explicit `d2-booking-lang` refused that way says
 so in the console (`<html lang>` is the quiet version of the question, so a
-refusal there is quiet too). Half a page in German promises a service the owner
+refusal there is quiet too). When `<html lang>` **wins** over the key's default
+the console says so once — Webflow's default `lang="en"` would otherwise switch
+a Polish client's widget with nothing to find. Codes are compared without the
+region and the case (`de-DE`, `EN`), in the fallback chain and in
+`digi2.booking.texts()` too; `message()` with a reason whose sentence needs
+values answers the generic sentence, never a `{brace}`. Half a page in German promises a service the owner
 cannot give. A key whose `/config` lists no `languages` at all is **not** policed
 (there is nothing to check against): the attribute stands, and everything else
 stays as it was, on the key's default.
