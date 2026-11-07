@@ -109,6 +109,10 @@ function element(attrs, tagName) {
  *   produkty  wynik d2estate.getProducts()
  *   elementy  elementy strony dla querySelectorAll (sloty, formularz testowy)
  *   dotyk     matchMedia('(hover: none)') = true
+ *   sciezka   location.pathname (domyślnie /oferta)
+ *   uuidy     kolejne wyniki crypto.randomUUID (np. visitorId nowego profilu)
+ *   wCzasie   tablica, do której trafia każde digi2.emit z czasem zegara { n, d, t }
+ *   poZaladowaniu  fn(window) zaraz po wykonaniu modułu, przed otwarciem magazynu
  *   kod       inny kod modułu (np. ma.3 do testu zgodności)
  *   bezUnicodeRegExp  przeglądarka sprzed ES2018: new RegExp(…, 'u') rzuca
  *   dymek     { open, zostawiaKlase } - pełnoekranowy dymek mapy 2destate na telefonie;
@@ -227,7 +231,7 @@ function strona(opts) {
     addEventListener(n, f) { (naOknie[n] = naOknie[n] || []).push(f); },
     document,
     dataLayer,
-    location: { origin: 'https://demo.example', host: 'demo.example', hostname: 'demo.example', pathname: '/oferta', search: o.search || '', href: 'https://demo.example/oferta' + (o.search || '') },
+    location: { origin: 'https://demo.example', host: 'demo.example', hostname: 'demo.example', pathname: o.sciezka || '/oferta', search: o.search || '', href: 'https://demo.example' + (o.sciezka || '/oferta') + (o.search || '') },
     localStorage: {
       getItem(k) {
         if (k === 'consentModeV2') return o.zgoda ? JSON.stringify(o.zgoda) : null;
@@ -241,12 +245,13 @@ function strona(opts) {
       },
       removeItem(k) { if (o.dysk && o.dysk.ls) delete o.dysk.ls[k]; },
     },
-    crypto: { randomUUID: () => '00000000-0000-4000-8000-' + String(++uuidN).padStart(12, '0') },
+    crypto: { randomUUID: () => (o.uuidy && o.uuidy.length ? o.uuidy.shift() : '00000000-0000-4000-8000-' + String(++uuidN).padStart(12, '0')) },
     atob: (b) => Buffer.from(b, 'base64').toString('binary'),
     digi2: {
       log(...a) { if (o.logi) o.logi.push(JSON.stringify(a)); },
       emit(n, d) {
         (zdarzenia[n] = zdarzenia[n] || []).push(d);
+        if (o.wCzasie) o.wCzasie.push({ n, d: klon(d), t: zegar.t });
         (sluchacze[n] || []).forEach((f) => f(d));
       },
       on(n, f) { (sluchacze[n] = sluchacze[n] || []).push(f); },
@@ -346,6 +351,8 @@ function strona(opts) {
     };
   }
   vm.runInContext(o.kod || kodModulu, context, { filename: modulePath });
+  // Zdarzenia z chwili ładowania: moduł już stoi, magazyn jeszcze się otwiera (bufor).
+  if (o.poZaladowaniu) o.poZaladowaniu(window);
 
   const env = {
     window, zegar, dataLayer, popupy, zablokowane, webhooki, sygnaly, ostrzezenia, zdarzenia, ma: window.digi2.ma,
@@ -366,6 +373,20 @@ function strona(opts) {
         if (!timery.length || timery[0].at > zegar.t) break;
         timery.shift().fn();
       }
+      await env.gotowe();
+    },
+    /** Jak minie, ale każdy timer odpala w swojej chwili (zegar = jego at) - czas zdarzeń z timerów dla przypadków ma-cases. */
+    async minieDokladnie(ms) {
+      const cel = zegar.t + ms;
+      for (;;) {
+        timery.sort((a, b) => a.at - b.at);
+        if (!timery.length || timery[0].at > cel) break;
+        const x = timery.shift();
+        if (x.at > zegar.t) zegar.t = x.at;
+        x.fn();
+        await env.gotowe();
+      }
+      zegar.t = cel;
       await env.gotowe();
     },
     naDokumencie, naOknie, document,
@@ -6002,4 +6023,126 @@ test('ma.41 (recenzja 2): cofanie — priorytet display wraca, usunięty scenari
   await r.ma.clear();
   assert.equal(s3.textContent, 'tekst');
   assert.equal(s3.getAttribute('title'), 'stary');
+});
+
+// ---------------------------------------------------------------------------
+// Przypadki zgodności ma-cases (§13.8.1 pkt 3 specu silnika): ten sam plik czyta
+// symulacja panelu 2destate (simulate(envelope, visitor, visit, now)). Przypadek,
+// którego ma.js nie spełnia, zatrzymuje bramkę wydania. Format: README → ma-cases.
+// ---------------------------------------------------------------------------
+
+const CASES_DIR = path.join(__dirname, 'fixtures', 'ma-cases');
+const POLA_PRZYPADKU = ['id', 'desc', 'since', 'envelope', 'visitor', 'visit', 'now', 'expect'];
+const POLA_GOSCIA = ['visitorId', 'consent', 'device', 'lead', 'profile'];
+const ZDARZENIA_WIZYTY = ['page', 'wait', 'scroll', 'hidden', 'visible', 'unit_view', 'exit_intent', 'lead'];
+
+function zgodaPrzypadku(consent) {
+  if (consent === 'granted') return [gtag('consent', 'update', { analytics_storage: 'granted' })];
+  if (consent === 'denied') return [gtag('consent', 'update', { analytics_storage: 'denied' })];
+  if (consent === 'pending') return [];
+  throw new Error('visitor.consent: granted | denied | pending, nie ' + consent);
+}
+
+/** Przebieg przypadku na prawdziwym ma.js: lista akcji { t, scenarioId, nodeId, do[, status] }. */
+async function symuluj(c) {
+  Object.keys(c).forEach((k) => assert.ok(POLA_PRZYPADKU.includes(k), c.id + ': nieznane pole ' + k));
+  const v = c.visitor;
+  Object.keys(v).forEach((k) => assert.ok(POLA_GOSCIA.includes(k), c.id + ': nieznane pole visitor.' + k));
+  // Runner umie tylko tyle - przypadek spoza tego ma paść głośno, nie przejść po cichu.
+  assert.equal(v.profile, null, c.id + ': visitor.profile jeszcze nieobsługiwany (tylko null)');
+  assert.ok(v.lead == null || v.lead === false, c.id + ': visitor.lead - użyj zdarzenia lead w visit');
+  assert.ok(v.device === 'desktop' || v.device === 'touch', c.id + ': visitor.device');
+  const t0 = Date.parse(c.now);
+  assert.ok(Number.isFinite(t0), c.id + ': now');
+  assert.ok(c.visit.length && c.visit[0].event === 'page' && c.visit[0].t === 0, c.id + ': wizyta zaczyna się od page w t = 0');
+  const zegar = { t: t0 };
+  const wCzasie = [];
+  const opts = {
+    koperta: c.envelope, zegar, wCzasie, dotyk: v.device === 'touch',
+    uuidy: v.visitorId ? [v.visitorId] : [], dataLayer: zgodaPrzypadku(v.consent),
+  };
+  let env = null;
+  let poprzednie = 0;
+  for (let i = 0; i < c.visit.length; i++) {
+    const krok = c.visit[i];
+    assert.ok(ZDARZENIA_WIZYTY.includes(krok.event), c.id + ': nieznane zdarzenie ' + krok.event);
+    assert.ok(krok.t >= poprzednie, c.id + ': kroki w kolejności t');
+    poprzednie = krok.t;
+    const d = krok.data || {};
+    if (krok.event === 'page') {
+      // unit_view { atLoad: true } tuż za page: obejrzenie przy ładowaniu (deep link),
+      // trafia do bufora i wchodzi przy otwarciu magazynu, w passie tej odsłony.
+      const przyLadowaniu = [];
+      while (c.visit[i + 1] && c.visit[i + 1].event === 'unit_view' && c.visit[i + 1].data && c.visit[i + 1].data.atLoad) {
+        const n = c.visit[++i];
+        assert.equal(n.t, krok.t, c.id + ': unit_view atLoad ma t swojej odsłony');
+        assert.equal(n.path, krok.path, c.id + ': unit_view atLoad na swojej odsłonie');
+        przyLadowaniu.push(n.data.unit);
+      }
+      const poZaladowaniu = (w) => przyLadowaniu.forEach((u) => w.digi2.ma.track(u));
+      if (!env) env = await start(Object.assign({}, opts, { sciezka: krok.path, poZaladowaniu }));
+      else env = await powrot(env, t0 + krok.t - zegar.t, { sciezka: krok.path, poZaladowaniu });
+      continue;
+    }
+    assert.ok(!d.atLoad, c.id + ': atLoad tylko tuż za page');
+    await env.minieDokladnie(t0 + krok.t - zegar.t);
+    assert.equal(krok.path, env.window.location.pathname, c.id + ': ' + krok.event + ' na innej stronie niż otwarta');
+    if (krok.event === 'scroll') {
+      // documentElement 3000 px, okno 1000 px: pct = pageYOffset / 2000.
+      env.window.pageYOffset = Math.round(d.pct * 20);
+      env.okno('scroll');
+    } else if (krok.event === 'hidden' || krok.event === 'visible') {
+      env.document.visibilityState = krok.event;
+      env.dom('visibilitychange');
+    } else if (krok.event === 'unit_view') {
+      env.ma.track(d.unit);
+    } else if (krok.event === 'exit_intent') {
+      env.dom('mouseout', { clientY: -1, relatedTarget: null });
+    } else if (krok.event === 'lead') {
+      env.ma.lead();
+    }
+    await env.gotowe();
+  }
+  return wCzasie.filter((e) => e.n === 'ma:action').map((e) => {
+    const a = { t: e.t - t0, scenarioId: e.d.scenarioId, nodeId: e.d.nodeId, do: e.d.do };
+    if (e.d.status) a.status = e.d.status;
+    return a;
+  });
+}
+
+// t akcji z dokładnością do pełnej sekundy w dół: próg czasu odpala timer
+// o kilkadziesiąt ms po progu, a symulacja panelu liczy dokładnie próg.
+const doSekundy = (lista) => lista.map((a) => Object.assign({}, a, { t: Math.floor(a.t / 1000) * 1000 }));
+
+const indeksPrzypadkow = JSON.parse(fs.readFileSync(path.join(CASES_DIR, 'index.json'), 'utf8'));
+
+test('ma-cases: index.json wymienia każdy plik przypadku, id = nazwa pliku, numery bez dziur', () => {
+  const pliki = fs.readdirSync(CASES_DIR).filter((f) => f !== 'index.json' && f.endsWith('.json')).sort();
+  assert.deepEqual([...indeksPrzypadkow.cases].sort(), pliki);
+  indeksPrzypadkow.cases.forEach((f, i) => {
+    const c = JSON.parse(fs.readFileSync(path.join(CASES_DIR, f), 'utf8'));
+    assert.equal(c.id + '.json', f);
+    assert.equal(f.slice(0, 3), String(i + 1).padStart(3, '0'), f + ': numer w kolejności');
+    assert.match(c.since, /^v1\.9\.0-ma\.\d+$/);
+    assert.ok(parseInt(c.since.split('.').pop(), 10) <= parseInt(/SCRIPT_VERSION = (\d+)/.exec(kodModulu)[1], 10), f + ': since nowsze niż ma.js');
+  });
+});
+
+for (const plik of indeksPrzypadkow.cases) {
+  const c = JSON.parse(fs.readFileSync(path.join(CASES_DIR, plik), 'utf8'));
+  test('ma-cases ' + c.id + ': ' + c.desc, async () => {
+    const akcje = await symuluj(c);
+    assert.deepEqual(doSekundy(akcje), doSekundy(c.expect.actions));
+  });
+}
+
+test('ma.44: page z progiem nasłuchuje czasu i przewinięcia tylko na stronie, do której pasuje reszta filtra', async () => {
+  // MUTACJA: włączyć nasłuch dla każdego page z progiem, a strona /oferta słucha
+  // scrolla dla scenariusza, który i tak dotyczy tylko /kontakt.
+  const zProgiem = (sciezki) => koperta([scenariusz('p', { event: 'page', paths: { include: sciezki }, minScrollPct: 50 },
+    [{ do: 'datalayer', event: 'ma_segment', params: { segment: 'p' } }])], { minScript: 'ma.44' });
+  const obca = await start({ koperta: zProgiem(['/kontakt']), sciezka: '/oferta' });
+  assert.equal((obca.naOknie.scroll || []).length, 0, 'filtr ścieżki nie pasuje — bez nasłuchu');
+  const swoja = await start({ koperta: zProgiem(['/oferta']), sciezka: '/oferta' });
+  assert.equal((swoja.naOknie.scroll || []).length, 1, 'pasuje — nasłuch jest');
 });

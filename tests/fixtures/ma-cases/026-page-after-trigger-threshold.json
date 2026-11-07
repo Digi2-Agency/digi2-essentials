@@ -1,0 +1,121 @@
+{
+  "id": "026-page-after-trigger-threshold",
+  "desc": "unit_view -> page z minSeconds: 5. Odsłona, na której obejrzano lokal, nie liczy się, choć próg czasu mija na niej po obejrzeniu; odpala następna odsłona po 5 s.",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "chain-s5",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "event": "unit_view",
+              "unitIds": [],
+              "minCount": 1
+            }
+          },
+          {
+            "id": "t2",
+            "type": "trigger",
+            "when": {
+              "event": "page",
+              "paths": {
+                "include": [
+                  "/oferta"
+                ]
+              },
+              "minSeconds": 5
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "chain-s5"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "t2"
+          ],
+          [
+            "t2",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    },
+    {
+      "t": 1000,
+      "path": "/oferta",
+      "event": "unit_view",
+      "data": {
+        "unit": {
+          "unitId": "A1",
+          "rooms": 2,
+          "floor": 1
+        }
+      }
+    },
+    {
+      "t": 9000,
+      "path": "/oferta",
+      "event": "wait",
+      "data": {}
+    },
+    {
+      "t": 20000,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    },
+    {
+      "t": 30000,
+      "path": "/oferta",
+      "event": "wait",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 25000,
+        "scenarioId": "chain-s5",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

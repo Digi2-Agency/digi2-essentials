@@ -1,0 +1,95 @@
+{
+  "id": "028-page-after-return-visit",
+  "desc": "return_visit -> page: odsłona, która otworzyła wizytę powrotną, liczy się jako „po” return_visit tej wizyty (granicą jest odsłona, nie milisekunda).",
+  "since": "v1.9.0-ma.44",
+  "envelope": {
+    "version": "0",
+    "site": "osiedle-demo",
+    "minScript": "ma.44",
+    "storage": {
+      "retentionDays": 90,
+      "consentRequired": false
+    },
+    "channels": {},
+    "scenarios": [
+      {
+        "scenarioId": "rv-page",
+        "revision": 1,
+        "active": true,
+        "nodes": [
+          {
+            "id": "t1",
+            "type": "trigger",
+            "when": {
+              "event": "return_visit",
+              "afterHours": 1
+            }
+          },
+          {
+            "id": "t2",
+            "type": "trigger",
+            "when": {
+              "event": "page",
+              "paths": {
+                "include": [
+                  "/oferta"
+                ]
+              }
+            }
+          },
+          {
+            "id": "a1",
+            "type": "action",
+            "do": "datalayer",
+            "event": "ma_segment",
+            "params": {
+              "segment": "rv-page"
+            }
+          }
+        ],
+        "edges": [
+          [
+            "t1",
+            "t2"
+          ],
+          [
+            "t2",
+            "a1"
+          ]
+        ]
+      }
+    ]
+  },
+  "visitor": {
+    "visitorId": "aaaaaaaa-bbbb-4ccc-8ddd-000000000001",
+    "consent": "granted",
+    "device": "desktop",
+    "lead": null,
+    "profile": null
+  },
+  "visit": [
+    {
+      "t": 0,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    },
+    {
+      "t": 7200000,
+      "path": "/oferta",
+      "event": "page",
+      "data": {}
+    }
+  ],
+  "now": "2026-11-08T12:00:00+01:00",
+  "expect": {
+    "actions": [
+      {
+        "t": 7200000,
+        "scenarioId": "rv-page",
+        "nodeId": "a1",
+        "do": "datalayer"
+      }
+    ]
+  }
+}

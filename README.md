@@ -1306,8 +1306,8 @@ until reload.
 
 ### Scenario engine (§13.3a)
 
-Each event (`unit_view`, `return_visit`, `lead`, `crm_call_result`, and from ma.4
-`exit_intent`, `engagement`, `form_abandon`) runs through
+Each event (`unit_view`, `return_visit`, `lead`, `crm_call_result`, from ma.4
+`exit_intent`, `engagement`, `form_abandon`, and from ma.44 `page`) runs through
 the active scenarios in envelope order. A node's progress is `{ at, unit,
 segment }` in `state.scenarios[scenarioId].nodes`.
 
@@ -1665,6 +1665,99 @@ nodes gets no extra listener. Before consent nothing is collected.
 
 `clear()` and a consent wipe also reset the page's signals (form timers,
 fired `engagement` triggers), so a trigger can fire again on the same page.
+
+### The `page` trigger (ma.44, §13.8.2)
+
+Audience filters of the current page view, all in `when` (never `if`, §13.8.1
+point 3): `paths: { include?, exclude? }`, `lang`, `device`, `minPageViews`,
+`minSeconds`, `minScrollPct`, `chance`. At least one must differ from its
+default (`minSeconds: 0` / `minScrollPct: 0` don't count). Fires once a page
+view (`pageFired`, per `scenarioId/nodeId`).
+
+- **Fail closed.** Unlike other nodes, an unknown field in `when` (or in
+  `paths`), a value out of range, `lang` without `langPrefixes` or with a key
+  not in it, and an envelope whose `langPrefixes` is invalid all make the node
+  `invalid` with `console.warn` — the branch stops. Ignoring an unknown filter
+  (rule 8) would show the popup to more visitors than the scenario says; a
+  script older than ma.44 stops at the unknown trigger for the same reason.
+- **When it is checked.** On page open, in the same pass as `return_visit`
+  and the buffer (one popup at a time), with `seconds: 0`. Thresholds
+  (`minSeconds`, `minScrollPct`) ride on the `engagement` machinery: active
+  time while the tab is visible, deepest scroll, one timer to the nearest
+  threshold; `engCheck` signals a `page` node once both are met, and `check()`
+  re-tests every filter. Listeners go on only when some `page` node has a
+  threshold.
+- **Arming (rule 1) — the boundary is the page view, not the millisecond.**
+  `state.pageSeq` goes up at the start of every store open, before `touch()`,
+  and every step records the `seq` of the page view it happened on
+  (`st.nodes[id].seq`). A non-root `page` fires only on a page view with a
+  higher `seq` than its predecessor's step: events of the same page view (the
+  buffer, a deep-link `unit_view`, a lead, a step that crossed a threshold)
+  never count, even when `minSeconds` passes after them. One exception
+  (architekt-it, review of #72): the `return_visit` dispatched by the page view
+  that **opened** the visit records `seq − 0.5`, so that page view counts as
+  after it — `return_visit → page` fires on the returning page. Steps stored
+  before ma.44 have no `seq` and fall back to the open time (`pageAt > at`).
+- **Listeners.** Time and scroll are watched only for a `page` with a
+  threshold whose static part (path, language, device, page number, chance)
+  matches this page view.
+- **Path.** Raw `location.pathname`, case-sensitive, not decoded; exactly one
+  trailing slash dropped, except `/`. Entries in `paths` are checked like the
+  publish validator does: a trailing `/` (except `/` itself), anything outside
+  printable ASCII, an upper-case letter outside `%XX`, or `%xx` with lower-case
+  hex make the node invalid — such an entry never matches, and in `exclude` it
+  would silently stop excluding. Prefix match with a segment boundary
+  (`p` matches `p` and `p/…`). `"/"` in `paths` is the home page only.
+- **Language.** `langPrefixes` on the envelope: 1–10 entries, code
+  `^[a-z]{2}$`, prefix `/` or `^/[a-z]{2}(-[a-z]{2})?$`, unique, at most one
+  `/`. The longest matching non-`/` prefix wins and is stripped (empty rest =
+  `/`); otherwise the `/` entry's language, path unchanged; otherwise the
+  language is unknown (`lang` fails, path compared in full). With
+  `langPrefixes`, `paths` sees the path after the language prefix.
+- **Device.** `mobile` = `matchMedia('(hover: none)')`, as for `exit_intent`.
+- **`minPageViews`** compares with `state.visitPageviews` (this page included).
+- **`chance`.** FNV-1a 32-bit over the UTF-8 bytes of
+  `visitorId + "\u001f" + scenarioId + "\u001f" + nodeId`, unsigned,
+  `h % 100 < chance`. Part of the contract: changing it means a new node or
+  field and a higher `minScript`. `Math.imul` (no fallback: one without it
+  would lose precision and put visitors in other buckets than the panel).
+
+### Compatibility cases (`tests/fixtures/ma-cases`, ma.44)
+
+Owned by this repo (§13.8.1 point 3 of the engine spec); the 2destate panel
+runs the same files from the tag equal to `MA_APPROVED_SCRIPT` in its
+`simulate(envelope, visitor, visit, now)`. A behaviour change starts with a
+new case here.
+
+- **Files.** `<NNN>-<slug>.json`, numbered without gaps, `id` = file name,
+  listed in `index.json` (`{ format: 1, cases: [...] }`) so the panel needn't
+  list a CDN directory. They ship in the tag:
+  `@v1.9.0-ma.N/tests/fixtures/ma-cases/…`.
+- **Fields.** `id`, `desc`, `since` (`v1.9.0-ma.N`, not newer than
+  `SCRIPT_VERSION`), `envelope` (1:1; consent requirement only in
+  `envelope.storage.consentRequired`), `visitor { visitorId, consent:
+  granted|denied|pending, device: desktop|touch, lead, profile }`, `visit
+  [{ t, path, event, data }]`, `now` (ISO with offset, Europe/Warsaw),
+  `expect.actions`.
+- **Visit events.** `page` (a load at `path`; first step, `t: 0`), `wait`
+  (time passes, tab visible), `scroll` (`data.pct`), `hidden` / `visible`,
+  `unit_view` (`data.unit`, §13.1 shape; `data.atLoad: true` = viewed while
+  the page loads — a deep link, buffered and handled when the store opens;
+  only right after its `page`, same `t` and `path`), `exit_intent`, `lead`.
+  Any other step's `path` must equal the open page.
+- **Expectation.** Every `ma:action`, in order, as `{ t, scenarioId, nodeId,
+  do }` (+ `status` when present); the whole list is compared. `t` is ms from
+  the visit start, compared after flooring to the second: a threshold timer
+  fires ~20 ms after it, the panel computes the threshold itself.
+- **Runner.** `tests/ma.test.js` (`symuluj`) runs each case on the real
+  `ma.js` in the mini-DOM (`sciezka`, `uuidy`, `wCzasie`, `minieDokladnie`).
+  It refuses what it can't run yet — `visitor.profile` other than `null`,
+  `visitor.lead` — so a case never passes half-run. A failing case fails
+  `npm test` and so the release gate.
+- **Expectations are not taken from the code.** The language/path cases come
+  from the table in the review of engine PR #1903; `chance` buckets are
+  computed with an independent FNV-1a. Each case was checked to fail on a
+  mutated `ma.js`.
 
 ### Hot lead comes back (ma.12, MA-D38 stage 1, variant D′)
 
