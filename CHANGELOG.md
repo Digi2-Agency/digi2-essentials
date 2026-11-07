@@ -27,26 +27,21 @@ startuje portal: **`pl`, `en`, `de`, `uk`**. Polskie zdania **nie zmieniły się
 ani o literę** — są przepisane jeden do jednego i przypięte w testach.
 
 - **`d2-booking-lang="de"`** na tagu loadera ustawia język, w którym gość czyta
-  stronę (`pl`, `en`, `de`, `uk`). Bez atrybutu decyduje `<html lang>`, gdy
-  klucz tym językiem mówi, a inaczej `default_language` klucza. Czytane przez
-  `digi2.attr`.
-- **Przeczytaj przed podbiciem wersji.** `<html lang>` wybiera teraz **słownik**,
-  a nie tylko formatowanie. Do tej pory moduł miał jedną tablicę zdań — polską —
-  więc `<html lang>` ustawiał wyłącznie `Intl` i `locale` rezerwacji, a gość
-  czytał polski tekst niezależnie od niego. Po tej zmianie strona z
-  Designerowym domyślnym `<html lang="en">`, której klucz ma włączony `en`
-  (dokładnie to, co ma przykładowy klucz kontraktu), przestawi **cały widget**
-  na angielski — bez żadnego atrybutu. Konsola mówi o tym raz („<html lang="en">
-  sets the booking language…”), gdy `<html lang>` odsuwa stronę od
-  `default_language` klucza. Jeśli strona ma
-  mówić po polsku, popraw `<html lang>` albo dopisz `d2-booking-lang="pl"`
-  **przed** podbiciem wersji.
-- Kolejność jest jedna: `d2-booking-lang` → `<html lang>` → `default_language`.
+  stronę (`pl`, `en`, `de`, `uk`). Bez atrybutu decyduje `default_language`
+  klucza. Czytane przez `digi2.attr`.
+- **`<html lang>` jest czytany tylko przy `d2-booking-lang="auto"`** (decyzja
+  Piotra, 2026-11-07). Webflow ustawia w wielu projektach domyślnie
+  `<html lang="en">`, więc czytany sam z siebie przestawiłby polską stronę
+  klienta na angielski po cichu. Strona wielojęzyczna (Webflow Localization),
+  która ustawia `lang` na każdej wersji językowej, włącza to jednym słowem:
+  `d2-booking-lang="auto"`.
+- Kolejność jest jedna: `d2-booking-lang` (albo przy `"auto"` — `<html lang>`)
+  → `default_language`.
   Język, na który **klucz nie pozwala** (`languages` z `/config`) — albo taki,
   którego moduł nie ma w słowniku — wraca do domyślnego: pół strony po
   niemiecku obiecuje usługę, której właściciel nie da. **W konsoli mówi o tym
-  wpisany atrybut** `d2-booking-lang`; `<html lang>` to cichsza wersja tego
-  samego pytania, więc odmowa tam jest cicha. Klucz, którego `/config` nie ma
+  wpisany atrybut** `d2-booking-lang`; odmowa `<html lang>` przy `"auto"`
+  jest cicha. Klucz, którego `/config` nie ma
   `languages` wcale, nie jest pilnowany (nie ma z czym porównać): atrybut
   zostaje w mocy, a wszystko inne działa jak dotąd.
 - Sam **domyślny język klucza jest pilnowany tak samo**: `default_language`,
@@ -175,10 +170,8 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   z JSON-em od proxy, z jakimkolwiek `reason`) zostaje wynikiem niepewnym:
   ponowienie idzie pod tym samym `Idempotency-Key`, więc nie powstanie druga
   rezerwacja.
-- **Przed podbiciem wersji na stronie klienta:** Webflow ustawia często
-  domyślnie `<html lang="en">`, więc polska strona, której klucz ma `en` w
-  `languages`, może po cichu przejść na angielski (sygnał tylko w konsoli). Sprawdź `<html lang>` albo dopisz
-  `d2-booking-lang`.
+- `<html lang>` nie zmienia języka widgetu bez `d2-booking-lang="auto"`, więc
+  domyślne `lang="en"` z Webflow nie przestawi polskiej strony na angielski.
 
 ## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
 

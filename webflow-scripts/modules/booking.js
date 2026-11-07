@@ -59,14 +59,17 @@
  * THAT DICTIONARY, so Ukrainian keeps its own three-form rule.
  *
  *   d2-booking-lang="de"   The page asks for one language (loader tag, read
- *                          with digi2.attr). <html lang> is the quieter version
- *                          of the same question.
+ *                          with digi2.attr).
+ *   d2-booking-lang="auto" The page follows <html lang> — for a site that sets
+ *                          it per language (Webflow Localization). Without
+ *                          "auto" <html lang> is NOT read: Webflow writes
+ *                          lang="en" on many projects by default.
  *
  * Which language wins:
  *
- *   1. d2-booking-lang, when the key allows it and the module has a dictionary
- *   2. <html lang>, under the same two conditions
- *   3. the key's default_language from /config
+ *   1. d2-booking-lang (or, with "auto", <html lang>), when the key allows it
+ *      and the module has a dictionary
+ *   2. the key's default_language from /config
  *
  * A language the key does not allow — or one no dictionary covers — is refused
  * in favour of the default, and an explicit attribute refused that way says so
@@ -1757,6 +1760,9 @@
     return false;
   }
 
+  // d2-booking-lang="auto": the language of <html lang>, under the same rules.
+  var AUTO_LANGUAGE = 'auto';
+
   var _langWarned = {};
   /**
    * The language the guest reads — and the one every Intl format and the
@@ -1764,8 +1770,8 @@
    *
    * The key decides what is on offer: /config carries the languages the owner
    * allowed and the default. The page asks for one of them with
-   * d2-booking-lang on the loader tag, and <html lang> is the quieter version
-   * of the same question. A language the key does not allow — or one this
+   * d2-booking-lang on the loader tag; d2-booking-lang="auto" asks with
+   * <html lang> instead, quietly (a refusal there says nothing). A language the key does not allow — or one this
    * module has no dictionary for — is refused in favour of the key's default,
    * because half a page in German promises a service the owner cannot give;
    * an explicit attribute refused that way says so in the console.
@@ -1793,6 +1799,17 @@
     }
     var langs = (cfg && isArray(cfg.languages)) ? cfg.languages : [];
     var asked = langCode(attr(cfgEl(), 'd2-booking-lang'));
+    // "auto" follows <html lang>: for a site that sets it per language
+    // (Webflow Localization). Without it <html lang> is not read at all —
+    // Webflow writes lang="en" on many projects by default, and a Polish
+    // client's widget must not turn English because of it.
+    if (asked === AUTO_LANGUAGE) {
+      var html = null;
+      try { html = document.documentElement; } catch (e) { html = null; }
+      var code = langCode(html ? html.getAttribute('lang') : '');
+      if (code && (!langs.length || keySpeaks(langs, code)) && dictOf(code)) return code;
+      return fallback;
+    }
     if (asked) {
       var allowed = !langs.length || keySpeaks(langs, asked);
       if (allowed && dictOf(asked)) return asked;
@@ -1804,20 +1821,6 @@
           + ' — the guest reads ' + fallback);
       }
       return fallback;
-    }
-    var html = null;
-    try { html = document.documentElement; } catch (e) { html = null; }
-    var code = langCode(html ? html.getAttribute('lang') : '');
-    if (code && keySpeaks(langs, code) && dictOf(code)) {
-      // Webflow sets lang="en" on many projects by default, and since the
-      // dictionaries that switches every sentence. Said once, so whoever bumps
-      // the version on a client's page finds out in the console.
-      if (code !== fallback && lastConfig && !_langWarned['html:' + code]) {
-        _langWarned['html:' + code] = true;
-        _warn('<html lang="' + code + '"> sets the booking language to ' + code + ' (the key\'s'
-          + ' default is ' + fallback + ') — put d2-booking-lang on the loader tag to choose it');
-      }
-      return code;
     }
     return fallback;
   }

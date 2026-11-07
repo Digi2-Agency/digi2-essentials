@@ -1164,12 +1164,12 @@ test('an unreachable /config leaves the form usable and the backend deciding', a
 test('the page language is sent when the key speaks it', async () => {
   // MUTACJA: always send default_language and a guest reading the English page
   // gets Polish e-mails.
-  const env = page({ lang: 'en-GB', forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  const env = page({ lang: 'en-GB', loaderAttrs: { 'd2-booking-lang': 'auto' }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
   await env.settled();
   await env.booking.book(env.form, STAY);
   assert.equal(env.calls.filter((c) => c.method === 'POST')[0].body.locale, 'en');
 
-  const other = page({ lang: 'de', forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  const other = page({ lang: 'de', loaderAttrs: { 'd2-booking-lang': 'auto' }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
   await other.settled();
   await other.booking.book(other.form, STAY);
   assert.equal(
@@ -5052,21 +5052,27 @@ test('a regional or capitalised code reads its own dictionary', async () => {
   assert.deepEqual(env.booking.texts('EN'), en);
 });
 
-test('<html lang> moving the page off the key\'s default says so once in the console', async () => {
-  // MUTACJA: switch in silence, and the Webflow default lang="en" turns a
-  // Polish client's widget English with nothing for anyone to find.
+test('<html lang> alone does not move the widget off the key\'s default', async () => {
+  // MUTACJA: read <html lang> without "auto", and Webflow's default lang="en"
+  // turns a Polish client's widget English after a version bump.
   const env = page({ lang: 'en', config: { languages: ['pl', 'en'] }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
   await env.settled();
-  assert.equal(env.booking.language(), 'en');
-  env.booking.language();
-  const said = env.warnings.filter((w) => w.indexOf('<html lang="en">') >= 0);
-  assert.equal(said.length, 1, env.warnings.join(' | '));
-  assert.ok(said[0].indexOf('d2-booking-lang') >= 0);
+  assert.equal(env.booking.language(), CONFIG.response.default_language);
+  assert.equal(env.booking.text('submit_label'), PL_SAYS.submit_label);
+  await env.booking.book(env.form, STAY);
+  assert.equal(env.calls.filter((c) => c.method === 'POST')[0].body.locale, CONFIG.response.default_language);
+});
 
-  const asked = langPage('en', { lang: 'en' });
-  await asked.settled();
-  assert.equal(asked.warnings.filter((w) => w.indexOf('<html lang=') >= 0).length, 0,
-    'the attribute chose it: nothing to warn about');
+test('d2-booking-lang="auto" follows <html lang> under the key\'s rules, quietly', async () => {
+  // MUTACJA: treat "auto" as a language code, and it is refused with a warning
+  // and the Localization page reads the default.
+  const en = page({ lang: 'en', loaderAttrs: { 'd2-booking-lang': 'auto' }, config: { languages: ['pl', 'en'] }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  await en.settled();
+  assert.equal(en.booking.language(), 'en');
+  const de = page({ lang: 'de', loaderAttrs: { 'd2-booking-lang': 'auto' }, config: { languages: ['pl', 'en'] }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  await de.settled();
+  assert.equal(de.booking.language(), CONFIG.response.default_language, 'a language the key does not allow');
+  assert.equal(de.warnings.filter((w) => w.indexOf('d2-booking-lang') >= 0).length, 0, de.warnings.join(' | '));
 });
 
 test('every counted word has every form its own rule can return', async () => {
@@ -5103,12 +5109,10 @@ test('every counted word has every form its own rule can return', async () => {
   }
 });
 
-test('<html lang> chooses the dictionary, not only the dates', async () => {
-  // MUTACJA: let the dictionary follow only d2-booking-lang and a page that
-  // says <html lang="en"> reads Polish sentences under English dates — the
-  // second rule of the chain, which every other language test skips by
-  // setting the attribute.
-  const env = page({ lang: 'en', forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+test('with "auto", <html lang> chooses the dictionary, not only the dates', async () => {
+  // MUTACJA: let "auto" move only the formatting and a page that says
+  // <html lang="en"> reads Polish sentences under English dates.
+  const env = page({ lang: 'en', loaderAttrs: { 'd2-booking-lang': 'auto' }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
   await env.settled();
 
   assert.equal(env.booking.language(), 'en', 'the key allows en (the contract fixture)');
