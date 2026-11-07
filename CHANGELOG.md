@@ -38,7 +38,8 @@ loader: atrybut `d2-booking` na tagu.
   `booking:created`, które nie niesie danych gościa.
 - Tłumaczenia `de` i `uk` są maszynowe i czekają na przeczytanie przez native
   speakera.
-- Strony na `d2-ma` przypięte do `ma.N`: bez zmian (`ma.min.js` jak w ma.41).
+- `ma.min.js`: zmienia się tylko numer wersji (`digi2.ma.version` = `ma.42`),
+  bez zmian w działaniu. Strony przypięte do `ma.N` bez zmian.
 
 ## ma.42 — `d2-booking`: słowniki językowe `pl`, `en`, `de`, `uk` (etap 8)
 
