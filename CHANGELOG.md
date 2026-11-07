@@ -149,6 +149,38 @@ ani o literę** — są przepisane jeden do jednego i przypięte w testach.
   a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
   czterech trasach i na żadnej innej.
 
+## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
+
+- **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**
+  `Idempotency-Key` jest związany z blokadą (obiekt, termin, skład grupy), a nie
+  z całym formularzem. Gość, któremu zapis przekroczył czas, a który potem
+  poprawił e-mail, dostaje swoją rezerwację z powrotem zamiast „termin zajęty”,
+  a nowy adres idzie do niej przez `/contact` przed płatnością. Zmieniona w tym
+  jednym przypadku uwaga (`note`) zostaje taka, jak wysłana za pierwszym razem.
+  Pierwsza treść wraca **tylko** po odpowiedzi, której nie dało się odczytać
+  (brak sieci, 5xx); po każdej innej odmowie (np. 422 na e-mailu, 413 na
+  uwadze) poprawiony formularz idzie jako nowe żądanie.
+- **Wyczyszczony telefon albo imię są czyszczone także w rezerwacji** (idą do
+  `/contact` jako `null`). Wcześniej puste pole było pomijane, a backend czytał
+  to jako „zostaw stary numer”.
+- **`booking:created` nie niesie już danych gościa**: `customer_name`,
+  `customer_email`, `customer_phone` i `customer_note` są zdjęte z kopii.
+  Jeśli tag GTM wypycha to zdarzenie do dataLayer, nie wyśle e-maila gościa.
+  Kto czytał stamtąd e-mail, musi go wziąć z własnego formularza.
+- `Retry-After` jest czytany najwyżej do **3600 s** we wszystkich miejscach
+  (przycisk formularza, panel obsługi, lista). Wartość ponad ~24,8 dnia
+  przepełniała `setTimeout`, który wtedy odblokowywał przycisk od razu.
+- Przy **dwóch listach** czekających po `429` przycisk szukania odblokowuje się
+  dopiero po ostatnim czekaniu, nie po pierwszym.
+- Pole szukania zbudowane dwa razy, którego widoczna kopia stoi w panelu
+  `position: fixed` (szuflada na telefonie), jest czytane z tej widocznej kopii.
+- **Przed wydaniem:** zsynchronizować fixture kontraktu z 2destate po ich
+  #350/#351 (`contact_token` nullable, `reason` w `/requests`).
+- Nie ukrywaj wzorca karty przez `display: none` na jego rodzicu — wiersze
+  trafiają do tego samego rodzica i byłyby niewidoczne.
+- Opis listy: wiersze trafiają do **rodzica wzorca** (w Collection List — do
+  rodzica Collection Item), a do `[d2-booking-results]` tylko bez wzorca.
+
 ## Bez wydania — `d2-booking`: lista obiektów i wyszukiwanie (etap 6)
 
 Lista apartamentów z `GET /products`, wpisana we wzorzec karty, który zbudował

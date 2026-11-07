@@ -4333,8 +4333,15 @@ clickable placeholder card that no later render ever clears (only
 `[d2-booking-item]` rows are). The first one is the pattern, the rest are
 dropped, and the module says in the console how many it found.
 
-Rows are **appended** to the container, so a button, a count or an empty state
-belongs **next to** the list, not inside it — which is where a Webflow layout
+Do not hide the pattern by hiding its wrapper (`display: none` on the parent):
+rows go into that same wrapper and would stay invisible. Hide nothing — the
+module takes the pattern off the page itself.
+
+Rows are **appended** to the element the pattern stood in — the template's
+parent, or in a Collection List the parent of its Collection Item (the
+`w-dyn-items` wrapper) — and to `[d2-booking-results]` itself only when the
+list has no template. A button, a count or an empty state therefore belongs
+**next to** the list, not inside it — which is where a Webflow layout
 leaves them anyway. One put inside is still filled in and never removed (only
 `[d2-booking-item]` rows are cleared); the rows simply follow it. With one list
 on the page the controls may stand anywhere; with two, each list has to hold
@@ -4929,10 +4936,24 @@ and the attempt is kept twice over:
   the form like a payment refusal.
 - **`Idempotency-Key` on `POST /bookings`.** The fetch timeout rejects here while
   the request can still land there, and `AbortController` would not undo it. The
-  key is a UUID v4 tied to the exact body, new on any changed field and after
-  24 h. A retry returns the same booking; one recovered as `expired` is not paid
-  and drops the key. Pinned by `contact.json` and `booking.json` in
+  key is a UUID v4 tied to the **hold** — product, `unit`, `starts_at`,
+  `units_count` and the party — and new on a changed hold and after 24 h. The
+  retry repeats the body the key was first sent with, because the backend
+  answers `idempotency_key_reused` to the same key with another body. A guest
+  who corrected their e-mail after a lost answer therefore gets their own hold
+  back (not `period_taken`), and the corrected contact follows through
+  `/contact` before anything is paid. A changed `note` in that one case stays as
+  first sent — `/contact` does not carry it. The first body is repeated **only
+  after an answer we never read** (`network_error`, `server_error`,
+  `bad_response`); any other refusal (a 422 on the e-mail, a 413 on the note…)
+  drops the key, so the corrected form goes out as a new request. A retry
+  returns the same booking; one recovered as `expired` is not paid and drops
+  the key. Pinned by `contact.json` and `booking.json` in
   `tests/fixtures/booking-api/`.
+- **A cleared phone or name is sent as `null`** to `/contact`. The backend
+  reads a field left out as "keep it", so an emptied field would otherwise keep
+  the old number (the fixtures do not pin this yet — `SiteContactChange` in
+  2destate does).
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.
@@ -5132,7 +5153,7 @@ digi2.booking.apply();                   // re-read the page after a DOM change
 digi2.on('booking:ready',   ({ config }) => {});
 digi2.on('booking:stay',    ({ stay }) => {});            // chosen or cleared
 digi2.on('booking:quote',   ({ quote, reason }) => {});   // price answered or refused
-digi2.on('booking:created', ({ booking, form }) => {});
+digi2.on('booking:created', ({ booking, form }) => {});  // booking without customer_* fields
 digi2.on('booking:payment', ({ booking_id, url, session, form }) => {});  // leaving for the checkout
 digi2.on('booking:refused', ({ reason, status, form }) => {});
 digi2.on('booking:return',  ({ booking_id, state, status }) => {});
@@ -5141,6 +5162,20 @@ digi2.on('booking:search',  ({ search }) => {});          // + message when it w
 digi2.on('booking:manage',  ({ booking_id, booking }) => {});
 digi2.on('booking:request', ({ booking_id, request }) => {});   // a request was saved
 ```
+
+`booking:created` hands on a copy of the booking **without** `customer_name`,
+`customer_email`, `customer_phone` and `customer_note`. It is the event the page
+measures bookings with, and a GTM listener that pushes its detail to the
+dataLayer would otherwise send the guest's e-mail to every tag.
+
+`Retry-After` is read up to **3600 s**. A larger value is a mistake, and past
+~24.8 days `setTimeout` overflows and fires at once, so the cap sits in one
+place and covers the form button, the manage panel and the list.
+
+With two lists on the page waiting out a 429, the search forms open only when
+the **last** wait ends: they ask the same route for every list. A field built
+twice counts as visible when it has an `offsetParent` **or** client rects, so a
+copy inside a `position: fixed` drawer is the one the guest sees.
 
 Guest-facing copy lives in the dictionaries (see [Languages](#languages)): one
 flat table per language, in the shape the portal's i18next files have.

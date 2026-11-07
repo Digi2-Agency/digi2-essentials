@@ -2067,6 +2067,15 @@ test('a provider that is only unavailable offers a retry and pays the booking it
   assert.equal(checkoutPosts(env).length, 2);
 });
 
+test('a Retry-After past an hour is read as an hour, so no timer overflows', async () => {
+  // MUTACJA: take the header as it comes, and 30 days overflow setTimeout,
+  // which then opens the button at once.
+  const env = page({ refuse: { bookings: 'too_many_requests' }, headers: { 'Retry-After': '2592000' } });
+  await env.settled();
+  const res = await env.booking.request('POST', '/products/x/bookings', { body: {} });
+  assert.equal(res.retryAfter, 3600);
+});
+
 test('429 on the checkout waits exactly the Retry-After seconds', async () => {
   // MUTACJA: ignore Retry-After and the button opens at once, so the guest
   // hammers a rate limit that only grows longer.
@@ -3245,6 +3254,18 @@ test('a hold that died frees the form for another period', async () => {
   await env.settled();
   assert.equal(bookingPosts(env).length, 2, 'the new period really was sent');
   assert.equal(bookingPosts(env)[1].body.starts_at, '2027-06-01T00:00:00');
+});
+
+test('booking:created says nothing about the guest', async () => {
+  // MUTACJA: hand the whole answer on, and a GTM listener pushing the detail to
+  // the dataLayer sends the guest's e-mail to every tag on the page.
+  const env = await paySubmit(payPage());
+  const created = env.events.find((e) => e.name === 'booking:created');
+  assert.ok(created);
+  assert.equal(created.data.booking.id, BOOKING.response.id, 'the booking itself is there');
+  ['customer_name', 'customer_email', 'customer_phone', 'customer_note'].forEach((k) => {
+    assert.ok(!(k in created.data.booking), k);
+  });
 });
 
 test('booking:created hands the page a copy, never the object we are about to pay', async () => {
@@ -4900,7 +4921,8 @@ test('a German page formats its amounts and its dates in German too', async () =
 // the one family of keys a sweep of the source cannot find, and the only
 // sentences a dictionary may carry without a literal behind them.
 const BACKEND_REASONS = ['booking_already_paid', 'balance_already_paid', 'balance_processing',
-  'stripe_not_connected', 'stripe_account_not_ready', 'request_already_waiting'];
+  'stripe_not_connected', 'stripe_account_not_ready', 'request_already_waiting',
+  'idempotency_key_reused'];
 
 test('every sentence a dictionary carries is one the module can really show', async () => {
   // MUTACJA: translate a key nothing ever looks up four times over (as
@@ -5541,14 +5563,76 @@ test('a retry after a lost answer repeats the key and pays the booking it recove
   assert.equal(checkoutPosts(env).length, 1);
 });
 
-test('a changed field is a new request under a new key', async () => {
+test('a changed party is a new request under a new key', async () => {
   // MUTACJA: one key per form, and the backend answers idempotency_key_reused.
   const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
   await paySubmit(env);
-  fieldOf(env.form, 'note').value = 'Późny przyjazd';
+  fieldOf(env.form, 'adults').value = '3';
   fire(env.form, 'submit');
   await env.settled();
   assert.notEqual(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+});
+
+test('an e-mail corrected after a lost answer recovers the hold and follows through /contact', async () => {
+  // MUTACJA: tie the key to the whole form, and the guest who fixed a typo is
+  // refused by their own hold (period_taken) instead of paying it.
+  const env = payPage({
+    booking: { contact_token: 'secret-contact' },
+    script: { bookings: OFFLINE_ONCE.slice() },
+  });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  const posts = bookingPosts(env);
+  assert.equal(posts.length, 2);
+  assert.equal(keyOf(posts[1]), keyOf(posts[0]), 'the same hold, the same key');
+  assert.deepEqual(posts[1].body, posts[0].body, 'and the body that key was first sent with');
+  const sent = contactPosts(env);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.customer_email, 'nowy@example.com');
+  assert.equal(checkoutPosts(env).length, 1, 'then the booking is paid');
+  assert.ok(env.calls.indexOf(sent[0]) < env.calls.indexOf(checkoutPosts(env)[0]), 'contact before payment');
+});
+
+test('an e-mail corrected after a 422 goes out as a new request, not the first body', async () => {
+  // MUTACJA: keep the first body after a refusal the backend did read, and the
+  // guest who fixed the e-mail it named is refused again for a day.
+  const env = payPage({
+    script: { bookings: [{ status: 422, body: { detail: [{ type: 'value_error', loc: ['body', 'customer_email'], msg: 'bad', input: {} }] } }] },
+  });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  const posts = bookingPosts(env);
+  assert.equal(posts.length, 2);
+  assert.equal(posts[1].body.customer_email, 'nowy@example.com');
+  assert.notEqual(keyOf(posts[1]), keyOf(posts[0]));
+});
+
+test('a note shortened after a 413 goes out shortened', async () => {
+  // MUTACJA: the same, for request_too_large: the long note goes out again.
+  const env = payPage({ script: { bookings: [{ status: 413, body: { detail: 'Too large' } }] } });
+  await paySubmit(env);
+  fieldOf(env.form, 'note').value = 'Krótko';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env)[1].body.customer_note, 'Krótko');
+});
+
+test('a phone the guest emptied is cleared, not left as it was', async () => {
+  // MUTACJA: leave the empty phone out, and the backend keeps the old number,
+  // which it reads as "unchanged".
+  const env = failedPayment();
+  await paySubmit(env);
+  fieldOf(env.form, 'phone').value = '';
+  fire(env.form, 'submit');
+  await env.settled();
+  const sent = contactPosts(env);
+  assert.equal(sent.length, 1);
+  assert.ok(Object.prototype.hasOwnProperty.call(sent[0].body, 'customer_phone'));
+  assert.equal(sent[0].body.customer_phone, null);
 });
 
 test('a key older than a day is not used again', async () => {
@@ -5921,6 +6005,45 @@ test('during a 429 wait the search spends no call and its button is down', async
   fire(env.searchForm, 'submit');
   await env.settled();
   assert.equal(listCalls(env).length, before + 1);
+});
+
+test('with two lists waiting out a 429, the search opens only when the longer wait ends', async () => {
+  // MUTACJA: let the first list's timer open the search, and the click it
+  // invites lands inside the second list's wait and earns the next 429.
+  const env = listPage({
+    results: { inner: ['more'] },
+    searchForm: { submit: true },
+    script: { products: [refused429(10), refused429(30)] },
+  });
+  const second = element({ 'd2-booking-results': '' }, 'div');
+  env.document.body.appendChild(second);
+  await env.booking.apply();
+  await env.settled();
+  const button = env.searchForm.querySelector('button');
+  assert.equal(button.disabled, true);
+  assert.ok(env.waits().indexOf(10000) >= 0 && env.waits().indexOf(30000) >= 0, env.waits().join(','));
+  await env.tick(10000);
+  assert.equal(button.disabled, true, 'the other list is still waiting');
+  await env.tick();
+  assert.equal(button.disabled, false, 'both waits are over');
+});
+
+test('a field in a position: fixed panel counts as the one the guest sees', async () => {
+  // MUTACJA: trust offsetParent alone, and the drawer's emptied field loses to
+  // the hidden desktop copy: the guest cannot clear the city on a phone.
+  const env = listPage({ searchForm: { fields: ['location'], values: { location: 'Gdańsk' } } });
+  await env.settled();
+  const hidden = searchFieldOf(env, 'location');
+  hidden.offsetParent = null;
+  hidden.getClientRects = () => [];
+  const drawer = element({ 'd2-booking-search-field': 'location' }, 'input');
+  drawer.value = '';
+  drawer.offsetParent = null;
+  drawer.getClientRects = () => [{ width: 300, height: 40 }];
+  env.searchForm.appendChild(drawer);
+  fire(env.searchForm, 'submit');
+  await env.settled();
+  assert.equal(listCalls(env).pop().url.indexOf('location='), -1);
 });
 
 test('payments that are not switched on are not painted as the guest\'s mistake', async () => {
