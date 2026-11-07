@@ -16,6 +16,149 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## Bez wydania — `d2-booking`: słowniki językowe `pl`, `en`, `de`, `uk` (etap 8)
+
+Każde zdanie, które czyta gość, siedzi teraz w **słowniku językowym** — po
+jednym na język, płaski `klucz → zdanie`, w tym samym kształcie co pliki
+i18next portalu (decyzja D7), żeby ten sam klucz dał się znaleźć po obu
+stronach. Moduł nie ma zależności, więc i18next w nim być nie może: te małe
+tablice to całość jego tłumaczenia. Są cztery języki, te same, z którymi
+startuje portal: **`pl`, `en`, `de`, `uk`**. Polskie zdania **nie zmieniły się
+ani o literę** — są przepisane jeden do jednego i przypięte w testach.
+
+- **`d2-booking-lang="de"`** na tagu loadera ustawia język, w którym gość czyta
+  stronę (`pl`, `en`, `de`, `uk`). Bez atrybutu decyduje `<html lang>`, gdy
+  klucz tym językiem mówi, a inaczej `default_language` klucza. Czytane przez
+  `digi2.attr`.
+- **Przeczytaj przed podbiciem wersji.** `<html lang>` wybiera teraz **słownik**,
+  a nie tylko formatowanie. Do tej pory moduł miał jedną tablicę zdań — polską —
+  więc `<html lang>` ustawiał wyłącznie `Intl` i `locale` rezerwacji, a gość
+  czytał polski tekst niezależnie od niego. Po tej zmianie strona z
+  Designerowym domyślnym `<html lang="en">`, której klucz ma włączony `en`
+  (dokładnie to, co ma przykładowy klucz kontraktu), przestawi **cały widget**
+  na angielski — bez żadnego atrybutu. Konsola mówi o tym raz („<html lang="en">
+  sets the booking language…”), gdy `<html lang>` odsuwa stronę od
+  `default_language` klucza. Jeśli strona ma
+  mówić po polsku, popraw `<html lang>` albo dopisz `d2-booking-lang="pl"`
+  **przed** podbiciem wersji.
+- Kolejność jest jedna: `d2-booking-lang` → `<html lang>` → `default_language`.
+  Język, na który **klucz nie pozwala** (`languages` z `/config`) — albo taki,
+  którego moduł nie ma w słowniku — wraca do domyślnego: pół strony po
+  niemiecku obiecuje usługę, której właściciel nie da. **W konsoli mówi o tym
+  wpisany atrybut** `d2-booking-lang`; `<html lang>` to cichsza wersja tego
+  samego pytania, więc odmowa tam jest cicha. Klucz, którego `/config` nie ma
+  `languages` wcale, nie jest pilnowany (nie ma z czym porównać): atrybut
+  zostaje w mocy, a wszystko inne działa jak dotąd.
+- Sam **domyślny język klucza jest pilnowany tak samo**: `default_language`,
+  którego moduł nie ma w słowniku (np. `fr`), wraca do `pl` i mówi o tym w
+  konsoli. Inaczej zdania wychodziłyby z polskiej tablicy, a każda data, nazwa
+  miesiąca i kwota byłyby sformatowane w języku, którego na stronie nikt nie
+  czyta — strona w dwóch językach naraz.
+- Wybrany język idzie też jako **`locale` rezerwacji** (maile z portalu zgadzają
+  się ze stroną), za nim idzie **każde formatowanie `Intl`** (kwoty, procenty,
+  nazwy miesięcy i dni tygodnia, i to, od którego dnia zaczyna się tydzień), a
+  od tej zmiany mówi nim też **API** — niżej. Do tej pory język brało się tylko
+  z `<html lang>`, więc strona po angielsku na polskim shellu nie miała jak
+  poprosić o angielski.
+- **Moduł mówi API, w jakim języku jest strona.** `?lang=<język>` dostają
+  **cztery trasy** kontraktu: `GET /products` (lista), `GET /products/<ref>`
+  (jeden obiekt), `GET …/availability` (kalendarz) i `POST …/bookings`
+  (zakładanie rezerwacji). Dzięki temu **nazwa i opis miejsca przychodzą w tym
+  języku, w którym gość czyta stronę** — do tej pory szły w `default_language`
+  klucza, więc niemiecka strona pokazywała niemieckie zdania wokół polskich
+  nazw. Każde pole wraca do wartości bazowej osobno (tłumaczenie z nazwą, ale
+  bez opisu, nie zeruje opisu), a zdjęcia od języka nie zależą; sama lista
+  miejsc też nie — ta sama strona po niemiecku pokazuje te same mieszkania.
+  Backend czyta `Accept-Language` celowo **nie**, więc bez tego parametru nie
+  da się dostać odpowiedzi w innym języku niż domyślny klucza.
+- Wysyłany jest **ten język, w którym moduł naprawdę renderuje**, a nie surowy
+  `d2-booking-lang`: gdy klucz odmówił niemieckiego, w zapytaniu jedzie
+  domyślny — gość nie ma czytać niemieckich zdań obok polskich nazw ani
+  odwrotnie. Kody z regionem albo wielką literą (`de-DE`, `EN`) czytają
+  słownik swojego języka także w łańcuchu zapasowym i w `digi2.booking.texts()`,
+  Nazwa sezonu z odpowiedzi ceny (`label`, wpisana przez właściciela tylko w
+  języku domyślnym klucza) pokazuje się **tylko na stronie w
+  `default_language`**; na stronie w innym języku linia dostaje słowo ze
+  słownika („Aufenthalt in der Saison”) zamiast polskiej nazwy sezonu.
+  A `digi2.booking.message()` z powodem, którego zdanie wymaga wartości
+  (np. `child_age_max`), mówi zdanie ogólne zamiast klamer `{max}`. Backend i
+  tak zawęża wartość do `languages` klucza, a wartości,
+  której nie może użyć (pustej, bezsensownej, absurdalnie długiej), **nie
+  odmawia — pomija ją**.
+- Przy `POST …/bookings` wybrany język **zapisuje się na rezerwacji**: w nim są
+  pisane **wszystkie jej późniejsze maile** do gościa, a linki do portalu w tych
+  mailach otwierają go w tym samym języku. `locale` w ciele żądania działa jak
+  dotąd (backend bierze je pod uwagę, gdy w adresie nie ma `lang`).
+- `?lang=` nie dostaje **żadna inna trasa**: `/config`, `quote`,
+  `checkout-session`, `status`, `manage`, `requests` i `balance-checkout` mają w
+  kontrakcie przypięty zbiór parametrów (test kontraktu po stronie API
+  porównuje z nim prawdziwą trasę), więc dopisanie języka gdzie indziej byłoby
+  kłamstwem o kontrakcie. `GET /bookings/<id>/manage` jest bez niego świadomie:
+  jego `product_name` idzie za językiem **tej rezerwacji**, czyli za językiem
+  maila, z którego gość kliknął link. `/config` czyta się **przed** ustaleniem
+  języka — to jego odpowiedź go ustala — i parametru nie ma, więc kury i jajka
+  tu nie ma: pozostałe cztery trasy pytają dopiero po `/config` (także
+  `GET /products/<ref>`, które czeka na nią wprost, żeby raz rozwiązany obiekt
+  nie został zapamiętany w złym języku).
+- Brakujący klucz w jednym słowniku czyta się w następnym języku łańcucha
+  (proszony → domyślny klucza → `pl`), więc na stronie nie zostaje dziura.
+  Klucza, którego nie ma **żaden** słownik, moduł nie wypisuje wcale i mówi w
+  konsoli który to — gość nie ma czytać `manage_label_nights`. Zdanie, do
+  którego brakuje wartości `{w nawiasie}`, wraca do zdania, które jej nie
+  potrzebuje — nigdy do wypisanego nawiasu.
+- Liczby **odmienia słownik, nie kod**: `nights_one` / `nights_few` /
+  `nights_many` po polsku i ukraińsku, `nights_one` / `nights_other` po
+  angielsku i niemiecku, a który z nich wybrać, mówi funkcja `plural` tego
+  słownika. Ukraiński ma **własną** regułę trzech form, nie polską: mówi
+  „21 ніч” tam, gdzie polski mówi „21 nocy”.
+- **Niemiecki i ukraiński to tłumaczenia maszynowe, które czekają na czytanie
+  przez native speakera.** Zanim postawisz niemiecką albo ukraińską stronę
+  przed gośćmi, przeczytaj zwłaszcza zdania o pieniądzach i o skutkach:
+  dopłatę (`manage_label_balance`, `return_balance`, `manage_pay_balance`),
+  zwrot (`request_kind_refund`, `manage_refund`),
+  anulowanie i wygaśnięcie blokady terminu (`return_cancelled`,
+  `return_cancelled_hold`, `return_expired`), prośby do właściciela
+  (`request_not_allowed`, `manage_request_sent`) i dopłatę za zwierzę
+  (`pet_fee_*`). Niemiecki mówi do gościa przez „Sie”, ukraiński przez „ви”,
+  a polski oryginał jest na „ty”, bo tak pisze się polskie teksty w sieci.
+  Zdania są przypięte w testach, więc poprawka native speakera będzie świadomą
+  zmianą zdania, a nie cichym dryfem.
+- **Sprawdzanie formularza w przeglądarce też mówi ze słownika** — cztery
+  zdania, które pisze samo: `adults_required` („podaj liczbę dorosłych — dzieci
+  liczą się razem z nimi”), `child_age_max`, `child_ages_count` i
+  `too_many_pets_over_threshold`, obok `required`, `email` i `number`. Żadne
+  zdanie, które czyta gość, nie jest już napisem w kodzie.
+- Odmieniane są **dwa** słowa: `nights` i `years` — granica wieku dziecka mówi
+  „2 lata” i „12 lat”, a po ukraińsku „2 роки” i „12 років”.
+- Jedno zdanie **cytuje nazwę linku z maila portalu**, więc oba muszą się
+  zgadzać: `manage_balance_elsewhere` wysyła gościa do dopłaty po nazwie —
+  „Dopłata” (pl), „Balance” (en), „Restzahlung” (de), «Доплата» (uk). To są
+  cztery napisy, do których portal (etap 9) musi przetłumaczyć swój przycisk;
+  mail nazwany inaczej każe gościowi szukać w skrzynce linku, którego nie ma.
+- Nowe w API modułu: **`digi2.booking.language()`** (w jakim języku czyta gość),
+  **`digi2.booking.text(klucz, wartości)`** (jedno zdanie ze słownika, z
+  wstawionymi `{wartościami}`) i **`digi2.booking.texts(język)`** (cała tablica
+  tego języka, kopia) — strona, która dopisuje własny przycisk, ma czym go
+  podpisać w języku gościa.
+- Powód odmowy, rodzaj wiersza ceny, stan rezerwacji, rodzaj prośby i jednostka
+  ceny, których słownik nie zna, nadal pokazują się tak jak dotąd (po nazwie z
+  odpowiedzi albo wcale) i **nie trafiają do konsoli**: to nazwy od backendu,
+  który może nazwać rzecz, o której ta wersja nie słyszała.
+- Pilnują tego testy: wszystkie cztery słowniki mają **dokładnie ten sam zbiór
+  kluczy** (język nie wyjdzie wypełniony w połowie), a każdy klucz, o który
+  moduł pyta, jest **wyczytany ze źródła** i sprawdzony w każdym słowniku —
+  klucz z gałęzi, której nie chodzi żaden inny test, to dokładnie ten, który
+  ginie w tłumaczeniu. Do tego każda reguła `plural` jest przepytana liczbami
+  0–150 i musi mieć w swoim słowniku każdą formę, którą potrafi wskazać
+  (brakującego `nights_few` zbiór kluczy nie widzi, bo składa formy w jeden
+  klucz), a zdanie, o które **nic w module nie pyta**, jest błędem — żeby
+  martwy klucz nie był tłumaczony cztery razy. W przeglądarce bramka wydania
+  otwiera
+  `sandbox/gate-booking-lang.html`: strona z polskim `<html lang>`, która prosi
+  o niemiecki, i cały widget wychodzi po niemiecku razem z kwotami i datami —
+  a w adresach żądań, które ta strona naprawdę wysyła, stoi `?lang=de` na tych
+  czterech trasach i na żadnej innej.
+
 ## Bez wydania — `d2-booking`: poprawki po recenzji etapów 5 i 6
 
 - **Poprawka e-maila po zerwanym połączeniu nie blokuje już własnego terminu.**

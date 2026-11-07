@@ -197,7 +197,7 @@ test.describe('booking: the calendar and the price', () => {
 
   test('the apartment comes out of the address and the slug is resolved to an id', async ({ page }) => {
     const calls = await page.evaluate(() => window.__d2Calls);
-    const asked = calls.filter((c) => /\/products\/[^/?]+$/.test(c));
+    const asked = calls.filter((c) => /\/products\/[^/?]+(?:\?|$)/.test(c));
     expect(asked.length, calls.join('\n')).toBe(1);
     expect(asked[0]).toContain('/products/' + SLUG);
     // And the {product_id} routes get the id of that answer, never the slug.
@@ -414,6 +414,162 @@ test.describe('booking: the drawn widget and the payment', () => {
     // for, so landing on the return address proves both calls happened.
     await page.waitForURL(/payment=success/);
     await expect(page.locator('#wrocil')).toBeVisible();
+  });
+});
+
+// ---- booking: a page in another language -----------------------------------
+
+// The dictionaries, end to end in a real browser (etap 8). The page shell is
+// Polish and the loader tag asks for German, so every sentence the module
+// draws has to come out of the de table — and the amounts and the dates out of
+// Intl in German. The mini-DOM cannot show this: it has no Intl locale data of
+// the browser's, no real stylesheet and no real UTF-8 journey through dist/.
+test.describe('booking: a page in another language', () => {
+  function openDays(page) {
+    return page.evaluate(() => Array.prototype.filter
+      .call(document.querySelectorAll('[d2-booking-day]'), (b) => !b.hasAttribute('aria-disabled'))
+      .map((b) => b.getAttribute('d2-booking-day')));
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/sandbox/gate-booking-lang.html');
+    await page.waitForFunction(() => !!(window.digi2 && window.digi2.booking), null, { timeout: 10000 });
+    await page.waitForSelector('[d2-booking-widget-ready] [d2-booking-calendar-ready] [d2-booking-day]');
+    if ((await openDays(page)).length < 3) {
+      await page.click('[d2-booking-calendar-next]');
+      await page.waitForFunction(
+        (seen) => document.querySelector('[d2-booking-calendar-month]').textContent !== seen,
+        await page.textContent('[d2-booking-calendar-month]')
+      );
+    }
+  });
+
+  test('the whole widget is German, though the page shell is Polish', async ({ page }) => {
+    // The attribute wins over <html lang>, and the key really allows German.
+    await expect(page.locator('html')).toHaveAttribute('lang', 'pl');
+    expect(await page.evaluate(() => window.digi2.booking.language())).toBe('de');
+
+    await expect(page.locator('[d2-booking-submit]')).toHaveText('Jetzt buchen');
+    await expect(page.locator('[d2-booking-mark]')).toHaveText('Buchungen: digi2');
+    await expect(page.locator('[d2-booking-form] label').first()).toContainText('Erwachsene');
+    expect(await page.evaluate(() => Array.prototype.map
+      .call(document.querySelectorAll('[d2-booking-form] label'), (l) => l.textContent)
+      .join(' | '))).toContain('Vor- und Nachname');
+    // Nothing Polish is left in what the module drew.
+    expect(await page.textContent('[d2-booking-widget]')).not.toContain('Zarezerwuj');
+  });
+
+  test('a busy night and a chosen stay are announced in German', async ({ page }) => {
+    const month = await page.evaluate(() => document.querySelector('[d2-booking-day]')
+      .getAttribute('d2-booking-day').slice(0, 8));
+    const taken = page.locator('[d2-booking-day="' + month + '11"]');
+    await expect(taken).toHaveAttribute('aria-disabled', 'true');
+    expect(await taken.getAttribute('aria-label')).toContain('belegt');
+
+    const open = await openDays(page);
+    const [arrival, departure] = open.slice(-2);
+    await page.click('[d2-booking-day="' + arrival + '"]');
+    await page.click('[d2-booking-day="' + departure + '"]');
+
+    const said = await page.textContent('[d2-booking-status]');
+    expect(said).toContain('Gewählter Zeitraum');
+    // One night is "Nacht", more are "Nächte" — the German rule, in the
+    // browser's own words, over the day the browser's Intl spells.
+    const nights = Math.round((Date.parse(departure) - Date.parse(arrival)) / 86400000);
+    expect(said).toContain(nights + ' ' + (nights === 1 ? 'Nacht' : 'Nächte'));
+    const german = await page.evaluate((day) => new Intl.DateTimeFormat('de', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    }).format(new Date(day + 'T12:00:00Z')), arrival);
+    expect(said).toContain(german);
+
+    // And the money is German too: 550,00 PLN, not 550,00 zł.
+    const expected = await page.evaluate(() => new Intl.NumberFormat('de', {
+      style: 'currency', currency: 'PLN',
+    }).format(550));
+    await expect(page.locator('[d2-booking-total]')).toHaveText(expected);
+    await expect(page.locator('[d2-booking-line]').first()).toContainText('Aufenthalt');
+  });
+
+  test('the language the page renders in goes out as ?lang= on the four routes that take it', async ({ page }) => {
+    // What no node test can show: the real dist/ module, in a real browser,
+    // putting the language into the address of the request. Without it the API
+    // answers in the key's default_language (KONTRAKT.md), so this German page
+    // would read German sentences around Polish names and descriptions — and
+    // the e-mails of a booking made here would go out in Polish.
+    const open = await openDays(page);
+    const [arrival, departure] = open.slice(-2);
+    await page.click('[d2-booking-day="' + arrival + '"]');
+    await page.click('[d2-booking-day="' + departure + '"]');
+    await expect(page.locator('[d2-booking-total]')).not.toHaveText('');
+
+    await page.fill('[d2-booking-field="name"]', 'Anna Müller');
+    await page.fill('[d2-booking-field="email"]', 'anna@beispiel.de');
+    // book() creates the booking without leaving for the payment, so the page
+    // — and its own record of the calls — survives the assertions.
+    const made = await page.evaluate(() => window.digi2.booking
+      .book(document.querySelector('[d2-booking-form]'), window.digi2.booking.stay())
+      .then((res) => (res.ok ? true : res.reason)));
+    expect(made).toBe(true);
+
+    const calls = await page.evaluate(() => window.__d2Calls);
+    const langOf = (call) => {
+      const found = /[?&]lang=([^&]*)/.exec(call);
+      return found ? found[1] : null;
+    };
+    const carries = (part) => calls.filter((c) => c.indexOf(part) >= 0);
+
+    // The three routes this page asks for, each in German.
+    const places = calls.filter((c) => /\/products\/[^/?]+(?:\?|$)/.test(c));
+    const windows = carries('/availability');
+    const created = calls.filter((c) => /\/products\/[^/?]+\/bookings(?:\?|$)/.test(c));
+    [places, windows, created].forEach((group) => {
+      expect(group.length, calls.join('\n')).toBeGreaterThan(0);
+      group.forEach((call) => expect(langOf(call), call).toBe('de'));
+    });
+
+    // And the two routes this page asks for whose contract has no language in
+    // the query get none — /config least of all, since its answer is what
+    // settles the language. The rest of that list is pinned in booking.test.js.
+    ['/config', '/quote'].forEach((part) => {
+      expect(carries(part).length, calls.join('\n')).toBeGreaterThan(0);
+      carries(part).forEach((call) => expect(langOf(call), call).toBe(null));
+    });
+  });
+
+  test('the form check answers in German as well', async ({ page }) => {
+    // The four sentences the browser-side check writes itself used to be
+    // Polish literals in the code: a guest on a German page read Polish under
+    // a German label. Here the real dist/ module says them.
+    await page.fill('[d2-booking-field="children"]', '2');
+    await page.fill('[d2-booking-field="child_ages"]', '15');
+    await page.fill('[d2-booking-field="name"]', 'Anna Müller');
+    await page.fill('[d2-booking-field="email"]', 'anna@beispiel.de');
+    await page.click('[d2-booking-submit]');
+    // child_max_age of the stub key is 12 (the contract fixture).
+    await expect(page.locator('[d2-booking-error="child_ages"]'))
+      .toHaveText('Ein Kind darf nicht älter als 12 Jahre sein.');
+
+    await page.fill('[d2-booking-field="child_ages"]', '7');
+    await page.click('[d2-booking-submit]');
+    await expect(page.locator('[d2-booking-error="child_ages"]'))
+      .toHaveText('Geben Sie das Alter jedes Kindes an — 2 insgesamt.');
+
+    // And nothing Polish is left behind in a message slot.
+    await page.fill('[d2-booking-field="child_ages"]', '7, 9');
+    await page.click('[d2-booking-submit]');
+    await expect(page.locator('[d2-booking-error="child_ages"]')).toHaveText('');
+  });
+
+  test('all four dictionaries really ship in dist/, Cyrillic and all', async ({ page }) => {
+    // A dictionary that survives minification and the trip through the server
+    // as UTF-8 — the one thing no node test can prove.
+    const tables = await page.evaluate(() => ['pl', 'en', 'de', 'uk']
+      .map((lang) => window.digi2.booking.texts(lang)));
+    const counts = tables.map((table) => Object.keys(table).length);
+    expect(counts.filter((n) => n > 100).length, counts.join(',')).toBe(4);
+    expect(tables[3].nights_many).toBe('ночей');
+    expect(tables[3].submit_label).toBe('Забронювати');
+    expect(tables[2].submit_label).toBe('Jetzt buchen');
   });
 });
 

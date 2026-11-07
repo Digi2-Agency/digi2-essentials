@@ -135,7 +135,7 @@
         return fixture('config').then(function (fx) { return answer(fx.response); });
       }
       // GET /products/<ref> — jeden obiekt; w ścieżce stoi referencja.
-      if (/\/products\/[^/?]+$/.test(text)) {
+      if (/\/products\/[^/?]+(?:\?|$)/.test(text)) {
         return fixture('product').then(function (fx) { return answer(fx.response); });
       }
       // GET /products z zapytaniem — lista, strona po stronie.

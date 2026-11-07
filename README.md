@@ -4109,6 +4109,7 @@ refusal, `KONTRAKT.md` with the file format). Contract version **1**.
 | `d2-booking="pk_…"` | loader tag | **Site key.** Public, non-secret: it sits in the page's HTML on purpose. The backend protects itself with the key's domain allowlist, rate limits and server-side prices — there is nothing to hide here. Read with `getAttribute`, not `digi2.attr`: a key is not a responsive value. |
 | `d2-booking-api="<base>"` | loader tag | API base address. Default `https://api.2destate.com/api/v1`. `https` only (`http://localhost` and `http://127.0.0.1` are allowed while building); anything else is refused with a console warning and the default is used. Read raw — an address may legally contain `;` and `@`. |
 | `d2-booking-product="<uuid\|slug>"` | loader tag, the form, the calendar or the widget | Product (apartment) this page books — a uuid or a slug. The calendar may pick another one. **Optional:** with no attribute anywhere the module reads `?apartament=<slug>` off the address, which is how one booking page serves a whole CMS collection (`/rezerwacja?apartament=apartament-rynek-wroclaw`). An attribute always wins over the address; an empty or missing parameter is simply no product. |
+| `d2-booking-lang="<code>"` | loader tag | The language the guest reads — `pl`, `en`, `de` or `uk`, and one of the languages the key allows (`/config` `languages`). **Optional:** without it the key's `default_language` decides, and `<html lang>` is honoured the same way. A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default with a console warning. Read with `digi2.attr`. See [Languages](#languages). |
 
 ### The API client
 
@@ -4125,8 +4126,9 @@ into one of two shapes:
 `reason` is the **typed** reason from `errors.json` and is the only thing the
 module acts on. The `detail.message` / `detail` sentence from the backend is
 **never shown to the guest**: it is written for logs, in whatever language the
-API speaks. `message` is always our own Polish sentence, and a reason the module
-has never heard of still gets one (the generic "nie udało się…"). Where the body
+API speaks. `message` is always our own sentence, in the language the guest reads
+([Languages](#languages)), and a reason the module has never heard of still
+gets one (the generic "nie udało się…" / "The booking could not be…"). Where the body
 carries no reason of its own, it comes from the status plus what the caller knows
 about its own route (`notFound`, `conflict`, `badRequest` options):
 
@@ -4170,6 +4172,139 @@ whole page (every form shares it): `form_fields`, `child_max_age`, `languages`,
 `default_language`, `branding_hidden`, `account_url`. A `/config` that cannot be
 read never closes the form — the page keeps the fields the Designer built, logs
 a warning, and the backend decides on submit.
+
+### Languages
+
+Every sentence a guest reads lives in a **dictionary**, one per language: a flat
+`key → sentence` table in the same shape as the portal's i18next JSON (owner's
+decision D7), so the same key is greppable on both sides. The module cannot use
+i18next — it has no dependencies at all — so these tables are the whole of its
+translation. Shipped: **pl, en, de, uk** — the four languages the portal starts
+with (D7).
+
+Polish is the original wording and the one the tests pin literally; English was
+written beside it. **German and Ukrainian are machine translations awaiting a
+native reading** — they are pinned by tests all the same, so the reading that
+comes is a deliberate change of a sentence and not a quiet drift. German is
+addressed formally (`Sie`), Ukrainian too (`ви`); Polish is informal, because
+Polish web copy is.
+
+```html
+<script src=".../digi2-loader.min.js" d2-booking="pk_live_…" d2-booking-lang="de"></script>
+```
+
+Which language a guest gets:
+
+1. `d2-booking-lang`, when the key allows it **and** the module has a dictionary
+2. `<html lang>` (`en-GB` → `en`), under the same two conditions
+3. the key's `default_language` from `/config`
+
+A language the key does not allow — or one no dictionary covers — is **refused
+in favour of the default**; an explicit `d2-booking-lang` refused that way says
+so in the console (`<html lang>` is the quiet version of the question, so a
+refusal there is quiet too). When `<html lang>` **wins** over the key's default
+the console says so once — Webflow's default `lang="en"` would otherwise switch
+a Polish client's widget with nothing to find. Codes are compared without the
+region and the case (`de-DE`, `EN`), in the fallback chain and in
+`digi2.booking.texts()` too; `message()` with a reason whose sentence needs
+values answers the generic sentence, never a `{brace}`. Half a page in German promises a service the owner
+cannot give. A key whose `/config` lists no `languages` at all is **not** policed
+(there is nothing to check against): the attribute stands, and everything else
+stays as it was, on the key's default.
+
+The **default itself** is held to the same rule: a key whose `default_language`
+is a language this module has no dictionary for falls back to `pl` and says so
+in the console once. Otherwise the sentences would come out of the base
+dictionary while every `Intl` format — dates, month names, amounts, the first
+day of the week — followed a language nobody on the page reads.
+
+The chosen language is also what goes out as the booking's `locale` (so the
+portal's e-mails match the page), what every `Intl` format follows — the
+amounts, the percentages, the month and weekday names, and which day a week
+starts on — and what the module **tells the API** it is in (below).
+
+#### The language on the wire
+
+The module says which language it is in: four routes of the contract accept
+`?lang=<code>` and are asked with it.
+
+| Route | What the language changes |
+|---|---|
+| `GET /products` | the `name` and `description` of every card. The list itself does not depend on the language: the same page in German shows the same places |
+| `GET /products/{ref}` | the `name` and `description` of that one place |
+| `GET /products/{product_id}/availability` | the `product_name` of the window |
+| `POST /products/{product_id}/bookings` | the same — **and** the chosen language is recorded on the booking: every later e-mail that guest gets is written in it, and the portal links in those e-mails open in it (`?lang=`) |
+
+Each field falls back on its own, so a translation with a name but no
+description does not blank the description, and pictures never depend on the
+language.
+
+**Without the parameter an answer comes back in the key's `default_language`**,
+which is exactly why a page in any other language has to send it;
+`Accept-Language` the backend reads deliberately **not**, so the page cannot end
+up in two languages at once. What goes out is the language the module **really
+renders in**, never the raw `d2-booking-lang`: on a page whose asked language
+the key refused, the sentences are the default and so is the parameter — a guest
+must not read German sentences beside Polish names or the reverse. The backend
+narrows the value to the key's `languages` all the same, so a value it cannot
+use (empty, `klingon`, absurdly long) is **ignored and never a refusal**.
+
+**No other route takes it.** `/config`, `quote`, `checkout-session`, `status`,
+`manage`, `requests` and `balance-checkout` pin the query they accept in
+`tests/fixtures/booking-api/`, and a contract test on the API side compares each
+fixture with the real route — a parameter invented elsewhere would be a lie
+about the contract. `GET /bookings/{id}/manage` is deliberately without one: its
+`product_name` follows the language of that booking, which is the language of
+the e-mail the guest clicked.
+
+`/config` is asked **before** the language is settled — its own answer is what
+settles it — and takes no language either, so there is no chicken-and-egg.
+Everything else waits for that answer: all four routes are only ever asked after
+`/config` has returned, `GET /products/{ref}` included, which waits for it
+explicitly so a resolved place is never cached in the wrong language.
+
+| Case | What happens |
+|---|---|
+| a key missing from one dictionary | read in the next language of the chain (asked → the key's default → `pl`), so there is no hole in the page |
+| a key no dictionary has | nothing is rendered and the console says which key — a guest must never read `manage_label_nights` |
+| a `{placeholder}` with no value | the whole sentence is dropped and the caller falls back to one that needs none — never a printed brace |
+| a counted word | one key per form (`nights_one` / `nights_few` / `nights_many` in Polish and Ukrainian, `nights_one` / `nights_other` in English and German); which one a number takes is the `plural` function **of that dictionary**, which is why Ukrainian keeps its own three-form rule: it says *21 ніч* where Polish says *21 nocy*, and English and German count in two. Two words are counted today: `nights` and `years` (the child-age limit — *2 lata* against *12 lat*) |
+| a refusal `reason`, a line `kind`, a `status`, a request kind or a price unit the dictionary does not know | shown as the answer's own value (a line kind) or not at all (a status), and never reported: those come from the backend, which may name things this version has not heard of |
+
+The **browser-side form check** says its sentences out of the same tables, the
+four it writes itself included: `required`, `email`, `number`,
+`adults_required` (children count into the party), `child_age_max`,
+`child_ages_count` and `too_many_pets_over_threshold`. Nothing a guest can read
+is a literal in the code.
+
+One sentence quotes a label of the portal's e-mail, so the two have to agree:
+`manage_balance_elsewhere` sends the guest to the balance link **by name** —
+`„Dopłata”` (pl), `“Balance”` (en), `„Restzahlung“` (de), `«Доплата»` (uk).
+Those four strings are the contract for the portal's own translation; an e-mail
+that labels that link anything else sends the guest hunting in his inbox.
+
+`digi2.booking.text('submit_label')` gives a page the module's own wording in
+the guest's language, and `digi2.booking.texts('uk')` the whole table (a copy).
+
+#### Adding a language
+
+1. One more entry in `DICTIONARIES` (`webflow-scripts/modules/booking.js`): its
+   own `plural` function and a `texts` table with **every** key the base one has
+   — the counted word as one key per form its rule can return.
+2. The key's `/config` has to list the code in `languages`, or the module
+   refuses it in favour of `default_language`: the module speaking a language
+   the owner never set up would promise e-mails and a portal in it.
+3. Nothing else changes. The tests do the policing: one proves every dictionary
+   has exactly the same key set (so a language cannot ship half-filled), one
+   reads every key the module looks up **out of the source** and checks it
+   against every dictionary — a key reached only by a branch no test walks is
+   exactly the one that goes missing in a translation — one probes each `plural`
+   over 0…150 and demands every form it can answer (`nights_few` missing is
+   invisible to a key-set test, which folds the forms off), and one refuses a
+   sentence **nothing looks up**, so a dead key is never translated four times.
+4. `npm run build`, because `dist/` is committed, and the browser gate
+   (`sandbox/gate-booking-lang.html`) proves a non-default language end to end
+   in a real Chromium, Cyrillic and all.
 
 ### The list of places
 
@@ -4652,9 +4787,12 @@ amount is divided only by the number of digits `Intl` says that currency has
 is formatted with `Intl.NumberFormat` in the language of `/config` and the
 **currency of the answer**.
 
-Line labels: a `label` in the answer always wins; otherwise the `kind` gets a
-sentence from one table in the module, and an unknown kind is shown by its own
-name. `length_discount` carries its rate in the label when the answer has one —
+Line labels: a `label` in the answer wins **only on a page in the key's
+`default_language`** — it is the owner's season name, typed once and translated
+nowhere (2destate, `rental_pricing.py`), so `?lang=` on `/quote` could not help.
+On a page in any other language the dictionary's word for the `kind` stands in
+(`line_season` → "Stay in season"). Without a `label` the `kind` gets its
+word from the dictionary too, and an unknown kind is shown by its own name. `length_discount` carries its rate in the label when the answer has one —
 and without it when the answer says `null`, which is what a key with
 `merge_cleaning_fee` sends (`KONTRAKT.md`).
 
@@ -5013,7 +5151,11 @@ await digi2.booking.pay(bookingId);      // payment of a booking that exists
 await digi2.booking.status(bookingId);   // read a booking's status once (the return page)
 digi2.booking.returned();                // { state, status } — the last status printed
 digi2.booking.managed();                 // the last manage answer (never the token)
-digi2.booking.message('period_taken');   // the Polish sentence for a reason
+digi2.booking.message('period_taken');   // the guest's sentence for a reason
+digi2.booking.language();                // 'pl' | 'en' | 'de' | 'uk' — what the guest reads
+digi2.booking.text('submit_label');      // one sentence out of the dictionary
+digi2.booking.text('nights', { count: 21 });           // 'nocy' / 'nights' / 'Nächte' / 'ніч'
+digi2.booking.texts('uk');               // that language's own table (a copy)
 digi2.booking.apply();                   // re-read the page after a DOM change
 
 digi2.on('booking:ready',   ({ config }) => {});
@@ -5043,8 +5185,8 @@ the **last** wait ends: they ask the same route for every list. A field built
 twice counts as visible when it has an `offsetParent` **or** client rects, so a
 copy inside a `position: fixed` drawer is the one the guest sees.
 
-Guest-facing copy lives in one table inside the module (Polish), so the i18n
-dictionaries can replace it in one place.
+Guest-facing copy lives in the dictionaries (see [Languages](#languages)): one
+flat table per language, in the shape the portal's i18next files have.
 
 ---
 
@@ -5236,8 +5378,9 @@ jsDelivr purge does not answer `"status": "finished"` (the tag is pushed by
 then: repeat the purge by hand).
 
 The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
-opens `sandbox/gate-forms.html` and `sandbox/gate-popups.html` from a local
-server (`tests/browser/serve.js`, 127.0.0.1:5179). Both load
+opens `sandbox/gate-forms.html`, `sandbox/gate-popups.html` and the
+`sandbox/gate-booking*.html` pages from a local server
+(`tests/browser/serve.js`, 127.0.0.1:5179). They all load
 `dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
 jsDelivr serves after the tag. It checks, in a real browser:
 
@@ -5249,6 +5392,13 @@ jsDelivr serves after the tag. It checks, in a real browser:
 - **popups** — `d2-show-popup` opens, the close button and Esc close;
   `view_promotion` / `close_promotion` are pushed.
 - **datalayer** — the pushes above, through the real bus.
+- **booking** — the calendar, the drawn widget and the payment, the list and
+  the search, the return and the manage page, each on its own sandbox page with
+  the API stubbed from `tests/fixtures/booking-api/`. `gate-booking-lang.html`
+  is the dictionaries end to end: a page whose shell is Polish asks for German
+  with `d2-booking-lang`, and the widget, the calendar's spoken labels, the
+  amounts and the dates all come out German — plus all four tables really
+  shipping in `dist/`, Cyrillic through minification and the server included.
 - **screenshots** — compared with `tests/browser/__screenshots__/` (at most
   30 differing pixels). A missing baseline fails; it is never written by the
   gate. After a deliberate visual change:
@@ -5265,8 +5415,8 @@ worker; service workers are blocked; and Chromium starts with
 so no other host resolves at all (WebSockets and `sendBeacon` included). No
 client form is ever reached.
 
-**Coverage.** Only forms, popups and datalayer are exercised — 3 of ~24
-modules. The others are covered by `npm test` (mini-DOM, no browser). Next
+**Coverage.** Only forms, popups, booking and datalayer are exercised — 4 of
+~24 modules. The others are covered by `npm test` (mini-DOM, no browser). Next
 step worth taking: one test per `dist/modules/*.min.js` that loads it through
 the loader and fails on any `pageerror`.
 

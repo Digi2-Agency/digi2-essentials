@@ -492,7 +492,7 @@ function page(opts) {
                     : text.indexOf('/quote') >= 0 ? 'quote'
                       // GET /products/<ref>: the only route whose path takes
                       // a reference, so it is what is left of /products/.
-                      : /\/products\/[^/?]+$/.test(text) ? 'product'
+                      : /\/products\/[^/?]+(?:\?|$)/.test(text) ? 'product'
                         // GET /products with a query is the list; the single
                         // place is the one above, with a reference in the path.
                         : text.indexOf('/products') >= 0 ? 'products' : 'other';
@@ -875,7 +875,7 @@ test('a filled form sends exactly the body from booking.json', async () => {
   assert.equal(
     post.url,
     'https://api.2destate.com/api/v1/public/sites/pk_test_123/products/'
-      + BOOKING.response.product_id + '/bookings'
+      + BOOKING.response.product_id + '/bookings?lang=' + CONFIG.response.default_language
   );
   assert.equal(post.init.headers['Content-Type'], 'application/json');
   assert.deepEqual(post.body, BOOKING.request);
@@ -1189,7 +1189,7 @@ test('a double click sends one booking', async () => {
   fire(env.form, 'submit');
   await env.settled();
   // Submit also opens the payment, so the booking route is counted on its own.
-  assert.equal(env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url)).length, 1);
+  assert.equal(env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url)).length, 1);
 });
 
 test('an unknown d2-booking-field value is reported, not guessed', async () => {
@@ -1221,7 +1221,7 @@ function availabilityCalls(env) {
 }
 
 function productCalls(env) {
-  return env.calls.filter((c) => c.method === 'GET' && /\/products\/[^/?]+$/.test(c.url));
+  return env.calls.filter((c) => c.method === 'GET' && /\/products\/[^/?]+(?:\?|$)/.test(c.url));
 }
 
 test('the calendar asks for the shown month and draws it as real buttons', async () => {
@@ -1888,7 +1888,7 @@ test('the drawn widget books the stay it shows', async () => {
   fieldOf(form, 'email').value = 'anna@example.com';
   fire(form, 'submit');
   await env.settled();
-  const post = env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url))[0];
+  const post = env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url))[0];
   assert.ok(post, 'the drawn form submits the booking');
   assert.equal(post.body.starts_at, '2027-05-02T00:00:00');
   assert.equal(post.body.units_count, 2);
@@ -1910,7 +1910,7 @@ function payPage(extra) {
 }
 
 function bookingPosts(env) {
-  return env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url));
+  return env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url));
 }
 
 function checkoutPosts(env) {
@@ -4329,6 +4329,985 @@ test('a search form with no list on the page says so in the console', async () =
   assert.equal(listCalls(env).length, 0);
   assert.ok(env.warnings.some((w) => w.indexOf('d2-booking-results') >= 0
     && w.indexOf('d2-booking-search') >= 0), env.warnings.join(' | '));
+});
+
+// ---------------------------------------------------------------------------
+// The dictionaries — every guest sentence, one table per language
+// ---------------------------------------------------------------------------
+
+// The Polish wording as it stands today, key by key. These literals are the
+// contract of what a guest reads: they went through several reviews, so a
+// reworded sentence is a change of product, not a refactor, and has to fail
+// here first.
+const PL_SAYS = {
+  required: 'Wypełnij to pole.',
+  email: 'Podaj adres e-mail w postaci jan@przyklad.pl.',
+  number: 'Podaj liczbę.',
+  form_invalid: 'Popraw zaznaczone pola.',
+  stay_required: 'Wybierz termin pobytu.',
+  adults_required: 'Podaj liczbę dorosłych — dzieci liczą się razem z nimi.',
+  too_many_pets_over_threshold: 'Nie może być więcej zwierząt powyżej progu wagi niż zwierząt.',
+  key_missing: 'Rezerwacja nie jest tu jeszcze skonfigurowana.',
+  network_error: 'Brak połączenia z systemem rezerwacji. Sprawdź internet i spróbuj ponownie.',
+  bad_response: 'Coś poszło nie tak. Spróbuj ponownie za chwilę.',
+  site_key_not_found: 'Rezerwacja online jest niedostępna. Skontaktuj się z obiektem.',
+  product_not_found: 'Tego obiektu nie ma już w ofercie.',
+  booking_not_found: 'Ten link do rezerwacji jest nieważny lub wygasł. Nowy znajdziesz w e-mailu.',
+  field_required: 'To pole jest wymagane.',
+  invalid_stay: 'Sprawdź daty pobytu.',
+  invalid_search: 'Sprawdź daty i miejsce pobytu.',
+  rental_rules: 'Tego pobytu nie można zarezerwować. Wybierz inny termin lub długość pobytu.',
+  period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
+  too_many_requests: 'Zbyt wiele prób. Spróbuj ponownie za chwilę.',
+  payment_provider_unavailable: 'Operator płatności jest chwilowo niedostępny. Spróbuj ponownie za chwilę.',
+  payment_opening: 'Przenosimy Cię do płatności…',
+  booking_received: 'Rezerwacja zapisana. Wyślemy potwierdzenie, gdy zostanie przyjęta.',
+  return_loading: 'Sprawdzamy Twoją rezerwację…',
+  return_checking: 'Płatność jest jeszcze sprawdzana. Gdy rezerwacja zostanie potwierdzona, napiszemy na Twój e-mail.',
+  return_confirmed: 'Rezerwacja potwierdzona. Do zobaczenia!',
+  return_cancelled_hold: 'Płatność nie została dokończona. Termin trzymamy jeszcze chwilę.',
+  return_new_period: 'Wybierz nowy termin',
+  manage_loading: 'Wczytujemy rezerwację…',
+  manage_account: 'Przejdź do swoich rezerwacji',
+  manage_pay_balance: 'Dopłać teraz',
+  manage_request_sent: 'Prośba zapisana. Decyzję podejmie obiekt i odezwie się do Ciebie.',
+  manage_label_dates: 'Termin',
+  manage_label_phone: 'Telefon alarmowy',
+  submit_label: 'Zarezerwuj',
+  total_label: 'Razem',
+  deposit_label: 'Teraz:',
+  balance_label: '· później:',
+  child_ages_hint: 'np. 7, 10',
+  unit_day: 'za noc',
+  mark: 'Rezerwacje: digi2',
+  calendar_loading: 'Sprawdzamy wolne terminy…',
+  calendar_pick: 'Wybierz datę przyjazdu.',
+  calendar_prev: 'Poprzedni miesiąc',
+  day_busy: 'zajęte',
+  day_past: 'termin już niedostępny',
+  day_can_depart: 'możliwy wyjazd',
+  day_today: 'dziś',
+  line_base: 'Pobyt',
+  line_extra_guest_fee: 'Dopłata za osobę',
+  line_length_discount: 'Rabat za długość pobytu',
+  status_awaiting_payment: 'Czeka na płatność',
+  status_confirmed: 'Potwierdzona',
+  request_kind_date_change: 'Zmiana terminu',
+  request_state_pending: 'czeka na decyzję',
+  field_name: 'Imię i nazwisko',
+  field_pets_over_threshold: 'Powyżej progu wagi',
+  violation_past: 'Ten dzień już minął. Wybierz późniejszą datę.',
+  violation_buffer_conflict: 'Między pobytami musi zostać przerwa. Wybierz termin dzień dalej.',
+  violation_too_many_guests: 'Za dużo osób na ten obiekt. Zmniejsz liczbę gości.',
+  violation_period_taken: 'Ten termin został właśnie zajęty. Wybierz inny.',
+  generic: 'Nie udało się dokończyć rezerwacji. Spróbuj ponownie lub skontaktuj się z obiektem.',
+};
+
+// The English wording. Pinned the same way: a translation nobody reads is a
+// translation nobody notices going wrong.
+const EN_SAYS = {
+  required: 'Please fill in this field.',
+  email: 'Enter an e-mail address like john@example.com.',
+  stay_required: 'Choose the dates of your stay.',
+  network_error: 'No connection to the booking system. Check your internet and try again.',
+  booking_not_found: 'This booking link is invalid or has expired. You will find a new one in your e-mail.',
+  rental_rules: 'This stay cannot be booked. Choose other dates or a different length of stay.',
+  period_taken: 'These dates have just been taken. Please choose others.',
+  payment_opening: 'Taking you to the payment…',
+  booking_received: 'Booking saved. We will send the confirmation once it is accepted.',
+  return_confirmed: 'Booking confirmed. See you soon!',
+  return_new_period: 'Choose new dates',
+  manage_pay_balance: 'Pay the balance now',
+  manage_label_dates: 'Dates',
+  submit_label: 'Book now',
+  total_label: 'Total',
+  unit_day: 'per night',
+  mark: 'Bookings: digi2',
+  calendar_pick: 'Choose your arrival date.',
+  day_busy: 'taken',
+  line_base: 'Stay',
+  status_awaiting_payment: 'Waiting for payment',
+  request_state_pending: 'waiting for a decision',
+  field_name: 'Full name',
+  violation_buffer_conflict: 'A gap is needed between stays. Choose dates a day further out.',
+  generic: 'The booking could not be completed. Please try again or contact the property.',
+};
+
+// A page in one language: the key allows it and the loader tag asks for it.
+function langPage(language, extra) {
+  return page(Object.assign({
+    loaderAttrs: language ? { 'd2-booking-lang': language } : {},
+    config: { languages: ['pl', 'en', 'de', 'uk'] },
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  }, extra || {}));
+}
+
+// Every key of one dictionary, with the plural forms folded into one name:
+// Polish counts a night in three forms and English in two, so the tables are
+// equal in keys only once _one/_few/_many/_other is off them.
+function keyNames(env, language) {
+  const seen = {};
+  Object.keys(env.booking.texts(language)).forEach((key) => {
+    seen[key.replace(/_(one|few|many|other)$/, '')] = true;
+  });
+  return Object.keys(seen).sort();
+}
+
+test('the Polish dictionary says exactly what the module said before', async () => {
+  // MUTACJA: reword any Polish sentence (or drop a key into another table) and
+  // the wording a guest reads changes behind every review this copy went
+  // through.
+  const env = langPage('pl');
+  await env.settled();
+
+  Object.keys(PL_SAYS).forEach((key) => {
+    assert.equal(env.booking.text(key), PL_SAYS[key], key);
+  });
+  assert.equal(env.warnings.join(' | '), '', 'no key of the pin set is unknown');
+});
+
+test('the English dictionary answers in English', async () => {
+  // MUTACJA: let the lookup answer out of the Polish table whatever the
+  // language, and an English page sells a stay in Polish.
+  const env = langPage('en');
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'en');
+  Object.keys(EN_SAYS).forEach((key) => {
+    assert.equal(env.booking.text(key), EN_SAYS[key], key);
+  });
+});
+
+test('the English dictionary has every key the Polish one has', async () => {
+  // MUTACJA: forget one key in a translation and that one sentence falls back
+  // to Polish in the middle of an English page, with nothing to say it did.
+  const env = langPage('en');
+  await env.settled();
+
+  assert.deepEqual(keyNames(env, 'en'), keyNames(env, 'pl'));
+
+  // And every sentence really is translated: the two tables share only the
+  // words that are the same word in both languages.
+  const pl = env.booking.texts('pl');
+  const en = env.booking.texts('en');
+  const same = Object.keys(pl).filter((key) => en[key] === pl[key]);
+  assert.deepEqual(same.sort(), ['field_email', 'line_weekend'], same.join(', '));
+});
+
+test('an unknown key is reported, never rendered', async () => {
+  // MUTACJA: answer the key itself (or an empty string in silence) and a
+  // missing sentence ships as a bare "manage_label_nights" on the page, or as
+  // an empty slot nobody ever hears about.
+  const env = langPage('pl');
+  await env.settled();
+
+  assert.equal(env.booking.text('no_such_sentence'), '');
+  assert.ok(env.warnings.some((w) => w.indexOf('no_such_sentence') >= 0), env.warnings.join(' | '));
+});
+
+test('a sentence whose placeholder has no value is not printed with braces', async () => {
+  // MUTACJA: fill the placeholders with an empty string and the guest reads
+  // "Najkrótszy pobyt to  ." or a raw {min} brace.
+  const env = langPage('pl');
+  await env.settled();
+
+  assert.equal(env.booking.text('violation_below_min_units'), '');
+  assert.equal(env.booking.text('violation_below_min_units', { min: 3 }), '');
+  assert.equal(
+    env.booking.text('violation_below_min_units', { min: 3, min_nights: 'noce' }),
+    'Najkrótszy pobyt to 3 noce.'
+  );
+  assert.equal(env.booking.text('return_balance', { amount: '550,00 zł' }), '');
+  assert.ok(env.booking.text('return_balance', { amount: '550,00 zł', date: '1 maja 2027' })
+    .indexOf('{') < 0);
+});
+
+test('the counted word follows the rule of its own language', async () => {
+  // MUTACJA: hardcode the Polish three-form rule in the lookup and English
+  // reads "5 night", or drop the rule into the lookup at all and a language
+  // with another one cannot be added without touching it.
+  const pl = langPage('pl');
+  await pl.settled();
+  assert.equal(pl.booking.text('nights', { count: 1 }), 'noc');
+  assert.equal(pl.booking.text('nights', { count: 2 }), 'noce');
+  assert.equal(pl.booking.text('nights', { count: 5 }), 'nocy');
+  assert.equal(pl.booking.text('nights', { count: 12 }), 'nocy');
+  assert.equal(pl.booking.text('nights', { count: 22 }), 'noce');
+
+  const en = langPage('en');
+  await en.settled();
+  assert.equal(en.booking.text('nights', { count: 1 }), 'night');
+  assert.equal(en.booking.text('nights', { count: 2 }), 'nights');
+  assert.equal(en.booking.text('nights', { count: 5 }), 'nights');
+  assert.equal(en.booking.text('nights', { count: 22 }), 'nights');
+});
+
+test('a page asking for a language the key does not allow reads the default', async () => {
+  // MUTACJA: trust d2-booking-lang without checking the key's own list and a
+  // page sells in a language whose e-mails, portal and invoices the owner
+  // never set up. The key here allows Polish only and the module does speak
+  // English, so the list is the only thing that can refuse it.
+  const env = page({
+    loaderAttrs: { 'd2-booking-lang': 'en' },
+    config: { languages: ['pl'] },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await env.settled();
+
+  assert.equal(env.booking.language(), CONFIG.response.default_language);
+  assert.equal(env.booking.text('submit_label'), PL_SAYS.submit_label);
+  assert.ok(env.warnings.some((w) => w.indexOf('d2-booking-lang') >= 0 && w.indexOf('en') >= 0),
+    env.warnings.join(' | '));
+  await env.booking.book(env.form, STAY);
+  assert.equal(
+    env.calls.filter((c) => c.method === 'POST')[0].body.locale,
+    CONFIG.response.default_language,
+    'and the refused language never goes out with the booking either'
+  );
+
+  // A language outside the list stays outside it however many dictionaries
+  // the module grows.
+  const german = page({
+    loaderAttrs: { 'd2-booking-lang': 'de' },
+    config: { languages: ['pl', 'en'] },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await german.settled();
+  assert.equal(german.booking.language(), CONFIG.response.default_language);
+
+  // And the same refusal when the key allows a language the module cannot
+  // speak: half a page in French is worse than the language the owner set.
+  const french = page({
+    loaderAttrs: { 'd2-booking-lang': 'fr' },
+    config: { languages: ['pl', 'fr'] },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await french.settled();
+  assert.equal(french.booking.language(), CONFIG.response.default_language);
+  assert.ok(french.warnings.some((w) => w.indexOf('fr') >= 0), french.warnings.join(' | '));
+});
+
+test('a key whose answer lists no languages keeps the default, and the page may still ask', async () => {
+  // MUTACJA: police the page's choice against an empty list and every key
+  // whose /config carries no languages at all is stuck in its default
+  // language, the attribute silently ignored.
+  const quiet = page({
+    lang: 'en',
+    config: { languages: [] },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await quiet.settled();
+  assert.equal(quiet.booking.language(), CONFIG.response.default_language,
+    'nothing on the loader tag: the key decides, exactly as before');
+
+  const asked = page({
+    loaderAttrs: { 'd2-booking-lang': 'en' },
+    config: { languages: [] },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await asked.settled();
+  assert.equal(asked.booking.language(), 'en');
+  assert.equal(asked.booking.text('submit_label'), EN_SAYS.submit_label);
+});
+
+test('d2-booking-lang beats the document language and goes out with the booking', async () => {
+  // MUTACJA: read only <html lang> and a page whose shell is Polish cannot
+  // open the English booking widget at all; forget to send it and that guest
+  // gets Polish e-mails from the portal.
+  const env = page({
+    lang: 'pl',
+    loaderAttrs: { 'd2-booking-lang': 'en-GB' },
+    forms: [{ fields: { name: 'A', email: 'a@b.pl' } }],
+  });
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'en', 'en-GB is the en dictionary');
+  await env.booking.book(env.form, STAY);
+  assert.equal(env.calls.filter((c) => c.method === 'POST')[0].body.locale, 'en');
+});
+
+test('the English page formats its amounts and its dates in English too', async () => {
+  // MUTACJA: format with the config default while the sentences are English
+  // and the guest reads "Chosen dates: 1 maja 2027" over a price in zł spelled
+  // the Polish way.
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': 'en', 'd2-booking-product': PRODUCT },
+    calendar: true,
+    status: true,
+    price: true,
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+  await env.settled();
+
+  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-07');
+  await env.tick();
+  const said = statusText(env);
+  assert.ok(said.indexOf('Chosen dates') === 0, said);
+  assert.ok(said.indexOf('3 nights') > 0, said);
+  assert.ok(said.indexOf(dayWords('2027-05-04', null, 'en')) > 0, said);
+
+  assert.equal(totalText(env), money(QUOTE.response.amount_total, QUOTE.response.currency, 'en'));
+  assert.equal(textIn(lineRows(env)[0], 'd2-booking-line-label'), EN_SAYS.line_base,
+    'the row the quote answered, labelled in English');
+});
+
+test('the widget the module draws in English is English all through', async () => {
+  // MUTACJA: draw the labels out of one hardcoded table and the drawn widget
+  // is Polish on an English page — the form, the button and the mark.
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': 'en', 'd2-booking-product': PRODUCT },
+    widget: true,
+    forms: [],
+  });
+  await env.settled();
+
+  const form = env.document.querySelector('[d2-booking-form]');
+  assert.equal(submitOf(form).textContent, EN_SAYS.submit_label);
+  const labels = form.querySelectorAll('label').map((el) => String(el.textContent));
+  assert.ok(labels.indexOf(EN_SAYS.field_name + ' *') >= 0, labels.join(' | '));
+  assert.equal(String(env.document.querySelector('[d2-booking-mark]').textContent), EN_SAYS.mark);
+});
+
+// The German wording, pinned the same way. It is a machine translation
+// awaiting a native reading (CHANGELOG), and that is exactly why it is pinned:
+// the review that comes will be a deliberate change of these literals, not a
+// quiet drift nobody can see.
+const DE_SAYS = {
+  required: 'Bitte füllen Sie dieses Feld aus.',
+  stay_required: 'Wählen Sie den Zeitraum Ihres Aufenthalts.',
+  network_error: 'Keine Verbindung zum Buchungssystem. Prüfen Sie Ihr Internet und versuchen Sie es erneut.',
+  booking_not_found: 'Dieser Buchungslink ist ungültig oder abgelaufen. Einen neuen finden Sie in Ihrer E-Mail.',
+  rental_rules: 'Dieser Aufenthalt kann nicht gebucht werden. Wählen Sie einen anderen Zeitraum oder eine andere Aufenthaltsdauer.',
+  period_taken: 'Dieser Zeitraum wurde gerade belegt. Wählen Sie einen anderen.',
+  payment_opening: 'Wir leiten Sie zur Zahlung weiter…',
+  booking_received: 'Buchung gespeichert. Die Bestätigung schicken wir, sobald sie angenommen ist.',
+  return_confirmed: 'Buchung bestätigt. Bis bald!',
+  return_new_period: 'Neuen Zeitraum wählen',
+  manage_pay_balance: 'Restbetrag jetzt zahlen',
+  manage_label_dates: 'Zeitraum',
+  manage_change_date: 'Umbuchung anfragen',
+  manage_refund: 'Erstattung beantragen',
+  day_past: 'Datum nicht mehr verfügbar',
+  field_pets: 'Haustiere',
+  line_pet_fee: 'Haustier',
+  submit_label: 'Jetzt buchen',
+  total_label: 'Gesamt',
+  unit_day: 'pro Nacht',
+  mark: 'Buchungen: digi2',
+  calendar_pick: 'Wählen Sie das Anreisedatum.',
+  day_busy: 'belegt',
+  line_base: 'Aufenthalt',
+  line_cleaning_fee: 'Endreinigung',
+  status_awaiting_payment: 'Wartet auf Zahlung',
+  request_state_pending: 'wartet auf Entscheidung',
+  field_name: 'Vor- und Nachname',
+  violation_buffer_conflict: 'Zwischen zwei Aufenthalten muss eine Pause bleiben. Wählen Sie einen Zeitraum einen Tag weiter.',
+  generic: 'Die Buchung konnte nicht abgeschlossen werden. Versuchen Sie es erneut oder wenden Sie sich an die Unterkunft.',
+};
+
+// The Ukrainian wording — also a machine translation awaiting a native
+// reading, pinned for the same reason.
+const UK_SAYS = {
+  required: 'Заповніть це поле.',
+  stay_required: 'Виберіть дати проживання.',
+  network_error: 'Немає зв’язку із системою бронювання. Перевірте інтернет і спробуйте ще раз.',
+  booking_not_found: 'Це посилання на бронювання недійсне або час його дії минув. Нове знайдете в електронному листі.',
+  rental_rules: 'Це проживання неможливо забронювати. Виберіть інші дати або іншу тривалість.',
+  period_taken: 'Ці дати щойно зайняли. Виберіть інші.',
+  payment_opening: 'Переходимо до оплати…',
+  booking_received: 'Бронювання збережено. Надішлемо підтвердження, коли його буде прийнято.',
+  return_confirmed: 'Бронювання підтверджено. До зустрічі!',
+  return_new_period: 'Вибрати інші дати',
+  manage_pay_balance: 'Доплатити зараз',
+  manage_label_dates: 'Дати',
+  status_pending: 'Очікує рішення власника',
+  manage_request_sent: 'Запит збережено. Рішення ухвалить власник і звʼяжеться з вами.',
+  too_many_requests: 'Занадто багато спроб. Спробуйте ще раз трохи пізніше.',
+  balance_processing: 'Платіж обробляється. Оновіть сторінку трохи пізніше.',
+  submit_label: 'Забронювати',
+  total_label: 'Разом',
+  unit_day: 'за ніч',
+  mark: 'Бронювання: digi2',
+  calendar_pick: 'Виберіть дату приїзду.',
+  day_busy: 'зайнято',
+  line_base: 'Проживання',
+  line_cleaning_fee: 'Прибирання',
+  status_awaiting_payment: 'Очікує оплати',
+  request_state_pending: 'очікує рішення',
+  field_name: 'Ім’я та прізвище',
+  violation_buffer_conflict: 'Між проживаннями має бути перерва. Виберіть дати на день далі.',
+  generic: 'Не вдалося завершити бронювання. Спробуйте ще раз або зв’яжіться з власником.',
+};
+
+/**
+ * Every language the module has a table for, read out of its source. A list
+ * typed in here would only ever agree with itself: the point of the key-set
+ * test is that a language added later cannot ship half-filled, and a language
+ * this file has not heard of is precisely the one that would.
+ */
+function moduleLanguages() {
+  const start = moduleCode.indexOf('var DICTIONARIES = {');
+  assert.ok(start > 0, 'the dictionaries are still a table called DICTIONARIES');
+  const block = moduleCode.slice(start, moduleCode.indexOf('\n  };', start));
+  const found = block.match(/^ {4}[a-z]{2}: \{$/gm) || [];
+  return found.map((line) => line.trim().replace(':', '').replace(' {', ''));
+}
+
+/**
+ * Every key the module really asks for, read out of its source as well: a
+ * literal t('x') / lookup('x') / labelKey: 'x'. A key reached only by a branch
+ * no other test walks is exactly the one that goes missing in a translation,
+ * so the list cannot be a hand-written one.
+ *
+ * A literal ending in '_' is not a key but a prefix the module completes with
+ * something the answer carries ('violation_' + code, 'line_' + kind), so for
+ * those the family is what has to exist.
+ */
+function lookedUpKeys() {
+  const keys = {};
+  const prefixes = {};
+  function add(name) {
+    if (/_$/.test(name)) prefixes[name] = true;
+    else keys[name] = true;
+  }
+  let m;
+  // The character before the call keeps createElement('div') and friends out:
+  // only a bare t( or lookup( is a lookup.
+  const calls = /[^A-Za-z0-9_$.](?:t|lookup)\(\s*'([a-z][a-z0-9_]*)'/g;
+  while ((m = calls.exec(moduleCode)) !== null) add(m[1]);
+  const labels = /labelKey:\s*'([a-z][a-z0-9_]*)'/g;
+  while ((m = labels.exec(moduleCode)) !== null) add(m[1]);
+  return { keys: Object.keys(keys).sort(), prefixes: Object.keys(prefixes).sort() };
+}
+
+test('every dictionary the module carries has exactly the same key set', async () => {
+  // MUTACJA: ship a language with one sentence missing — or add a fifth table
+  // and translate half of it — and that sentence quietly comes out in another
+  // language in the middle of the page, with nothing to say it did.
+  const env = langPage('pl');
+  await env.settled();
+
+  const langs = moduleLanguages();
+  ['pl', 'en', 'de', 'uk'].forEach((lang) => {
+    assert.ok(langs.indexOf(lang) >= 0, lang + ' is one of the languages of decision D7');
+  });
+  const base = keyNames(env, 'pl');
+  assert.ok(base.length > 100, 'the base table has ' + base.length + ' keys');
+  langs.forEach((lang) => {
+    assert.deepEqual(keyNames(env, lang), base, lang + ' against pl');
+  });
+});
+
+test('every key the module looks up exists in every dictionary', async () => {
+  // MUTACJA: leave out a key only one branch asks for — the manage page's
+  // labels, the price unit, a violation code — and a guest reading that page
+  // in German gets a Polish word or nothing at all.
+  const env = langPage('pl');
+  await env.settled();
+
+  const asked = lookedUpKeys();
+  assert.ok(asked.keys.length > 40, 'found ' + asked.keys.length + ' keys in the source');
+  assert.ok(asked.prefixes.length >= 5,
+    'found the dynamic families: ' + asked.prefixes.join(', '));
+
+  moduleLanguages().forEach((lang) => {
+    const table = env.booking.texts(lang);
+    const names = Object.keys(table);
+    asked.keys.forEach((key) => {
+      const has = Object.prototype.hasOwnProperty.call(table, key)
+        // A counted word is a family: nights_one, nights_few, nights_many.
+        || names.some((name) => name.indexOf(key + '_') === 0);
+      assert.ok(has, 'no "' + key + '" in the ' + lang + ' dictionary');
+    });
+    asked.prefixes.forEach((prefix) => {
+      assert.ok(names.some((name) => name.indexOf(prefix) === 0),
+        'nothing at all for "' + prefix + '*" in the ' + lang + ' dictionary');
+    });
+  });
+});
+
+test('the German dictionary answers in German', async () => {
+  // MUTACJA: forget to register the de table and a page that asked for German
+  // falls back to the key's default language without anybody noticing.
+  const env = langPage('de');
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'de');
+  Object.keys(DE_SAYS).forEach((key) => {
+    assert.equal(env.booking.text(key), DE_SAYS[key], key);
+  });
+  assert.equal(env.warnings.join(' | '), '', 'German is a language this page can be in');
+});
+
+test('the Ukrainian dictionary answers in Ukrainian', async () => {
+  // MUTACJA: as above for uk — and Cyrillic is where a dictionary copied from
+  // the wrong table shows up at once.
+  const env = langPage('uk');
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'uk');
+  Object.keys(UK_SAYS).forEach((key) => {
+    assert.equal(env.booking.text(key), UK_SAYS[key], key);
+  });
+  assert.equal(env.warnings.join(' | '), '', 'Ukrainian is a language this page can be in');
+});
+
+test('German counts a night in two forms and Ukrainian in three', async () => {
+  // MUTACJA: give Ukrainian the English two-form rule (or the Polish one) and
+  // a guest reads "21 ночей" or "2 ночей"; give German the Polish rule and it
+  // reads "5 Nacht". The two rules differ from each other AND from Polish on
+  // the same numbers, which is what pins them here: Polish says "21 nocy",
+  // Ukrainian "21 ніч".
+  const de = langPage('de');
+  await de.settled();
+  assert.equal(de.booking.text('nights', { count: 1 }), 'Nacht');
+  assert.equal(de.booking.text('nights', { count: 2 }), 'Nächte');
+  assert.equal(de.booking.text('nights', { count: 5 }), 'Nächte');
+  assert.equal(de.booking.text('nights', { count: 21 }), 'Nächte');
+
+  const uk = langPage('uk');
+  await uk.settled();
+  assert.equal(uk.booking.text('nights', { count: 1 }), 'ніч');
+  assert.equal(uk.booking.text('nights', { count: 2 }), 'ночі');
+  assert.equal(uk.booking.text('nights', { count: 4 }), 'ночі');
+  assert.equal(uk.booking.text('nights', { count: 5 }), 'ночей');
+  assert.equal(uk.booking.text('nights', { count: 11 }), 'ночей');
+  assert.equal(uk.booking.text('nights', { count: 14 }), 'ночей');
+  assert.equal(uk.booking.text('nights', { count: 21 }), 'ніч');
+  assert.equal(uk.booking.text('nights', { count: 22 }), 'ночі');
+  assert.equal(uk.booking.text('nights', { count: 25 }), 'ночей');
+  assert.equal(uk.booking.text('nights', { count: 101 }), 'ніч');
+  assert.equal(uk.booking.text('nights', { count: 112 }), 'ночей');
+
+  // And the counted sentence really uses it, so no page prints "3 ніч".
+  assert.equal(
+    uk.booking.text('calendar_range', { from: '1', to: '4', count: 3, nights: uk.booking.text('nights', { count: 3 }) }),
+    'Вибрані дати: 1 – 4, 3 ночі.'
+  );
+});
+
+test('a German page formats its amounts and its dates in German too', async () => {
+  // MUTACJA: thread only the sentences through the chosen language and leave
+  // the formatting on the key's default, and a German page shows a Polish
+  // date over a German sentence.
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': 'de', 'd2-booking-product': PRODUCT },
+    config: { languages: ['pl', 'en', 'de', 'uk'] },
+    calendar: true,
+    status: true,
+    price: true,
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+  await env.settled();
+
+  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-07');
+  await env.tick();
+  const said = statusText(env);
+  assert.ok(said.indexOf('Gewählter Zeitraum') === 0, said);
+  assert.ok(said.indexOf('3 Nächte') > 0, said);
+  assert.ok(said.indexOf(dayWords('2027-05-04', null, 'de')) > 0, said);
+
+  assert.equal(totalText(env), money(QUOTE.response.amount_total, QUOTE.response.currency, 'de'));
+  assert.equal(textIn(lineRows(env)[0], 'd2-booking-line-label'), DE_SAYS.line_base);
+});
+
+test('a season name is shown on a page in the key\'s language and replaced in any other', async () => {
+  // MUTACJA: let the line's label win whatever the language, and a German
+  // widget prints the owner's Polish season name (2destate: it exists in the
+  // key's default language only).
+  function seasonQuote() {
+    const body = clone(QUOTE.response);
+    body.line_items[0] = Object.assign({}, body.line_items[0], { kind: 'season', label: 'Sezon letni' });
+    return { status: 200, body };
+  }
+  async function labelOn(language) {
+    const env = page({
+      now: MAY_2027,
+      loaderAttrs: { 'd2-booking-lang': language, 'd2-booking-product': PRODUCT },
+      config: { languages: ['pl', 'en', 'de', 'uk'] },
+      calendar: true,
+      price: true,
+      script: { quote: [seasonQuote(), seasonQuote(), seasonQuote()] },
+      forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+    });
+    await env.settled();
+    clickDay(env, '2027-05-04');
+    clickDay(env, '2027-05-07');
+    await env.tick();
+    return textIn(lineRows(env)[0], 'd2-booking-line-label');
+  }
+  assert.equal(await labelOn('pl'), 'Sezon letni');
+  assert.equal(await labelOn('de'), DE_SAYS.line_season || 'Aufenthalt in der Saison');
+});
+
+// The reasons that only ever arrive from the backend. The module never writes
+// them down — message() looks up whatever the error answer named — so they are
+// the one family of keys a sweep of the source cannot find, and the only
+// sentences a dictionary may carry without a literal behind them.
+const BACKEND_REASONS = ['booking_already_paid', 'balance_already_paid', 'balance_processing',
+  'stripe_not_connected', 'stripe_account_not_ready', 'request_already_waiting',
+  'idempotency_key_reused'];
+
+test('every sentence a dictionary carries is one the module can really show', async () => {
+  // MUTACJA: translate a key nothing ever looks up four times over (as
+  // manage_label_requests and manage_label_outstanding were) and a native
+  // reading spends its effort on a sentence no page can print, while both
+  // key-set tests stay green because the key is dead in every table equally.
+  const env = langPage('pl');
+  await env.settled();
+
+  const start = moduleCode.indexOf('var DICTIONARIES = {');
+  const outside = moduleCode.slice(0, start)
+    + moduleCode.slice(moduleCode.indexOf('\n  };', start));
+  const asked = lookedUpKeys();
+  const dead = Object.keys(env.booking.texts('pl')).filter((key) => {
+    const name = key.replace(/_(one|few|many|other)$/, '');
+    if (asked.prefixes.some((prefix) => name.indexOf(prefix) === 0)) return false;
+    if (BACKEND_REASONS.indexOf(name) >= 0) return false;
+    return outside.indexOf("'" + name + "'") < 0;
+  });
+  assert.deepEqual(dead, [], 'nothing in the module asks for: ' + dead.join(', '));
+});
+
+test('a reason whose sentence needs values says the generic sentence, never a brace', async () => {
+  // MUTACJA: hand the dictionary sentence on as it is, and a backend reason
+  // that shares a key with a templated sentence prints "{max} {years}".
+  const env = langPage('pl');
+  await env.settled();
+  const said = env.booking.message('child_age_max');
+  assert.equal(said.indexOf('{'), -1, said);
+  assert.equal(said, env.booking.text('generic'));
+});
+
+test('a regional or capitalised code reads its own dictionary', async () => {
+  // MUTACJA: look the code up as given, and texts('en-GB') answers {} while
+  // pageLanguage reads en-GB as English.
+  const env = langPage('pl');
+  await env.settled();
+  const en = env.booking.texts('en');
+  assert.ok(Object.keys(en).length > 10);
+  assert.deepEqual(env.booking.texts('en-GB'), en);
+  assert.deepEqual(env.booking.texts('EN'), en);
+});
+
+test('<html lang> moving the page off the key\'s default says so once in the console', async () => {
+  // MUTACJA: switch in silence, and the Webflow default lang="en" turns a
+  // Polish client's widget English with nothing for anyone to find.
+  const env = page({ lang: 'en', config: { languages: ['pl', 'en'] }, forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  await env.settled();
+  assert.equal(env.booking.language(), 'en');
+  env.booking.language();
+  const said = env.warnings.filter((w) => w.indexOf('<html lang="en">') >= 0);
+  assert.equal(said.length, 1, env.warnings.join(' | '));
+  assert.ok(said[0].indexOf('d2-booking-lang') >= 0);
+
+  const asked = langPage('en', { lang: 'en' });
+  await asked.settled();
+  assert.equal(asked.warnings.filter((w) => w.indexOf('<html lang=') >= 0).length, 0,
+    'the attribute chose it: nothing to warn about');
+});
+
+test('every counted word has every form its own rule can return', async () => {
+  // MUTACJA: drop nights_few from the Ukrainian table. Both key-set tests fold
+  // the forms off the keys and stay green, while a Ukrainian page reads the
+  // Polish "3 noce" out of the fallback chain with nothing in the console.
+  const base = langPage('pl');
+  await base.settled();
+  const families = {};
+  Object.keys(base.booking.texts('pl')).forEach((key) => {
+    const m = /^(.+)_(one|few|many|other)$/.exec(key);
+    if (m) families[m[1]] = true;
+  });
+  assert.deepEqual(Object.keys(families).sort(), ['nights', 'years'],
+    'the counted words of the base table');
+
+  const counts = [0, 0.5, 1.5];
+  for (let n = 1; n <= 150; n++) counts.push(n);
+  for (const lang of moduleLanguages()) {
+    const env = langPage(lang);
+    await env.settled();
+    const table = env.booking.texts(lang);
+    Object.keys(families).forEach((family) => {
+      const own = Object.keys(table)
+        .filter((key) => key.indexOf(family + '_') === 0)
+        .map((key) => table[key]);
+      counts.forEach((n) => {
+        const said = env.booking.text(family, { count: n });
+        assert.ok(own.indexOf(said) >= 0,
+          lang + ': ' + family + ' of ' + n + ' answered "' + said
+          + '", which is no form of its own (' + own.join(', ') + ')');
+      });
+    });
+  }
+});
+
+test('<html lang> chooses the dictionary, not only the dates', async () => {
+  // MUTACJA: let the dictionary follow only d2-booking-lang and a page that
+  // says <html lang="en"> reads Polish sentences under English dates — the
+  // second rule of the chain, which every other language test skips by
+  // setting the attribute.
+  const env = page({ lang: 'en', forms: [{ fields: { name: 'A', email: 'a@b.pl' } }] });
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'en', 'the key allows en (the contract fixture)');
+  assert.equal(env.booking.text('submit_label'), EN_SAYS.submit_label);
+  assert.equal(env.booking.text('required'), EN_SAYS.required);
+});
+
+test('a default language no dictionary covers is not what the page is formatted in', async () => {
+  // MUTACJA: return the key's default_language unchecked and a key set to a
+  // language the module cannot speak shows Polish sentences while every date,
+  // month name and amount is formatted in that other language — a page in two
+  // languages at once, with nothing in the console.
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-product': PRODUCT },
+    config: { languages: ['pl', 'fr'], default_language: 'fr' },
+    calendar: true,
+    status: true,
+    price: true,
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+  await env.settled();
+
+  assert.equal(env.booking.language(), 'pl', 'the language whose sentences the guest reads');
+  assert.ok(env.warnings.some((w) => w.indexOf('default_language') >= 0 && w.indexOf('fr') >= 0),
+    env.warnings.join(' | '));
+
+  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-07');
+  await env.tick();
+  const said = statusText(env);
+  assert.ok(said.indexOf('Wybrany termin') === 0, said);
+  assert.ok(said.indexOf(dayWords('2027-05-04', null, 'pl')) > 0, said);
+  assert.equal(totalText(env), money(QUOTE.response.amount_total, QUOTE.response.currency, 'pl'));
+
+  await env.booking.book(env.form, STAY);
+  // The quote is a POST too, so the booking is the one whose path ends there.
+  const created = env.calls.filter((c) => c.method === 'POST' && /\/bookings(?:\?|$)/.test(c.url));
+  assert.equal(created.length, 1);
+  assert.equal(created[0].body.locale, 'pl',
+    'and the booking carries the language the guest was really served');
+});
+
+// One page per branch of the browser-side check: the four sentences it writes
+// itself, with the fields the contract fixture leaves optional.
+async function checkSays(language, fields, slot, cfg) {
+  const env = page({
+    loaderAttrs: language ? { 'd2-booking-lang': language } : {},
+    config: Object.assign({ languages: ['pl', 'en', 'de', 'uk'] }, cfg || {}),
+    forms: [{ fields: Object.assign({ name: 'Anna Nowak', email: 'anna@example.com' }, fields) }],
+  });
+  await env.settled();
+  const res = await env.booking.book(env.form, STAY);
+  assert.equal(res.ok, false, 'the check stopped the booking');
+  assert.equal(env.calls.filter((c) => c.method === 'POST').length, 0);
+  return errorTextOf(env.form, slot);
+}
+
+test('the sentences the form check writes itself come out of the dictionary too', async () => {
+  // MUTACJA: leave any of these four a Polish literal in checkItems (the
+  // first draft of the dictionaries left all four) and a guest on a German
+  // page reads Polish under a German label. Neither key-set test can see it:
+  // a bare string literal is no lookup, so the key is missing from all four
+  // tables equally.
+  const NO_ADULTS = { adults: 0, children: 2 };
+  assert.equal(await checkSays('pl', NO_ADULTS, 'adults'),
+    'Podaj liczbę dorosłych — dzieci liczą się razem z nimi.');
+  assert.equal(await checkSays('de', NO_ADULTS, 'adults'),
+    'Geben Sie die Zahl der Erwachsenen an — Kinder zählen mit.');
+  assert.equal(await checkSays('uk', NO_ADULTS, 'adults'),
+    'Вкажіть кількість дорослих — діти враховуються разом з ними.');
+
+  const TOO_OLD = { adults: 2, children: 1, child_ages: '15' };
+  assert.equal(await checkSays('pl', TOO_OLD, 'child_ages'),
+    'Wiek dziecka nie może być większy niż 12 lat.');
+  assert.equal(await checkSays('de', TOO_OLD, 'child_ages'),
+    'Ein Kind darf nicht älter als 12 Jahre sein.');
+  assert.equal(await checkSays('en', TOO_OLD, 'child_ages'),
+    'A child cannot be older than 12 years.');
+
+  const ONE_AGE_SHORT = { adults: 2, children: 2, child_ages: '7' };
+  assert.equal(await checkSays('pl', ONE_AGE_SHORT, 'child_ages'),
+    'Podaj wiek każdego dziecka — 2 razem.');
+  assert.equal(await checkSays('de', ONE_AGE_SHORT, 'child_ages'),
+    'Geben Sie das Alter jedes Kindes an — 2 insgesamt.');
+
+  const HEAVY_PETS = { pets: 1, pets_over_threshold: 2 };
+  assert.equal(await checkSays('pl', HEAVY_PETS, 'pets_over_threshold'),
+    'Nie może być więcej zwierząt powyżej progu wagi niż zwierząt.');
+  assert.equal(await checkSays('de', HEAVY_PETS, 'pets_over_threshold'),
+    'Über der Gewichtsgrenze dürfen nicht mehr Haustiere sein als insgesamt.');
+});
+
+test('the year of a child age is counted by the rule of its language', async () => {
+  // MUTACJA: write "lat" into the sentence instead of the counted word and a
+  // key whose child_max_age is 2 says "niż 2 lat" in Polish, where Polish
+  // wants "2 lata" — and Ukrainian "2 роки" against "12 років".
+  const young = { adults: 2, children: 1, child_ages: '15' };
+  assert.equal(await checkSays('pl', young, 'child_ages', { child_max_age: 2 }),
+    'Wiek dziecka nie może być większy niż 2 lata.');
+  assert.equal(await checkSays('uk', young, 'child_ages', { child_max_age: 2 }),
+    'Дитина не може бути старшою за 2 роки.');
+  assert.equal(await checkSays('uk', young, 'child_ages'),
+    'Дитина не може бути старшою за 12 років.');
+
+  const pl = langPage('pl');
+  await pl.settled();
+  assert.equal(pl.booking.text('years', { count: 1 }), 'rok');
+  assert.equal(pl.booking.text('years', { count: 2 }), 'lata');
+  assert.equal(pl.booking.text('years', { count: 12 }), 'lat');
+  assert.equal(pl.booking.text('years', { count: 22 }), 'lata');
+
+  const uk = langPage('uk');
+  await uk.settled();
+  assert.equal(uk.booking.text('years', { count: 21 }), 'рік');
+
+  const de = langPage('de');
+  await de.settled();
+  assert.equal(de.booking.text('years', { count: 1 }), 'Jahr');
+  assert.equal(de.booking.text('years', { count: 2 }), 'Jahre');
+
+  const en = langPage('en');
+  await en.settled();
+  assert.equal(en.booking.text('years', { count: 1 }), 'year');
+  assert.equal(en.booking.text('years', { count: 12 }), 'years');
+});
+
+// ---------------------------------------------------------------------------
+// The language on the wire — ?lang= on the four routes that accept it
+// ---------------------------------------------------------------------------
+
+// The four routes whose query carries `lang` (KONTRAKT.md → Język gościa,
+// and the `query` field of the four fixtures), recognised in a URL exactly as
+// the contract spells the paths. Everything else must go out without it: the
+// contract test on the 2destate side pins the query every route accepts.
+const LANG_ROUTES = [
+  /\/products\?/,                            // GET /products
+  /\/products\/[^/?]+(?:\?|$)/,              // GET /products/{ref}
+  /\/products\/[^/?]+\/availability/,        // GET /products/{product_id}/availability
+  /\/products\/[^/?]+\/bookings(?:\?|$)/,    // POST /products/{product_id}/bookings
+];
+
+// Routes of the contract whose query has no language in it at all.
+const ROUTES_WITHOUT_LANG = [
+  '/config', '/quote', '/checkout-session', '/status', '/manage', '/requests', '/balance-checkout',
+];
+
+function langOf(url) {
+  const found = /[?&]lang=([^&]*)/.exec(String(url));
+  return found ? decodeURIComponent(found[1]) : null;
+}
+
+// A page in one language with everything that asks the API on it: the list,
+// the calendar, the price and a form that can be submitted.
+function wirePage(language, cfg) {
+  return page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-lang': language, 'd2-booking-product': PRODUCT },
+    config: Object.assign({ languages: ['pl', 'en', 'de', 'uk'] }, cfg || {}),
+    calendar: true,
+    price: true,
+    results: true,
+    forms: [{ fields: { name: 'Anna Nowak', email: 'anna@example.com' } }],
+  });
+}
+
+test('the four routes that take a language are asked in the one the page renders in', async () => {
+  // MUTACJA: leave ?lang= off these calls and a German page gets the key's
+  // default_language back (KONTRAKT.md: without the parameter the answer is
+  // the default), so German sentences stand around Polish place names and
+  // descriptions, and the e-mails of that booking go out in Polish too.
+  const env = wirePage('de');
+  await env.settled();
+  await env.booking.book(env.form, STAY);
+
+  assert.equal(env.booking.language(), 'de', 'the language the guest really reads');
+  assert.equal(langOf(productCalls(env)[0].url), 'de', productCalls(env)[0].url);
+  assert.equal(langOf(availabilityCalls(env)[0].url), 'de', availabilityCalls(env)[0].url);
+  assert.equal(langOf(listCalls(env)[0].url), 'de', listCalls(env)[0].url);
+  assert.equal(langOf(bookingPosts(env)[0].url), 'de', bookingPosts(env)[0].url);
+  // The fixture puts it in the query of the POST as well, and `locale` in the
+  // body stays what it was: the contract reads the address first.
+  assert.equal(bookingPosts(env)[0].body.locale, 'de');
+});
+
+test('a language the key does not allow goes out as the default, never as the refused one', async () => {
+  // MUTACJA: send the raw d2-booking-lang instead of the language the module
+  // really renders in and a guest reads Polish sentences (the key refused
+  // German) beside German names and descriptions from the API.
+  const refused = wirePage('de', { languages: ['pl', 'en'] });
+  await refused.settled();
+  await refused.booking.book(refused.form, STAY);
+
+  const fallback = CONFIG.response.default_language;
+  assert.equal(refused.booking.language(), fallback);
+  assert.equal(langOf(productCalls(refused)[0].url), fallback);
+  assert.equal(langOf(availabilityCalls(refused)[0].url), fallback);
+  assert.equal(langOf(listCalls(refused)[0].url), fallback);
+  assert.equal(langOf(bookingPosts(refused)[0].url), fallback);
+  assert.deepEqual(refused.calls.filter((c) => langOf(c.url) === 'de').map((c) => c.url), [],
+    'the refused language never reaches the API');
+
+  // The same for a language the key allows but no dictionary of this module
+  // covers: the page is rendered in the default, so that is what is asked for.
+  const noDict = wirePage('fr', { languages: ['pl', 'fr'] });
+  await noDict.settled();
+  assert.equal(noDict.booking.language(), fallback);
+  assert.equal(langOf(productCalls(noDict)[0].url), fallback);
+  assert.deepEqual(noDict.calls.filter((c) => langOf(c.url) === 'fr').map((c) => c.url), []);
+});
+
+test('no other route of the contract is given a lang', async () => {
+  // MUTACJA: add the parameter to every call and the contract test on the
+  // 2destate side fails: each route pins the query set it accepts, and quote,
+  // checkout-session, status, manage, requests and balance-checkout do not
+  // take a language — /config least of all, since it is the answer that
+  // settles which language the page is in.
+  const german = { 'd2-booking-lang': 'de' };
+  const allowed = { languages: ['pl', 'en', 'de', 'uk'] };
+
+  // The booking page: /config, the quote and the payment session.
+  const booked = wirePage('de');
+  await booked.settled();
+  booked.booking.select({ unit: STAY.unit, starts_at: STAY.starts_at, units_count: STAY.units_count });
+  // The price is asked for once the typing has settled, so the debounce fires.
+  await booked.tick();
+  fire(booked.form, 'submit');
+  await booked.settled();
+
+  // The guest's own pages: the return (status), the manage block and a request.
+  const back = returnPage({ loaderAttrs: german, config: allowed });
+  await back.settled();
+  const managed = managePage({ loaderAttrs: german, config: allowed });
+  await managed.settled();
+  fire(manageAction(managed, 'refund'), 'click');
+  await managed.settled();
+  const balance = managePage({
+    loaderAttrs: german, config: allowed, hash: '#token=' + TOKEN + '&action=balance',
+  });
+  await balance.settled();
+  fire(manageAction(balance, 'balance'), 'click');
+  await balance.settled();
+
+  const every = [].concat(booked.calls, back.calls, managed.calls, balance.calls);
+  ROUTES_WITHOUT_LANG.forEach((part) => {
+    const asked = every.filter((c) => c.url.indexOf(part) >= 0);
+    assert.ok(asked.length > 0, 'the test never reached ' + part);
+    asked.forEach((c) => assert.equal(langOf(c.url), null, part + ' was given a language: ' + c.url));
+  });
+
+  // And nothing else carries one either: every call with a lang is one of the
+  // four routes whose fixture shows it.
+  every.filter((c) => langOf(c.url) !== null).forEach((c) => {
+    assert.ok(LANG_ROUTES.some((re) => re.test(c.url)), 'lang on a route that does not take it: ' + c.url);
+  });
+  assert.ok(every.some((c) => langOf(c.url) === 'de'), 'and the four routes really were asked');
 });
 
 // ---------------------------------------------------------------------------
