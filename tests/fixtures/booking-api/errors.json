@@ -1,0 +1,250 @@
+{
+  "contract_version": 1,
+  "errors": [
+    {
+      "name": "site_key_not_found",
+      "status": 404,
+      "exact": true,
+      "body": {
+        "detail": "Site key not found"
+      }
+    },
+    {
+      "name": "origin_not_allowed",
+      "status": 403,
+      "exact": true,
+      "body": {
+        "detail": "Origin not allowed for this project"
+      }
+    },
+    {
+      "name": "product_not_found",
+      "status": 404,
+      "exact": true,
+      "body": {
+        "detail": "Product not found"
+      }
+    },
+    {
+      "name": "booking_not_found",
+      "status": 404,
+      "exact": true,
+      "body": {
+        "detail": "Booking not found"
+      }
+    },
+    {
+      "name": "field_required",
+      "status": 422,
+      "exact": true,
+      "body": {
+        "detail": {
+          "code": "field_required",
+          "field": "phone"
+        }
+      }
+    },
+    {
+      "name": "field_invalid",
+      "status": 422,
+      "exact": true,
+      "body": {
+        "detail": {
+          "code": "field_invalid",
+          "field": "child_ages"
+        }
+      }
+    },
+    {
+      "name": "rental_rules",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "rental_rules",
+          "violations": [
+            "period_taken"
+          ]
+        }
+      },
+      "violations": {
+        "product_not_bookable": "The product does not take bookings at all right now",
+        "unit_not_allowed": "The requested unit is not one of the product's allowed_units",
+        "below_min_units": "Fewer units than the product's min_units",
+        "above_max_units": "More units than the product's max_units",
+        "lead_time_too_short": "The period starts sooner than lead_time_hours from now",
+        "blackout_overlap": "The period overlaps a blackout the owner set",
+        "period_taken": "The period overlaps a booking that already stands",
+        "buffer_conflict": "The period falls inside buffer_minutes around another booking",
+        "no_price_for_unit": "A prepaid product has no price for this unit and length",
+        "too_many_guests": "More guests than the product's max_guests"
+      }
+    },
+    {
+      "name": "period_taken",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "period_taken",
+          "message": "Someone else took this period"
+        }
+      }
+    },
+    {
+      "name": "idempotency_key_reused",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "idempotency_key_reused",
+          "message": "This Idempotency-Key was used with a different request"
+        }
+      }
+    },
+    {
+      "name": "booking_not_payable",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "booking_not_payable",
+          "message": "A booking in status 'expired' no longer awaits payment"
+        }
+      }
+    },
+    {
+      "name": "booking_already_paid",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "booking_already_paid",
+          "message": "This booking is already paid"
+        }
+      }
+    },
+    {
+      "name": "stripe_not_connected",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "stripe_not_connected",
+          "message": "No Stripe account is connected for this project or workspace"
+        }
+      }
+    },
+    {
+      "name": "stripe_account_not_ready",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "stripe_account_not_ready",
+          "message": "The connected Stripe account cannot accept charges yet"
+        }
+      }
+    },
+    {
+      "name": "payment_provider_unavailable",
+      "status": 502,
+      "exact": true,
+      "body": {
+        "detail": "The payment provider is unavailable right now"
+      }
+    },
+    {
+      "name": "too_many_requests",
+      "status": 429,
+      "body": {
+        "detail": "Too many attempts. Try again in about 1 min."
+      }
+    },
+    {
+      "name": "invalid_stay",
+      "status": 400,
+      "body": {
+        "detail": "check_in and check_out go together"
+      }
+    },
+    {
+      "name": "invalid_request",
+      "status": 400,
+      "body": {
+        "detail": "units_count must be at least 1"
+      }
+    },
+    {
+      "name": "validation_error",
+      "status": 422,
+      "body": {
+        "detail": [
+          {
+            "type": "missing",
+            "loc": [
+              "body",
+              "starts_at"
+            ],
+            "msg": "Field required",
+            "input": {
+              "unit": "day"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "request_too_large",
+      "status": 413,
+      "body": {
+        "detail": {
+          "code": "request_too_large",
+          "message": "Request body is too large.",
+          "size_bytes": 90000,
+          "max_bytes": 81920
+        }
+      }
+    },
+    {
+      "name": "request_not_allowed",
+      "status": 409,
+      "body": {
+        "detail": "This booking is already closed",
+        "reason": "request_not_allowed"
+      }
+    },
+    {
+      "name": "request_already_waiting",
+      "status": 409,
+      "exact": true,
+      "body": {
+        "detail": "A request of this kind is already waiting for a decision",
+        "reason": "request_already_waiting"
+      }
+    },
+    {
+      "name": "no_balance",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "no_balance",
+          "message": "The balance cannot be paid right now"
+        }
+      }
+    },
+    {
+      "name": "balance_already_paid",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "balance_already_paid",
+          "message": "The balance cannot be paid right now"
+        }
+      }
+    },
+    {
+      "name": "balance_processing",
+      "status": 409,
+      "body": {
+        "detail": {
+          "reason": "balance_processing",
+          "message": "The balance cannot be paid right now"
+        }
+      }
+    }
+  ]
+}

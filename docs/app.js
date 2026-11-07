@@ -22,7 +22,8 @@ var CATCOLOR = {
   'Komponenty UI': '#38bdf8',
   'Efekty': '#fb7185',
   'Narzędzia': '#9c9c9c',
-  'Marketing': '#2dd4bf'
+  'Marketing': '#2dd4bf',
+  'Rezerwacje': '#f97316'
 };
 function catOf(key){
   for(var i = 0; i < D2.categories.length; i++){

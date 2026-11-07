@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: bramka wydania — d2-booking (powrót z płatności i obsługa rezerwacji)</title>
+
+<!--
+  Strona kontroli przed wydaniem (tests/browser/gate.spec.js). Moduł idzie
+  z dist/, czyli dokładnie to, co pójdzie na CDN po tagu.
+
+  Dwa bloki gościa na jednej stronie, tak jak w prawdziwym życiu:
+  <div d2-booking-return> czyta ?booking=…&payment=… po powrocie od Stripe'a,
+  a <div d2-booking-manage> czyta token z fragmentu linku z maila. Strona nie
+  daje im żadnego elementu w środku — wszystko rysuje moduł.
+
+  API jest zaatrapowane w przeglądarce: podmieniamy window.fetch PRZED
+  loaderem, a odpowiedzi bierzemy z tests/fixtures/booking-api/. Atrapa
+  WYMAGA nagłówka X-Booking-Token na trasach gościa i bez niego odpowiada
+  404 „Booking not found" — dokładnie jak kontrakt — więc bramka sprawdza
+  prawdziwą drogę tokenu, a nie samą deklarację. Odebrany token atrapa
+  zapisuje w window.__d2Token, żeby test mógł go porównać.
+
+  Nic nie wychodzi poza localhost; prawdziwe API 2destate nie jest wołane ani
+  razu, Stripe też nie: checkout_url dopłaty atrapa ustawia na tę samą stronę
+  z ?payment=balance_success. Klucz pk_sandbox_* jest wymyślony.
+
+  Stan rezerwacji sterujemy adresem: ?stan=expired daje blokadę, która minęła
+  (wtedy moduł pokazuje link do site_url), a domyślnie rezerwacja jest
+  potwierdzona, żeby bramka nie czekała na odpytywanie.
+
+  Ręcznie: npm run sandbox  ->  otwórz
+  /sandbox/gate-booking-manage.html?booking=<id-z-manage.json> i dopisz
+  fragment z tokenem z manage.json: #token=<token>&action=details. Przykładowy
+  token jest celowo NIE wpisany w tej stronie — bramka sprawdza, że nie ma go
+  w żadnym miejscu dokumentu po wczytaniu.
+-->
+
+<style>
+  body { margin: 0; background: #fbfaf8; color: #1a1d1c; font: 16px/1.5 "DejaVu Sans", Arial, sans-serif; }
+  .strona { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  h2 { font-size: 15px; margin: 24px 0 8px; color: #6b6f6d; font-weight: 600; }
+</style>
+
+<script>
+  // Atrapa API — zanim loader dociągnie moduł. Odpowiedzi z plików kontraktu.
+  (function () {
+    var realFetch = window.fetch.bind(window);
+    var FIXTURES = '../tests/fixtures/booking-api/';
+    var cache = {};
+    window.__d2Calls = [];
+    window.__d2Token = null;
+
+    function fixture(name) {
+      if (!cache[name]) {
+        cache[name] = realFetch(FIXTURES + name + '.json').then(function (r) { return r.json(); });
+      }
+      return cache[name];
+    }
+
+    function answer(body, status) {
+      return new Response(JSON.stringify(body), {
+        status: status || 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    function tokenOf(init) {
+      var headers = (init && init.headers) || {};
+      var given = typeof headers.get === 'function'
+        ? headers.get('X-Booking-Token')
+        : headers['X-Booking-Token'];
+      return given ? String(given) : '';
+    }
+
+    // Trasy gościa bez tokenu to ta sama odmowa, co rezerwacja, której nie ma.
+    function guest(init, body, status) {
+      var token = tokenOf(init);
+      if (!token) return answer({ detail: 'Booking not found' }, 404);
+      window.__d2Token = token;
+      return answer(body, status);
+    }
+
+    function statusBody(fx) {
+      var data = JSON.parse(JSON.stringify(fx.response));
+      var here = String(location.search || '');
+      if (here.indexOf('stan=expired') >= 0) {
+        data.status = 'awaiting_payment';
+        data.hold_open = false;
+        data.paid = false;
+        return data;
+      }
+      data.status = 'confirmed';
+      data.paid = true;
+      data.hold_open = false;
+      if (here.indexOf('payment=balance_success') >= 0) {
+        data.balance_due_minor = null;
+        data.balance_due_at = null;
+      }
+      return data;
+    }
+
+    window.fetch = function (url, init) {
+      var text = String(url && url.url ? url.url : url);
+      if (text.indexOf('/public/sites/') < 0) return realFetch(url, init);
+      window.__d2Calls.push(((init && init.method) || 'GET') + ' ' + text);
+
+      if (text.indexOf('/config') >= 0) {
+        return fixture('config').then(function (fx) { return answer(fx.response); });
+      }
+      // Kolejność ma znaczenie: każda z tych ścieżek zawiera /bookings.
+      if (text.indexOf('/status') >= 0) {
+        return fixture('status').then(function (fx) { return answer(statusBody(fx)); });
+      }
+      if (text.indexOf('/manage') >= 0) {
+        return fixture('manage').then(function (fx) { return guest(init, fx.response); });
+      }
+      if (text.indexOf('/requests') >= 0) {
+        return fixture('request').then(function (fx) { return guest(init, fx.response, fx.status); });
+      }
+      if (text.indexOf('/balance-checkout') >= 0) {
+        return fixture('balance-checkout').then(function (fx) {
+          var data = JSON.parse(JSON.stringify(fx.response));
+          // Zamiast Stripe'a — ta sama strona z adnotacją. Adres jest lokalny,
+          // więc moduł go przyjmuje (https albo localhost) i nic nie wychodzi
+          // na sieć.
+          data.checkout_url = location.origin + location.pathname + '?booking='
+            + encodeURIComponent('3f2a9c1e-5b7d-4e60-9a11-2c4d6e8f0a12')
+            + '&payment=balance_success';
+          return guest(init, data);
+        });
+      }
+      // Nic innego atrapa nie obsługuje — i nic innego nie wychodzi na sieć.
+      return answer({ detail: 'Not found in the sandbox stub' }, 404);
+    };
+  }());
+</script>
+
+<script src="../dist/digi2-loader.min.js"
+  d2-booking="pk_sandbox_0000"
+  d2-booking-api="http://127.0.0.1:5179/api/v1"></script>
+</head>
+<body>
+<div class="strona">
+  <h1>Powrót z płatności i obsługa rezerwacji (atrapa API)</h1>
+
+  <h2>Powrót od Stripe'a</h2>
+  <!-- Identyfikator rezerwacji moduł bierze z ?booking= w adresie. -->
+  <div d2-booking-return></div>
+
+  <h2>Twoja rezerwacja (link z maila)</h2>
+  <!-- Token moduł bierze z #token=… i od razu zdejmuje go z paska adresu. -->
+  <div d2-booking-manage></div>
+</div>
+</body>
+</html>

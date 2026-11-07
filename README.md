@@ -125,8 +125,9 @@ Only the modules you declare get loaded. Loader: **5.9 KB** min / **2.4 KB** gzi
 | `d2-datalayer` | datalayer | 3.0 KB | Push module activity to `dataLayer` using GA4 event names |
 | `d2-promo="<url>"` | promo | 5.6 KB | Show/hide elements from a promotion running in 2destate |
 | `d2-ma="<url>"` | ma | 66.1 KB | Marketing automation (demo, contract v0 + §13.8 + §13.9 + §13.11): unit views → profile in IndexedDB → scenarios from digi2.app |
+| `d2-booking="pk_…"` | booking | 65.2 KB | Booking a rental from the page: the guest's form, the calendar, the price and the payment, answered by the 2destate public site API (contract v1) |
 
-Total (all modules): **350.3 KB min** / **111.5 KB** gzipped.
+Total (all modules): **466.2 KB min** / **146.8 KB** gzipped.
 
 ---
 
@@ -4089,6 +4090,1120 @@ digi2.on('lightbox:close',  () => {})
 
 ---
 
+## Booking (d2-booking)
+
+Booking a rental straight from the page. The module talks to the **public site
+API** of 2destate — `/api/v1/public/sites/{public_key}/…` — whose contract lives
+in `tests/fixtures/booking-api/` (one file per route, `errors.json` with every
+refusal, `KONTRAKT.md` with the file format). Contract version **1**.
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@vX.Y.Z/dist/digi2-loader.min.js"
+  d2-booking="pk_live_…"
+  d2-booking-product="3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10"
+></script>
+```
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking="pk_…"` | loader tag | **Site key.** Public, non-secret: it sits in the page's HTML on purpose. The backend protects itself with the key's domain allowlist, rate limits and server-side prices — there is nothing to hide here. Read with `getAttribute`, not `digi2.attr`: a key is not a responsive value. |
+| `d2-booking-api="<base>"` | loader tag | API base address. Default `https://api.2destate.com/api/v1`. `https` only (`http://localhost` and `http://127.0.0.1` are allowed while building); anything else is refused with a console warning and the default is used. Read raw — an address may legally contain `;` and `@`. |
+| `d2-booking-product="<uuid\|slug>"` | loader tag, the form, the calendar or the widget | Product (apartment) this page books — a uuid or a slug. The calendar may pick another one. **Optional:** with no attribute anywhere the module reads `?apartament=<slug>` off the address, which is how one booking page serves a whole CMS collection (`/rezerwacja?apartament=apartament-rynek-wroclaw`). An attribute always wins over the address; an empty or missing parameter is simply no product. |
+| `d2-booking-lang="<code>"` | loader tag | The language the guest reads — `pl`, `en`, `de` or `uk`, and one of the languages the key allows (`/config` `languages`). **Optional:** without it the key's `default_language` decides and `<html lang>` is **not read**; `d2-booking-lang="auto"` follows `<html lang>` instead (a site that sets it per language, e.g. Webflow Localization). A language the key does not allow, or one the module has no dictionary for, is refused in favour of the default with a console warning. Read with `digi2.attr`. See [Languages](#languages). |
+
+### The API client
+
+One small client over `fetch`. It **adds no credentials** (`credentials: 'omit'`,
+no cookies, no tokens of ours), sends and accepts JSON, and turns every answer
+into one of two shapes:
+
+```js
+{ ok: true,  status: 200, data: { … } }
+{ ok: false, status: 409, reason: 'period_taken', message: 'Ten termin…',
+  field: 'phone', violations: ['period_taken'], retryAfter: 45 }
+```
+
+`reason` is the **typed** reason from `errors.json` and is the only thing the
+module acts on. The `detail.message` / `detail` sentence from the backend is
+**never shown to the guest**: it is written for logs, in whatever language the
+API speaks. `message` is always our own sentence, in the language the guest reads
+([Languages](#languages)), and a reason the module has never heard of still
+gets one (the generic "nie udało się…" / "The booking could not be…"). Where the body
+carries no reason of its own, it comes from the status plus what the caller knows
+about its own route (`notFound`, `conflict`, `badRequest` options):
+
+| Answer | `reason` |
+|---|---|
+| `detail.reason` / `detail.code` | that string (`period_taken`, `rental_rules`, `field_required`, `request_too_large`, …) |
+| `detail` is a sentence and `reason` stands beside it, **on a 409** | that `reason` (the two 409s of `/requests`); on any other status it is ignored — a 5xx stays an unknown outcome |
+| `detail` is a list (FastAPI 422) | `validation_error`, and `field` from `loc` (`["body","customer_email"]` → the `email` field). A `loc` that ends in an array index is walked past it, so `["body","child_ages",0]` still marks `child_ages`, and an entry naming nothing we know leaves the next entry its chance. |
+| 400 | `invalid_request` (or the caller's `badRequest`, e.g. `invalid_stay`) |
+| 403 | `origin_not_allowed` |
+| 404 | the caller's `notFound` — `site_key_not_found`, `product_not_found`, `booking_not_found` |
+| 409 with a sentence | the caller's `conflict` — `request_not_allowed`, `request_already_waiting` |
+| 413 / 429 | `request_too_large` / `too_many_requests` (+ `retryAfter` seconds from `Retry-After`) |
+| 502 | `payment_provider_unavailable` **only on the two payment routes** (`checkout-session`, `balance-checkout`), which ask for it by name — `errors.json` documents that refusal for them alone. A bad gateway on the calendar or the price is a `server_error`, because telling a guest who has not touched a payment that the payment provider is down is a lie. |
+| 5xx, unreadable body | `server_error`, `bad_response` |
+| `fetch` rejected | `network_error` |
+
+A refusal from a **domain outside the key's allowlist** carries no
+`Access-Control-Allow-Origin`, so the browser never lets the page read it: in
+the browser it is a `network_error`, like a dead connection. That is the one
+refusal shape the module cannot name.
+
+### The reference and the id
+
+`d2-booking-product` (and `?apartament=`) takes a **uuid or a slug**, but only
+one route of the contract accepts a reference: `GET /products/{ref}`.
+Availability, quote and bookings are all spelled `{product_id}`. So the module
+resolves the reference **once per visit** through that route and uses the `id`
+of the answer everywhere else — a slug sent to a `{product_id}` route would
+come back `404 Product not found` and nothing could be booked.
+
+The same answer carries `pet_fee`, which is where the sentence beside the pets
+question comes from (below). The lookup is made when a calendar, a quote, a
+booking or a pets hint needs it — a page that needs none of them makes none.
+A lookup that is refused is logged and the reference goes out **as the page
+wrote it**: the backend then decides, exactly as it would have anyway.
+
+### /config, read once
+
+On start the module reads `GET /config` **once** and keeps the answer for the
+whole page (every form shares it): `form_fields`, `child_max_age`, `languages`,
+`default_language`, `branding_hidden`, `account_url`. A `/config` that cannot be
+read never closes the form — the page keeps the fields the Designer built, logs
+a warning, and the backend decides on submit.
+
+### Languages
+
+Every sentence a guest reads lives in a **dictionary**, one per language: a flat
+`key → sentence` table in the same shape as the portal's i18next JSON (owner's
+decision D7), so the same key is greppable on both sides. The module cannot use
+i18next — it has no dependencies at all — so these tables are the whole of its
+translation. Shipped: **pl, en, de, uk** — the four languages the portal starts
+with (D7).
+
+Polish is the original wording and the one the tests pin literally; English was
+written beside it. **German and Ukrainian are machine translations awaiting a
+native reading** — they are pinned by tests all the same, so the reading that
+comes is a deliberate change of a sentence and not a quiet drift. German is
+addressed formally (`Sie`), Ukrainian too (`ви`); Polish is informal, because
+Polish web copy is.
+
+```html
+<script src=".../digi2-loader.min.js" d2-booking="pk_live_…" d2-booking-lang="de"></script>
+```
+
+Which language a guest gets:
+
+1. `d2-booking-lang`, when the key allows it **and** the module has a dictionary;
+   with `d2-booking-lang="auto"` that is `<html lang>` (`en-GB` → `en`), under
+   the same two conditions
+2. the key's `default_language` from `/config`
+
+**`<html lang>` is read only with `"auto"`.** Webflow writes `lang="en"` on many
+projects by default, so reading it on its own would switch a Polish client's
+widget to English on a version bump, with nothing on the page to say why. A
+site that really sets `<html lang>` per language (Webflow Localization) opts in
+with one word on the loader tag. Until `/config` answers, the module knows no
+`languages` list, so it renders in what it would render in without one (the
+attribute, or under `"auto"` `<html lang>`). A language the key then refuses
+can therefore show for that first moment, before the page settles on the
+default.
+
+A language the key does not allow — or one no dictionary covers — is **refused
+in favour of the default**; an explicit `d2-booking-lang` refused that way says
+so in the console (under `"auto"` a refused `<html lang>` is quiet: one site,
+many pages, and the key's list is the owner's choice). Codes are compared without the
+region and the case (`de-DE`, `EN`), in the fallback chain and in
+`digi2.booking.texts()` too; `message()` with a reason whose sentence needs
+values answers the generic sentence, never a `{brace}`. Half a page in German promises a service the owner
+cannot give. A key whose `/config` lists no `languages` at all is **not** policed
+(there is nothing to check against): the attribute stands, and everything else
+stays as it was, on the key's default.
+
+The **default itself** is held to the same rule: a key whose `default_language`
+is a language this module has no dictionary for falls back to `pl` and says so
+in the console once. Otherwise the sentences would come out of the base
+dictionary while every `Intl` format — dates, month names, amounts, the first
+day of the week — followed a language nobody on the page reads.
+
+The chosen language is also what goes out as the booking's `locale` (so the
+portal's e-mails match the page), what every `Intl` format follows — the
+amounts, the percentages, the month and weekday names, and which day a week
+starts on — and what the module **tells the API** it is in (below).
+
+#### The language on the wire
+
+The module says which language it is in: four routes of the contract accept
+`?lang=<code>` and are asked with it.
+
+| Route | What the language changes |
+|---|---|
+| `GET /products` | the `name` and `description` of every card. The list itself does not depend on the language: the same page in German shows the same places |
+| `GET /products/{ref}` | the `name` and `description` of that one place |
+| `GET /products/{product_id}/availability` | the `product_name` of the window |
+| `POST /products/{product_id}/bookings` | the same — **and** the chosen language is recorded on the booking: every later e-mail that guest gets is written in it, and the portal links in those e-mails open in it (`?lang=`) |
+
+Each field falls back on its own, so a translation with a name but no
+description does not blank the description, and pictures never depend on the
+language.
+
+**Without the parameter an answer comes back in the key's `default_language`**,
+which is exactly why a page in any other language has to send it;
+`Accept-Language` the backend reads deliberately **not**, so the page cannot end
+up in two languages at once. What goes out is the language the module **really
+renders in**, never the raw `d2-booking-lang`: on a page whose asked language
+the key refused, the sentences are the default and so is the parameter — a guest
+must not read German sentences beside Polish names or the reverse. The backend
+narrows the value to the key's `languages` all the same, so a value it cannot
+use (empty, `klingon`, absurdly long) is **ignored and never a refusal**.
+
+**No other route takes it.** `/config`, `quote`, `checkout-session`, `status`,
+`manage`, `requests` and `balance-checkout` pin the query they accept in
+`tests/fixtures/booking-api/`, and a contract test on the API side compares each
+fixture with the real route — a parameter invented elsewhere would be a lie
+about the contract. `GET /bookings/{id}/manage` is deliberately without one: its
+`product_name` follows the language of that booking, which is the language of
+the e-mail the guest clicked.
+
+`/config` is asked **before** the language is settled — its own answer is what
+settles it — and takes no language either, so there is no chicken-and-egg.
+Everything else waits for that answer: all four routes are only ever asked after
+`/config` has returned, `GET /products/{ref}` included, which waits for it
+explicitly so a resolved place is never cached in the wrong language.
+
+| Case | What happens |
+|---|---|
+| a key missing from one dictionary | read in the next language of the chain (asked → the key's default → `pl`), so there is no hole in the page |
+| a key no dictionary has | nothing is rendered and the console says which key — a guest must never read `manage_label_nights` |
+| a `{placeholder}` with no value | the whole sentence is dropped and the caller falls back to one that needs none — never a printed brace |
+| a counted word | one key per form (`nights_one` / `nights_few` / `nights_many` in Polish and Ukrainian, `nights_one` / `nights_other` in English and German); which one a number takes is the `plural` function **of that dictionary**, which is why Ukrainian keeps its own three-form rule: it says *21 ніч* where Polish says *21 nocy*, and English and German count in two. Two words are counted today: `nights` and `years` (the child-age limit — *2 lata* against *12 lat*) |
+| a refusal `reason`, a line `kind`, a `status`, a request kind or a price unit the dictionary does not know | shown as the answer's own value (a line kind) or not at all (a status), and never reported: those come from the backend, which may name things this version has not heard of |
+
+The **browser-side form check** says its sentences out of the same tables, the
+four it writes itself included: `required`, `email`, `number`,
+`adults_required` (children count into the party), `child_age_max`,
+`child_ages_count` and `too_many_pets_over_threshold`. Nothing a guest can read
+is a literal in the code.
+
+One sentence quotes a label of the portal's e-mail, so the two have to agree:
+`manage_balance_elsewhere` sends the guest to the balance link **by name** —
+`„Dopłata”` (pl), `“Balance”` (en), `„Restzahlung“` (de), `«Доплата»` (uk).
+Those four strings are the contract for the portal's own translation; an e-mail
+that labels that link anything else sends the guest hunting in his inbox.
+
+`digi2.booking.text('submit_label')` gives a page the module's own wording in
+the guest's language, and `digi2.booking.texts('uk')` the whole table (a copy).
+
+#### Adding a language
+
+1. One more entry in `DICTIONARIES` (`webflow-scripts/modules/booking.js`): its
+   own `plural` function and a `texts` table with **every** key the base one has
+   — the counted word as one key per form its rule can return.
+2. The key's `/config` has to list the code in `languages`, or the module
+   refuses it in favour of `default_language`: the module speaking a language
+   the owner never set up would promise e-mails and a portal in it.
+3. Nothing else changes. The tests do the policing: one proves every dictionary
+   has exactly the same key set (so a language cannot ship half-filled), one
+   reads every key the module looks up **out of the source** and checks it
+   against every dictionary — a key reached only by a branch no test walks is
+   exactly the one that goes missing in a translation — one probes each `plural`
+   over 0…150 and demands every form it can answer (`nights_few` missing is
+   invisible to a key-set test, which folds the forms off), and one refuses a
+   sentence **nothing looks up**, so a dead key is never translated four times.
+4. `npm run build`, because `dist/` is committed, and the browser gate
+   (`sandbox/gate-booking-lang.html`) proves a non-default language end to end
+   in a real Chromium, Cyrillic and all.
+
+### The list of places
+
+```html
+<div d2-booking-results>
+  <a d2-booking-template d2-booking-link class="karta">
+    <img d2-booking-bind="image">
+    <h3 d2-booking-bind="name"></h3>
+    <span d2-booking-bind="city_line"></span>
+    <span d2-booking-bind="price"></span>
+  </a>
+</div>
+
+<button d2-booking-more>Pokaż więcej</button>
+<span d2-booking-count></span>
+<div d2-booking-results-empty>Nic nie znaleźliśmy.</div>
+```
+
+`GET /products` answers the list, and the row the page built is the row the
+guest reads: `[d2-booking-template]` is remembered, **taken off the page**
+before anything shows, and cloned once per entry — markup, classes and nesting
+as the Designer wrote them. The clone loses `d2-booking-template` and gains
+`d2-booking-item`. A template left where it stood would be an empty card above
+every real one.
+
+**Every** pattern leaves the page, not only the first one, and the attribute is
+stripped from the inside of the clone as well: a card built inside a Webflow
+Collection List is rendered once per CMS item, so the published page carries
+`d2-booking-template` on every one of them, and a copy left standing would be a
+clickable placeholder card that no later render ever clears (only
+`[d2-booking-item]` rows are). The first one is the pattern, the rest are
+dropped, and the module says in the console how many it found.
+
+Do not hide the pattern by hiding its wrapper (`display: none` on the parent):
+rows go into that same wrapper and would stay invisible. Hide nothing — the
+module takes the pattern off the page itself.
+
+Rows are **appended** to the element the pattern stood in — the template's
+parent, or in a Collection List the parent of its Collection Item (the
+`w-dyn-items` wrapper) — and to `[d2-booking-results]` itself only when the
+list has no template. A button, a count or an empty state therefore belongs
+**next to** the list, not inside it — which is where a Webflow layout
+leaves them anyway. One put inside is still filled in and never removed (only
+`[d2-booking-item]` rows are cleared); the rows simply follow it. With one list
+on the page the controls may stand anywhere; with two, each list has to hold
+its own, because a button standing between them belongs to neither.
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-results` | any Div | The list, read once per visit. |
+| `d2-booking-results-limit="<n>"` | the list | How many places one page asks for. Default `24`; the key has its own maximum. |
+| `d2-booking-results-link="<shape>"` | the list | The address shape every card of this list leads to (below). Read raw — an address may legally contain `;` and `@`. |
+| `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave. |
+| `d2-booking-bind="<field>"` | any element in the row, the row itself included | One field of the entry, as text (below). |
+| `d2-booking-link[="<shape>"]` | Link, or the row itself | Where this card leads. A whole card is usually one link, so the attribute may sit on the template. |
+| `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a `429` wait it is down together with the search button. |
+| `d2-booking-count` | any element | The `count` the answer carries — every place that matches, not the ones on screen. |
+| `d2-booking-results-empty` | any element | Shown **only** when the answer has nothing. Hidden until the answer arrives, and hidden on a refusal. |
+| `d2-booking-results-message` | any element **inside** the list | The sentence of a refusal, in the module's own words. Unlike the button, the count and the empty state — which may also stand beside the list — this one is looked for inside it; a missing one is built there, with `role="status"` and `aria-live="polite"` and marked `d2-booking-built`. |
+| `d2-booking-item` | set by the module | On every rendered row. |
+| `d2-booking-empty` | set by the module | On a slot the answer had nothing for. |
+| `d2-booking-results-state` | set by the module | `loading` \| `ready` \| `empty` \| `error`. |
+| `d2-booking-results-drawn` | set by the module | This list had no template, so the module drew the cards itself. |
+| `d2-booking-busy` | set by the module | A page of the list is in flight. |
+
+**Every scalar field of the contract binds by its own name** — `name`,
+`project_name`, `city`, `city_line`, `address_line`, `rooms`, `area`, `floor`,
+`beds`, `max_guests`, `description`, `rental_kind`, `timezone`, `latitude`,
+`longitude`, `min_units`, `max_units`, `payment_mode`… — so a page is never
+limited to a list somebody hardcoded. Four values read differently:
+
+| Value | What the module writes |
+|---|---|
+| `image` | `image_url`. On an `<img>` the `src`, with the place's `name` as the `alt` (an unnamed picture gets an empty `alt` on purpose, so a screen reader skips it instead of reading an address out loud); anywhere else the `background-image`. |
+| `price` | The entry's own `price.price` in the entry's own `currency`, through the same `Intl` formatting as the quote. The module computes no amount here either. |
+| `price_unit` | What that amount is the price of ("za noc"). A unit this module does not know shows nothing rather than a bare code. |
+| a list of scalars (`amenities`, `allowed_units`, `image_urls`) | joined with commas |
+
+A missing or `null` field — eighteen fields of the contract are nullable, so
+this is most pages and not an edge case — leaves the element empty and marked
+`d2-booking-empty`, never the word `null`. So does `""`, an object (`pet_fee`,
+`prices`) rather than `[object Object]`, a name the answer does not carry at
+all (a typo, or `constructor` — the field has to be the entry's own, or a slot
+would read `function Object() { [native code] }`), and a flag that is `false`
+(`requires_approval`); a flag that is `true` leaves the slot **exactly as the
+Designer built it** — the text and the markup inside it, an icon beside the
+word "na zapytanie" included, and not marked `d2-booking-empty` either. A
+declared `0` (the ground `floor`) is an answer, not a gap, and is written.
+
+**Nothing out of the answer is ever markup**: a value goes in with
+`textContent`, an address with `setAttribute`, and a picture only once its
+address reads as one — `https:`, `/…` or `data:image/`, with no quote, bracket
+or backslash. A `src` is one click from running and a background goes into a
+style property, where a single quote ends the declaration and starts whatever
+came with the answer. These names come out of a CMS this module does not own.
+
+#### Where a card leads
+
+The default is `?apartament=<slug>` — the very query the booking page reads —
+so the list and the booking page fit together with nothing written. A client
+whose apartments are CMS pages under their own addresses writes the shape
+instead, on the link or on the whole list:
+
+| Shape | `href` |
+|---|---|
+| none | `?apartament=apartament-rynek-wroclaw` |
+| `/apartamenty/{slug}` | `/apartamenty/apartament-rynek-wroclaw` |
+| `/rezerwacja` (no placeholder) | `/rezerwacja?apartament=apartament-rynek-wroclaw` |
+
+`{slug}` and `{id}` are the two references the booking page can resolve, and
+both go out `encodeURIComponent`-escaped. Each placeholder is the field it
+names and nothing else: an entry whose `slug` is `null` (a nullable field of
+the contract) under a `/apartamenty/{slug}` shape leaves the card **without an
+`href`** and marked `d2-booking-empty`, rather than pointing at a CMS address
+built out of a UUID that cannot exist. So does an entry with neither reference
+under the default shape.
+
+#### Paging, and a page that was refused
+
+Paging is `limit` and `offset`. The first page replaces the rows and every
+later one is appended, so the guest keeps what they were already reading. A
+page that was refused **leaves the offset where it was** — the next click asks
+for that same page again instead of skipping it — and says why in
+`[d2-booking-results-message]`, in the module's own words (the backend's own
+sentence is for logs), with `[d2-booking-results-empty]` taken down: a refusal
+is not an offer with nothing in it. A `400` on this route is about what the
+filter asked for: the period (`invalid_stay`), or the period and the city once
+the search named one (`invalid_search`). An answer that said `has_more: false`
+is final: that button asks for nothing more.
+
+A `429` is the one refusal the button does **not** stay open for: it waits
+exactly `Retry-After` seconds, like every other button of this module that
+meets a rate limit, because opening it at once only buys the guest the next
+`429`. A click that gets past the disabled button spends no call either.
+
+`booking:list` reports every page — `{ count, shown, has_more }`, or
+`{ reason, status }` when the page was refused.
+
+#### The search above the list
+
+```html
+<form d2-booking-search>
+  <input type="date"   d2-booking-search-field="check_in">
+  <input type="date"   d2-booking-search-field="check_out">
+  <input type="number" d2-booking-search-field="adults" value="2">
+  <input type="number" d2-booking-search-field="children">
+  <select d2-booking-search-field="location">…</select>
+  <button type="submit">Szukaj</button>
+</form>
+```
+
+A submit searches **without reloading the page**: every `[d2-booking-results]`
+on the page goes back to its first page with the new filter, and the search
+goes into the page address, so a reload keeps it and the link is worth sharing.
+The module reads those parameters on start — **before** the first page of any
+list — and fills the form with them, so a shared link opens its own result
+under a form that shows what was asked for. Webflow's own form handler never
+runs: the module takes the submit.
+
+The form and the address are **merged**, not one or the other: a field the form
+carries answers for its own key even when it is empty (the guest can see that
+field, so clearing it is an answer), and so does anything the form knows
+without a field of its own — the calendar's period, a pinned city. Every key
+the form has no field for keeps what the address said. A search form built
+around the calendar and a party field therefore keeps the city of the link it
+was opened with, and a submit in it does not widen the list to the whole
+country.
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-search` | Form Block | The search. One form drives every list on the page. |
+| `d2-booking-search-field="<name>"` | Input, Select | `check_in` \| `check_out` \| `adults` \| `children` \| `location`. Any other name is ignored with a console warning. |
+| `d2-booking-location="<city>"` | the search form, or a list | Pins the city; the guest cannot change it. On a list it wins for that list. Read with raw `getAttribute`. |
+| `d2-booking-pinned` | set by the module | On a `location` field under a pin: the value is the pinned city and the field is `disabled`. |
+| `d2-booking-search-option` | set by the module | On an `<option>` the module added to a `<select>`, because the city it had to show — out of a link or a pin — was not among the page's own options. |
+| `d2-booking-search-bound` | set by the module | This form's submit is taken; a second `apply()` does not take it twice. |
+
+What goes out is what `GET /products` takes and nothing else:
+
+| Parameter | Rule |
+|---|---|
+| `check_in`, `check_out` | Both or neither — the route takes them together (`errors.json`: a 400 "check_in and check_out go together"). A typed time is dropped, because a filter asks about days, and text that is not a date narrows nothing. |
+| `guests` | **adults + children.** The route takes no `adults` and no `children`, so nothing can contradict the sum — a `guests` that does is a `422` (KONTRAKT.md). A page that asks about neither sends no `guests` at all. |
+| `location` | The pinned city if there is one, otherwise the `location` field. |
+| `limit`, `offset` | The list's own paging, back at `offset=0`. |
+
+The period may be **typed** into the two date fields or **picked** in a
+`[d2-booking-calendar]` standing inside the search form — the same calendar the
+booking form uses, and the only one: the search reads the stay that calendar
+already announced through `select()`. A typed field wins over it, because a
+value the guest can see on the page is what they think they are searching for.
+
+**Edge cases**
+
+- Half a period, or a departure that is not after the arrival, asks the API
+  **nothing** and says one sentence in `[d2-booking-results-message]`
+  (`stay_required` / `invalid_stay`). The route would answer a 400 whose
+  sentence is for logs, and the guest would see a list that went empty for no
+  reason they can read.
+- A **pinned** city beats the `location` field and the address alike, and is
+  never written into the address: it is the page's decision, not the guest's
+  search. A list may carry a pin with no search form anywhere near it — that is
+  how a page of one city is built. Two lists may pin two different cities; each
+  list's own pin wins for that list.
+- The city is read with raw `getAttribute`, never `digi2.attr`: a place name
+  may legally contain `;` or `@`, which the responsive syntax would cut.
+- The address keeps the two questions the page asked
+  (`?check_in=…&check_out=…&adults=2&children=1&location=Wrocław`), not the sum
+  we send, so a shared link can put the party back into the form. Everything
+  else the address carried — `?apartament=`, a campaign, a language — stays
+  exactly as it was written. The entry is **replaced** and not pushed
+  (`replaceState`), so Back still leaves the page instead of walking through
+  every narrowing of a filter.
+- A `<select>` takes only a value one of **its own** `<option>`s carries: a
+  browser answers anything else with `selectedIndex = -1`, so the field stands
+  blank and reads back empty. A link naming a city the page does not offer
+  (`?location=Gdańsk` over a select of two cities) would therefore lose that
+  city twice over — off the screen, and out of the merge, where a field answers
+  for its own key even when it is empty — and the guest would get the whole
+  offer under an address still promising one city. **The link wins:** the
+  module adds the one `<option>` it needs (marked `d2-booking-search-option`)
+  and selects it, so the result, the field and the address all name the same
+  city, even when that result is empty. The same repair serves a pinned city a
+  select does not offer; the page's own options stay what the guest can choose
+  between, and the added one is the search they arrived with. A text `<input>`
+  takes any city as it is and is never touched.
+- A link whose search carries half a period opens the **whole offer** rather
+  than a refusal: that sentence belongs to a guest who just pressed search, not
+  to a page that is only opening. The city in such a link still applies.
+- An answer still in flight when a new search goes out is **dropped**: it would
+  show places nobody asked about, and its `offset` would send the paging past
+  the rows now on screen, so the next "more" would skip apartments.
+- A refusal says the module's own sentence and never the API's: `invalid_stay`,
+  `invalid_search` when the filter also named a city, and a `429` that says how
+  long to wait from its `Retry-After`. `[d2-booking-results-empty]` goes down
+  with every refusal, the module's own included — "nothing found" and "we could
+  not ask" are not the same sentence and never stand together.
+- A search that **cannot go out** leaves the filter in force exactly as it was:
+  the rows on screen and the `offset` beside them belong to it, so the next
+  "more" still asks for the next page of the search the guest is reading rather
+  than mixing two result sets in one column.
+- Two clicks on "Szukaj" ask **once**: a submit repeating a question whose
+  first page is still in flight is ignored, so a double click spends one call
+  of the key's rate limit and not two. A submit after the answer came back —
+  the same question or another — always goes out, because that is a retry.
+- A `[d2-booking-search]` searches the lists **of its own page**. On a page with
+  no `[d2-booking-results]` the submit is still taken (nothing reloads) and the
+  console says so: a hero search form belongs on the page that holds the list.
+
+`booking:search` reports every search —
+`{ search: { check_in, check_out, guests, location } }`, plus `message` when
+the search was not sent at all.
+
+#### A page that brought no template
+
+A bare `<div d2-booking-results></div>` gets cards the module draws itself —
+picture, name, city line, price and its unit, all inside one link — out of the
+same injected stylesheet and the same `--d2-booking-*` variables as the drawn
+widget. Every rule is scoped to
+`[d2-booking-results][d2-booking-results-drawn]`, so a list the Designer built
+keeps its own look down to the last card.
+
+### The form
+
+```html
+<form d2-booking-form>
+  <div d2-booking-field-group>
+    <label for="phone">Telefon</label>
+    <input id="phone" d2-booking-field="phone">
+    <div d2-booking-error="phone"></div>
+  </div>
+  …
+  <div d2-booking-error="form"></div>
+</form>
+```
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-form` | Form | The booking form. Its own submit is stopped; the module sends the booking. |
+| `d2-booking-field="…"` | Input / Select / Textarea / Checkbox | `name`, `email`, `phone`, `note`, `adults`, `children`, `child_ages`, `pets`, `pets_over_threshold`. An unknown value is reported in the console and never sent. |
+| `d2-booking-field-group` | wrapper | Optional. Removed together with its field when the key does not ask for it, so the label goes too. Without it only the field itself is removed. A group holding **several** fields where the others stay keeps its place: only the switched-off field and its own message slot go, so one `off` field never takes its neighbours (e.g. the guest count) with it. |
+| `d2-booking-error="<field>"` | any element | Where the message for that field is written. `"form"` is the message for the whole form. A missing one is built next to the field and marked `d2-booking-built`. |
+| `d2-booking-hint="<field>"` | any element | Where a sentence the **key** decides goes. Today there is one: `pets_over_threshold` gets the product's `pet_fee` — the weight threshold, the amount and whether it is per stay or per night ("Zwierzę powyżej 10 kg: 50,00 zł za pobyt."). Without it the question is unanswerable: nothing on the page says what the threshold is. The drawn widget builds one; a Designer-built form gets the sentence by putting the attribute where they want it. No `pet_fee` in the answer takes the threshold field off the form, slot included: nothing on the page says what the threshold is. A failed product lookup keeps the field. An amount we cannot format leaves the slot empty and marked `d2-booking-empty`, and a `weight_threshold_kg` of `null` drops the threshold wording instead of printing a hole. |
+| `d2-booking-required` | set by the module | On every field the key requires (plus `aria-required="true"`). |
+| `d2-booking-invalid` | set by the module | On the field a message is pointing at (plus `aria-invalid="true"`). |
+| `d2-booking-ready` / `d2-booking-bound` / `d2-booking-busy` | set by the module | `/config` applied / submit bound / a booking is in flight (a second click is ignored, so one impatient guest never creates two holds). |
+
+**Required-ness comes from `/config` `form_fields`**, never from the page:
+
+| State | What happens |
+|---|---|
+| `off` | the field (and its group) is **removed from the DOM** and never sent |
+| `optional` | sent only when the guest filled it — an empty optional field is left out, not sent as `""` |
+| `required` | submit is blocked with a message on the field |
+
+`name` and `email` are always required even though `form_fields` does not mention
+them. `pets_over_threshold` follows `pets` (it disappears with it, but never
+blocks a submit of its own — it is a sub-question). `child_ages` goes `off`
+together with `children`. `adults` is never switched off: with `children` off it
+*is* the guest count.
+
+The browser-side check is there to be kind, not to be the judge — the backend
+decides. It catches an empty required field, a malformed e-mail, a non-number
+where a count belongs, a child older than `child_max_age`, an ages list that
+does not match the number of children, `pets_over_threshold` larger than `pets`,
+and children declared without adults. A `422` that still comes back lands on the
+field the backend named (`field_required` → `detail.field`, `validation_error` →
+`detail[].loc`); when that field was switched `off`, the message lands on the
+form.
+
+**Group composition and `guests`** (`KONTRAKT.md`): `guests` is always
+**adults + children**, so no request can contradict itself — the module never
+sends a `guests` of its own next to a different sum. With `children` off,
+`adults` is left out of the request as well and `guests` carries the count: a
+booking must not claim two adults for a stay priced for a different group. A
+form with a `children` field but no `adults` field sends `guests` only.
+
+`locale` is the language the module renders in (`d2-booking-lang`, or
+`<html lang>` under `"auto"`, when the key speaks it), otherwise
+`default_language`.
+
+### The calendar
+
+```html
+<div d2-booking-calendar></div>
+```
+
+One empty element is the whole setup: the module draws the month inside it and
+never touches what the Designer put there before it. The squares come from
+`GET /products/<ref>/availability`, **one window per month**, kept for the whole
+visit — walking back and forth never asks the API (or its rate limit) twice for
+the same month.
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-calendar` | any Div | The calendar. The product is `d2-booking-product` on this element or on the loader tag, or `?apartament=` from the address. |
+| `d2-booking-status` | any element | Optional. Where the chosen range and every refusal about the stay is written, for eyes and for screen readers alike. The module builds one inside the calendar when the page has none (`role="status"`, `aria-live="polite"`); a page may put its own anywhere, and every one of them gets the sentence. |
+| `d2-booking-calendar-built` / `-head` / `-month` / `-grid` / `-prev` / `-next` / `-weekdays` | built by the module | The parts of the drawn calendar, so CSS can reach them. |
+| `d2-booking-day="YYYY-MM-DD"` | built by the module | One day, always a real `<button type="button">`. |
+| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (the first local midnight after now plus `lead_time_hours`, so never today). |
+| `d2-booking-day-selected` / `-checkout` / `-in-range` / `-today` / `-blank` | set by the module | The arrival / the departure / a night between them / today / a leading or trailing empty square. |
+| `d2-booking-calendar-ready` / `d2-booking-busy` | set by the module | The month is drawn / a window is in flight. |
+
+**The rules come from the answer, not from the page.** `min_units` and
+`max_units` bound the number of nights, `lead_time_hours` closes the days that
+are already too close, and `buffer_minutes` widens a busy period of kind
+`booking`. That is the whole of what the availability answer carries about the
+rules
+(`tests/fixtures/booking-api/availability.json`): there is **no check-in-day
+rule** in the contract, so the calendar never closes a week day on its own and
+every day of the week is a possible arrival.
+
+**The first day on offer is a midnight, not a date.** A stay starts at local
+midnight and `check_rental_rules` refuses `starts_at < now + lead_time`, so the
+day that moment falls in is already too late: today is never on offer, even with
+a lead of `0`, and 24 hours at 15:00 opens the day after tomorrow. It is counted
+in the rental's zone. The calendar can still go stale on an open page, which is
+why `lead_time_too_short` after submit has its own sentence too.
+
+**The submit stops on the form, not earlier.** Webflow listens on the document
+and ignores `preventDefault`, so the module calls `stopPropagation` in the bubble
+phase. Capture would be wrong: d2-forms refuses an invalid form there, and that
+has to stop the booking whichever module loaded first. The price is that a
+document-level `submit` listener, a GTM form trigger included, hears nothing.
+
+**The calendar only speaks nights.** `units_count` is counted in `unit`, so
+sending the first of `allowed_units` would book 3 nights as 3 months. It always
+sends `day`, and a product without `day` answers `unit_not_allowed` on every day.
+
+**A month or a product that could not be read is asked for again.** A failed
+product lookup is dropped so the next caller retries instead of sending a slug
+to `{product_id}` routes for the whole visit; a 404 is an answer and is kept. A
+month whose window failed is read again on the way back.
+
+**`buffer_minutes` widens a booking, and only a booking.** Every entry of `busy`
+carries a `kind`: `booking` (someone's stay) or `blackout` (the owner closing
+the days). A booking is widened **on both sides** before the nights are counted,
+so a cleaning gap really closes the night next to a taken period instead of
+letting the guest pick a day the backend will refuse with `409 rental_rules`. A
+blackout is an **exact window** and is never widened: "renovation until 12:00"
+means the flat is free at 12:00, so the nights touching a blackout stay
+bookable. That is how the backend counts it (`rental_violations` in
+`services/rental_availability.py` tests the widened stay against periods of kind
+`booking` only), and a calendar that widened every period would grey out nights
+the backend would have taken — the guest would see a closed square with no
+reason given and the booking would be lost. A `kind` the module does not know is
+counted as a `booking`, buffer included: a night refused for nothing can be won
+back, a double booking cannot.
+
+A blocked square refuses with the code that fits it, so the sentence the guest
+reads is true: `period_taken` inside a booking, `blackout_overlap` inside a
+blackout, `buffer_conflict` only on the nights the buffer itself took. Where two
+periods reach the same night, the overlap wins over the gap — a night inside one
+period and merely next to another reads as taken, not as a missing gap.
+
+**A square is a date, never an instant.** Busy periods arrive as UTC instants;
+the module converts them to dates in the rental's own `timezone` with `Intl` and
+then counts in whole days, so no daylight saving change can move a night. A
+period that ends at **local midnight leaves its last date free**: the guest who
+leaves that morning never slept there. That is why the first day of a taken
+period is still a possible **departure** — a stay of the two nights before a
+taken period is bookable, and a stay that would swallow the taken nights is not.
+
+**Two clicks make a stay.** The first is the arrival, the second the departure.
+A day before the arrival (or the arrival itself) starts over; a day the rules
+refuse says why in the live region and **leaves the arrival where it is**, so
+the guest never has to guess which half of the range the calendar dropped. Only
+a complete range reaches `digi2.booking.select()` — half a stay is not a stay,
+and a missing length never quietly becomes one night.
+
+**Keyboard and screen readers.** The grid is `role="grid"` named by the month
+caption, with rows of `role="gridcell"` holding real buttons. The month is one
+tab stop (roving `tabindex`), and inside it:
+
+| Key | Moves |
+|---|---|
+| `←` / `→` | one day; across the edge of the month it draws the next one and keeps the focus on the day |
+| `↑` / `↓` | one week |
+| `Home` / `End` | start / end of that week |
+| `PageUp` / `PageDown` | one month, same day of the month |
+| `Enter` / `Space` | picks the day — left to the browser, which already clicks a `<button>` |
+
+A day a guest may not pick carries **`aria-disabled="true"`, never the `disabled`
+property**: a day that cannot be reached is a day nobody can be told about. It
+stays focusable, says why in its `aria-label`, and a click on it answers with
+the reason instead of doing nothing — and with the **right** reason: a day
+behind the earliest bookable one answers "this day has passed", never
+`period_taken`, because nobody took yesterday and the square's own label
+already says it is gone. Every day's label is its full date plus its
+state ("11 maja 2027, zajęte"), the month caption is `aria-live="polite"`, and
+the chosen range is announced in `[d2-booking-status]`.
+
+### The price
+
+```html
+<div d2-booking-breakdown>
+  <div d2-booking-line>                 <!-- optional: cloned per line -->
+    <span d2-booking-line-label></span>
+    <span d2-booking-line-detail></span>
+    <span d2-booking-line-amount></span>
+  </div>
+</div>
+<strong d2-booking-total></strong>
+<span d2-booking-deposit></span> <span d2-booking-balance></span>
+```
+
+| Attribute | Element | Description |
+|---|---|---|
+| `d2-booking-breakdown` | any Div | Where the rows of the price go. |
+| `d2-booking-line` | row inside the breakdown | Optional **template**: the first one the page carries is remembered and cloned per line of the answer, so the price list keeps the styling of the site. Without it the module draws plain rows marked `d2-booking-built`. |
+| `d2-booking-line-label` / `-detail` / `-amount` | inside the row | The name of the line / the quantity and the rate / the amount. A slot the template does not have is simply not filled. |
+| `d2-booking-line-kind` / `-negative` | set by the module | The `kind` from the answer (`base`, `season`, `weekend`, `season_weekend`, `extra_guest_fee`, `pet_fee`, `cleaning_fee`, `length_discount`) / the amount is below zero, so a discount can be coloured. |
+| `d2-booking-total` | any element | The total of the answer. |
+| `d2-booking-deposit` / `d2-booking-balance` | any element | What is paid now and what is left for later, from the `…_minor` fields. |
+| `d2-booking-empty` | set by the module | On an amount element with nothing to show — `null` is shown as empty, never as "0,00". |
+
+**One quote per settled change.** A chosen range and a changed guest count both
+ask `POST /products/<id>/quote`, debounced by 300 ms: clicking a range and
+typing a number is one decision, not five. A slower answer to an older question
+never overwrites a newer one. Nothing is asked for until the period **and** the
+party are known.
+
+**And one quote per question.** The form fires on every keystroke, including in
+fields that cannot move the price, so the module remembers the body it last
+sent: a settled change whose request would be **byte for byte** the one already
+answered is served from that answer and spends no call. Writing a long note
+after a priced range costs nothing; changing the party costs exactly one call.
+
+The party comes from the **first `[d2-booking-form]` on the page** (the stay is
+one per page, so the price is too), and only the group composition travels:
+`guests`, `adults`, `children`, `child_ages`, `pets`, `pets_over_threshold`. The
+name, the e-mail and the note are none of the price's business and are never
+sent to `quote` — they go with the booking itself. A page with no form at all
+still gets a price for the period alone.
+
+**The module prints the answer and computes nothing.** `amount_total` is the
+total — never the sum of the rows, because every discount, surcharge and
+rounding the owner set lives on the server. Each line is one row. A `…_minor`
+amount is divided only by the number of digits `Intl` says that currency has
+(two for PLN, none for JPY, three for TND), never by a hard-coded 100. All of it
+is formatted with `Intl.NumberFormat` in the language of `/config` and the
+**currency of the answer**.
+
+Line labels: a `label` in the answer wins **only on a page in the key's
+`default_language`** — it is the owner's season name, typed once and translated
+nowhere (2destate, `rental_pricing.py`), so `?lang=` on `/quote` could not help.
+On a page in any other language the dictionary's word for the `kind` stands in
+(`line_season` → "Stay in season"). Without a `label` the `kind` gets its
+word from the dictionary too. A kind the dictionary has no word for is named by
+the `label` (in any language, with no rate added — the label is the owner's whole
+name) and, with neither, by its own identifier. `length_discount` carries its rate in the label when the answer has one —
+and without it when the answer says `null`, which is what a key with
+`merge_cleaning_fee` sends (`KONTRAKT.md`).
+
+**When there is no price to show.** An answer with `available: false`, a `409
+rental_rules` and a `400` about the period all **clear** the breakdown and the
+total and leave one short sentence in the live region. A price beside "this stay
+cannot be had" would be an offer nobody can keep. The sentence comes from the
+`violations` codes when the answer has them, from one table at the top of the
+module. Its keys are the backend's own `VIOLATION_*` constants
+(`services/rental_availability.py`), pinned by
+`tests/fixtures/booking-api/errors.json`, all ten of them:
+`product_not_bookable`, `unit_not_allowed`, `below_min_units`,
+`above_max_units`, `lead_time_too_short`, `blackout_overlap`, `period_taken`,
+`buffer_conflict`, `no_price_for_unit` and `too_many_guests`. The numbers in a
+sentence are taken from the rental's own rules — "the shortest stay is 3
+nights" says 3. An unknown code, and a sentence whose number we do not have,
+falls back to the generic one, so no guest ever reads a raw code or a leftover
+brace. The calendar refuses with the same codes (plus its own `past`, which the
+backend never sends: a day behind today is not a period somebody took), so a
+rule caught in the browser and the same rule caught by the backend read alike.
+
+### The drawn widget
+
+```html
+<div d2-booking-widget></div>
+```
+
+An empty element is the whole setup. Inside it the module draws **every part the
+page does not have**: the calendar, the live region, the form (party row, guest
+fields, message slot and the submit button), the breakdown, the total and the
+deposit/balance. Everything it draws is marked `d2-booking-built`, and the
+widget itself gets `d2-booking-widget-ready` so a second `apply()` leaves it
+alone.
+
+**The Designer always wins.** A part is looked for on the **whole page**, not
+only inside the widget: the price, the form and the live region are one per page
+in this module (the quote takes its party from the first `[d2-booking-form]`,
+`writeAmount` fills every `[d2-booking-total]`), so a second one would be a
+second, silent form. A widget holding the Designer's own calendar and form only
+gets what they left out. One page books one stay, so a second
+`[d2-booking-widget]` finds every part taken, stays empty and says so in the
+console. `d2-booking-product` on the widget is copied onto the calendar and the
+form it draws.
+
+The drawn form asks only what the key asks for (`form_fields` decides which
+fields exist at all, so `applyFields` has nothing to remove afterwards), a
+required field gets a `*` in its label, and `adults` starts at `2` — the party
+nearly every rental is priced for, visible in the field and editable, so nobody
+is booked for a group they cannot see.
+
+**The look is variables, not opinions.** One `<style d2-booking-styles>` is
+injected once. Every colour and spacing rule is scoped to `[d2-booking-widget]`
+(and to `[d2-booking-return]` / `[d2-booking-manage]` for the guest's own two
+blocks, and to `[d2-booking-results][d2-booking-results-drawn]` for a list that
+brought no template) — nothing can reach a calendar, a form or a list styled
+by hand outside one — nothing is `!important`, and every colour and measure is
+a CSS variable with a default.
+
+There is **one** unscoped rule, and it is layout, not look:
+`[d2-booking-calendar-grid] [role=row] { display: grid; grid-template-columns:
+repeat(7, 1fr) }`. A month is seven columns or it is nothing, and the grid it
+applies to is markup the module built itself, so it can reach nothing the
+Designer wrote. That rule alone is injected on a page whose only booking
+markup is a bare `<div d2-booking-calendar>`; a page with a widget gets the
+whole sheet, which starts with the same rule.
+
+```css
+[d2-booking-widget] {
+  --d2-booking-accent: #1f6f5c;       /* chosen days, the button */
+  --d2-booking-accent-text: #fff;
+  --d2-booking-text: #1a1d1c;
+  --d2-booking-muted: #6b6f6d;        /* labels, details, the mark */
+  --d2-booking-bg: #fff;
+  --d2-booking-surface: #f6f5f3;      /* a free day */
+  --d2-booking-border: #e0ded9;
+  --d2-booking-busy: #fbe7e4;         /* a night someone has */
+  --d2-booking-range: #e9f2ef;        /* between arrival and departure */
+  --d2-booking-error: #b3261e;
+  --d2-booking-radius: 12px;
+  --d2-booking-gap: 12px;
+  --d2-booking-pad: 16px;
+  --d2-booking-width: 420px;
+  --d2-booking-font: inherit;
+}
+```
+
+The drawn `[d2-booking-summary]` ("Razem") and `[d2-booking-later]`
+("Teraz … · później …") hide themselves until there is a price — their amount
+slots start with `d2-booking-empty` and the sheet hides the row with `:has()`.
+A browser without `:has()` simply shows the empty row.
+
+Edge cases worth knowing: a widget placed **inside a Webflow Form block** makes
+the drawn `<form>` a nested one. The DOM allows it (we build it with
+`createElement`, not the HTML parser) and submit still works, but Webflow's own
+handler sits on the outer form — put the widget outside it. And a page that
+wants the price somewhere else simply builds `[d2-booking-total]` there: the
+widget then draws everything but that.
+
+### The digi2 mark
+
+A widget the module drew carries `[d2-booking-mark]` at its end — an `<a>` to
+`https://digi2.agency`, `target="_blank" rel="noopener"`. A page that built its
+own widget decides where it goes: put `d2-booking-mark` on any element and the
+module fills in the address and the text (an element that already has them keeps
+them). A key whose `/config` says `branding_hidden` has **no mark at all** — the
+one the page placed is removed too, because the attribute is ours and the key
+decides.
+
+The module shows the mark only where a `[d2-booking-mark]` exists or where it
+drew the widget itself: injecting a brand link into a page the Designer built by
+hand would be a surprise in someone else's layout.
+
+### Payment
+
+Submit is the whole way: `POST …/bookings` creates the booking, then
+`POST /bookings/<id>/checkout-session` asks for the payment, then the browser
+goes to the address the answer carries. The checkout route takes **no body** —
+what is paid and where the provider returns to is the backend's business
+(`KONTRAKT.md`: Stripe comes back to `manage_url`). Only an `https` address is
+followed (`http://localhost|127.0.0.1` while building); anything else is a
+console warning naming `checkout_url`, one sentence for the guest and no
+redirect. A redirect is the one thing a tampered answer could use.
+
+**One booking per request.** The submit buttons (`[d2-booking-submit]`, and any
+`button[type="submit"]` in the form) are really `disabled` on the first click,
+and the attempt is kept twice over:
+
+- `form._d2BookingFlight` — one attempt per form. A second submit is handed the
+  promise of the attempt already running, so a guest who corrects a field
+  mid-flight does not start a second one.
+- a registry keyed on **what the hold stands on** — the product id, the unit,
+  `starts_at`, `units_count` and the party. The same request from another form,
+  or from the page's own code, joins the attempt in flight (and is released
+  when it settles, so the form that joined is not left disabled); and the
+  booking it created is remembered, so a retry after a payment hiccup pays that
+  booking instead of holding the period twice. The contact fields are
+  deliberately **out** of the key: a guest who fixes a typo in their note
+  between the refusal and the retry must pay the booking they already hold, not
+  ask for a second hold on the same nights. Change the period or the party and
+  it is a different stay, so a different booking.
+- **A changed contact goes to the booking first.** Name, e-mail or phone that
+  differ from what the booking was made with go to `POST /bookings/{id}/contact`
+  before the checkout, under `X-Booking-Token: <contact_token>`. The token comes
+  with the booking answer and is taken off the object at once, because listeners
+  and the page get that object. The identifier alone must not move the
+  confirmation: it sits in the address, next to other people's scripts. No token,
+  or a 404, stops the payment with `contact_locked` instead of paying silently
+  under the old address; `booking_not_payable` and `booking_already_paid` close
+  the form like a payment refusal.
+- **`Idempotency-Key` on `POST /bookings`.** The fetch timeout rejects here while
+  the request can still land there, and `AbortController` would not undo it. The
+  key is a UUID v4 tied to the **hold** — product, `unit`, `starts_at`,
+  `units_count` and the party — and new on a changed hold and after 24 h. The
+  retry repeats the body the key was first sent with, because the backend
+  answers `idempotency_key_reused` to the same key with another body. A guest
+  who corrected their e-mail after a lost answer therefore gets their own hold
+  back (not `period_taken`), and the corrected contact follows through
+  `/contact` before anything is paid. A changed `note` in that one case stays as
+  first sent — `/contact` does not carry it. The first body is repeated **only
+  after an answer we never read** (`network_error`, `server_error`,
+  `bad_response`, and any status 0 or ≥ 500 whatever reason it names); any other refusal (a 422 on the e-mail, a 413 on the note…)
+  drops the key, so the corrected form goes out as a new request. A retry
+  returns the same booking; one recovered as `expired` is not paid and drops
+  the key. Pinned by `contact.json` and `booking.json` in
+  `tests/fixtures/booking-api/`.
+- **A cleared phone or name is sent as `null`** to `/contact`. The backend
+  reads a field left out as "keep it", so an emptied field would otherwise keep
+  the old number (the fixtures do not pin this yet — `SiteContactChange` in
+  2destate does).
+
+A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
+keeps offering a retry over a refusal about the form.
+
+`digi2.booking.book()` still only creates the booking; `checkout()` is the one
+that pays, and that is what submit calls.
+
+Refusals are read by `reason`, never by the body's `message` (the same refusal
+comes from two routes with different English text):
+
+| Reason | What happens |
+|---|---|
+| `booking_not_payable`, `booking_already_paid`, `stripe_not_connected`, `stripe_account_not_ready` | Final **for that stay**: its own sentence, the button stays down, `d2-booking-payment="final"`. A further `checkout()` for the *same* period and party answers with the stored refusal instead of calling the API; **another** period is a booking the guest is still entitled to make, and submit sends it. `booking_not_payable` also drops the dead booking from the registry — a hold that expired is exactly the moment somebody reaches for other dates. |
+| `payment_provider_unavailable` (502) | `d2-booking-payment="retry"`, the button opens again, the next submit pays the same booking. |
+| `too_many_requests` (429) | `d2-booking-payment="wait"`: the sentence names the seconds from `Retry-After` and the button opens again exactly that late. The **same** wait is honoured on the create-booking route, which is the one an impatient guest hammers; a submit that gets past the disabled button during the wait is handed the stored refusal and sends nothing. |
+| `payment_required: false` in the 201 | Nothing is paid: `d2-booking-payment="done"`, and the guest reads that the booking is in and the owner decides. |
+| no `checkout_url`, or one that is not https | `retry`: the booking is saved, the guest is told so and may try again. |
+
+A good-news sentence (the booking is in, taking you to the payment) goes into
+the same `[d2-booking-error="form"]` slot — the place the guest already looks —
+marked `d2-booking-ok` so CSS can stop painting it red.
+
+**Back from the checkout.** `pageshow` with `persisted` (the Back button
+restoring the page from the browser cache) clears `d2-booking-payment="opening"`
+and re-enables the form: a restored page would otherwise show a dead button
+under "taking you to the payment". The created booking is remembered, so the
+next submit pays that one.
+
+### The return page
+
+```html
+<div d2-booking-return></div>
+```
+
+The page the payment provider sends the guest back to:
+`…?booking=<id>&payment=<success|cancelled|balance_success|balance_cancelled>`.
+One empty element is the whole setup — the module reads the booking id out of
+the address (or out of the element's own value when the page knows it), asks
+`GET /bookings/<id>/status` and says what became of the booking.
+
+The card clears before the webhook lands, so the status is asked **again after
+a longer wait each time** — `1, 2, 3, 5, 8, 8, 8, 8` seconds, eight tries over
+about forty — and then the block stops and says the payment is still being
+checked. A cancelled payment is read **once** and never polled: nothing is on
+its way, and a guest who closed the payment on purpose must not watch a
+spinner. Re-reading the page (`digi2.booking.apply()`) never starts a second
+poll: the block is marked `d2-booking-return-ready` before the first call.
+
+| Attribute | Where | What |
+|---|---|---|
+| `d2-booking-return` / `d2-booking-return="<id>"` | any element | The block; its value is the booking id when the page knows it. |
+| `d2-booking-return-message` | any element | The sentence. Built with `role="status"` / `aria-live="polite"` when the page has none. |
+| `d2-booking-return-balance` | any element | What is left to pay and by when (`balance_due_minor`, `balance_due_at`). |
+| `d2-booking-return-new` | `<a>` | The way to another period, from the answer's `site_url`. Removed when it is `null` or not an https address. |
+| `d2-booking-return-state` | set by the module | `loading`, `checking`, `confirmed`, `paid`, `pending`, `balance_paid`, `cancelled`, `rejected`, `expired`, `unknown`, `error`. |
+
+| The answer | The state | Why |
+|---|---|---|
+| `status: "confirmed"` | `confirmed` | Nothing more to do. |
+| `paid: true` or `status: "paid"` | `paid` | A different sentence from "confirmed": arriving at a locked door is worse than waiting for an e-mail. |
+| `status: "expired"`, or `awaiting_payment` with `hold_open: false` | `expired` + the `site_url` link | Nothing was paid and the period is back in the offer. Saying "still being checked" here would keep the guest waiting while the dates go to somebody else. |
+| `status: "cancelled"` / `"rejected"` | its own, + the link | |
+| `status: "pending"` | `pending`, settled | `payment_mode` tells a prepaid booking from an on-request one, and `pending` is where the second one sits: the booking is in and the owner decides. There is no payment to check, so there is nothing to poll — calling it "still being checked" would leave the guest watching a spinner for forty seconds over a payment that does not exist. |
+| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is told the period is held for a moment, because no e-mail carries a payment link; once it is gone, at a new period. |
+| `payment=balance_success` | `balance_paid` only once `balance_due_minor` is gone | The webhook is what moves the money in our books, not what Stripe said in the address. |
+| anything else | `checking` | A status the module does not know is **never** guessed into a verdict. |
+
+Only those two cases are ever called expired, because they are the two the
+contract makes unambiguous. `site_url: null` means the key has no page to send
+the guest to, so the link is removed rather than pointed at `null` — a link
+that goes nowhere is worse than no link.
+
+Edge cases:
+
+- A slot the page built is **always** written to: with nothing to say it is
+  emptied and marked `d2-booking-empty`, so the Designer's layout keeps its
+  place. A slot of ours is drawn **only** when there is something to put in it
+  — an empty row we invented is a hole in the page, not a layout.
+- `/status` carries no `timezone`, so `balance_due_at` is read on the visitor's
+  own clock. It is a date near midday, so no zone moves it.
+- A refusal is `state="error"` with our own sentence, never a state that could
+  be mistaken for success.
+
+### The manage page
+
+```html
+<div d2-booking-return></div>   <!-- the balance comes back here with no token -->
+<div d2-booking-manage></div>
+```
+
+The link from the e-mail is
+`<manage_url>?booking=<id>#token=<token>&action=<details|balance|refund|change-date>`.
+The module reads the token out of the fragment **once**, takes it off the
+address bar at once with `history.replaceState` (so not even a history entry
+keeps it) and sends it only in the `X-Booking-Token` header. It never reaches
+the page, the address, an event or `digi2.log`, and the module never looks
+inside it: what the link is for comes from `action`, never from the token's
+shape — "opaque" forbids exactly that guess. The fragment is read and wiped on
+boot **even on a page with no manage block**, so a mistyped page does not leave
+a token in the address bar for the whole visit.
+
+The honest price: a reload has no token any more and needs the link from the
+e-mail again. The alternative — keeping it in the address or in storage — is a
+link that reads someone's booking sitting in a referrer, a screenshot or a
+shared URL.
+
+| Attribute | Where | What |
+|---|---|---|
+| `d2-booking-manage` / `="<id>"` | any element | The block. |
+| `d2-booking-manage-field="<name>"` | any element | `booking_id`, `product_name`, `dates`, `starts_at`, `ends_at`, `status`, `paid`, `outstanding`, `refunded`, `balance`, `balance_due_at`, `emergency_phone`. An `<a>` for the phone gets a `tel:` address. |
+| `d2-booking-manage-action="<kind>"` | `<button>` | `balance`, `refund`, `date_change`. |
+| `d2-booking-manage-input="<name>"` | input / textarea | `requested_starts_at`, `requested_units_count`, `customer_note`. |
+| `d2-booking-manage-requests` | any element | The list of the guest's own requests. |
+| `d2-booking-manage-request` | row | Optional template, cloned per request, with `…-kind`, `…-status`, `…-date`, `…-note`; gets `d2-booking-manage-request-state`. |
+| `d2-booking-manage-message` | any element | The one sentence. |
+| `d2-booking-manage-account` | `<a>` | `account_url` from `/config`. Removed when the key has none, or when it is not an https address. |
+| `d2-booking-manage-state` | set by the module | `loading`, `ready`, `invalid`, `error`, `returned`. |
+| `d2-booking-manage-status` | set by the module | The booking status straight from the answer, for CSS. |
+
+What each link may do (the contract's own table):
+
+| Link | Read | `requests` | `balance-checkout` |
+|---|---|---|---|
+| `action=details` / `refund` / `change-date` (a `manage` token) | yes | yes, when `refund_available` / `date_change_available` | no |
+| `action=balance` (a `balance` token) | yes | no | yes, when `balance_payable` |
+
+`balance_payable: true` on a manage link means the balance *can* be paid, just
+not with this link, so the guest is pointed at the balance link in their e-mail
+or at `account_url`. An action the answer does not allow is **removed** from
+the page, the Designer's own button included: a button the backend would refuse
+is an invitation to an error.
+
+Edge cases:
+
+- A `201` on a request means **saved**: the booking does not change, no money
+  moves, the owner decides in the panel. The button goes (one waiting request
+  closes its kind) and the request joins the list — that list is the only place
+  the owner's decision ever reaches the guest, because no e-mail goes out.
+- A `409` on `/requests` is either "this booking is closed" or "a request of
+  this kind is already waiting". Both carry a plain English sentence in
+  `detail` meant for logs and, beside it, a top-level `reason`
+  (`request_not_allowed` / `request_already_waiting`, `errors.json`), so each
+  gets its own sentence. The kind is closed either way.
+- `requested_starts_at` is sent as the rental's **local** time with no zone
+  (`2027-05-10T14:00:00`). A zone marker on the input is dropped, not converted
+  — the guest picked a day at the rental, not an instant. A `type="date"` input
+  becomes midnight and the backend applies its own check-in time.
+- Every refusal of a token is the same `booking_not_found` — missing, wrong,
+  expired, for another purpose, from another booking or outside the key — so
+  the block shows **one** sentence about an invalid link, no data at all and
+  the way to `account_url`. Naming a cause would be a guess, and a guess here
+  is an oracle for whoever is trying tokens. A refusal that is *not* about the
+  token (a dead network, a rate limit) says so under `state="error"`: telling
+  that guest their e-mail is worthless sends them looking for a link they
+  already have.
+- Stripe comes back from the balance to the same manage page **without** a
+  token, with `?payment=balance_success`. The manage block then goes quiet
+  (`state="returned"`, no sentence) and the return block on the same page reads
+  the status — otherwise the guest would read "this link is invalid" next to
+  "the balance is paid".
+- The group composition does not come back in `manage` and the module does not
+  show one: a child's age is not for everyone who knows a booking id (contract).
+- A **balance** refusal is read by `reason`, like the first payment, and the
+  two paths agree. `no_balance`, `balance_already_paid`, `booking_not_payable`,
+  `stripe_not_connected` and `stripe_account_not_ready` take the button with
+  them — nothing a click can mend, and a guest clicking anyway spends the
+  key's rate limit until the 429. `balance_processing` and
+  `payment_provider_unavailable` keep the button, because those really are
+  worth another try; a 429 keeps it down for exactly the `Retry-After`
+  seconds.
+
+### Module API
+
+```js
+await digi2.booking.config();            // /config, read once per page
+await digi2.booking.request('GET', '/products/' + ref, { notFound: 'product_not_found' });
+digi2.booking.values(form);              // what this form would send right now
+digi2.booking.validate(form);            // true / false, marks the fields
+digi2.booking.select({ product, unit: 'day', starts_at: '2027-05-01T00:00:00', units_count: 2 });
+digi2.booking.stay();                    // the stay chosen right now
+await digi2.booking.quote();             // ask for the price now, skipping the debounce
+digi2.booking.price();                   // the last quote answer the module printed
+digi2.booking.money('550.00', 'PLN');    // amount in whole currency -> guest text
+digi2.booking.moneyMinor(16500, 'PLN');  // amount in minor units -> guest text
+await digi2.booking.book(form, digi2.booking.stay());      // create the booking only
+await digi2.booking.checkout(form, digi2.booking.stay());  // ...and open the payment (what submit does)
+await digi2.booking.pay(bookingId);      // payment of a booking that exists
+await digi2.booking.status(bookingId);   // read a booking's status once (the return page)
+digi2.booking.returned();                // { state, status } — the last status printed
+digi2.booking.managed();                 // the last manage answer (never the token)
+digi2.booking.message('period_taken');   // the guest's sentence for a reason
+digi2.booking.language();                // 'pl' | 'en' | 'de' | 'uk' — what the guest reads
+digi2.booking.text('submit_label');      // one sentence out of the dictionary
+digi2.booking.text('nights', { count: 21 });           // 'nocy' / 'nights' / 'Nächte' / 'ніч'
+digi2.booking.texts('uk');               // that language's own table (a copy)
+digi2.booking.apply();                   // re-read the page after a DOM change
+
+digi2.on('booking:ready',   ({ config }) => {});
+digi2.on('booking:stay',    ({ stay }) => {});            // chosen or cleared
+digi2.on('booking:quote',   ({ quote, reason }) => {});   // price answered or refused
+digi2.on('booking:created', ({ booking, form }) => {});  // booking without customer_* fields
+digi2.on('booking:payment', ({ booking_id, url, session, form }) => {});  // leaving for the checkout
+digi2.on('booking:refused', ({ reason, status, form }) => {});
+digi2.on('booking:return',  ({ booking_id, state, status }) => {});
+digi2.on('booking:list',    ({ count, shown, has_more }) => {});  // or ({ reason, status })
+digi2.on('booking:search',  ({ search }) => {});          // + message when it was not sent
+digi2.on('booking:manage',  ({ booking_id, booking }) => {});
+digi2.on('booking:request', ({ booking_id, request }) => {});   // a request was saved
+```
+
+`booking:created` hands on a copy of the booking **without** `customer_name`,
+`customer_email`, `customer_phone` and `customer_note`. It is the event the page
+measures bookings with, and a GTM listener that pushes its detail to the
+dataLayer would otherwise send the guest's e-mail to every tag.
+
+`Retry-After` is read up to **3600 s**. A larger value is a mistake, and past
+~24.8 days `setTimeout` overflows and fires at once, so the cap sits in one
+place and covers the form button, the manage panel and the list.
+
+With two lists on the page waiting out a 429, the search forms open only when
+the **last** wait ends: they ask the same route for every list. A field built
+twice counts as visible when it has an `offsetParent` **or** client rects, so a
+copy inside a `position: fixed` drawer is the one the guest sees.
+
+Guest-facing copy lives in the dictionaries (see [Languages](#languages)): one
+flat table per language, in the shape the portal's i18next files have.
+
+---
+
 ## Events
 
 ```js
@@ -4277,8 +5392,9 @@ jsDelivr purge does not answer `"status": "finished"` (the tag is pushed by
 then: repeat the purge by hand).
 
 The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
-opens `sandbox/gate-forms.html` and `sandbox/gate-popups.html` from a local
-server (`tests/browser/serve.js`, 127.0.0.1:5179). Both load
+opens `sandbox/gate-forms.html`, `sandbox/gate-popups.html` and the
+`sandbox/gate-booking*.html` pages from a local server
+(`tests/browser/serve.js`, 127.0.0.1:5179). They all load
 `dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
 jsDelivr serves after the tag. It checks, in a real browser:
 
@@ -4290,6 +5406,13 @@ jsDelivr serves after the tag. It checks, in a real browser:
 - **popups** — `d2-show-popup` opens, the close button and Esc close;
   `view_promotion` / `close_promotion` are pushed.
 - **datalayer** — the pushes above, through the real bus.
+- **booking** — the calendar, the drawn widget and the payment, the list and
+  the search, the return and the manage page, each on its own sandbox page with
+  the API stubbed from `tests/fixtures/booking-api/`. `gate-booking-lang.html`
+  is the dictionaries end to end: a page whose shell is Polish asks for German
+  with `d2-booking-lang`, and the widget, the calendar's spoken labels, the
+  amounts and the dates all come out German — plus all four tables really
+  shipping in `dist/`, Cyrillic through minification and the server included.
 - **screenshots** — compared with `tests/browser/__screenshots__/` (at most
   30 differing pixels). A missing baseline fails; it is never written by the
   gate. After a deliberate visual change:
@@ -4306,8 +5429,8 @@ worker; service workers are blocked; and Chromium starts with
 so no other host resolves at all (WebSockets and `sendBeacon` included). No
 client form is ever reached.
 
-**Coverage.** Only forms, popups and datalayer are exercised — 3 of ~24
-modules. The others are covered by `npm test` (mini-DOM, no browser). Next
+**Coverage.** Only forms, popups, booking and datalayer are exercised — 4 of
+~24 modules. The others are covered by `npm test` (mini-DOM, no browser). Next
 step worth taking: one test per `dist/modules/*.min.js` that loads it through
 the loader and fails on any `pageerror`.
 

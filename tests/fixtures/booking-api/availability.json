@@ -1,0 +1,42 @@
+{
+  "contract_version": 1,
+  "route": "GET /api/v1/public/sites/{public_key}/products/{product_id}/availability",
+  "status": 200,
+  "query": {
+    "lang": "de",
+    "date_from": "2027-05-01T00:00:00",
+    "date_to": "2027-06-01T00:00:00"
+  },
+  "nullable": [
+    "product_name",
+    "max_units"
+  ],
+  "open_fields": [
+    "unit_prices"
+  ],
+  "response": {
+    "product_id": "3f2b7c1e-8a44-4c55-9a3e-0d1f6b2a7c10",
+    "product_name": "Apartament Rynek",
+    "timezone": "Europe/Warsaw",
+    "currency": "PLN",
+    "allowed_units": [
+      "day"
+    ],
+    "unit_prices": {
+      "day": "250.00"
+    },
+    "min_units": 1,
+    "max_units": 30,
+    "lead_time_hours": 0,
+    "buffer_minutes": 0,
+    "payment_mode": "prepaid",
+    "hold_minutes": 30,
+    "busy": [
+      {
+        "starts_at": "2027-05-10T22:00:00Z",
+        "ends_at": "2027-05-12T22:00:00Z",
+        "kind": "booking"
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "contract_version": 1,
+  "route": "POST /api/v1/public/sites/{public_key}/bookings/{booking_id}/contact",
+  "status": 200,
+  "headers": {
+    "X-Booking-Token": "contact.1806582600.przykladowy-podpis"
+  },
+  "request": {
+    "customer_email": "anna.nowak@example.com",
+    "customer_name": "Anna Nowak",
+    "customer_phone": "+48 600 700 800"
+  },
+  "nullable": [
+    "hold_expires_at"
+  ],
+  "response": {
+    "booking_id": "9c1d4e77-52ab-4f0e-8b6c-7a3e2d1f0b98",
+    "customer_email": "anna.nowak@example.com",
+    "hold_expires_at": "2027-04-01T12:30:00Z"
+  }
+}
