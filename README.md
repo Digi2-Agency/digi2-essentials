@@ -4247,7 +4247,7 @@ the same month.
 | `d2-booking-status` | any element | Optional. Where the chosen range and every refusal about the stay is written, for eyes and for screen readers alike. The module builds one inside the calendar when the page has none (`role="status"`, `aria-live="polite"`); a page may put its own anywhere, and every one of them gets the sentence. |
 | `d2-booking-calendar-built` / `-head` / `-month` / `-grid` / `-prev` / `-next` / `-weekdays` | built by the module | The parts of the drawn calendar, so CSS can reach them. |
 | `d2-booking-day="YYYY-MM-DD"` | built by the module | One day, always a real `<button type="button">`. |
-| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (today plus `lead_time_hours`). |
+| `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (the first local midnight after now plus `lead_time_hours`, so never today). |
 | `d2-booking-day-selected` / `-checkout` / `-in-range` / `-today` / `-blank` | set by the module | The arrival / the departure / a night between them / today / a leading or trailing empty square. |
 | `d2-booking-calendar-ready` / `d2-booking-busy` | set by the module | The month is drawn / a window is in flight. |
 
@@ -4259,6 +4259,28 @@ rules
 (`tests/fixtures/booking-api/availability.json`): there is **no check-in-day
 rule** in the contract, so the calendar never closes a week day on its own and
 every day of the week is a possible arrival.
+
+**The first day on offer is a midnight, not a date.** A stay starts at local
+midnight and `check_rental_rules` refuses `starts_at < now + lead_time`, so the
+day that moment falls in is already too late: today is never on offer, even with
+a lead of `0`, and 24 hours at 15:00 opens the day after tomorrow. It is counted
+in the rental's zone. The calendar can still go stale on an open page, which is
+why `lead_time_too_short` after submit has its own sentence too.
+
+**The submit stops on the form, not earlier.** Webflow listens on the document
+and ignores `preventDefault`, so the module calls `stopPropagation` in the bubble
+phase. Capture would be wrong: d2-forms refuses an invalid form there, and that
+has to stop the booking whichever module loaded first. The price is that a
+document-level `submit` listener, a GTM form trigger included, hears nothing.
+
+**The calendar only speaks nights.** `units_count` is counted in `unit`, so
+sending the first of `allowed_units` would book 3 nights as 3 months. It always
+sends `day`, and a product without `day` answers `unit_not_allowed` on every day.
+
+**A month or a product that could not be read is asked for again.** A failed
+product lookup is dropped so the next caller retries instead of sending a slug
+to `{product_id}` routes for the whole visit; a 404 is an answer and is kept. A
+month whose window failed is read again on the way back.
 
 **`buffer_minutes` widens a booking, and only a booking.** Every entry of `busy`
 carries a `kind`: `booking` (someone's stay) or `blackout` (the owner closing
@@ -4511,6 +4533,21 @@ and the attempt is kept twice over:
   between the refusal and the retry must pay the booking they already hold, not
   ask for a second hold on the same nights. Change the period or the party and
   it is a different stay, so a different booking.
+- **A changed contact goes to the booking first.** Name, e-mail or phone that
+  differ from what the booking was made with go to `POST /bookings/{id}/contact`
+  before the checkout, under `X-Booking-Token: <contact_token>`. The token comes
+  with the booking answer and is taken off the object at once, because listeners
+  and the page get that object. The identifier alone must not move the
+  confirmation: it sits in the address, next to other people's scripts. No token,
+  or a 404, stops the payment with `contact_locked` instead of paying silently
+  under the old address; `booking_not_payable` and `booking_already_paid` close
+  the form like a payment refusal.
+- **`Idempotency-Key` on `POST /bookings`.** The fetch timeout rejects here while
+  the request can still land there, and `AbortController` would not undo it. The
+  key is a UUID v4 tied to the exact body, new on any changed field and after
+  24 h. A retry returns the same booking; one recovered as `expired` is not paid
+  and drops the key. Pinned by `contact.json` and `booking.json` in
+  `tests/fixtures/booking-api/`.
 
 A new attempt clears `d2-booking-payment` first, so CSS keyed on `retry` never
 keeps offering a retry over a refusal about the form.
@@ -4574,7 +4611,7 @@ poll: the block is marked `d2-booking-return-ready` before the first call.
 | `status: "expired"`, or `awaiting_payment` with `hold_open: false` | `expired` + the `site_url` link | Nothing was paid and the period is back in the offer. Saying "still being checked" here would keep the guest waiting while the dates go to somebody else. |
 | `status: "cancelled"` / `"rejected"` | its own, + the link | |
 | `status: "pending"` | `pending`, settled | `payment_mode` tells a prepaid booking from an on-request one, and `pending` is where the second one sits: the booking is in and the owner decides. There is no payment to check, so there is nothing to poll — calling it "still being checked" would leave the guest watching a spinner for forty seconds over a payment that does not exist. |
-| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is pointed back at the link in their e-mail; once it is gone, at a new period. |
+| `payment=cancelled` in the address | `cancelled` | With the hold still open the guest is told the period is held for a moment, because no e-mail carries a payment link; once it is gone, at a new period. |
 | `payment=balance_success` | `balance_paid` only once `balance_due_minor` is gone | The webhook is what moves the money in our books, not what Stripe said in the address. |
 | anything else | `checking` | A status the module does not know is **never** guessed into a verdict. |
 

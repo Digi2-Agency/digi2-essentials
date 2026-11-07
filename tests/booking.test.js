@@ -21,6 +21,7 @@ const QUOTE = fixture('quote');
 const STATUS = fixture('status');
 const MANAGE = fixture('manage');
 const REQUEST = fixture('request');
+const CONTACT = fixture('contact');
 const BALANCE = fixture('balance-checkout');
 const PRODUCT_FIXTURE = fixture('product');
 const ERRORS = fixture('errors').errors;
@@ -104,7 +105,11 @@ function element(attrs, tagName) {
     },
     querySelector(selector) { return descendants(this).filter((x) => matches(x, selector))[0] || null; },
     querySelectorAll(selector) { return descendants(this).filter((x) => matches(x, selector)); },
-    addEventListener(type, fn) { (this.listeners[type] = this.listeners[type] || []).push(fn); },
+    addEventListener(type, fn, capture) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+      this.capturing = this.capturing || {};
+      this.capturing[type] = !!capture;
+    },
   };
   return el;
 }
@@ -251,6 +256,11 @@ function response(status, body, headers) {
  *   hash         fragment of the manage link ('#token=…&action=details')
  *   ret          true | { attrs, inner } — a <div d2-booking-return>
  *   manage       true | { attrs, inner } — a <div d2-booking-manage>
+ *   script       { <route>: [step, …] } — one step per call, before anything
+ *                else answers: null = the normal answer, 'offline' = a dead
+ *                network, { status, body, headers } = that response, and a
+ *                function ({ response, merged }) => Promise = an answer the
+ *                test releases itself. The steps run out, then it is normal.
  *   statusSeq    [overrides, …] — one per /status call; the last one repeats,
  *                which is how a poll that never settles is built
  *   manageData   overrides merged into the manage fixture response
@@ -341,6 +351,7 @@ function page(opts) {
     // first and the plain POST .../bookings is what is left.
     const route = text.indexOf('/config') >= 0 ? 'config'
       : text.indexOf('/status') >= 0 ? 'status'
+        : text.indexOf('/contact') >= 0 ? 'contact'
         : text.indexOf('/manage') >= 0 ? 'manage'
           : text.indexOf('/requests') >= 0 ? 'requests'
             : text.indexOf('/balance-checkout') >= 0 ? 'balance'
@@ -351,6 +362,11 @@ function page(opts) {
                       // GET /products/<ref>: the only route whose path takes
                       // a reference, so it is what is left of /products/.
                       : /\/products\/[^/?]+$/.test(text) ? 'product' : 'other';
+    const steps = (o.script || {})[route];
+    const step = steps && steps.length ? steps.shift() : null;
+    if (step === 'offline') return Promise.reject(new TypeError('Failed to fetch'));
+    if (typeof step === 'function') return step({ response, merged });
+    if (step) return Promise.resolve(response(step.status, step.body, step.headers));
     const refuse = (o.refuse || {})[route];
     if (refuse) {
       const spec = typeof refuse === 'string' ? refusalFixture(refuse) : refuse;
@@ -369,6 +385,7 @@ function page(opts) {
       return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, o.productData)));
     }
     if (route === 'status') return Promise.resolve(response(STATUS.status, statusResponse()));
+    if (route === 'contact') return Promise.resolve(response(CONTACT.status, clone(CONTACT.response)));
     if (route === 'manage') {
       return Promise.resolve(response(MANAGE.status, merged(MANAGE, o.manageData)));
     }
@@ -474,12 +491,14 @@ function page(opts) {
     // timeout is always FETCH_TIMEOUT_MS, so a test filters it out by value.
     waits() { return timers.map((t) => t.ms); },
     // Every timer still waiting fires now — the debounce the module set.
-    flush() {
-      const due = timers.filter((t) => t.live);
+    // With a limit, only the waits up to it: an answer the test is holding back
+    // must not be ended by the fetch timeout firing along with the debounce.
+    flush(limit) {
+      const due = timers.filter((t) => t.live && (limit === undefined || t.ms <= limit));
       due.forEach((t) => { t.live = false; t.fn(); });
       return due.length;
     },
-    async tick() { this.flush(); await this.settled(); },
+    async tick(limit) { this.flush(limit); await this.settled(); },
   };
 }
 
@@ -1166,14 +1185,14 @@ test('a stay under the minimum is refused with the number from the answer', asyn
   // price and only then learns the owner wants three.
   const env = calendarPage({ availability: { min_units: 3 }, price: true });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(env.booking.stay(), null, 'two nights were refused');
   assert.ok(statusText(env).indexOf('3') >= 0, statusText(env));
   assert.equal(quoteCalls(env).length, 0, 'and no price was asked for');
 
-  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-05');
   await env.settled();
   assert.equal(env.booking.stay().units_count, 3, 'three nights go through');
 });
@@ -1182,8 +1201,8 @@ test('a stay over the maximum is refused too', async () => {
   // MUTACJA: ignore max_units and a 14-night cap lets someone book a year.
   const env = calendarPage({ availability: { max_units: 2 } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-04');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-05');
   await env.settled();
   assert.equal(env.booking.stay(), null);
   assert.ok(statusText(env).indexOf('2') >= 0, statusText(env));
@@ -1194,12 +1213,14 @@ test('lead time closes the days that are already too close', async () => {
   // takes a booking for tomorrow, which the backend then refuses.
   const env = calendarPage({ availability: { lead_time_hours: 48 } });
   await env.settled();
-  ['2027-05-01', '2027-05-02'].forEach((key) => {
+  // 10:00 UTC + 48 h is 12:00 on May 3 in Warsaw. A stay starts at midnight, so
+  // May 3 is already behind that moment and May 4 is the first one the backend takes.
+  ['2027-05-01', '2027-05-02', '2027-05-03'].forEach((key) => {
     const btn = dayOf(env, key);
     assert.equal(btn.getAttribute('aria-disabled'), 'true', key + ' is inside the notice period');
     assert.equal(btn.getAttribute('d2-booking-day-past'), '');
   });
-  assert.equal(dayOf(env, '2027-05-03').getAttribute('aria-disabled'), null, 'the first allowed day is open');
+  assert.equal(dayOf(env, '2027-05-04').getAttribute('aria-disabled'), null, 'the first allowed day is open');
   clickDay(env, '2027-05-01');
   await env.settled();
   assert.equal(env.booking.stay(), null);
@@ -1210,16 +1231,16 @@ test('the arrow keys walk the grid and carry the focus into the next month', asy
   // the calendar can only be used with a mouse.
   const env = calendarPage();
   await env.settled();
-  const first = dayOf(env, '2027-05-01');
-  assert.equal(first.getAttribute('tabindex'), '0', 'the focus starts on today');
+  const first = dayOf(env, '2027-05-02');
+  assert.equal(first.getAttribute('tabindex'), '0', 'the focus starts on the first day on offer');
 
   assert.equal(keyOn(first, 'ArrowRight'), 1, 'the browser must not scroll the page');
-  assert.equal(env.document.activeElement, dayOf(env, '2027-05-02'));
-  assert.equal(dayOf(env, '2027-05-02').getAttribute('tabindex'), '0');
-  assert.equal(dayOf(env, '2027-05-01').getAttribute('tabindex'), '-1', 'one stop at a time');
+  assert.equal(env.document.activeElement, dayOf(env, '2027-05-03'));
+  assert.equal(dayOf(env, '2027-05-03').getAttribute('tabindex'), '0');
+  assert.equal(dayOf(env, '2027-05-02').getAttribute('tabindex'), '-1', 'one stop at a time');
 
-  keyOn(dayOf(env, '2027-05-02'), 'ArrowDown');
-  assert.equal(env.document.activeElement, dayOf(env, '2027-05-09'), 'a week down');
+  keyOn(dayOf(env, '2027-05-03'), 'ArrowDown');
+  assert.equal(env.document.activeElement, dayOf(env, '2027-05-10'), 'a week down');
 
   keyOn(dayOf(env, '2027-05-01'), 'ArrowLeft');
   await env.settled();
@@ -1290,8 +1311,8 @@ test('quote is asked once per settled change, with the contract body', async () 
   // the e-mail and the note of a guest who has not booked anything yet.
   const env = calendarPage({ price: true, forms: [{ fields: FULL_FIELDS }] });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   fire(env.form, 'input');
   fire(env.form, 'change');
   assert.equal(quoteCalls(env).length, 0, 'nothing is sent while the guest is still clicking');
@@ -1301,7 +1322,8 @@ test('quote is asked once per settled change, with the contract body', async () 
   assert.equal(got.length, 1, 'one call for the whole burst');
   assert.equal(got[0].method, 'POST');
   assert.ok(got[0].url.indexOf('/products/' + PRODUCT + '/quote') >= 0, got[0].url);
-  assert.deepEqual(got[0].body, QUOTE.request, 'exactly the contract request');
+  assert.deepEqual(got[0].body, Object.assign({}, QUOTE.request, { starts_at: '2027-05-02T00:00:00' }),
+    'exactly the contract request, for the day that was clicked');
 });
 
 test('no price is asked for before the range is finished', async () => {
@@ -1330,8 +1352,8 @@ test('the printed total is the amount from the answer, never a sum of the rows',
   // and rounding the owner set server-side is quietly thrown away.
   const env = calendarPage({ price: true, quote: { amount_total: '480.00' } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(totalText(env), money('480.00', QUOTE.response.currency), totalText(env));
   assert.notEqual(totalText(env), money('550.00', QUOTE.response.currency), 'not the sum of the two rows');
@@ -1342,8 +1364,8 @@ test('the amounts are formatted in the config language and the answer currency',
   // shows the wrong currency next to the right number.
   const env = calendarPage({ price: true, quote: { currency: 'EUR' } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(totalText(env), money(QUOTE.response.amount_total, 'EUR'), totalText(env));
   assert.notEqual(totalText(env), money(QUOTE.response.amount_total, 'PLN'));
@@ -1354,8 +1376,8 @@ test('the breakdown is one row per line of the answer, from the template the pag
   // the styling of the site and shows up unstyled.
   const env = calendarPage({ price: { template: true } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
 
   const rows = lineRows(env);
@@ -1378,8 +1400,8 @@ test('without a template the module draws plain rows of its own', async () => {
   // an empty price list.
   const env = calendarPage({ price: true });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   const rows = lineRows(env);
   assert.equal(rows.length, QUOTE.response.line_items.length);
@@ -1392,10 +1414,10 @@ test('a second quote replaces the rows instead of piling them up', async () => {
   // six rows and three totals.
   const env = calendarPage({ price: true });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
-  await env.tick();
+  clickDay(env, '2027-05-02');
   clickDay(env, '2027-05-04');
+  await env.tick();
+  clickDay(env, '2027-05-05');
   clickDay(env, '2027-05-06');
   await env.tick();
   assert.equal(quoteCalls(env).length, 2);
@@ -1407,8 +1429,8 @@ test('the deposit and the balance come from the minor units of the answer', asyn
   // deposit turns into 16 500 zł.
   const env = calendarPage({ price: true });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   const deposit = env.document.querySelector('[d2-booking-deposit]');
   const balance = env.document.querySelector('[d2-booking-balance]');
@@ -1420,8 +1442,8 @@ test('nothing left to pay in advance empties the deposit instead of showing zero
   // MUTACJA: format a null amount and the page shows "0,00 zł" to pay now.
   const env = calendarPage({ price: true, quote: { deposit_amount_minor: null, balance_amount_minor: null } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   const deposit = env.document.querySelector('[d2-booking-deposit]');
   assert.equal(String(deposit.textContent), '');
@@ -1433,8 +1455,8 @@ test('a refused quote shows our own short sentence, not the backend text', async
   // check_out go together" in English under a Polish form.
   const env = calendarPage({ price: true, refuse: { quote: 'invalid_stay' } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(statusText(env), env.booking.message('invalid_stay'));
   assert.ok(statusText(env).indexOf('check_in') < 0, statusText(env));
@@ -1447,8 +1469,8 @@ test('rental_rules is read through its violations, not as one blanket sentence',
   // vague sentence, so the guest cannot tell a taken period from a short stay.
   const env = calendarPage({ price: true, refuse: { quote: 'rental_rules' } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(statusText(env), env.booking.message('period_taken'), statusText(env));
   assert.notEqual(statusText(env), env.booking.message('rental_rules'));
@@ -1460,7 +1482,7 @@ test('rental_rules is read through its violations, not as one blanket sentence',
 async function refusedStaySays(availability, violations) {
   const env = calendarPage({ price: true, availability, quote: { available: false, violations } });
   await env.settled();
-  clickDay(env, '2027-05-01');
+  clickDay(env, '2027-05-02');
   clickDay(env, '2027-05-05');
   await env.tick();
   return statusText(env);
@@ -1515,8 +1537,8 @@ test('a 200 that says the stay is not available prints no price at all', async (
   // for a stay the answer itself called unavailable.
   const env = calendarPage({ price: true, quote: { available: false, violations: ['below_min_units'] } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(totalText(env), '');
   assert.equal(lineRows(env).length, 0);
@@ -1718,8 +1740,8 @@ test('the drawn widget books the stay it shows', async () => {
   // nothing, so a widget that looks finished cannot book.
   const env = widgetPage();
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(totalText(env), money(QUOTE.response.amount_total, 'PLN'), 'the price landed in the drawn total');
 
@@ -1730,7 +1752,7 @@ test('the drawn widget books the stay it shows', async () => {
   await env.settled();
   const post = env.calls.filter((c) => c.method === 'POST' && /\/bookings$/.test(c.url))[0];
   assert.ok(post, 'the drawn form submits the booking');
-  assert.equal(post.body.starts_at, '2027-05-01T00:00:00');
+  assert.equal(post.body.starts_at, '2027-05-02T00:00:00');
   assert.equal(post.body.units_count, 2);
   assert.deepEqual(env.redirects, [CHECKOUT.response.checkout_url]);
 });
@@ -2637,8 +2659,8 @@ test('a slug is resolved once and the three {product_id} routes get the id', asy
     forms: [{ fields: FULL_FIELDS, submit: true }],
   });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   fire(env.form, 'submit');
   await env.settled();
@@ -2974,8 +2996,8 @@ test('a 502 anywhere but the payment is a server error, not a Stripe outage', as
   // payment provider is down.
   const env = calendarPage({ price: true, refuse: { quote: { status: 502, body: { detail: 'Bad gateway' } } } });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   const said = statusText(env);
   assert.equal(said, env.booking.message('server_error'), said);
@@ -3068,7 +3090,11 @@ test('a hold that died frees the form for another period', async () => {
   assert.equal(bookingPosts(env).length, 1, 'the same stay is not tried again');
 
   // Another period is another booking, and the guest is entitled to make it.
+  // A real guest gets there through the button, not by firing submit, so it
+  // has to come back: a disabled button also blocks Enter in a field.
   env.booking.select({ unit: STAY.unit, starts_at: '2027-06-01T00:00:00', units_count: 2 });
+  assert.equal(submitOf(env.form).disabled, false, 'another period opens the button again');
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'final', 'the dead stay stays refused');
   fire(env.form, 'submit');
   await env.settled();
   assert.equal(bookingPosts(env).length, 2, 'the new period really was sent');
@@ -3100,8 +3126,8 @@ test('typing where the price cannot change asks for no second quote', async () =
   // spends five to ten calls of the key's rate limit on the identical body.
   const env = calendarPage({ price: true, forms: [{ fields: FULL_FIELDS }] });
   await env.settled();
-  clickDay(env, '2027-05-01');
-  clickDay(env, '2027-05-03');
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
   await env.tick();
   assert.equal(quoteCalls(env).length, 1);
 
@@ -3131,8 +3157,8 @@ test('a line carries its rate only when the answer has one', async () => {
     },
   });
   await withRate.settled();
-  clickDay(withRate, '2027-05-01');
-  clickDay(withRate, '2027-05-03');
+  clickDay(withRate, '2027-05-02');
+  clickDay(withRate, '2027-05-04');
   await withRate.tick();
   const rows = lineRows(withRate);
   assert.equal(rows.length, 3);
@@ -3153,8 +3179,8 @@ test('a line carries its rate only when the answer has one', async () => {
     },
   });
   await merged.settled();
-  clickDay(merged, '2027-05-01');
-  clickDay(merged, '2027-05-03');
+  clickDay(merged, '2027-05-02');
+  clickDay(merged, '2027-05-04');
   await merged.tick();
   const bare = textIn(lineRows(merged)[2], 'd2-booking-line-label');
   assert.equal(bare.indexOf('%'), -1, bare);
@@ -3235,4 +3261,461 @@ test('the pets sentence follows the product of the widget, not only the loader t
   assert.ok(asked[0].url.indexOf('/products/' + SLUG) > 0, asked[0].url);
   const hint = env.document.querySelector('[d2-booking-hint="pets_over_threshold"]');
   assert.ok(String(hint.textContent).indexOf('10') >= 0, String(hint.textContent));
+});
+
+// ---------------------------------------------------------------------------
+// Review of #60
+// ---------------------------------------------------------------------------
+
+function deferred() {
+  let release;
+  const promise = new Promise((resolve) => { release = resolve; });
+  return { promise, release };
+}
+
+test('submit stops on the form, on the way up to the document handler of Webflow', async () => {
+  // MUTACJA: only preventDefault, and webflow.js, which listens on the document
+  // and ignores it, also posts the guest's details to Webflow Forms. Or bind in
+  // the capture phase, and d2-forms can no longer stop an invalid form.
+  const env = calendarPage();
+  await env.settled();
+  assert.equal(env.form.capturing.submit, false);
+  let stopped = 0;
+  fire(env.form, 'submit', { preventDefault() {}, stopPropagation() { stopped += 1; } });
+  await env.settled();
+  assert.equal(stopped, 1);
+});
+
+test('a keystroke during a pending quote joins it and the new price is printed', async () => {
+  // MUTACJA: write lastQuoteKey when asking, and the keystroke is answered from
+  // the previous quote while the real answer fails the sequence check: the
+  // old price stays beside the new stay, marked busy for good.
+  const held = deferred();
+  const env = calendarPage({
+    price: true,
+    script: { quote: [null, ({ response, merged }) => held.promise.then(() => response(200, merged(QUOTE, { marker: 'new' })))] },
+  });
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
+  await env.tick(1000);
+  assert.equal(quoteCalls(env).length, 1);
+
+  env.booking.select({ product: PRODUCT, unit: 'day', starts_at: '2027-05-02T00:00:00', units_count: 3 });
+  await env.tick(1000);
+  assert.equal(quoteCalls(env).length, 2);
+
+  fire(env.form, 'input');
+  await env.tick(1000);
+  assert.equal(quoteCalls(env).length, 2, 'the same question is not asked twice');
+
+  held.release();
+  await env.settled();
+  assert.equal(env.booking.price().marker, 'new');
+  assert.equal(env.document.querySelector('[d2-booking-breakdown][d2-booking-busy]'), null);
+});
+
+test('going back to the printed stay during a pending quote clears the busy mark', async () => {
+  // MUTACJA: answer from memory without setPriceBusy(false). The pending answer
+  // is dropped as stale, so nothing else ever clears the mark.
+  const held = deferred();
+  const env = calendarPage({
+    price: true,
+    script: { quote: [null, () => held.promise] },
+  });
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
+  await env.tick(1000);
+  const shown = env.booking.price();
+  env.booking.select({ product: PRODUCT, unit: 'day', starts_at: '2027-05-02T00:00:00', units_count: 3 });
+  await env.tick(1000);
+  assert.ok(env.document.querySelector('[d2-booking-busy]'), 'the second question is on its way');
+
+  env.booking.select({ product: PRODUCT, unit: 'day', starts_at: '2027-05-02T00:00:00', units_count: 2 });
+  await env.tick(1000);
+  assert.equal(quoteCalls(env).length, 2, 'answered from the price already printed');
+  assert.equal(env.document.querySelector('[d2-booking-busy]'), null);
+  assert.deepEqual(env.booking.price(), shown);
+});
+
+test('a late quote does not print a price for a stay the guest let go of', async () => {
+  // MUTACJA: clear the price without moving quoteSeq, and the answer on its way
+  // prints a total beside an empty calendar.
+  const held = deferred();
+  const env = calendarPage({
+    price: true,
+    script: { quote: [({ response, merged }) => held.promise.then(() => response(200, merged(QUOTE)))] },
+  });
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
+  await env.tick(1000);
+  env.booking.select(null);
+  await env.tick(1000);
+  held.release();
+  await env.settled();
+  assert.equal(env.booking.price(), null);
+  assert.equal(env.document.querySelector('[d2-booking-busy]'), null);
+});
+
+test('today is never on offer: a stay starts at midnight, which has already gone', async () => {
+  // MUTACJA: compare calendar days. The day looks free and the backend answers
+  // lead_time_too_short, because period.starts_at < now.
+  const env = calendarPage();
+  await env.settled();
+  assert.equal(dayOf(env, '2027-05-01').getAttribute('aria-disabled'), 'true');
+  assert.equal(dayOf(env, '2027-05-02').getAttribute('aria-disabled'), null);
+  clickDay(env, '2027-05-01');
+  await env.settled();
+  assert.equal(statusText(env), 'Ten termin jest już za blisko. Wybierz późniejszy.');
+});
+
+test('the first day on offer is counted in the zone of the rental', async () => {
+  // 21:59 UTC + 2 h is 01:59 on May 2 in Warsaw, so May 2 has started already.
+  const env = calendarPage({ now: '2027-05-01T21:59:00Z', availability: { lead_time_hours: 2 } });
+  await env.settled();
+  assert.equal(dayOf(env, '2027-05-02').getAttribute('aria-disabled'), 'true');
+  assert.equal(dayOf(env, '2027-05-03').getAttribute('aria-disabled'), null);
+});
+
+test('the calendar sends nights as days whatever unit comes first', async () => {
+  // MUTACJA: send allowed_units[0], and 2 nights go out as 2 months, which the
+  // backend prices and books as exactly that.
+  const env = calendarPage({ availability: { allowed_units: ['month', 'day'] } });
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
+  await env.settled();
+  assert.equal(env.booking.stay().unit, 'day');
+  assert.equal(env.booking.stay().units_count, 2);
+});
+
+test('a product that does not rent by the day cannot be picked on the calendar', async () => {
+  // MUTACJA: let the range through, and the guest books months while the
+  // calendar shows nights.
+  const env = calendarPage({ availability: { allowed_units: ['month'] } });
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  clickDay(env, '2027-05-04');
+  await env.settled();
+  assert.equal(env.booking.stay(), null);
+  assert.equal(statusText(env), 'Taki pobyt nie jest tu dostępny.');
+});
+
+test('a failed product lookup is asked again, and the slug never reaches {product_id}', async () => {
+  // MUTACJA: keep the failed promise, and one blip sends the slug to every
+  // route for the whole visit, where the backend answers 422.
+  const env = calendarPage({
+    loaderAttrs: { 'd2-booking-product': 'rynek-1' },
+    script: { product: [{ status: 503, body: { detail: 'Unavailable' } }] },
+  });
+  await env.settled();
+  assert.equal(productCalls(env).length, 2);
+  assert.ok(availabilityCalls(env)[0].url.indexOf('/products/' + PRODUCT_FIXTURE.response.id + '/availability') > 0,
+    availabilityCalls(env)[0].url);
+});
+
+test('a product the backend does not know is not asked for again', async () => {
+  // MUTACJA: forget every failure, and a 404 costs one call per click.
+  const env = calendarPage({
+    loaderAttrs: { 'd2-booking-product': 'rynek-1' },
+    refuse: { product: { status: 404, body: { detail: 'Not found' } } },
+  });
+  await env.settled();
+  assert.equal(productCalls(env).length, 1);
+});
+
+test('a failed start is not repeated at once by the same page load', async () => {
+  // MUTACJA: forget the failed month, and start() asks for it twice in a row:
+  // five calls and up to 50 s before the calendar draws anything.
+  const down = { status: 503, body: { detail: 'Unavailable' } };
+  const env = calendarPage({ refuse: { availability: down } });
+  await env.settled();
+  assert.equal(availabilityCalls(env).length, 1);
+});
+
+test('a 429 on the product is not asked again before its wait is over', async () => {
+  // MUTACJA: retry at once, and an already limited key is hit again.
+  const env = calendarPage({
+    loaderAttrs: { 'd2-booking-product': 'rynek-1' },
+    script: { product: [{ status: 429, body: { detail: 'x' }, headers: { 'Retry-After': '30' } }] },
+  });
+  await env.settled();
+  assert.equal(productCalls(env).length, 1);
+});
+
+test('another party opens a final refusal too', async () => {
+  // MUTACJA: reopen only on select(), and the party is a dead end although
+  // send() would take it as a new request.
+  const env = payPage({ refuse: { checkout: 'booking_not_payable' } });
+  await paySubmit(env);
+  assert.equal(submitOf(env.form).disabled, true);
+  fire(env.form, 'input');
+  assert.equal(submitOf(env.form).disabled, true, 'the same request stays closed');
+  fieldOf(env.form, 'adults').value = '3';
+  fire(env.form, 'input');
+  assert.equal(submitOf(env.form).disabled, false);
+});
+
+test('a month that could not be read is asked for again on the way back', async () => {
+  // MUTACJA: keep the mark, and the month shows every night free for the visit.
+  const env = calendarPage({ script: { availability: [{ status: 503, body: { detail: 'Unavailable' } }] } });
+  await env.settled();
+  const asked = availabilityCalls(env).length;
+  keyOn(dayOf(env, '2027-05-02'), 'PageDown');
+  await env.settled();
+  keyOn(env.document.activeElement, 'PageUp');
+  await env.settled();
+  const may = availabilityCalls(env).filter((c) => c.url.indexOf(encodeURIComponent('2027-05-01T00:00:00')) >= 0);
+  assert.equal(may.length, 2, 'asked ' + asked + ' then again');
+});
+
+test('choosing a day keeps the focus on that day', async () => {
+  // MUTACJA: render(false) in pick. The grid is rebuilt, the focused button is
+  // gone and a keyboard user falls to <body> between arrival and departure.
+  const env = calendarPage();
+  await env.settled();
+  clickDay(env, '2027-05-02');
+  assert.equal(env.document.activeElement, dayOf(env, '2027-05-02'));
+  clickDay(env, '2027-05-04');
+  assert.equal(env.document.activeElement, dayOf(env, '2027-05-04'));
+});
+
+test('a blip while polling the status does not end the poll', async () => {
+  // MUTACJA: end on any failure, and a guest who has just paid reads an error
+  // and may pay again, seconds before the page would have said confirmed.
+  const env = returnPage({
+    script: { status: [null, { status: 503, body: { detail: 'Unavailable' } }, 'offline'] },
+    statusSeq: [{}, { status: 'confirmed', paid: true }],
+  });
+  await env.settled();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking');
+  await env.tick();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking', 'the 503 changes nothing');
+  await env.tick();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking', 'nor does the dead network');
+  await env.tick();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'confirmed');
+});
+
+test('a blip on the last try leaves the sentence that the payment is being checked', async () => {
+  // MUTACJA: end in the error sentence, and a guest who has just paid is sent
+  // back to pay again by the very last try.
+  const down = { status: 503, body: { detail: 'Unavailable' } };
+  const env = returnPage({ script: { status: [null, down, down, down, down, down, down, down] } });
+  await env.settled();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking');
+  for (let i = 0; i < 10; i += 1) await env.tick();
+  assert.equal(callsTo(env, '/status').length, 8);
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'checking');
+});
+
+test('a long Retry-After does not park the return page', async () => {
+  // MUTACJA: wait what the header says, and the guest watches "loading" for an hour.
+  const env = returnPage({ script: { status: [{ status: 429, body: { detail: 'x' }, headers: { 'Retry-After': '2976' } }] } });
+  await env.settled();
+  assert.ok(env.waits().filter((ms) => ms !== 10000).every((ms) => ms <= 30000), env.waits().join(','));
+});
+
+test('an answer about the booking ends the poll at once', async () => {
+  // MUTACJA: retry everything, and a booking that does not exist is asked for
+  // eight times while the guest watches a spinner.
+  const env = returnPage({ refuse: { status: { status: 404, body: { detail: 'Not found' } } } });
+  await env.settled();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'error');
+  await env.tick();
+  assert.equal(callsTo(env, '/status').length, 1);
+});
+
+test('the poll gives up on a backend that stays down', async () => {
+  // MUTACJA: retry without a limit, and the page polls for as long as it is open.
+  const env = returnPage({ refuse: { status: { status: 503, body: { detail: 'Unavailable' } } } });
+  await env.settled();
+  for (let i = 0; i < 12; i += 1) await env.tick();
+  assert.equal(env.ret.getAttribute('d2-booking-return-state'), 'error');
+  assert.equal(callsTo(env, '/status').length, 8);
+});
+
+// ---------------------------------------------------------------------------
+// Contact change and idempotency: contact.json, and contact_token and the
+// Idempotency-Key header in booking.json.
+// ---------------------------------------------------------------------------
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const OFFLINE_ONCE = ['offline'];
+
+function keyOf(call) { return call.init.headers['Idempotency-Key']; }
+function contactPosts(env) { return env.calls.filter((c) => /\/contact$/.test(c.url)); }
+function failedPayment(extra) {
+  return payPage(Object.assign({
+    booking: { contact_token: 'secret-contact' },
+    script: { checkout: [{ status: 502, body: { detail: 'Bad gateway' } }] },
+  }, extra || {}));
+}
+
+test('the contract fixtures name the two additions the module relies on', () => {
+  // MUTACJA: a copy of the contract without them, and these tests stop meaning
+  // what they say.
+  assert.match(BOOKING.headers['Idempotency-Key'], UUID_V4);
+  assert.ok(BOOKING.response.contact_token);
+  assert.ok(CONTACT.route.indexOf('/contact') > 0);
+  assert.equal(CONTACT.headers['X-Booking-Token'], BOOKING.response.contact_token);
+});
+
+test('every booking carries an Idempotency-Key in the form of a UUID v4', async () => {
+  // MUTACJA: send no key, and a request that timed out here but landed there
+  // leaves the guest refused by their own invisible hold.
+  const env = payPage();
+  await paySubmit(env);
+  assert.match(keyOf(bookingPosts(env)[0]), UUID_V4);
+});
+
+test('a retry after a lost answer repeats the key and pays the booking it recovers', async () => {
+  // MUTACJA: a new key per attempt, and the retry gets period_taken.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  assert.equal(checkoutPosts(env).length, 0);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 2);
+  assert.equal(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('a changed field is a new request under a new key', async () => {
+  // MUTACJA: one key per form, and the backend answers idempotency_key_reused.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  fieldOf(env.form, 'note').value = 'Późny przyjazd';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+});
+
+test('a key older than a day is not used again', async () => {
+  // MUTACJA: keep the key for ever. The backend keeps it, the module promised not to.
+  const env = payPage({ script: { bookings: OFFLINE_ONCE.slice() } });
+  await paySubmit(env);
+  env.form._d2BookingAttempt.at -= 25 * 3600 * 1000;
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[1]), keyOf(bookingPosts(env)[0]));
+});
+
+test('a recovered booking whose hold ran out is not paid, and the next try is new', async () => {
+  // MUTACJA: treat the 200 as a live booking, and the guest is sent to pay a
+  // hold that no longer exists.
+  const dead = Object.assign({}, BOOKING.response, { status: 'expired' });
+  const env = payPage({ status: true, script: { bookings: ['offline', { status: 200, body: dead }] } });
+  await paySubmit(env);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(checkoutPosts(env).length, 0);
+  assert.equal(submitOf(env.form).disabled, false);
+  assert.ok(env.events.some((e) => e.name === 'booking:refused' && e.data.reason === 'hold_expired'));
+  assert.ok(statusText(env).indexOf('Czas na opłacenie') >= 0, statusText(env));
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.notEqual(keyOf(bookingPosts(env)[2]), keyOf(bookingPosts(env)[1]));
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('the contact token reaches no event and no booking the page can read', async () => {
+  // MUTACJA: leave it on the booking, and any script on the page can move the
+  // confirmation to its own address.
+  const env = failedPayment();
+  await paySubmit(env);
+  const created = env.events.filter((e) => e.name === 'booking:created');
+  assert.equal(created.length, 1);
+  assert.equal(JSON.stringify(created[0].data.booking).indexOf('secret-contact'), -1);
+  assert.equal((env.warnings.join(' ') + env.logs.join(' ')).indexOf('secret-contact'), -1);
+  assert.equal(dumpTree(env.document.documentElement).indexOf('secret-contact'), -1);
+});
+
+test('a corrected e-mail goes to the booking before it is paid', async () => {
+  // MUTACJA: pay without sendContact. This is the decision of 2026-11-05: the
+  // confirmation and the link go to the address the guest typed last.
+  const env = failedPayment();
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(bookingPosts(env).length, 1, 'still one booking');
+  const sent = contactPosts(env);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].body.customer_email, 'nowy@example.com');
+  Object.keys(sent[0].body).forEach((key) => {
+    assert.ok(Object.prototype.hasOwnProperty.call(CONTACT.request, key), key + ' is not in the contract');
+  });
+  assert.equal(sent[0].init.headers['X-Booking-Token'], 'secret-contact');
+  assert.equal(checkoutPosts(env).length, 2);
+  assert.ok(env.calls.indexOf(sent[0]) < env.calls.indexOf(checkoutPosts(env)[1]), 'before the payment');
+});
+
+test('an unchanged contact sends nothing, also on the try after a correction', async () => {
+  // MUTACJA: always post it, and every retry spends the 10 per hour limit.
+  const env = failedPayment({
+    script: { checkout: [1, 2, 3].map(() => ({ status: 502, body: { detail: 'x' } })) },
+  });
+  await paySubmit(env);
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(contactPosts(env).length, 0);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'retry', 'the form is still open for one more try');
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(checkoutPosts(env).length, 4, 'that try really happened');
+  assert.equal(contactPosts(env).length, 1);
+});
+
+test('a contact the backend will not change stops the payment and says so', async () => {
+  // MUTACJA: pay anyway, and the guest believes the new address was taken.
+  const refused = failedPayment({ refuse: { contact: { status: 404, body: { detail: 'Not found' } } } });
+  await paySubmit(refused);
+  fieldOf(refused.form, 'email').value = 'nowy@example.com';
+  fire(refused.form, 'submit');
+  await refused.settled();
+  assert.equal(checkoutPosts(refused).length, 1, 'only the first, failed one');
+  assert.equal(submitOf(refused.form).disabled, false);
+  const said = refused.form.querySelector('[d2-booking-error="form"]').textContent;
+  assert.ok(said.indexOf('danych kontaktowych') >= 0, said);
+});
+
+test('no contact token means no change and no silent payment', async () => {
+  // MUTACJA: skip the check, and a booking from a backend without the token is
+  // paid under the old address.
+  const env = failedPayment({ booking: { contact_token: null } });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(contactPosts(env).length, 0);
+  assert.equal(checkoutPosts(env).length, 1);
+});
+
+test('a hold that ended before the contact change closes the form like a payment refusal', async () => {
+  // MUTACJA: treat it as a plain refusal, and the dead booking is kept and retried.
+  const env = failedPayment({
+    refuse: { contact: { status: 409, body: { detail: { reason: 'booking_not_payable' } } } },
+  });
+  await paySubmit(env);
+  fieldOf(env.form, 'email').value = 'nowy@example.com';
+  fire(env.form, 'submit');
+  await env.settled();
+  assert.equal(env.form.getAttribute('d2-booking-payment'), 'final');
+});
+
+test('no sentence sends the guest to an e-mail that does not exist', async () => {
+  // MUTACJA: bring back "link do płatności masz w e-mailu". No e-mail carries a
+  // first-payment link, so the guest searches their inbox for nothing.
+  const env = payPage();
+  await env.settled();
+  ['checkout_url_missing', 'return_cancelled_hold', 'booking_received'].forEach((name) => {
+    const said = env.booking.message(name);
+    assert.equal(/masz w e-mailu|Sprawdź e-mail|wysłaliśmy/.test(said), false, said);
+  });
 });

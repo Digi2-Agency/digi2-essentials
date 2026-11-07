@@ -241,6 +241,16 @@ test.describe('booking: the calendar and the price', () => {
     expect(Date.parse(week) - Date.parse(next)).toBe(7 * 86400000);
   });
 
+  test('choosing a day with the keyboard leaves the focus on that day', async ({ page }) => {
+    // The grid is rebuilt on every pick, so the focused button really goes away
+    // here, which the mini-DOM cannot show: focus would fall to <body>.
+    const [day] = (await openDays(page)).slice(-1);
+    await page.locator('[d2-booking-day="' + day + '"]').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('[d2-booking-day="' + day + '"]')).toHaveAttribute('d2-booking-day-selected', '');
+    expect(await page.evaluate(() => document.activeElement.getAttribute('d2-booking-day'))).toBe(day);
+  });
+
   test('a busy night says it is taken and cannot be picked', async ({ page }) => {
     const taken = page.locator('[d2-booking-day="' + (await busyDay(page)) + '"]');
     await expect(taken).toHaveAttribute('d2-booking-day-busy', '');
@@ -305,6 +315,44 @@ test.describe('booking: the drawn widget and the payment', () => {
         await page.textContent('[d2-booking-calendar-month]')
       );
     }
+  });
+
+  test('a submit never reaches the document, where webflow.js listens for it', async ({ page }) => {
+    await page.evaluate(() => {
+      window.reachedDocument = 0;
+      document.addEventListener('submit', () => { window.reachedDocument += 1; });
+      document.querySelector('[d2-booking-form]').requestSubmit();
+    });
+    await expect(page.locator('[d2-booking-status]')).not.toHaveText('');
+    expect(await page.evaluate(() => window.reachedDocument)).toBe(0);
+  });
+
+  test('a form d2-forms refuses in the capture phase books nothing', async ({ page }) => {
+    // The order the two modules loaded in must not matter, so the refusal is
+    // added last, after booking has long been bound.
+    await page.evaluate(() => {
+      window.bookingAsked = 0;
+      const realFetch = window.fetch;
+      window.fetch = function (url, init) {
+        if (init && init.method === 'POST') window.bookingAsked += 1;
+        return realFetch.apply(this, arguments);
+      };
+      const form = document.querySelector('[d2-booking-form]');
+      form.addEventListener('submit', (e) => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+      form.requestSubmit();
+    });
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.bookingAsked)).toBe(0);
+    await expect(page.locator('[d2-booking-form]')).not.toHaveAttribute('d2-booking-busy', '');
+  });
+
+  test('the drawn look keeps its alignment on a page that left-aligns its buttons', async ({ page }) => {
+    // A Webflow site's own reset does exactly this, and it reached the calendar
+    // on the first real page.
+    await page.addStyleTag({ content: 'button { text-align: left; }' });
+    const aligned = await page.evaluate(() => ['[d2-booking-day]', '[d2-booking-submit]']
+      .map((s) => getComputedStyle(document.querySelector(s)).textAlign));
+    expect(aligned).toEqual(['center', 'center']);
   });
 
   test('an empty widget becomes a whole booking form', async ({ page }) => {
