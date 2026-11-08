@@ -982,8 +982,13 @@
       <tr><td>Modules</td><td>Each loader fetches the modules on its own tag from its own address: forms from <code>@latest</code>, booking from the pinned release. A module the first loader is already fetching is not fetched again</td></tr>
       <tr><td>Per-page declarations (<code>&lt;digi2-module&gt;</code>)</td><td>Read by the first loader only</td></tr>
       <tr><td><code>digi2.on/emit</code>, <code>digi2.attr</code>, <code>digi2.modules</code>, <code>d2-static-width</code></td><td>The first loader's; the second one does not replace them</td></tr>
+      <tr><td>A module of the second loader never arrives (hung request)</td><td><code>onReady</code> goes ahead after <strong>10 s</strong> at the latest, with a console warning naming the module — forms on the page do not wait forever</td></tr>
       <tr><td>Second loader placed after the page was already announced ready</td><td>No second <code>loaded</code>; a later <code>onReady</code> runs at once, and calls on the second loader's module wait for it</td></tr>
     </table>
+    <div class="callout callout--info">
+      <span class="ic">ℹ︎</span>
+      <p><strong>Order matters.</strong> The fix lives in the loader that runs <em>second</em>. Keep the site-wide loader in Site Settings → <strong>Head</strong>, above the Embed, <strong>without <code>async</code>/<code>defer</code></strong>: then only the pinned Embed has to be ≥ ma.46. With the site loader in the footer, <code>async</code>, or two Embeds, both loaders must be ≥ ma.46.</p>
+    </div>
     <p class="muted">Up to v1.9.0-ma.45 the second loader installed its own event bus and both announced <code>loaded</code>, so every <code>onReady</code> callback placed after the second tag ran <strong>twice</strong>. <code>create()</code> calls only warned (“already exists”), but page code that added listeners in the callback did it twice too, which doubled analytics events such as <code>select_promotion</code>. The fix lives in the second loader, so the site-wide <code>@latest</code> tag needs no change: re-pin the Embed.</p>
   </section>
 

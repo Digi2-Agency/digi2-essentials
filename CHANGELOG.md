@@ -33,7 +33,13 @@ przypiętym do wersji dla `d2-booking`.
   `@latest`, booking z przypiętej wersji, nic dwa razy.
 - **Co zrobić na stronie:** przepiąć Embed z `@v1.9.0-ma.4x` na
   `@v1.9.0-ma.46`. Tag witryny zostaje bez zmian, bo poprawka siedzi w drugim
-  loaderze. Strażnik „raz” dopisany doraźnie w kodzie strony nie szkodzi i może
+  loaderze. **Warunek:** loader witryny musi wykonać się pierwszy, czyli stać w
+  `<head>` (Site Settings → Head), nad Embedem, i bez `async`/`defer`. Jeśli
+  stoi w stopce, ma `async` albo na stronie są dwa Embedy, oba loadery muszą
+  być ≥ ma.46.
+- Bezpiecznik: jeśli moduł drugiego loadera nie przyjdzie wcale (zawieszone
+  połączenie), `onReady` rusza najpóźniej po 10 s, a w konsoli pojawia się
+  ostrzeżenie z nazwą modułu. Formularze nie czekają w nieskończoność. Strażnik „raz” dopisany doraźnie w kodzie strony nie szkodzi i może
   zostać.
 - Deklaracje `<digi2-module>` czyta tylko pierwszy loader, a `digi2.modules`,
   `digi2.attr` i `d2-static-width` zostają z pierwszego. Strona z jednym

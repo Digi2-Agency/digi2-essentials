@@ -255,7 +255,9 @@
  *   in an Embed): the second runs as a guest — it keeps the first one's event
  *   bus, parser and modules API, fetches only its own tag's modules from its
  *   own base URL, and holds the first one's 'loaded' until those are in, so
- *   onReady fires once for the page (ma.46; up to ma.45 it fired twice).
+ *   onReady fires once for the page (ma.46; up to ma.45 it fired twice). The
+ *   hold ends after 10 s at the latest. The fix is in the loader that runs
+ *   second: keep the site-wide tag in <head>, above the Embed, without async.
  */
 (function () {
   'use strict';
@@ -966,6 +968,10 @@
   var _holding = false;
   var _heldLoaded = false;
   var _hostEmit = null;
+  // A guest module whose request hangs — no onload, no onerror — must not hold
+  // the whole page's onReady (forms.create with it) for good: past this the
+  // guest lets 'loaded' out anyway. Calls on its stub keep waiting for it.
+  var GUEST_LOADED_TIMEOUT_MS = 10000;
   if (_host && !window.digi2._allLoaded) {
     _holding = true;
     _hostEmit = window.digi2.emit;
@@ -1010,6 +1016,14 @@
     // A guest waits only for the modules it fetches itself; one the host is
     // fetching is the host's to wait for.
     var own = modules.map(function (m) { return loadModule(m); }).filter(function (p) { return !p._elsewhere; });
+    if (_host && _holding) {
+      setTimeout(function () {
+        if (!_holding) return;
+        console.warn('[digi2] Modules of the second loader (' + modules.join(', ') + ') not in after '
+          + (GUEST_LOADED_TIMEOUT_MS / 1000) + ' s — onReady goes ahead without them.');
+        _announce();
+      }, GUEST_LOADED_TIMEOUT_MS);
+    }
     Promise.all(own).then(_announce, function () {
       // Some modules failed — still mark done so onReady fires
       _announce();

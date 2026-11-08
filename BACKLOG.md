@@ -3,6 +3,26 @@
 Prace odłożone świadomie: co, dlaczego nie teraz i kiedy wracamy.
 Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w CHANGELOG).
 
+## Uwagi z recenzji #75 (ma.46) na ma.47
+
+- **Dodano:** 2026-11-09, recenzja architekt-it, bez blokady dla ma.46.
+- **Szacunek:** ok. pół dnia razem.
+- **Zakres:**
+  - **bind po nieudanym odczycie innego obiektu** (najważniejsze): gdy kalendarz
+    wybierze inny obiekt, a jego odczyt się nie uda, sloty zostają z poprzednim
+    obiektem, więc gość może zobaczyć zdjęcie innego apartamentu. Mają wrócić do
+    stanu z Designera albo dostać `d2-booking-empty`. Test.
+  - test ścieżki `_requestedElsewhere` (moduł, który gospodarz już pobiera);
+  - zdanie w README o wyścigu z `<digi2-module>`: gość ich nie czyta, więc
+    deklaracja przeznaczona dla modułu gościa ładuje się z adresu gospodarza;
+  - `placeOf` w README: obiekt z kalendarza wygrywa z jawnym
+    `d2-booking-product` na slocie;
+  - `applyPlaceBinds` wyjąć z `Promise.all` przed `applyCalendars`, żeby
+    wolny odczyt obiektu nie opóźniał kalendarza;
+  - nazwy klientów w publicznym repo (np. wpis o stronie klienta w
+    CHANGELOG) zamienić na opis bez nazwy.
+- **Warunek startu:** następne wydanie ma.47.
+
 ## d2-booking: nagłówek ze zdjęciem i opisem w narysowanym widgecie
 
 - **Dodano:** 2026-11-09, reszta pozycji „zdjęcie i opis poza listą”. Samo

@@ -187,6 +187,19 @@ From v1.9.0-ma.46 a loader that finds one already on the page (`digi2.on`,
   called again, a later `onReady` runs at once, and calls on the guest's module
   stub wait for the module.
 
+- **lets `loaded` out after 10 s at the latest** (`GUEST_LOADED_TIMEOUT_MS`), with
+  a `console.warn` naming the modules: a hung request for a guest module (no
+  `onload`, no `onerror`) must not hold the whole page's `onReady`, and
+  `forms.create` with it. A module that turns up later still replaces its stub;
+  no second `loaded` follows.
+
+**Order matters.** The fix lives in whichever loader runs **second**. The
+site-wide loader therefore has to run first: in `<head>` (Site Settings → Head),
+above the Embed, and **without `async`/`defer`**. Then the site-wide tag may
+stay on any version (`@latest` = v1.8.x) and only the pinned Embed must be
+≥ ma.46. If the order is not guaranteed (site loader in the footer, `async`, or
+two Embeds), **both** loaders must be ≥ ma.46.
+
 Only the public surface of the host is relied on, so the host may be an older
 version: the tests run the guest next to the stable v1.8.3 loader
 (`tests/fixtures/loader/`) as well as next to itself.
