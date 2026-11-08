@@ -833,6 +833,12 @@
           { l: '<digi2-module>', t: 'embed', a: [['d2-forms'], ['d2-popups']], n: 'flagi tylko dla tej strony' },
           { l: 'Div — alternatywnie', t: 'div', a: [['d2-modules', 'forms popups']] }
         ]}
+      ]},
+      { title: 'Dwa loadery na jednej stronie', desc: 'Loader witryny i drugi, przypięty do wersji dla jednego modułu (od ma.46: jeden onReady, każdy moduł ze swojego loadera).', tree: [
+        { l: 'Site Settings → Head', t: 'script', a: [['d2-forms'], ['d2-popups']], n: 'loader witryny, zwykle @latest — gospodarz', c: [] },
+        { l: 'Embed na stronie', t: 'embed', c: [
+          { l: '<script> loader @v1.9.0-ma.N', t: 'script', a: [['d2-booking', 'pk_live_…']], n: 'gość: dociąga tylko booking ze swojej wersji' }
+        ]}
       ]}
     ],
 
@@ -852,6 +858,7 @@
 
     examples: [
       { title: 'Moduły tylko na jednej podstronie (<digi2-module>)', desc: 'Loader w Head zostaje bez flag; deklarację wklejasz w Page Settings → Custom Code albo w Embed w treści strony. Loader skanuje deklaracje od razu i ponownie po załadowaniu DOM, więc pozycja w body nie przeszkadza.', code: '<!-- Site Settings → Head (loader bez flag) -->\n<script\n  src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@main/dist/digi2-loader.min.js"\n></script>\n\n<!-- Podstrona: element deklaracji z flagami -->\n<digi2-module d2-forms d2-popups></digi2-module>\n\n<!-- to samo w formie listy (nazwy bez prefiksu d2-) -->\n<div d2-modules="forms popups, cookies"></div>\n\n<!-- flagi z wartością też działają -->\n<digi2-module d2-gtm="GTM-XXXXXXX"></digi2-module>' },
+      { title: 'Dwa loadery na jednej stronie (loader witryny + booking w Embedzie)', desc: 'Strona może mieć loader witryny (Site Settings, zwykle <code>@latest</code>) i drugi, przypięty do wersji dla jednego modułu, np. <code>d2-booking</code> w Embedzie. Od v1.9.0-ma.46 drugi loader dołącza do pierwszego: <code>digi2.onReady</code> odpala <b>raz</b>, gdy są już moduły obu loaderów. Każdy loader pobiera moduły ze swojego tagu i ze swojego adresu, deklaracje <code>&lt;digi2-module&gt;</code> czyta tylko pierwszy, a szyna zdarzeń, <code>digi2.attr</code>, <code>digi2.modules</code> i <code>d2-static-width</code> zostają z pierwszego. Do ma.45 każdy callback <code>onReady</code> spod drugiego tagu wykonywał się <b>dwa razy</b>, więc kod strony, który w nim dokładał listenery, podwajał zdarzenia w pomiarze (np. <code>select_promotion</code>). Poprawka siedzi w drugim loaderze: wystarczy przepiąć Embed, tag witryny bez zmian.', code: '<!-- Site Settings → Head (każda strona) -->\n<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@latest/dist/digi2-loader.min.js"\n  d2-forms d2-popups></script>\n\n<!-- Embed na stronie rezerwacji -->\n<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@v1.9.0-ma.46/dist/digi2-loader.min.js"\n  d2-booking="pk_live_…"></script>\n\n<script>\n  digi2.onReady(function () {\n    // raz, po forms/popups (loader witryny) I po booking (Embed)\n  });\n</script>' },
       { title: 'Starszy build standalone (dist/digi2.min.js)', desc: 'Jednoplikowy build zawierający rdzeń digi2 (system eventów) i moduł popups — utrzymywany dla starszych wdrożeń. W nowych projektach używaj loadera z flagami.', code: '<script src="https://cdn.jsdelivr.net/gh/Digi2-Agency/digi2-essentials@main/dist/digi2.min.js"></script>' }
     ]
   };

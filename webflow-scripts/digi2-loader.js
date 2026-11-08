@@ -250,6 +250,12 @@
  *   The loader reads its own src to derive the base URL, scans its attributes
  *   for d2-* entries, and injects <script> tags for each matching module from
  *   the modules/ directory. Works with jsDelivr, any CDN, or self-hosted.
+ *
+ *   Two loader tags on one page (site-wide @latest + one pinned for d2-booking
+ *   in an Embed): the second runs as a guest — it keeps the first one's event
+ *   bus, parser and modules API, fetches only its own tag's modules from its
+ *   own base URL, and holds the first one's 'loaded' until those are in, so
+ *   onReady fires once for the page (ma.46; up to ma.45 it fired twice).
  */
 (function () {
   'use strict';
@@ -257,6 +263,21 @@
   // ---- Namespace -----------------------------------------------------------
   window.digi2 = window.digi2 || {};
   window.digi2._loaded = window.digi2._loaded || {};
+
+  // ---- A loader already on this page? --------------------------------------
+  // A page may carry two loader tags: the site-wide one (often @latest) and a
+  // second one pinned for a single module (d2-booking in an Embed). The second
+  // one must not install its own event bus: listeners registered on the first
+  // bus would never hear the second, the first loader's 'loaded' would go
+  // through the second bus, and every onReady callback registered after the
+  // second tag ran twice. So the second loader ("guest") keeps the host's bus,
+  // parser, static-width and modules API, loads only its own modules from its
+  // own base URL, and holds the host's 'loaded' until those modules are in —
+  // one 'loaded' for the page, after every loader is done. The host may be an
+  // older version (v1.8.x on @latest), so only its public surface is relied on.
+  var _host = typeof window.digi2.on === 'function'
+    && typeof window.digi2.emit === 'function'
+    && !!window.digi2.modules;
 
   // ---- Debug mode ----------------------------------------------------------
   // Detected from d2-debug-mode attribute on the loader script tag.
@@ -266,11 +287,11 @@
   if (_loaderTag) {
     _debugDetected = _loaderTag.hasAttribute('d2-debug-mode');
   }
-  window.digi2.debug = _debugDetected;
+  window.digi2.debug = _host ? (!!window.digi2.debug || _debugDetected) : _debugDetected;
 
   var _logStyles = 'color:#7c3aed;font-weight:bold';
 
-  window.digi2.log = function (module, action, data) {
+  if (!_host || typeof window.digi2.log !== 'function') window.digi2.log = function (module, action, data) {
     if (!window.digi2.debug) return;
     var prefix = '%c[digi2.' + module + ']';
     if (data !== undefined) {
@@ -281,6 +302,8 @@
   };
 
   // ---- Event system --------------------------------------------------------
+  // A guest loader keeps the host's bus (see "A loader already on this page?").
+  if (!_host) {
   var listeners = {};
 
   window.digi2.on = function (event, fn) {
@@ -349,6 +372,7 @@
     window.digi2.on(event, once);
     return function () { window.digi2.off(event, once); };
   };
+  } // end: !_host (event system)
 
   // ---- Responsive attribute parser -----------------------------------------
   // Any d2-* attribute that takes a value can carry per-breakpoint overrides:
@@ -422,9 +446,13 @@
     return v;
   }
 
-  window.digi2.parseResponsive = parseResponsive;
-  window.digi2.resolveResponsive = resolveResponsive;
-  window.digi2.attr = digi2Attr;
+  // One parser per page: the host's resize watcher only knows the breakpoints
+  // its own parser has seen, so a guest must not swap the parser out.
+  if (!_host || typeof window.digi2.attr !== 'function') {
+    window.digi2.parseResponsive = parseResponsive;
+    window.digi2.resolveResponsive = resolveResponsive;
+    window.digi2.attr = digi2Attr;
+  }
 
   // Emit `responsive:change` only when the active breakpoint *bucket* changes
   // — not on every resize pixel. The bucket is the smallest registered
@@ -438,7 +466,7 @@
   }
   var _lastBucket = _activeBucket(window.innerWidth);
   var _resizeRaf = null;
-  window.addEventListener('resize', function () {
+  if (!_host) window.addEventListener('resize', function () {
     if (_resizeRaf) return;
     _resizeRaf = (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(function () {
       _resizeRaf = null;
@@ -472,6 +500,15 @@
   // ---- Internal: load a single module by name (returns a Promise) ----------
   var _loadPromises = {};
 
+  function _requestedElsewhere(moduleName) {
+    var found = null;
+    try {
+      found = document.querySelector('script[src*="/modules/' + moduleName + '.js"], script[src*="/modules/'
+        + moduleName + '.min.js"]');
+    } catch (e) { found = null; }
+    return !!found;
+  }
+
   function loadModule(moduleName) {
     // Already loaded
     if (window.digi2._loaded[moduleName]) {
@@ -480,6 +517,20 @@
 
     // Already loading — return existing promise
     if (_loadPromises[moduleName]) {
+      return _loadPromises[moduleName];
+    }
+
+    // A guest whose module the host is already fetching waits for it on the
+    // bus instead of injecting a second copy.
+    if (_host && _requestedElsewhere(moduleName)) {
+      _loadPromises[moduleName] = new Promise(function (resolve, reject) {
+        function ok(name) { if (name === moduleName) { stop(); resolve(moduleName); } }
+        function bad(name) { if (name === moduleName) { stop(); reject(new Error('[digi2] Module "' + moduleName + '" failed to load')); } }
+        function stop() { window.digi2.off('module:loaded', ok); window.digi2.off('module:error', bad); }
+        window.digi2.on('module:loaded', ok);
+        window.digi2.on('module:error', bad);
+      });
+      _loadPromises[moduleName]._elsewhere = true;
       return _loadPromises[moduleName];
     }
 
@@ -518,8 +569,9 @@
   }
 
   // ---- digi2.modules — public API ------------------------------------------
-
-  window.digi2.modules = {
+  // A guest leaves the host's: digi2.modules.require() on a page keeps loading
+  // from the site-wide base URL, not from the pinned one.
+  var _modulesApi = {
     /**
      * Check if a module is loaded.
      *   digi2.modules.check('cookies')  →  true / false
@@ -558,6 +610,7 @@
       }));
     },
   };
+  if (!_host) window.digi2.modules = _modulesApi;
 
   // ---- Auto-require proxies ------------------------------------------------
   // If someone calls digi2.popups.create() before the module is loaded,
@@ -601,9 +654,14 @@
     return null;
   }
 
-  function createProxy(namespace, moduleName) {
+  function createProxy(namespace, moduleName, own) {
     // Don't overwrite if the real module already loaded
     if (window.digi2[namespace] && window.digi2._loaded[moduleName]) return;
+    // A guest leaves the host's stub alone — a call on it would load the
+    // module a second time, from the guest's base URL — except for a module
+    // the guest fetches itself (`own`): then a call on the host's stub would
+    // fetch it from the host's base URL instead.
+    if (_host && window.digi2[namespace] && !own) return;
 
     var stub; // what sits on digi2[namespace] until the real module replaces it
 
@@ -751,14 +809,20 @@
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', _initStaticWidth);
-  } else {
-    _initStaticWidth();
-  }
-  // Re-measure once web fonts finish loading (text metrics can shift)
-  if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
-    document.fonts.ready.then(_initStaticWidth);
+  // The host already measures [d2-static-width]; a guest doing it too would
+  // put a second observer on every element.
+  var _ownStaticWidth = !_host || !window.digi2.staticWidth;
+
+  if (_ownStaticWidth) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _initStaticWidth);
+    } else {
+      _initStaticWidth();
+    }
+    // Re-measure once web fonts finish loading (text metrics can shift)
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === 'function') {
+      document.fonts.ready.then(_initStaticWidth);
+    }
   }
 
   // A breakpoint flip can change both the anchor and how wide the content
@@ -770,15 +834,17 @@
     _initStaticWidth();
   }
 
-  if (typeof window.digi2.on === 'function') {
-    window.digi2.on('responsive:change', _relockStaticWidth);
-  }
+  if (_ownStaticWidth) {
+    if (typeof window.digi2.on === 'function') {
+      window.digi2.on('responsive:change', _relockStaticWidth);
+    }
 
-  window.digi2.staticWidth = {
-    apply: _applyStaticWidth,
-    refresh: _initStaticWidth,
-    relock: _relockStaticWidth,
-  };
+    window.digi2.staticWidth = {
+      apply: _applyStaticWidth,
+      refresh: _initStaticWidth,
+      relock: _relockStaticWidth,
+    };
+  }
 
   // ---- Discover requested modules -----------------------------------------
   // Modules can be declared two ways:
@@ -876,30 +942,77 @@
 
   var modules = [];
   _collectModules(loaderScript, modules); // loader tag (global)
-  _scanDeclarations(modules);             // declarations already in the DOM
+  // Page declarations are the host's: it scans them too, and two loaders
+  // fetching the same declared module would run it twice.
+  if (!_host) _scanDeclarations(modules); // declarations already in the DOM
+
+  // A guest's own modules get the guest's stub (see createProxy).
+  if (_host) {
+    modules.forEach(function (m) {
+      var ns = _namespaceOf(m);
+      if (ns && !window.digi2._loaded[m] && !_requestedElsewhere(m)) createProxy(ns, m, true);
+    });
+  }
 
   // Load whatever is known right now — loader-tag modules start ASAP.
   modules.forEach(function (m) { loadModule(m); });
 
-  function _finalizeLoad() {
-    _scanDeclarations(modules); // body / page declarations are now parsed
+  // ---- One 'loaded' per page ----------------------------------------------
+  // A guest holds the host's 'loaded' until its own modules are in, then lets
+  // it out once. If the host already announced the page before the guest ran,
+  // there is nothing to hold: its listeners already ran and must not run again
+  // (a later onReady runs at once, and calls on the guest's module stub wait
+  // for the module like any early call).
+  var _holding = false;
+  var _heldLoaded = false;
+  var _hostEmit = null;
+  if (_host && !window.digi2._allLoaded) {
+    _holding = true;
+    _hostEmit = window.digi2.emit;
+    window.digi2.emit = function (event, data) {
+      if (event === 'loaded' && _holding) {
+        _heldLoaded = true;
+        window.digi2._allLoaded = false; // a late onReady must wait too
+        return;
+      }
+      return _hostEmit.apply(this, arguments);
+    };
+  }
 
-    if (modules.length === 0) {
-      console.warn('[digi2] No modules requested. Add d2-* flags to the loader tag or a <digi2-module> element on the page.');
+  function _announce() {
+    if (!_host) {
       window.digi2._allLoaded = true;
       window.digi2.emit('loaded');
+      return;
+    }
+    if (!_holding) return;
+    _holding = false;
+    if (_heldLoaded) {
+      window.digi2._allLoaded = true;
+      _hostEmit('loaded');
+    }
+    // else: the host is still loading; its own 'loaded' now passes through.
+  }
+
+  function _finalizeLoad() {
+    if (!_host) _scanDeclarations(modules); // body / page declarations are now parsed
+
+    if (modules.length === 0) {
+      if (!_host) {
+        console.warn('[digi2] No modules requested. Add d2-* flags to the loader tag or a <digi2-module> element on the page.');
+      }
+      _announce();
       return;
     }
 
     window.digi2.log('loader', 'modules requested', modules);
 
-    Promise.all(modules.map(function (m) { return loadModule(m); })).then(function () {
-      window.digi2._allLoaded = true;
-      window.digi2.emit('loaded');
-    }).catch(function () {
+    // A guest waits only for the modules it fetches itself; one the host is
+    // fetching is the host's to wait for.
+    var own = modules.map(function (m) { return loadModule(m); }).filter(function (p) { return !p._elsewhere; });
+    Promise.all(own).then(_announce, function () {
       // Some modules failed — still mark done so onReady fires
-      window.digi2._allLoaded = true;
-      window.digi2.emit('loaded');
+      _announce();
     });
   }
 

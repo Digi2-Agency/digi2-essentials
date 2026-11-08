@@ -16,6 +16,29 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.46 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+**Loader: dwa loadery na jednej stronie nie podwajają już `digi2.onReady`.**
+Dotyczy stron z loaderem witryny (`@latest`) i drugim loaderem w Embedzie,
+przypiętym do wersji dla `d2-booking`.
+
+- Do ma.45 każdy callback `digi2.onReady` umieszczony pod drugim tagiem
+  wykonywał się **dwa razy**. `forms.create` / `popups.create` tylko ostrzegały
+  („already exists”), ale kod strony, który w callbacku dokładał listenery,
+  robił to podwójnie. Przykład z pierwszej strony z bookingiem:
+  `select_promotion` trafiał do dataLayer 2× na jeden klik.
+- Od ma.46 drugi loader dołącza do pierwszego. `onReady` odpala **raz**, gdy
+  są już moduły obu loaderów (moduł, który się nie załadował, też się liczy
+  jako gotowy). Każdy moduł przychodzi ze swojego loadera: formularze z
+  `@latest`, booking z przypiętej wersji, nic dwa razy.
+- **Co zrobić na stronie:** przepiąć Embed z `@v1.9.0-ma.4x` na
+  `@v1.9.0-ma.46`. Tag witryny zostaje bez zmian, bo poprawka siedzi w drugim
+  loaderze. Strażnik „raz” dopisany doraźnie w kodzie strony nie szkodzi i może
+  zostać.
+- Deklaracje `<digi2-module>` czyta tylko pierwszy loader, a `digi2.modules`,
+  `digi2.attr` i `d2-static-width` zostają z pierwszego. Strona z jednym
+  loaderem działa jak dotąd.
+
 ## v1.9.0-ma.45 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 Poprawka wyzwalacza `page` z ma.44 (warunek architekt-it z recenzji #72).

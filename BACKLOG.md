@@ -3,45 +3,6 @@
 Prace odłożone świadomie: co, dlaczego nie teraz i kiedy wracamy.
 Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w CHANGELOG).
 
-## Błąd — loader: dwa loadery na stronie wykonują callbacki `onReady` dwa razy
-
-- **Dodano:** 2026-11-08, decyzja architekt-it: poprawiamy w bibliotece,
-  gałąź z poprawką 2026-11-09
-- **Priorytet:** przed kolejnym wdrożeniem d2-booking na innej stronie
-- **Szacunek:** ok. pół dnia z testami i dokumentacją
-- **Objaw:** strona z loaderem witryny (`@latest`) i drugim loaderem z
-  d2-booking (`@v1.9.0-ma.N` w Embedzie) wykonuje każdy callback
-  `digi2.onReady` zarejestrowany po drugim tagu dwa razy. `forms.create` i
-  `popups.create` są idempotentne (ostrzeżenie „already exists”, zwracają
-  istniejącą instancję), ale kod strony, który przy okazji dokłada listenery,
-  robi to dwa razy. Przykład: zdarzenie `select_promotion` trafia do dataLayer
-  2× na jeden klik. To błąd pomiaru.
-- **Przyczyna:** oba loadery dzielą `window.digi2`. Drugi nadpisuje
-  `on`/`emit`/`onReady` własnymi (własna lista listenerów). Każdy loader na
-  koniec woła `window.digi2.emit('loaded')`, czyli emit drugiego, więc lista
-  drugiego dostaje `'loaded'` dwa razy.
-- **Poprawka:** loader, który zastanie działający loader (flaga w
-  `window.digi2`), nie nadpisuje `on`/`emit`/`onReady`. Ładuje swoje moduły
-  swoją bazą URL i nie ogłasza `'loaded'` drugi raz. Wystarczy poprawiony
-  drugi loader, bo pierwszy (`@latest`) zostaje bez zmian. Test: dwa loadery na
-  jednej stronie, callback `onReady` raz, moduły obu loaderów załadowane.
-- **Kolejność (uwaga z recenzji #74):** jeśli drugi loader nie ogłasza
-  `'loaded'`, callback, który czeka na jego moduł (np. d2-booking), może ruszyć
-  po `'loaded'` pierwszego loadera, zanim ten moduł się załaduje. Test ma to
-  sprawdzić. Rozwiązanie jest jedno z dwóch: `'loaded'` czeka też na moduły
-  drugiego loadera albo moduł ma osobne, opisane w dokumentacji zdarzenie
-  gotowości (`module:loaded` / `booking:ready`).
-- **Opcja u klienta do czasu poprawki (nie domyślna):** strażnik „raz” w
-  callbackach `onReady` kodu strony. Na rajska77 architekt-it rekomendował
-  Piotrowi czekać na poprawkę biblioteki. Decyzja należy do Piotra.
-  **RAJSKA77: wdrożone 8.11, do zdjęcia po wydaniu poprawki.** Decyzja
-  Piotra, od ok. 23:20 UTC działa `r77-popupy` v2 i blokada w stopce.
-  `select_promotion` idzie 1×. Usunięcie dopiero po podmianie przypiętego tagu
-  w Embedzie na `ma.N` z poprawką. Strażnik przy jednym loaderze nie szkodzi,
-  więc pośpiechu nie ma.
-- **Wydanie:** nowy tag `v1.9.0-ma.N` przez `scripts/release.sh` i podmiana
-  przypiętego tagu w Embedach z d2-booking.
-
 ## d2-booking: zdjęcie i opis produktu poza listą wyników (UX)
 
 - **Dodano:** 2026-11-08, zgłoszenie webflow (po decyzji 2destate z 8.11), bez
