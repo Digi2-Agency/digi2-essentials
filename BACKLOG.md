@@ -56,8 +56,13 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
   w kalendarzu pola też się zmieniają. Narysowany widget może dostać opcjonalny
   nagłówek ze zdjęciem i opisem, włączany atrybutem. Testy i dokumentacja w
   czterech miejscach.
-- **Warunek startu:** zlecenie (2destate, webflow) albo kolejne wdrożenie
-  strony jednego lokalu.
+- **Warunek startu:** zaplanowane na 2026-11-09 razem z poprawką loadera
+  (decyzja architekt-it 8.11): jeden PR i jeden tag `ma.N`, więc u klienta
+  jedna podmiana przypięcia. Dwa osobne commity, w PR opisane jako dwie zmiany,
+  każda z własnym testem. Gdy wiązanie się przeciągnie, wychodzi sam loader:
+  błąd pomiaru ma pierwszeństwo.
+- **Przypadek:** test 2destate z 8.11 na pierwszej stronie wdrożenia. Widget
+  jednego produktu nie pokazuje zdjęcia, choć API zwraca `image_url`.
 
 ## d2-booking: zmiana języka w locie (`setLanguage` + przerysowanie)
 
