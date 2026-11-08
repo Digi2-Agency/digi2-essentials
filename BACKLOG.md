@@ -34,6 +34,11 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
 - **Opcja u klienta do czasu poprawki (nie domyślna):** strażnik „raz” w
   callbackach `onReady` kodu strony. Na rajska77 architekt-it rekomendował
   Piotrowi czekać na poprawkę biblioteki. Decyzja należy do Piotra.
+  **RAJSKA77: wdrożone 8.11, do zdjęcia po wydaniu poprawki.** Decyzja
+  Piotra, od ok. 23:20 UTC działa `r77-popupy` v2 i blokada w stopce.
+  `select_promotion` idzie 1×. Usunięcie dopiero po podmianie przypiętego tagu
+  w Embedzie na `ma.N` z poprawką. Strażnik przy jednym loaderze nie szkodzi,
+  więc pośpiechu nie ma.
 - **Wydanie:** nowy tag `v1.9.0-ma.N` przez `scripts/release.sh` i podmiana
   przypiętego tagu w Embedach z d2-booking.
 
