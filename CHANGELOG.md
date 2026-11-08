@@ -39,6 +39,24 @@ przypiętym do wersji dla `d2-booking`.
   `digi2.attr` i `d2-static-width` zostają z pierwszego. Strona z jednym
   loaderem działa jak dotąd.
 
+**`d2-booking`: zdjęcie, nazwa i opis apartamentu poza listą.**
+
+- `d2-booking-bind` działa teraz także **poza** listą wyników: w widgecie, w
+  formularzu, w sekcji nad nimi. Pokazuje obiekt, który rezerwuje ta strona
+  (`<img d2-booking-bind="image">`, `<h2 d2-booking-bind="name">`,
+  `<p d2-booking-bind="description">`), z tymi samymi polami i zasadami co
+  karta listy. Na stronie jednego apartamentu nie trzeba już wklejać zdjęcia
+  ręcznie.
+- Obiekt to ten wybrany w kalendarzu, a jeśli kalendarz żadnego nie wybrał:
+  najbliższy `d2-booking-product`, potem z tagu loadera, potem `?apartament=`.
+  Wybór innego obiektu w kalendarzu przepina sloty. Dane pochodzą z tego samego
+  zapytania o obiekt, które strona już robi (z `?lang=`), więc nic nie
+  dochodzi.
+- Gdy obiektu nie da się odczytać, sloty zostają takie, jak w Designerze.
+  Wiersze listy dalej biorą każdy swój obiekt.
+- Do zrobienia osobno: opcjonalny nagłówek ze zdjęciem w **narysowanym**
+  widgecie. Na razie sloty buduje się w Designerze.
+
 ## v1.9.0-ma.45 — 2026-11-08 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 Poprawka wyzwalacza `page` z ma.44 (warunek architekt-it z recenzji #72).

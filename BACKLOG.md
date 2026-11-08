@@ -3,32 +3,17 @@
 Prace odłożone świadomie: co, dlaczego nie teraz i kiedy wracamy.
 Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w CHANGELOG).
 
-## d2-booking: zdjęcie i opis produktu poza listą wyników (UX)
+## d2-booking: nagłówek ze zdjęciem i opisem w narysowanym widgecie
 
-- **Dodano:** 2026-11-08, zgłoszenie webflow (po decyzji 2destate z 8.11), bez
-  wydania teraz
-- **Szacunek:** ok. pół dnia z testami i dokumentacją
-- **Powód:** `d2-booking-bind="<pole>"` wypełnia się dziś tylko w wierszach
-  listy wyników (`[d2-booking-results]`). Strona rezerwacji jednego lokalu
-  chce nad widgetem albo w nim zdjęcia i opisu tego lokalu. Na pierwszej
-  stronie wdrożenia zdjęcie wstawiono statycznie. Moduł i tak pobiera produkt
-  raz na wizytę (`GET /products/{ref}`, z `?lang=`), a odpowiedź ma
-  `image_url`, `image_urls` i `description`. Dane już są, brakuje tylko
-  wiązania.
-- **Zakres:** `d2-booking-bind` działa też poza listą, w obrębie
-  `[d2-booking-widget]` / formularza albo na elemencie z `d2-booking-product`.
-  Wypełnia się z produktu rozwiązanego dla tej strony, ten sam zestaw pól co w
-  wierszu (`image`, `name`, `description`, `city_line`…). Po zmianie produktu
-  w kalendarzu pola też się zmieniają. Narysowany widget może dostać opcjonalny
-  nagłówek ze zdjęciem i opisem, włączany atrybutem. Testy i dokumentacja w
-  czterech miejscach.
-- **Warunek startu:** zaplanowane na 2026-11-09 razem z poprawką loadera
-  (decyzja architekt-it 8.11): jeden PR i jeden tag `ma.N`, więc u klienta
-  jedna podmiana przypięcia. Dwa osobne commity, w PR opisane jako dwie zmiany,
-  każda z własnym testem. Gdy wiązanie się przeciągnie, wychodzi sam loader:
-  błąd pomiaru ma pierwszeństwo.
-- **Przypadek:** test 2destate z 8.11 na pierwszej stronie wdrożenia. Widget
-  jednego produktu nie pokazuje zdjęcia, choć API zwraca `image_url`.
+- **Dodano:** 2026-11-09, reszta pozycji „zdjęcie i opis poza listą”. Samo
+  wiązanie `d2-booking-bind` poza listą weszło w ma.46.
+- **Szacunek:** ok. 2–3 h z testami i dokumentacją.
+- **Zakres:** widget rysowany przez moduł (bez slotów z Designera) dostaje,
+  po włączeniu atrybutem (np. `d2-booking-widget-place`), nagłówek: zdjęcie,
+  nazwa i opis z `applyPlaceBinds`. Style z tego samego arkusza i tych samych
+  zmiennych CSS co reszta widgetu.
+- **Warunek startu:** strona, która używa narysowanego widgetu i chce zdjęcia.
+  Strona ze slotami w Designerze ma to już od ma.46.
 
 ## d2-booking: zmiana języka w locie (`setLanguage` + przerysowanie)
 

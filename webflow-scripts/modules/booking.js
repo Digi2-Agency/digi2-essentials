@@ -275,6 +275,13 @@
  * property, where a single quote ends the declaration. These names come out of
  * a CMS this module does not own.
  *
+ * Outside the list (ma.46) a [d2-booking-bind] — in the widget, the form, a
+ * hero above them — binds the place this page books: the stay's, else the
+ * nearest d2-booking-product, the loader tag's, ?apartament=. Same fields and
+ * rules, same GET /products/{ref} answer the page already has; a place that
+ * cannot be read leaves the slots as the Designer built them. See
+ * applyPlaceBinds.
+ *
  * A card leads to ?apartament=<slug>, which is the query this module reads on
  * the booking page, so the list and the booking page fit together with nothing
  * written. A client whose apartments are CMS pages under their own addresses
@@ -2640,6 +2647,8 @@
     } : null;
     if (stayState) reopenClosed();
     _emit('booking:stay', { stay: stayState });
+    // Another place picked for the stay shows its own picture and words.
+    applyPlaceBinds();
     // A new stay is a new price: asked for once the clicking has settled.
     scheduleQuote();
     return stayState;
@@ -5302,23 +5311,87 @@
 
   function bindRow(row, entry, language) {
     var slots = slotsIn(row, 'd2-booking-bind');
-    for (var i = 0; i < slots.length; i++) {
-      var el = slots[i];
-      var field = String(attr(el, 'd2-booking-bind') || '');
-      if (field === 'image') { bindImage(el, entry); continue; }
-      var value = entryField(entry, field);
-      // A flag is not a word: true leaves the slot exactly as the Designer
-      // built it ("na zapytanie", icon and all) and false empties it like a
-      // missing value. Nobody reads "false" in a list of apartments — and
-      // writing the slot's own text back into it would replace the markup
-      // inside with one text node, which is what textContent does.
-      if (typeof value === 'boolean') {
-        if (value) el.removeAttribute('d2-booking-empty');
-        else writeBind(el, '');
-        continue;
-      }
-      writeBind(el, bindValue(entry, field, language));
+    for (var i = 0; i < slots.length; i++) bindSlot(slots[i], entry, language);
+  }
+
+  function bindSlot(el, entry, language) {
+    var field = String(attr(el, 'd2-booking-bind') || '');
+    if (field === 'image') { bindImage(el, entry); return; }
+    var value = entryField(entry, field);
+    // A flag is not a word: true leaves the slot exactly as the Designer
+    // built it ("na zapytanie", icon and all) and false empties it like a
+    // missing value. Nobody reads "false" in a list of apartments — and
+    // writing the slot's own text back into it would replace the markup
+    // inside with one text node, which is what textContent does.
+    if (typeof value === 'boolean') {
+      if (value) el.removeAttribute('d2-booking-empty');
+      else writeBind(el, '');
+      return;
     }
+    writeBind(el, bindValue(entry, field, language));
+  }
+
+  // ---------------------------------------------------------------------------
+  // The place this page books, bound outside the list
+  // ---------------------------------------------------------------------------
+
+  /**
+   * A [d2-booking-bind] outside the list — in the widget, in the form, in a
+   * hero above them — shows the place this page books, out of the same
+   * GET /products/{ref} answer the rest of the page already asked for (once
+   * per visit, with ?lang=). The place is the stay's when the calendar picked
+   * one, else the nearest d2-booking-product up the tree, then the loader
+   * tag's, then ?apartament= — the order stayFor and productOf already use.
+   * The fields and their rules are the list's (bindSlot): image, name,
+   * description, city_line… A place that cannot be read leaves every slot as
+   * the Designer built it; an empty slot is worse than a placeholder.
+   */
+  var placeSeq = 0;
+
+  function hasOwnD2(el, name) {
+    return !!el && typeof el.getAttribute === 'function'
+      && (el.getAttribute(name) !== null || el.getAttribute('data-' + name) !== null);
+  }
+
+  // A slot of the list belongs to its row's entry, never to the page's place.
+  function inList(el) {
+    for (var n = el; n && n !== document; n = n.parentNode) {
+      if (hasOwnD2(n, 'd2-booking-results') || hasOwnD2(n, 'd2-booking-template')
+        || hasOwnD2(n, 'd2-booking-item')) return true;
+    }
+    return false;
+  }
+
+  function placeOf(el) {
+    if (stayState && stayState.product) return stayState.product;
+    var n = el;
+    while (n && n !== document && !hasOwnD2(n, 'd2-booking-product')) n = n.parentNode;
+    return productOf(n && n !== document ? n : null);
+  }
+
+  function applyPlaceBinds() {
+    var found = allOf('d2-booking-bind');
+    var byRef = {};
+    var refs = [];
+    for (var i = 0; i < found.length; i++) {
+      if (inList(found[i])) continue;
+      var ref = placeOf(found[i]);
+      if (!ref) continue;
+      var key = productSlot(ref);
+      if (!byRef[key]) { byRef[key] = { ref: ref, slots: [] }; refs.push(key); }
+      byRef[key].slots.push(found[i]);
+    }
+    if (!refs.length) return Promise.resolve(null);
+    // A newer stay wins over an older answer still on its way.
+    var seq = ++placeSeq;
+    return Promise.all(refs.map(function (key) {
+      var group = byRef[key];
+      return product(group.ref).then(function (data) {
+        if (seq !== placeSeq || !data) return;
+        var language = currentLanguage();
+        for (var j = 0; j < group.slots.length; j++) bindSlot(group.slots[j], data, language);
+      });
+    }));
   }
 
   /**
@@ -6135,7 +6208,7 @@
       // The list goes out now and nothing waits for it: a calendar has no use
       // for /products, and a slow answer there must not leave it blank.
       var places = applyResults(cfg);
-      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg)]);
+      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg), applyPlaceBinds()]);
       return guest.then(function () {
         // The mark signs the block, so it goes on last: a return block only
         // fills itself once the status has answered, and a mark appended

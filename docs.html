@@ -3387,7 +3387,7 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td><code>d2-booking-results-limit="&lt;n&gt;"</code></td><td>the list</td><td>How many places one page asks for. Default <code>24</code>; the key has its own maximum.</td></tr>
       <tr><td><code>d2-booking-results-link="&lt;shape&gt;"</code></td><td>the list</td><td>The address shape every card of this list leads to — see below. Read raw: an address may legally contain <code>;</code> and <code>@</code>.</td></tr>
       <tr><td><code>d2-booking-template</code></td><td>any element</td><td>The row. Taken out of the page and cloned per place; never shown itself. <strong>Every</strong> one of them leaves the page, the first is the pattern — a card built inside a Collection List carries the attribute on every rendered item, and the module says in the console how many it found. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave.</td></tr>
-      <tr><td><code>d2-booking-bind="&lt;field&gt;"</code></td><td>any element, incl. the row</td><td>One field of the entry, as text — see the table below.</td></tr>
+      <tr><td><code>d2-booking-bind="&lt;field&gt;"</code></td><td>any element, incl. the row</td><td>One field of the entry, as text — see the table below. Outside the list it binds the page's own place (ma.46, below).</td></tr>
       <tr><td><code>d2-booking-link[="&lt;shape&gt;"]</code></td><td>Link, or the row itself</td><td>Where this card leads. A whole card is usually one link, so the attribute may sit on the template itself.</td></tr>
       <tr><td><code>d2-booking-more</code></td><td>Button</td><td>Asks for the next page and <strong>appends</strong> it. Hidden once the answer says <code>has_more</code> is false. Disabled while a page is in flight, and after a <code>429</code> for exactly <code>Retry-After</code> seconds. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a <code>429</code> wait it is down together with the search button.</td></tr>
       <tr><td><code>d2-booking-count</code></td><td>any element</td><td>The <code>count</code> the answer carries — all the places that match, not the ones on screen.</td></tr>
@@ -3413,6 +3413,22 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
       <tr><td><code>0</code> (the ground <code>floor</code>)</td><td><code>0</code>. A declared zero is an answer, not a gap.</td></tr>
     </table>
     <p class="muted">Nothing out of the answer is ever markup: a value goes in with <code>textContent</code>, an address with <code>setAttribute</code>, and a picture only once its address reads as one. These names come out of a CMS this module does not own.</p>
+
+    <h3>The page's own place, outside the list</h3>
+    <p>From v1.9.0-ma.46 <code>d2-booking-bind</code> also works <strong>outside</strong> <code>[d2-booking-results]</code> — in the widget, in the form, in a hero above them. There it shows the place <em>this page books</em>: its picture, name and description on a single-apartment booking page, with nothing pasted by hand.</p>
+    <pre><code>&lt;div <span class="attr">d2-booking-widget</span>&gt;
+  &lt;img <span class="attr">d2-booking-bind</span>=<span class="string">"image"</span>&gt;
+  &lt;h2 <span class="attr">d2-booking-bind</span>=<span class="string">"name"</span>&gt;&lt;/h2&gt;
+  &lt;p <span class="attr">d2-booking-bind</span>=<span class="string">"description"</span>&gt;&lt;/p&gt;
+&lt;/div&gt;</code></pre>
+    <table>
+      <tr><th>What</th><th>How</th></tr>
+      <tr><td>Which place</td><td>The stay's, once the calendar picked one; otherwise the nearest <code>d2-booking-product</code> up the tree, then the loader tag's, then <code>?apartament=</code> — the same order the form books in. Picking another place in the calendar re-binds the slots</td></tr>
+      <tr><td>Where the data comes from</td><td>The same <code>GET /products/{ref}</code> the page already asks (once per visit, with <code>?lang=</code>), so no extra request</td></tr>
+      <tr><td>Fields</td><td>The list's, with the same rules (table above): <code>image</code>, <code>name</code>, <code>description</code>, <code>city_line</code>, <code>area</code>…</td></tr>
+      <tr><td>A place that cannot be read</td><td>Every slot stays as you built it: a placeholder picture beats an empty box</td></tr>
+      <tr><td>Slots inside the list</td><td>Unchanged: each row binds its own entry, never the page's place</td></tr>
+    </table>
 
     <h3>Where a card leads</h3>
     <p>By default <code>?apartament=&lt;slug&gt;</code> — the very query the booking page reads — so the list and the booking page fit together with nothing written. A client whose apartments are CMS pages under their own addresses writes the shape instead, on the link or on the whole list:</p>
