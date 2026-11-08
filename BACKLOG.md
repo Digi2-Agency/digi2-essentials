@@ -25,8 +25,15 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
   swoją bazą URL i nie ogłasza `'loaded'` drugi raz. Wystarczy poprawiony
   drugi loader, bo pierwszy (`@latest`) zostaje bez zmian. Test: dwa loadery na
   jednej stronie, callback `onReady` raz, moduły obu loaderów załadowane.
-- **Obejście u klienta do czasu poprawki:** strażnik „raz” w callbackach
-  `onReady` kodu strony.
+- **Kolejność (uwaga z recenzji #74):** jeśli drugi loader nie ogłasza
+  `'loaded'`, callback, który czeka na jego moduł (np. d2-booking), może ruszyć
+  po `'loaded'` pierwszego loadera, zanim ten moduł się załaduje. Test ma to
+  sprawdzić. Rozwiązanie jest jedno z dwóch: `'loaded'` czeka też na moduły
+  drugiego loadera albo moduł ma osobne, opisane w dokumentacji zdarzenie
+  gotowości (`module:loaded` / `booking:ready`).
+- **Opcja u klienta do czasu poprawki (nie domyślna):** strażnik „raz” w
+  callbackach `onReady` kodu strony. Na rajska77 architekt-it rekomendował
+  Piotrowi czekać na poprawkę biblioteki. Decyzja należy do Piotra.
 - **Wydanie:** nowy tag `v1.9.0-ma.N` przez `scripts/release.sh` i podmiana
   przypiętego tagu w Embedach z d2-booking.
 
