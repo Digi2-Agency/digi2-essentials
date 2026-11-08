@@ -37,6 +37,28 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
 - **Wydanie:** nowy tag `v1.9.0-ma.N` przez `scripts/release.sh` i podmiana
   przypiętego tagu w Embedach z d2-booking.
 
+## d2-booking: zdjęcie i opis produktu poza listą wyników (UX)
+
+- **Dodano:** 2026-11-08, zgłoszenie webflow (po decyzji 2destate z 8.11), bez
+  wydania teraz
+- **Szacunek:** ok. pół dnia z testami i dokumentacją
+- **Powód:** `d2-booking-bind="<pole>"` wypełnia się dziś tylko w wierszach
+  listy wyników (`[d2-booking-results]`). Strona rezerwacji jednego lokalu
+  chce nad widgetem albo w nim zdjęcia i opisu tego lokalu. Na pierwszej
+  stronie wdrożenia zdjęcie wstawiono statycznie. Moduł i tak pobiera produkt
+  raz na wizytę (`GET /products/{ref}`, z `?lang=`), a odpowiedź ma
+  `image_url`, `image_urls` i `description`. Dane już są, brakuje tylko
+  wiązania.
+- **Zakres:** `d2-booking-bind` działa też poza listą, w obrębie
+  `[d2-booking-widget]` / formularza albo na elemencie z `d2-booking-product`.
+  Wypełnia się z produktu rozwiązanego dla tej strony, ten sam zestaw pól co w
+  wierszu (`image`, `name`, `description`, `city_line`…). Po zmianie produktu
+  w kalendarzu pola też się zmieniają. Narysowany widget może dostać opcjonalny
+  nagłówek ze zdjęciem i opisem, włączany atrybutem. Testy i dokumentacja w
+  czterech miejscach.
+- **Warunek startu:** zlecenie (2destate, webflow) albo kolejne wdrożenie
+  strony jednego lokalu.
+
 ## d2-booking: zmiana języka w locie (`setLanguage` + przerysowanie)
 
 - **Dodano:** 2026-11-08, decyzja architekt-it (nie teraz)
