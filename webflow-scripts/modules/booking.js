@@ -279,7 +279,8 @@
  * hero above them — binds the place this page books: the stay's, else the
  * nearest d2-booking-product, the loader tag's, ?apartament=. Same fields and
  * rules, same GET /products/{ref} answer the page already has; a place that
- * cannot be read leaves the slots as the Designer built them. See
+ * cannot be read leaves the slots as the Designer built them — also after
+ * they showed another place (ma.47: back to the Designer's content). See
  * applyPlaceBinds.
  *
  * A card leads to ?apartament=<slug>, which is the query this module reads on
@@ -5369,6 +5370,41 @@
     return productOf(n && n !== document ? n : null);
   }
 
+  // What the Designer put in a slot, kept from its first binding: a place that
+  // cannot be read must not leave the picture and the name of ANOTHER place
+  // (the one picked before) in front of the guest. The child nodes themselves
+  // are kept, so markup inside the slot (an icon beside the word) comes back.
+  var DESIGNER_ATTRS = ['src', 'srcset', 'sizes', 'alt', 'd2-booking-empty'];
+
+  function rememberDesigner(el) {
+    if (el._d2Designer) return;
+    var attrs = {};
+    for (var i = 0; i < DESIGNER_ATTRS.length; i++) attrs[DESIGNER_ATTRS[i]] = el.getAttribute(DESIGNER_ATTRS[i]);
+    var list = el.childNodes || el.children || [];
+    var nodes = [];
+    for (var j = 0; j < list.length; j++) nodes.push(list[j]);
+    el._d2Designer = {
+      attrs: attrs,
+      nodes: nodes,
+      text: nodes.length ? '' : String(el.textContent || ''),
+      bg: el.style ? (el.style.backgroundImage || '') : ''
+    };
+  }
+
+  function restoreDesigner(el) {
+    var d = el._d2Designer;
+    if (!d) return;
+    el.textContent = d.text;
+    for (var i = 0; i < d.nodes.length; i++) el.appendChild(d.nodes[i]);
+    for (var k in d.attrs) {
+      if (!d.attrs.hasOwnProperty(k)) continue;
+      if (d.attrs[k] === null) el.removeAttribute(k);
+      else el.setAttribute(k, d.attrs[k]);
+    }
+    if (el.style) el.style.backgroundImage = d.bg;
+    el._d2PlaceKey = null;
+  }
+
   function applyPlaceBinds() {
     var found = allOf('d2-booking-bind');
     var byRef = {};
@@ -5387,9 +5423,21 @@
     return Promise.all(refs.map(function (key) {
       var group = byRef[key];
       return product(group.ref).then(function (data) {
-        if (seq !== placeSeq || !data) return;
+        if (seq !== placeSeq) return;
+        var j;
+        if (!data) {
+          // Back to the Designer, but only a slot that shows some other place.
+          for (j = 0; j < group.slots.length; j++) {
+            if (group.slots[j]._d2PlaceKey) restoreDesigner(group.slots[j]);
+          }
+          return;
+        }
         var language = currentLanguage();
-        for (var j = 0; j < group.slots.length; j++) bindSlot(group.slots[j], data, language);
+        for (j = 0; j < group.slots.length; j++) {
+          rememberDesigner(group.slots[j]);
+          bindSlot(group.slots[j], data, language);
+          group.slots[j]._d2PlaceKey = key;
+        }
       });
     }));
   }
@@ -6208,7 +6256,10 @@
       // The list goes out now and nothing waits for it: a calendar has no use
       // for /products, and a slow answer there must not leave it blank.
       var places = applyResults(cfg);
-      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg), applyPlaceBinds()]);
+      // The page's own place goes out now and nothing waits for it: a hero about
+      // another apartment must not hold the calendar back.
+      applyPlaceBinds();
+      var guest = Promise.all([applyReturns(cfg), applyManages(cfg), applyPetFee(cfg)]);
       return guest.then(function () {
         // The mark signs the block, so it goes on last: a return block only
         // fills itself once the status has answered, and a mark appended
