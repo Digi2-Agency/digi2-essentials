@@ -499,7 +499,7 @@ function page(opts) {
     const steps = (o.script || {})[route];
     const step = steps && steps.length ? steps.shift() : null;
     if (step === 'offline') return Promise.reject(new TypeError('Failed to fetch'));
-    if (typeof step === 'function') return step({ response, merged });
+    if (typeof step === 'function') return step({ response, merged, url: text });
     if (step) return Promise.resolve(response(step.status, step.body, step.headers));
     const refuse = (o.refuse || {})[route];
     if (refuse) {
@@ -6378,4 +6378,60 @@ test('d2-booking-bind in the list rows still shows each row\'s own entry, not th
   const rows = rowsOf(env);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map((r) => bindText(r, 'name')), ['Apartament 0', 'Apartament 1']);
+});
+
+test('d2-booking-bind goes back to the Designer\'s content when another place picked for the stay cannot be read', async () => {
+  // MUTACJA: keep the old binding on a failed read (as in ma.46) and the guest
+  // reads the name and sees the picture of the apartment they did NOT pick.
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-product': PRODUCT },
+    productData: (url) => (url.indexOf('/products/zniknal') >= 0 ? { refuse: 'product_not_found' } : {}),
+  });
+  const slots = placeSlots(env.document.body, ['image', 'name']);
+  slots.image.setAttribute('src', 'placeholder.jpg');
+  slots.image.setAttribute('alt', 'Zdjęcie apartamentu');
+  // Built as a browser holds it: the word is a node of its own beside the icon.
+  slots.name.ownText = '';
+  const badge = element({ class: 'ikona' }, 'i');
+  const word = element({}, 'span');
+  word.ownText = 'z Designera';
+  slots.name.appendChild(badge);
+  slots.name.appendChild(word);
+  await env.booking.apply();
+  await env.settled();
+  assert.equal(slots.name.textContent, PRODUCT_FIXTURE.response.name);
+  assert.equal(slots.image.getAttribute('src'), PRODUCT_FIXTURE.response.image_url);
+
+  env.booking.select({ product: 'zniknal', unit: 'day', starts_at: '2027-05-10', units_count: 2 });
+  await env.settled();
+  assert.equal(slots.image.getAttribute('src'), 'placeholder.jpg', 'the Designer\'s picture, not the other apartment\'s');
+  assert.equal(slots.image.getAttribute('alt'), 'Zdjęcie apartamentu');
+  assert.equal(slots.name.textContent, 'z Designera');
+  assert.equal(slots.name.children[0], badge, 'the markup inside the slot comes back too');
+  assert.equal(slots.name.getAttribute('d2-booking-empty'), null);
+
+  env.booking.select({ product: PRODUCT, unit: 'day', starts_at: '2027-05-10', units_count: 2 });
+  await env.settled();
+  assert.equal(slots.name.textContent, PRODUCT_FIXTURE.response.name, 'and binds again once a readable place is picked');
+});
+
+test('a slow answer about the place does not hold the calendar back', async () => {
+  // MUTACJA: keep applyPlaceBinds inside the Promise.all before applyCalendars
+  // and a calendar waits for a product answer it has no use for.
+  // A hero about another apartment than the calendar books.
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const answer = ({ response: r, merged: m, url }) => (url.indexOf('/products/inny') >= 0
+    ? held.then(() => r(PRODUCT_FIXTURE.status, m(PRODUCT_FIXTURE, { name: 'Inny' })))
+    : Promise.resolve(r(PRODUCT_FIXTURE.status, m(PRODUCT_FIXTURE, {}))));
+  const env = calendarPage({ script: { product: [answer, answer, answer, answer, answer] } });
+  const hero = env.document.body.appendChild(element({ 'd2-booking-product': 'inny' }, 'div'));
+  // Added before the first answer is back: the start-up apply binds it.
+  const slots = placeSlots(hero, ['name']);
+  await env.settled();
+  assert.ok(availabilityCalls(env).length >= 1, 'the calendar asked for its month while the other place was still on its way');
+  release();
+  await env.settled();
+  assert.equal(slots.name.textContent, 'Inny');
 });

@@ -972,6 +972,7 @@
   // the whole page's onReady (forms.create with it) for good: past this the
   // guest lets 'loaded' out anyway. Calls on its stub keep waiting for it.
   var GUEST_LOADED_TIMEOUT_MS = 10000;
+  var _guestTimer = null;
   if (_host && !window.digi2._allLoaded) {
     _holding = true;
     _hostEmit = window.digi2.emit;
@@ -993,6 +994,8 @@
     }
     if (!_holding) return;
     _holding = false;
+    if (_guestTimer !== null && typeof clearTimeout === 'function') clearTimeout(_guestTimer);
+    _guestTimer = null;
     if (_heldLoaded) {
       window.digi2._allLoaded = true;
       _hostEmit('loaded');
@@ -1017,7 +1020,7 @@
     // fetching is the host's to wait for.
     var own = modules.map(function (m) { return loadModule(m); }).filter(function (p) { return !p._elsewhere; });
     if (_host && _holding) {
-      setTimeout(function () {
+      _guestTimer = setTimeout(function () {
         if (!_holding) return;
         console.warn('[digi2] Modules of the second loader (' + modules.join(', ') + ') not in after '
           + (GUEST_LOADED_TIMEOUT_MS / 1000) + ' s — onReady goes ahead without them.');

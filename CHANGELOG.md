@@ -16,6 +16,28 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.47 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+Poprawki po recenzji ma.46 (#75).
+
+- **`d2-booking-bind` poza listą: nigdy zdjęcie innego apartamentu.** Gdy gość
+  wybierze w kalendarzu inny obiekt, a jego odczyt się nie uda, sloty wracają do
+  tego, co zbudowano w Designerze: tekst i znaczniki w środku, `src`/`alt`
+  obrazka, tło. W ma.46 zostawało zdjęcie i nazwa poprzednio wybranego obiektu.
+- Wybór z kalendarza wygrywa także z `d2-booking-product` wpisanym na slocie,
+  bo sloty pokazują to, co gość właśnie rezerwuje. Tak było już w ma.46, teraz
+  jest to opisane.
+- Wolna odpowiedź o obiekcie w sekcji nad widgetem (np. inny apartament) nie
+  wstrzymuje już startu kalendarza.
+- Loader: bezpiecznik 10 s jest kasowany, gdy moduły drugiego loadera dotrą
+  normalnie. Zachowanie się nie zmienia, w pamięci nie zostaje martwy zegar.
+- Dwa loadery: deklarację `<digi2-module>` czyta pierwszy loader, więc
+  zadeklarowany tak moduł przychodzi z jego adresu (`@latest`). Moduł, który ma
+  przyjść z przypiętej wersji, stawiaj na tagu przypiętego loadera. To nie jest
+  zmiana, teraz jest opisane.
+- Testy: ścieżka „moduł pobiera już pierwszy loader”, callback zarejestrowany
+  po bezpieczniku odpala od razu.
+
 ## v1.9.0-ma.46 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 **Loader: dwa loadery na jednej stronie nie podwajają już `digi2.onReady`.**
@@ -36,11 +58,11 @@ przypiętym do wersji dla `d2-booking`.
   loaderze. **Warunek:** loader witryny musi wykonać się pierwszy, czyli stać w
   `<head>` (Site Settings → Head), nad Embedem, i bez `async`/`defer`. Jeśli
   stoi w stopce, ma `async` albo na stronie są dwa Embedy, oba loadery muszą
-  być ≥ ma.46.
+  być ≥ ma.46. Strażnik „raz” dopisany doraźnie w kodzie strony nie szkodzi
+  i może zostać.
 - Bezpiecznik: jeśli moduł drugiego loadera nie przyjdzie wcale (zawieszone
   połączenie), `onReady` rusza najpóźniej po 10 s, a w konsoli pojawia się
-  ostrzeżenie z nazwą modułu. Formularze nie czekają w nieskończoność. Strażnik „raz” dopisany doraźnie w kodzie strony nie szkodzi i może
-  zostać.
+  ostrzeżenie z nazwą modułu. Formularze nie czekają w nieskończoność.
 - Deklaracje `<digi2-module>` czyta tylko pierwszy loader, a `digi2.modules`,
   `digi2.attr` i `d2-static-width` zostają z pierwszego. Strona z jednym
   loaderem działa jak dotąd.
@@ -1941,7 +1963,7 @@ pierwsza instancja w dokumencie, a reszta tylko czyta.
 
 ### Popup promocyjny nie wchodzi już na otwarty formularz — nigdy, nie tylko z sekwencji
 
-Zgłoszone z `rajska77.com`: po kliknięciu „Zarezerwuj" w wyszukiwarce i zamknięciu
+Zgłoszone ze strony klienta: po kliknięciu „Zarezerwuj" w wyszukiwarce i zamknięciu
 popupa nie dało się scrollować strony. Odtworzone — po drugim otwarciu i zamknięciu
 formularza strona zostawała z `body { overflow: hidden }`, przy czym **żaden popup nie
 był widoczny**: nie było czego zamknąć, a przycisk „Zarezerwuj" przestawał otwierać

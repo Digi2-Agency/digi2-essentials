@@ -175,7 +175,11 @@ From v1.9.0-ma.46 a loader that finds one already on the page (`digi2.on`,
 - fetches only the modules on **its own tag**, from **its own base URL**. It
   does not read `<digi2-module>` declarations (the host does) and does not fetch
   a module whose `<script>` the host already injected (it waits for that
-  module's `module:loaded` / `module:error` instead);
+  module's `module:loaded` / `module:error` instead). One consequence: a
+  `<digi2-module d2-booking>` declaration on the page is read by the **host**,
+  so that module comes from the host's base URL (`@latest`), not from the pinned
+  one. A module that has to come from the pinned release goes on the pinned
+  loader's own tag;
 - puts its own stub on the namespaces of its own modules, even over the host's
   stub, so an early `digi2.booking.config()` fetches booking from the pinned
   release and not from the host's base URL. The host's other stubs stay;
@@ -4570,13 +4574,22 @@ declared `0` (the ground `floor`) is an answer, not a gap, and is written.
 a hero above them — binds the place this page books, with the same fields and
 rules. The place is `stayState.product` once the calendar picked one, else the
 nearest `d2-booking-product` up the tree, then the loader tag's, then
-`?apartament=` (the order `stayFor` / `productOf` use). The data is the
+`?apartament=` (the order `stayFor` / `productOf` use). **The calendar's choice
+wins even over a `d2-booking-product` written on the slot or its wrapper**: the
+slots show what the guest is about to book. The data is the
 `GET /products/{ref}` answer the module already keeps per visit (with
 `?lang=`), so the binding costs no request. `select()` re-binds, and a sequence
 number drops an older answer that arrives after a newer stay. A slot inside
 `[d2-booking-results]`, `[d2-booking-template]` or `[d2-booking-item]` is the
 list's and is skipped. A place that cannot be read (404, network) leaves every
-slot as the Designer built it: a placeholder beats an empty box.
+slot as the Designer built it: a placeholder beats an empty box. From ma.47 that
+also holds after a slot already showed a place: when the calendar picks another
+place and its read fails, the slot goes **back to what the Designer built**
+(child nodes, `src`/`srcset`/`sizes`/`alt`, background, `d2-booking-empty`, all
+kept from its first binding), so the guest never reads the name or sees the
+picture of the apartment they did not pick. The binding is not awaited by the
+start-up `apply()`: a slow answer about a hero's other apartment does not hold
+the calendar back.
 
 **Nothing out of the answer is ever markup**: a value goes in with
 `textContent`, an address with `setAttribute`, and a picture only once its

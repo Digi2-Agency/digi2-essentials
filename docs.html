@@ -980,7 +980,7 @@
       <tr><th>What</th><th>With two loaders</th></tr>
       <tr><td><code>digi2.onReady</code> / <code>loaded</code></td><td>Fires <strong>once</strong>, after the modules of <em>both</em> loaders are in (a module that fails still counts as done)</td></tr>
       <tr><td>Modules</td><td>Each loader fetches the modules on its own tag from its own address: forms from <code>@latest</code>, booking from the pinned release. A module the first loader is already fetching is not fetched again</td></tr>
-      <tr><td>Per-page declarations (<code>&lt;digi2-module&gt;</code>)</td><td>Read by the first loader only</td></tr>
+      <tr><td>Per-page declarations (<code>&lt;digi2-module&gt;</code>)</td><td>Read by the first loader only — so a module declared that way comes from the first loader's address. Put a module that must come from the pinned release on the pinned loader's own tag</td></tr>
       <tr><td><code>digi2.on/emit</code>, <code>digi2.attr</code>, <code>digi2.modules</code>, <code>d2-static-width</code></td><td>The first loader's; the second one does not replace them</td></tr>
       <tr><td>A module of the second loader never arrives (hung request)</td><td><code>onReady</code> goes ahead after <strong>10 s</strong> at the latest, with a console warning naming the module — forms on the page do not wait forever</td></tr>
       <tr><td>Second loader placed after the page was already announced ready</td><td>No second <code>loaded</code>; a later <code>onReady</code> runs at once, and calls on the second loader's module wait for it</td></tr>
@@ -3428,10 +3428,10 @@ dataLayer.<span class="fn">push</span>({ event: <span class="string">'generate_l
 &lt;/div&gt;</code></pre>
     <table>
       <tr><th>What</th><th>How</th></tr>
-      <tr><td>Which place</td><td>The stay's, once the calendar picked one; otherwise the nearest <code>d2-booking-product</code> up the tree, then the loader tag's, then <code>?apartament=</code> — the same order the form books in. Picking another place in the calendar re-binds the slots</td></tr>
+      <tr><td>Which place</td><td>The stay's, once the calendar picked one; otherwise the nearest <code>d2-booking-product</code> up the tree, then the loader tag's, then <code>?apartament=</code> — the same order the form books in. Picking another place in the calendar re-binds the slots — the calendar's choice wins even over a <code>d2-booking-product</code> written on the slot</td></tr>
       <tr><td>Where the data comes from</td><td>The same <code>GET /products/{ref}</code> the page already asks (once per visit, with <code>?lang=</code>), so no extra request</td></tr>
       <tr><td>Fields</td><td>The list's, with the same rules (table above): <code>image</code>, <code>name</code>, <code>description</code>, <code>city_line</code>, <code>area</code>…</td></tr>
-      <tr><td>A place that cannot be read</td><td>Every slot stays as you built it: a placeholder picture beats an empty box</td></tr>
+      <tr><td>A place that cannot be read</td><td>Every slot stays as you built it: a placeholder picture beats an empty box. From ma.47 also after the calendar switched to another place whose read failed: the slots go back to your content, never the previous apartment's picture</td></tr>
       <tr><td>Slots inside the list</td><td>Unchanged: each row binds its own entry, never the page's place</td></tr>
     </table>
 

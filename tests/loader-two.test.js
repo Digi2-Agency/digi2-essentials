@@ -20,8 +20,11 @@ function page(opts) {
   // A test that needs the clock passes its own; the rest run on the real one.
   const timers = [];
   const clock = o.fakeClock
-    ? (fn, ms) => { timers.push({ fn, ms }); return timers.length; }
+    ? (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; }
     : setTimeout;
+  const unclock = o.fakeClock
+    ? (id) => { if (timers[id - 1]) timers[id - 1].live = false; }
+    : clearTimeout;
   const window = {
     innerWidth: 1200,
     addEventListener() {},
@@ -43,7 +46,7 @@ function page(opts) {
   window.document = document;
   const context = vm.createContext({
     window, document, console, navigator: { userAgent: 'node-test' },
-    setTimeout: clock, MutationObserver: class { observe() {} }, Promise,
+    setTimeout: clock, clearTimeout: unclock, MutationObserver: class { observe() {} }, Promise,
   });
 
   function runLoader(file, src, attrs) {
@@ -243,9 +246,14 @@ for (const [label, first] of [['stable v1.8.3', STABLE], ['current', CURRENT]]) 
     assert.equal(calls, 1, 'onReady goes ahead without booking');
     assert.ok(said.some((m) => m.indexOf('booking') >= 0), 'and says which module it gave up on');
 
+    let late = 0;
+    p.window.digi2.onReady(() => { late++; });
+    assert.equal(late, 1, 'a callback registered after the guard ran goes at once');
+
     p.arrive('booking'); // the module turns up late after all
     await p.settle();
     assert.equal(calls, 1, 'no second loaded when it does');
+    assert.equal(late, 1);
   });
 }
 
@@ -259,7 +267,35 @@ test('the guard does nothing once the guest modules are in', async () => {
   p.arrive('booking');
   await p.settle();
   assert.equal(calls, 1);
-  p.timers.filter((t) => t.ms === 10000).forEach((t) => t.fn());
+  const guard = p.timers.filter((t) => t.ms === 10000);
+  assert.equal(guard.length, 1);
+  assert.equal(guard[0].live, false, 'the guard is cleared once the guest modules are in');
+  guard[0].fn();
   await p.settle();
   assert.equal(calls, 1);
 });
+
+for (const [label, first] of [['stable v1.8.3', STABLE], ['current', CURRENT]]) {
+  test(`${label} + current: a module both tags ask for is fetched once, by the first loader`, async () => {
+    // MUTACJA: drop _requestedElsewhere and the guest injects forms a second
+    // time, from its own base URL: the module runs twice.
+    const p = page();
+    p.runLoader(first, SITE, { 'd2-forms': '' });
+    // The host's <script> for forms is in the document now, as in a browser.
+    const hostForms = p.injected.find((s) => s.src.indexOf('/modules/forms.') !== -1);
+    p.document.querySelector = (sel) => (sel.indexOf('/modules/forms.') !== -1 ? hostForms : null);
+    p.runLoader(CURRENT, EMBED, { 'd2-booking': 'pk_test', 'd2-forms': '' });
+    const forms = p.injected.map((s) => s.src).filter((s) => s.indexOf('/modules/forms.') !== -1);
+    assert.deepEqual(forms, ['https://cdn.jsdelivr.net/gh/x/y@latest/dist/modules/forms.min.js']);
+
+    let calls = 0;
+    p.window.digi2.onReady(() => { calls++; });
+    p.arrive('booking');
+    await p.settle();
+    assert.equal(calls, 0, 'the host still waits for its forms');
+    p.arrive('forms');
+    await p.settle();
+    assert.equal(calls, 1);
+  });
+}
+
