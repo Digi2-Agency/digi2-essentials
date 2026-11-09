@@ -16,6 +16,29 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.48 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+- **Kalendarz `d2-booking`: tydzień zaczyna się od poniedziałku w każdym
+  języku.** Do ma.47 pierwszy dzień tygodnia szedł za językiem strony, a samo
+  `en` przeglądarka czyta jak angielski amerykański, więc angielska wersja
+  strony zaczynała tydzień od niedzieli, a polska od poniedziałku. Teraz
+  domyślnie jest poniedziałek. Nowy atrybut `d2-booking-week-start` na
+  kalendarzu albo na tagu loadera (dla wszystkich kalendarzy): `mon`
+  (domyślnie), `sun` (niedziela) albo `auto` (region z `<html lang>`, np.
+  `en-US` → niedziela, `en-GB` → poniedziałek; bez regionu sam język, czyli
+  zachowanie sprzed ma.48). **Co zrobić na stronie:** nic, chyba że strona
+  celowo pokazywała tydzień od niedzieli. Wtedy dopisz
+  `d2-booking-week-start="sun"`.
+- **`digi2.booking.apply()` nie czeka już na sloty `d2-booking-bind` poza
+  listą** (zmiana z ma.47, dopiero teraz zapisana). Obietnica rozwiązuje się,
+  gdy gotowe są kalendarze, lista i bloki powrotu. Zdjęcie i opis obiektu
+  strony mogą dojść chwilę później, a moduł nie ogłasza tego osobnym
+  zdarzeniem. Kod strony, który po `await apply()` czytał te sloty, musi je
+  sprawdzić później (np. po zdarzeniu `load` obrazka).
+- Sloty poza listą: błąd przy wpisywaniu danych obiektu kończy się jednym
+  ostrzeżeniem w konsoli, a nie „Uncaught (in promise)”. Slot, który już
+  pokazuje dany obiekt, nie wraca do treści z Designera.
+
 ## v1.9.0-ma.47 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 Poprawki po recenzji ma.46 (#75).

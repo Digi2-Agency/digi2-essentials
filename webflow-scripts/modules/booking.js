@@ -159,6 +159,8 @@
  * ─── The calendar ───────────────────────────────────────────────────────────
  *
  *   <div d2-booking-calendar></div>      the module draws the month inside
+ *   d2-booking-week-start="mon|sun|auto" on it (or on the loader tag): the
+ *                                        first day of the week, Monday by default
  *
  * One window per month from GET /products/<ref>/availability, kept for the
  * visit. The answer carries the rules and the calendar honours them: min_units,
@@ -1714,11 +1716,33 @@
     return parts ? dayText(parts.day, lang, options) : '';
   }
 
-  // Monday in most of Europe, Sunday in the US — from the language, when the
-  // browser knows it.
-  function firstWeekday(lang) {
+  /**
+   * The day a calendar week starts on: 1 = Monday, 0 = Sunday.
+   *
+   * Monday unless the page says otherwise. A bare language is no guide: the
+   * browser reads "en" as American English and starts the week on Sunday, so
+   * an English page for a Polish apartment would turn its whole calendar round.
+   * `d2-booking-week-start` on the calendar (or on the loader tag, for every
+   * calendar on the page) takes:
+   *   mon  — Monday (the default; any other value too)
+   *   sun  — Sunday
+   *   auto — what the browser knows for the language: the region from
+   *          <html lang> when it is the same language ("en-US" → Sunday,
+   *          "en-GB" → Monday), otherwise the bare language ("en" → Sunday).
+   */
+  function firstWeekday(lang, el) {
+    var asked = String(attr(el, 'd2-booking-week-start') || attr(cfgEl(), 'd2-booking-week-start') || '')
+      .trim().toLowerCase();
+    if (asked === 'sun') return 0;
+    if (asked !== 'auto') return 1;
+    var tag = lang || BASE_LANGUAGE;
     try {
-      var loc = new Intl.Locale(lang || BASE_LANGUAGE);
+      var html = document.documentElement;
+      var page = String((html && html.getAttribute('lang')) || '').trim();
+      if (page.indexOf('-') > 0 && langCode(page) === langCode(tag)) tag = page;
+    } catch (e) {}
+    try {
+      var loc = new Intl.Locale(tag);
       var info = typeof loc.getWeekInfo === 'function' ? loc.getWeekInfo() : loc.weekInfo;
       if (info && isFinite(info.firstDay)) return Number(info.firstDay) % 7;
     } catch (e) {}
@@ -3440,7 +3464,7 @@
       var phase = state.from && !state.to ? 'departure' : 'arrival';
       var first = state.month;
       var count = daysInMonth(first);
-      var week = firstWeekday(language);
+      var week = firstWeekday(language, state.el);
       var today = todayIn(rules().timezone, 0);
 
       if (!state.focusDay || state.focusDay < first || state.focusDay >= first + count) {
@@ -3535,8 +3559,8 @@
       if (key === 'ArrowRight') return day + 1;
       if (key === 'ArrowUp') return day - 7;
       if (key === 'ArrowDown') return day + 7;
-      if (key === 'Home') return day - ((weekdayOf(day) - firstWeekday(lang()) + 7) % 7);
-      if (key === 'End') return day + (6 - ((weekdayOf(day) - firstWeekday(lang()) + 7) % 7));
+      if (key === 'Home') return day - ((weekdayOf(day) - firstWeekday(lang(), state.el) + 7) % 7);
+      if (key === 'End') return day + (6 - ((weekdayOf(day) - firstWeekday(lang(), state.el) + 7) % 7));
       if (key === 'PageUp') return sameDayIn(addMonths(state.month, -1), day);
       if (key === 'PageDown') return sameDayIn(addMonths(state.month, 1), day);
       return null;
@@ -5426,9 +5450,11 @@
         if (seq !== placeSeq) return;
         var j;
         if (!data) {
-          // Back to the Designer, but only a slot that shows some other place.
+          // Back to the Designer, but only a slot that shows some other place:
+          // one already showing this place keeps it.
           for (j = 0; j < group.slots.length; j++) {
-            if (group.slots[j]._d2PlaceKey) restoreDesigner(group.slots[j]);
+            var shown = group.slots[j]._d2PlaceKey;
+            if (shown && shown !== key) restoreDesigner(group.slots[j]);
           }
           return;
         }
@@ -5439,7 +5465,12 @@
           group.slots[j]._d2PlaceKey = key;
         }
       });
-    }));
+    })).catch(function (e) {
+      // Nobody waits for this promise (select() and apply() fire and forget),
+      // so a failure here is said once in the console, never left unhandled.
+      _warn('the page\'s own place could not be shown', e);
+      return null;
+    });
   }
 
   /**
