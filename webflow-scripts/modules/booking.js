@@ -1729,23 +1729,28 @@
    *   auto — what the browser knows for the language: the region from
    *          <html lang> when it is the same language ("en-US" → Sunday,
    *          "en-GB" → Monday), otherwise the bare language ("en" → Sunday).
+   *          A tag the browser refuses falls back to the bare language; a
+   *          region it does not know ("en-ZZ") gets its world default, Monday.
+   *          A browser without week data (Firefox today) gives Monday.
    */
   function firstWeekday(lang, el) {
     var asked = String(attr(el, 'd2-booking-week-start') || attr(cfgEl(), 'd2-booking-week-start') || '')
       .trim().toLowerCase();
     if (asked === 'sun') return 0;
     if (asked !== 'auto') return 1;
-    var tag = lang || BASE_LANGUAGE;
+    var tags = [lang || BASE_LANGUAGE];
     try {
       var html = document.documentElement;
       var page = String((html && html.getAttribute('lang')) || '').trim();
-      if (page.indexOf('-') > 0 && langCode(page) === langCode(tag)) tag = page;
+      if (page.indexOf('-') > 0 && langCode(page) === langCode(tags[0])) tags.unshift(page);
     } catch (e) {}
-    try {
-      var loc = new Intl.Locale(tag);
-      var info = typeof loc.getWeekInfo === 'function' ? loc.getWeekInfo() : loc.weekInfo;
-      if (info && isFinite(info.firstDay)) return Number(info.firstDay) % 7;
-    } catch (e) {}
+    for (var i = 0; i < tags.length; i++) {
+      try {
+        var loc = new Intl.Locale(tags[i]);
+        var info = typeof loc.getWeekInfo === 'function' ? loc.getWeekInfo() : loc.weekInfo;
+        return info && isFinite(info.firstDay) ? Number(info.firstDay) % 7 : 1;
+      } catch (e) {}
+    }
     return 1;
   }
 

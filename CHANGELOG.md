@@ -26,9 +26,12 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   kalendarzu albo na tagu loadera (dla wszystkich kalendarzy): `mon`
   (domyślnie), `sun` (niedziela) albo `auto` (region z `<html lang>`, np.
   `en-US` → niedziela, `en-GB` → poniedziałek; bez regionu sam język, czyli
-  zachowanie sprzed ma.48). **Co zrobić na stronie:** nic, chyba że strona
-  celowo pokazywała tydzień od niedzieli. Wtedy dopisz
-  `d2-booking-week-start="sun"`.
+  zachowanie sprzed ma.48). **Kogo dotyczy od razu:** `booking.min.js` nie ma
+  w żadnej wersji stabilnej, więc strona z `d2-booking` na `@latest` dostaje
+  ma.48 zaraz po tagu (cache CDN do 12 h), bez przepinania. Strona przypięta do
+  `@v1.9.0-ma.4x` dostaje zmianę dopiero po przepięciu. **Co zrobić na
+  stronie:** nic, chyba że strona celowo pokazywała tydzień od niedzieli. Wtedy
+  dopisz `d2-booking-week-start="sun"`.
 - **`digi2.booking.apply()` nie czeka już na sloty `d2-booking-bind` poza
   listą** (zmiana z ma.47, dopiero teraz zapisana). Obietnica rozwiązuje się,
   gdy gotowe są kalendarze, lista i bloki powrotu. Zdjęcie i opis obiektu

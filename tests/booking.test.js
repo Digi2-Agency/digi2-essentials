@@ -3217,6 +3217,10 @@ test('d2-booking-week-start="auto" follows the region of <html lang>', async () 
   const pl = calendarPage({ lang: 'en-US', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
   await pl.settled();
   assert.equal(weekStartsOn(pl), 'poniedziałek');
+  // A tag the browser refuses is no region at all: the bare language decides.
+  const bad = englishCalendar({ lang: 'en-!!', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
+  await bad.settled();
+  assert.equal(weekStartsOn(bad), 'Sunday');
 });
 
 // ---------------------------------------------------------------------------
@@ -6494,8 +6498,9 @@ test('a slot that cannot take the place\'s data leaves no unhandled rejection be
   const seen = [];
   const onRejection = (e) => { seen.push(e); };
   process.on('unhandledRejection', onRejection);
+  let env;
   try {
-    const env = page({ now: MAY_2027, loaderAttrs: { 'd2-booking-product': PRODUCT } });
+    env = page({ now: MAY_2027, loaderAttrs: { 'd2-booking-product': PRODUCT } });
     const slots = placeSlots(env.document.body, ['name']);
     slots.name.appendChild = () => { throw new Error('a slot that refuses children'); };
     Object.defineProperty(slots.name, 'textContent', {
@@ -6510,4 +6515,6 @@ test('a slot that cannot take the place\'s data leaves no unhandled rejection be
     process.removeListener('unhandledRejection', onRejection);
   }
   assert.deepEqual(seen.map(String), []);
+  const said = env.warnings.filter((w) => w.indexOf('could not be shown') >= 0);
+  assert.equal(said.length, 1, 'said once in the console: ' + env.warnings.join(' | '));
 });

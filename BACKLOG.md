@@ -44,3 +44,16 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
     miejscach (docs.html, docs/data2.js, README, CHANGELOG).
 - **Wydanie:** nowy tag `v1.9.0-ma.N` przez `scripts/release.sh`, potem podmiana
   przypiętego tagu na stronach, które tego chcą. To druga zmiana u klienta.
+
+## d2-booking: slot poza listą przerwany w połowie wiązania
+
+- **Dodano:** 2026-11-09, recenzja #77 (architekt-it), do rozważenia przy
+  kolejnej zmianie w `applyPlaceBinds`.
+- **Problem:** gdy `bindSlot` rzuci w połowie (od ma.48 kończy się to jednym
+  ostrzeżeniem w konsoli), slot zostaje z częścią danych obiektu i bez
+  `_d2PlaceKey`. Następna porażka odczytu go więc nie przywróci do treści z
+  Designera.
+- **Pomysł:** przy błędzie `restoreDesigner` na tym slocie (jest zapamiętany
+  przez `rememberDesigner` przed wiązaniem).
+- **Warunek startu:** pierwsza zmiana w wiązaniu poza listą albo zgłoszenie ze
+  strony.
