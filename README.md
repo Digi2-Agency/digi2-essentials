@@ -6,6 +6,7 @@ Component library for Webflow. One script tag, modular architecture, on-demand l
 [Quick Start](#quick-start) ·
 [Modules](#available-modules) ·
 [Per-page modules](#per-page-modules) ·
+[Two loaders](#two-loaders-on-one-page) ·
 [Responsive attributes](#responsive-attributes) ·
 [Google / Consent](#google--consent) ·
 [A/B Tests](#ab-tests) ·
@@ -150,6 +151,66 @@ Keep the loader in the **global site head** (no flags) and request modules **per
 - `d2-gtm="GTM-XXX"` and `d2-ab-tests="configName"` work on the element too.
 - Calling a module API auto-loads it on demand; use `<digi2-module>` for declarative features (`d2-show-popup`, consent masters, auto-format) that need the module present without a JS call.
 - `digi2.modules.require('forms')` loads a module programmatically (returns a Promise).
+
+---
+
+## Two loaders on one page
+
+A page may carry the site-wide loader (often `@latest`) **and** a second loader
+pinned for one module, typically `d2-booking` in an Embed:
+
+```html
+<script src=".../digi2-essentials@latest/dist/digi2-loader.min.js" d2-forms d2-popups></script>
+<!-- Embed on the booking page -->
+<script src=".../digi2-essentials@v1.9.0-ma.46/dist/digi2-loader.min.js" d2-booking="pk_live_…"></script>
+```
+
+From v1.9.0-ma.46 a loader that finds one already on the page (`digi2.on`,
+`digi2.emit` and `digi2.modules` exist) runs as a **guest**:
+
+- keeps the host's event bus (`on/off/emit/onReady/signal/when`), responsive
+  parser (`digi2.attr`, so the host's `responsive:change` knows every
+  breakpoint), `digi2.modules` (so `require()` keeps the site-wide base URL) and
+  `d2-static-width` (no second observer per element);
+- fetches only the modules on **its own tag**, from **its own base URL**. It
+  does not read `<digi2-module>` declarations (the host does) and does not fetch
+  a module whose `<script>` the host already injected (it waits for that
+  module's `module:loaded` / `module:error` instead);
+- puts its own stub on the namespaces of its own modules, even over the host's
+  stub, so an early `digi2.booking.config()` fetches booking from the pinned
+  release and not from the host's base URL. The host's other stubs stay;
+- **holds the host's `loaded`** (it wraps `digi2.emit` and lets every other
+  event through) until its own modules settle, loaded or failed, then lets it
+  out once. `digi2._allLoaded` stays `false` while held, so an `onReady`
+  registered meanwhile waits too. If the host had already announced `loaded`
+  before the guest ran, nothing is held or repeated: listeners that ran are not
+  called again, a later `onReady` runs at once, and calls on the guest's module
+  stub wait for the module.
+
+- **lets `loaded` out after 10 s at the latest** (`GUEST_LOADED_TIMEOUT_MS`), with
+  a `console.warn` naming the modules: a hung request for a guest module (no
+  `onload`, no `onerror`) must not hold the whole page's `onReady`, and
+  `forms.create` with it. A module that turns up later still replaces its stub;
+  no second `loaded` follows.
+
+**Order matters.** The fix lives in whichever loader runs **second**. The
+site-wide loader therefore has to run first: in `<head>` (Site Settings → Head),
+above the Embed, and **without `async`/`defer`**. Then the site-wide tag may
+stay on any version (`@latest` = v1.8.x) and only the pinned Embed must be
+≥ ma.46. If the order is not guaranteed (site loader in the footer, `async`, or
+two Embeds), **both** loaders must be ≥ ma.46.
+
+Only the public surface of the host is relied on, so the host may be an older
+version: the tests run the guest next to the stable v1.8.3 loader
+(`tests/fixtures/loader/`) as well as next to itself.
+
+Why: up to ma.45 the second loader installed its own bus and both loaders
+called `window.digi2.emit('loaded')` — by then the second loader's emit — so
+every `onReady` callback registered after the second tag ran twice. `create()`
+only warned ("already exists"), but page code adding listeners in the callback
+doubled them, and analytics events with them (`select_promotion` on the first
+site with d2-booking). The fix is in the second loader, so `@latest` on the
+site-wide tag needs no change.
 
 ---
 
@@ -4469,7 +4530,7 @@ its own, because a button standing between them belongs to neither.
 | `d2-booking-results-limit="<n>"` | the list | How many places one page asks for. Default `24`; the key has its own maximum. |
 | `d2-booking-results-link="<shape>"` | the list | The address shape every card of this list leads to (below). Read raw — an address may legally contain `;` and `@`. |
 | `d2-booking-template` | any element in the list | The row. Taken out of the page and cloned per place; never shown itself. Inside a Collection List the whole Collection Item is the row, however deep the card sits, so the grid keeps its columns and the empty items leave. |
-| `d2-booking-bind="<field>"` | any element in the row, the row itself included | One field of the entry, as text (below). |
+| `d2-booking-bind="<field>"` | any element in the row, the row itself included; outside the list: the page's own place (ma.46) | One field of the entry, as text (below). |
 | `d2-booking-link[="<shape>"]` | Link, or the row itself | Where this card leads. A whole card is usually one link, so the attribute may sit on the template. |
 | `d2-booking-more` | Button | Asks for the next page (`limit`/`offset`) and **appends** it. Disabled while a page is in flight, hidden once the answer says `has_more` is false. A refused first page takes the old rows away, because the address and the form already name the new search, and this button stays as the way to ask again. During a `429` wait it is down together with the search button. |
 | `d2-booking-count` | any element | The `count` the answer carries — every place that matches, not the ones on screen. |
@@ -4504,6 +4565,18 @@ would read `function Object() { [native code] }`), and a flag that is `false`
 Designer built it** — the text and the markup inside it, an icon beside the
 word "na zapytanie" included, and not marked `d2-booking-empty` either. A
 declared `0` (the ground `floor`) is an answer, not a gap, and is written.
+
+**Outside the list (ma.46)** a `[d2-booking-bind]` — in the widget, the form,
+a hero above them — binds the place this page books, with the same fields and
+rules. The place is `stayState.product` once the calendar picked one, else the
+nearest `d2-booking-product` up the tree, then the loader tag's, then
+`?apartament=` (the order `stayFor` / `productOf` use). The data is the
+`GET /products/{ref}` answer the module already keeps per visit (with
+`?lang=`), so the binding costs no request. `select()` re-binds, and a sequence
+number drops an older answer that arrives after a newer stay. A slot inside
+`[d2-booking-results]`, `[d2-booking-template]` or `[d2-booking-item]` is the
+list's and is skipped. A place that cannot be read (404, network) leaves every
+slot as the Designer built it: a placeholder beats an empty box.
 
 **Nothing out of the answer is ever markup**: a value goes in with
 `textContent`, an address with `setAttribute`, and a picture only once its

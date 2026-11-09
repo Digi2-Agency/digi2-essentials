@@ -516,7 +516,13 @@ function page(opts) {
     }
     if (route === 'quote') return Promise.resolve(response(QUOTE.status, merged(QUOTE, o.quote)));
     if (route === 'product') {
-      return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, o.productData)));
+      // A function answers per reference: the calendar can pick another place.
+      const overrides = typeof o.productData === 'function' ? o.productData(text) : o.productData;
+      if (overrides && overrides.refuse) {
+        const spec = refusalFixture(overrides.refuse);
+        return Promise.resolve(response(spec.status, spec.body, o.headers));
+      }
+      return Promise.resolve(response(PRODUCT_FIXTURE.status, merged(PRODUCT_FIXTURE, overrides)));
     }
     if (route === 'products') return Promise.resolve(productsResponse());
     if (route === 'status') return Promise.resolve(response(STATUS.status, statusResponse()));
@@ -6289,4 +6295,87 @@ test('no sentence sends the guest to an e-mail that does not exist', async () =>
     const said = env.booking.message(name);
     assert.equal(/masz w e-mailu|Sprawdź e-mail|wysłaliśmy/.test(said), false, said);
   });
+});
+
+// ---------------------------------------------------------------------------
+// d2-booking-bind outside the list: the place this page books
+// ---------------------------------------------------------------------------
+
+function placeSlots(host, fields, tags) {
+  const out = {};
+  fields.forEach((field) => {
+    const slot = element({ 'd2-booking-bind': field }, (tags || {})[field] || (field === 'image' ? 'img' : 'span'));
+    slot.ownText = 'z Designera';
+    host.appendChild(slot);
+    out[field] = slot;
+  });
+  return out;
+}
+
+test('d2-booking-bind in the widget shows the picture and the description of the page\'s place', async () => {
+  // MUTACJA: bind only inside [d2-booking-results] (as up to ma.45) and the
+  // slots keep the Designer's placeholder — the guest sees no picture.
+  const env = widgetPage({ widget: { inner: ['form'] } });
+  const slots = placeSlots(env.widget, ['image', 'name', 'description']);
+  await env.settled();
+  await env.booking.apply();
+  await env.settled();
+  assert.equal(slots.image.getAttribute('src'), PRODUCT_FIXTURE.response.image_url);
+  assert.equal(slots.name.textContent, PRODUCT_FIXTURE.response.name);
+  assert.equal(slots.description.textContent, PRODUCT_FIXTURE.response.description);
+});
+
+test('d2-booking-bind anywhere outside the list follows the product of the loader tag', async () => {
+  const env = page({ now: MAY_2027, loaderAttrs: { 'd2-booking-product': PRODUCT } });
+  const hero = env.document.body.appendChild(element({ class: 'hero' }, 'div'));
+  const slots = placeSlots(hero, ['image', 'description']);
+  await env.booking.apply();
+  await env.settled();
+  assert.equal(slots.image.getAttribute('src'), PRODUCT_FIXTURE.response.image_url);
+  assert.equal(slots.description.textContent, PRODUCT_FIXTURE.response.description);
+  assert.equal(productCalls(env).length, 1, 'the place is read once, shared with the rest of the page');
+});
+
+test('d2-booking-bind follows another place picked for the stay', async () => {
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-product': PRODUCT },
+    productData: (url) => (url.indexOf('/products/inny') >= 0
+      ? { id: 'inny-id', slug: 'inny', name: 'Inny lokal', description: 'Opis innego.', image_url: 'https://cdn.example.org/inny.jpg' }
+      : {}),
+  });
+  const slots = placeSlots(env.document.body, ['image', 'name', 'description']);
+  await env.booking.apply();
+  await env.settled();
+  assert.equal(slots.name.textContent, PRODUCT_FIXTURE.response.name);
+  env.booking.select({ product: 'inny', unit: 'day', starts_at: '2027-05-10', units_count: 2 });
+  await env.settled();
+  assert.equal(slots.name.textContent, 'Inny lokal');
+  assert.equal(slots.description.textContent, 'Opis innego.');
+  assert.equal(slots.image.getAttribute('src'), 'https://cdn.example.org/inny.jpg');
+});
+
+test('d2-booking-bind on a place that cannot be read keeps what the Designer put there', async () => {
+  const env = page({
+    now: MAY_2027,
+    loaderAttrs: { 'd2-booking-product': PRODUCT },
+    productData: { refuse: 'product_not_found' },
+  });
+  const slots = placeSlots(env.document.body, ['name', 'description']);
+  await env.booking.apply();
+  await env.settled();
+  assert.equal(slots.name.textContent, 'z Designera');
+  assert.equal(slots.description.textContent, 'z Designera');
+});
+
+test('d2-booking-bind in the list rows still shows each row\'s own entry, not the page\'s place', async () => {
+  // MUTACJA: let the page's place bind into every [d2-booking-bind] and the
+  // cards of the list all turn into the same apartment.
+  const env = listPage({ loaderAttrs: { 'd2-booking-product': PRODUCT }, products: answerOf(places(2)) });
+  await env.settled();
+  await env.booking.apply();
+  await env.settled();
+  const rows = rowsOf(env);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map((r) => bindText(r, 'name')), ['Apartament 0', 'Apartament 1']);
 });
