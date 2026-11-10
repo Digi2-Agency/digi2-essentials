@@ -5031,6 +5031,26 @@ test('ma.37: contact z szablonu zamyka i przewija do [d2-ma-contact], potem #kon
   assert.equal(kontakt.przew, 0, 'popup spoza szablonu panelu nie przewija');
 });
 
+test('ma.49: wbudowany popup (d2-ma-builtin, promo-filter) — „Porozmawiajmy” zamyka i przewija do #kontakt', async () => {
+  const k = koperta([POWROT], { templates: { popup: [zPrzyciskami([{ type: 'cta', label: 'Zapytaj doradcę', action: 'contact' }])] } });
+  // Atrapa nie parsuje innerHTML buildUnitless, więc popup ze znacznikami wbudowanego składamy ręcznie.
+  const wbud = element({ 'd2-ma-popup': 'last-unit', 'd2-ma-builtin': '' });
+  wbud.id = 'wbud';
+  const przycisk = element({ 'd2-ma-cta': '', 'd2-ma-template-cta': 'contact', href: '#' }, 'A');
+  wbud.appendChild(przycisk);
+  const env = await powrotZPopupem(k, { szablon: wbud });
+  const kontakt = element({});
+  kontakt.id = 'kontakt';
+  kontakt.przew = 0;
+  kontakt.scrollIntoView = () => { kontakt.przew++; };
+  env.window.document.body.appendChild(kontakt);
+  let zablokowany = false;
+  przycisk._klik({ preventDefault() { zablokowany = true; } });
+  await env.minie(500);
+  assert.ok(zablokowany, 'bez skoku na #');
+  assert.equal(kontakt.przew, 1, 'wbudowany popup przewija do #kontakt');
+});
+
 // ---------------------------------------------------------------------------
 // ma.39: adapter silnika 2destate / 3destate, zgłaszanie wersji przy kopercie
 // ---------------------------------------------------------------------------

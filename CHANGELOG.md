@@ -16,6 +16,18 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.49 — 2026-11-10 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+- **`d2-ma`: „Porozmawiajmy” we wbudowanym popupie `promo-filter` przewija do
+  formularza.** Przycisk ma akcję `contact`, ale do ma.48 przewijał tylko w
+  popupie z szablonu panelu. Wbudowany ma `href="#"`, więc klik wysyłał
+  `ma_popup_cta`, zamykał popup i na tym koniec. Teraz zamyka i po 450 ms
+  przewija do `[d2-ma-contact]`, a bez niego do `#kontakt`. Bez żadnego celu
+  tylko zamyka, jak dotąd. Własny `[d2-ma-popup]` strony bez zmian.
+  **Kogo dotyczy:** strony z `d2-ma` i scenariuszem z popupem `promo-filter`
+  (dziś Demo marketing automation na digi2.agency). Strona przypięta do
+  `@v1.9.0-ma.4x` dostaje poprawkę dopiero po przepięciu na `ma.49`.
+
 ## v1.9.0-ma.48 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 - **Kalendarz `d2-booking`: tydzień zaczyna się od poniedziałku w każdym

@@ -65,6 +65,7 @@
  *                                 ma.37 template cta: + filter_rooms | scroll_to (#id) | close, ≤ 2 per popup;
  *                                 contact scrolls to [d2-ma-contact], else #kontakt
  *     [d2-ma-contact]             ma.37: contact form target of a template popup's contact button
+ *                                 (ma.49: also the built-in promo-filter's "Porozmawiajmy")
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
  *   [d2-ma-history]               List of viewed units, newest first
@@ -267,7 +268,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 48;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 49;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3170,7 +3171,10 @@
       // link zostaje przy swoim href (do 2 przycisków o różnych akcjach).
       var act = (a.getAttribute && a.getAttribute('d2-ma-template-cta')) || cta;
       a._d2maCta = act;
-      a._d2maTemplate = !!(root.getAttribute && root.getAttribute('d2-ma-template') !== null);
+      // ma.49: przewinięcie „contact” należy do popupu, którego treść robi skrypt: szablon
+      // panelu albo wbudowany (promo-filter, href="#"). Popup strony zostaje przy swoim.
+      a._d2maTemplate = !!(root.getAttribute && (root.getAttribute('d2-ma-template') !== null
+        || root.getAttribute('d2-ma-builtin') !== null));
       var href = act === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
       if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
@@ -3198,7 +3202,7 @@
         }
         if (inst) inst.hide();
         // ma.37: contact z szablonu panelu przewija do formularza ([d2-ma-contact], potem
-        // #kontakt); bez żadnego - tylko zamyka. Wbudowany popup jak dotąd.
+        // #kontakt); bez żadnego - tylko zamyka. Od ma.49 tak samo wbudowany (promo-filter).
         if (own === 'contact' && this._d2maTemplate) scrollLater(document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt'));
       });
     }
