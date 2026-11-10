@@ -3168,6 +3168,61 @@ test('a calendar outside a widget still gets its seven columns', async () => {
   assert.equal(css.indexOf('[d2-booking-widget]'), -1, 'and nothing of the drawn look');
 });
 
+function weekStartsOn(env) {
+  const head = env.document.querySelector('[d2-booking-calendar-weekdays]');
+  return head.children[0].getAttribute('aria-label');
+}
+
+function englishCalendar(extra) {
+  return calendarPage(Object.assign({
+    loaderAttrs: { 'd2-booking-lang': 'en', 'd2-booking-product': PRODUCT },
+  }, extra || {}));
+}
+
+test('an English calendar starts its week on Monday, like the Polish one', async () => {
+  // MUTACJA: take the first day of the week from Intl.Locale('en') (as up to
+  // ma.47) and the browser reads plain "en" as American English: the English
+  // page of a Polish apartment shows Sunday first.
+  const env = englishCalendar();
+  await env.settled();
+  assert.equal(weekStartsOn(env), 'Monday');
+  // 1 May 2027 is a Saturday: five blanks before it in a Monday week.
+  const firstRow = env.document.querySelector('[d2-booking-calendar-grid]').children[1];
+  assert.equal(firstRow.children.filter((c) => c.getAttribute('d2-booking-day-blank') === '').length, 5);
+});
+
+test('d2-booking-week-start="sun" starts the week on Sunday', async () => {
+  const env = englishCalendar({ calendar: { attrs: { 'd2-booking-week-start': 'sun' } } });
+  await env.settled();
+  assert.equal(weekStartsOn(env), 'Sunday');
+});
+
+test('d2-booking-week-start on the loader tag holds for every calendar', async () => {
+  const env = calendarPage({
+    loaderAttrs: { 'd2-booking-product': PRODUCT, 'd2-booking-week-start': 'sun' },
+  });
+  await env.settled();
+  assert.equal(weekStartsOn(env), 'niedziela');
+});
+
+test('d2-booking-week-start="auto" follows the region of <html lang>', async () => {
+  // MUTACJA: ignore the region and "auto" on an en-GB page starts on Sunday.
+  const us = englishCalendar({ lang: 'en-US', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
+  await us.settled();
+  assert.equal(weekStartsOn(us), 'Sunday');
+  const gb = englishCalendar({ lang: 'en-GB', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
+  await gb.settled();
+  assert.equal(weekStartsOn(gb), 'Monday');
+  // <html lang> in another language than the page reads is not its region.
+  const pl = calendarPage({ lang: 'en-US', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
+  await pl.settled();
+  assert.equal(weekStartsOn(pl), 'poniedziałek');
+  // A tag the browser refuses is no region at all: the bare language decides.
+  const bad = englishCalendar({ lang: 'en-!!', calendar: { attrs: { 'd2-booking-week-start': 'auto' } } });
+  await bad.settled();
+  assert.equal(weekStartsOn(bad), 'Sunday');
+});
+
 // ---------------------------------------------------------------------------
 // Refusals: the sentence, the field and the wait
 // ---------------------------------------------------------------------------
@@ -6434,4 +6489,32 @@ test('a slow answer about the place does not hold the calendar back', async () =
   release();
   await env.settled();
   assert.equal(slots.name.textContent, 'Inny');
+});
+
+test('a slot that cannot take the place\'s data leaves no unhandled rejection behind', async () => {
+  // MUTACJA: drop the .catch at the end of applyPlaceBinds and nobody holds
+  // the promise select() and apply() fire and forget — the browser logs
+  // "Uncaught (in promise)" and a test runner fails the page.
+  const seen = [];
+  const onRejection = (e) => { seen.push(e); };
+  process.on('unhandledRejection', onRejection);
+  let env;
+  try {
+    env = page({ now: MAY_2027, loaderAttrs: { 'd2-booking-product': PRODUCT } });
+    const slots = placeSlots(env.document.body, ['name']);
+    slots.name.appendChild = () => { throw new Error('a slot that refuses children'); };
+    Object.defineProperty(slots.name, 'textContent', {
+      get() { return 'z Designera'; },
+      set() { throw new Error('a slot that refuses text'); },
+    });
+    env.booking.select({ product: PRODUCT, unit: 'day', starts_at: '2027-05-10', units_count: 2 });
+    await env.settled();
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  } finally {
+    process.removeListener('unhandledRejection', onRejection);
+  }
+  assert.deepEqual(seen.map(String), []);
+  const said = env.warnings.filter((w) => w.indexOf('could not be shown') >= 0);
+  assert.equal(said.length, 1, 'said once in the console: ' + env.warnings.join(' | '));
 });

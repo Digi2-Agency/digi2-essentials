@@ -4396,8 +4396,10 @@ day of the week — followed a language nobody on the page reads.
 
 The chosen language is also what goes out as the booking's `locale` (so the
 portal's e-mails match the page), what every `Intl` format follows — the
-amounts, the percentages, the month and weekday names, and which day a week
-starts on — and what the module **tells the API** it is in (below).
+amounts, the percentages and the month and weekday names — and what the module
+**tells the API** it is in (below). Which day a week starts on is not the
+language's: Monday unless `d2-booking-week-start` says otherwise (the calendar,
+below).
 
 #### The language on the wire
 
@@ -4838,12 +4840,21 @@ the same month.
 | Attribute | Element | Description |
 |---|---|---|
 | `d2-booking-calendar` | any Div | The calendar. The product is `d2-booking-product` on this element or on the loader tag, or `?apartament=` from the address. |
+| `d2-booking-week-start` | the calendar, or the loader tag (every calendar) | The first day of the week: `mon` (default; any unknown value too), `sun`, or `auto`. `auto` asks the browser (`Intl.Locale#getWeekInfo`): the region of `<html lang>` when it is the page's language (`en-US` → Sunday, `en-GB` → Monday), otherwise the bare language (`en` → Sunday). A tag the browser refuses (`en-!!`) counts as no region; a region it does not know (`en-ZZ`) gets the browser's world default, Monday. A browser without week data (Firefox today) gives Monday for `auto` too. |
 | `d2-booking-status` | any element | Optional. Where the chosen range and every refusal about the stay is written, for eyes and for screen readers alike. The module builds one inside the calendar when the page has none (`role="status"`, `aria-live="polite"`); a page may put its own anywhere, and every one of them gets the sentence. |
 | `d2-booking-calendar-built` / `-head` / `-month` / `-grid` / `-prev` / `-next` / `-weekdays` | built by the module | The parts of the drawn calendar, so CSS can reach them. |
 | `d2-booking-day="YYYY-MM-DD"` | built by the module | One day, always a real `<button type="button">`. |
 | `d2-booking-day-busy` / `-past` | set by the module | A night nobody can book — taken, closed by the owner or inside a booking's buffer / before the earliest stay (the first local midnight after now plus `lead_time_hours`, so never today). |
 | `d2-booking-day-selected` / `-checkout` / `-in-range` / `-today` / `-blank` | set by the module | The arrival / the departure / a night between them / today / a leading or trailing empty square. |
 | `d2-booking-calendar-ready` / `d2-booking-busy` | set by the module | The month is drawn / a window is in flight. |
+
+**The week starts on Monday, whatever the language.** Up to ma.47 the first
+day came from `Intl.Locale(language)`, and a bare `en` is American English to
+the browser: the English page of a Polish apartment started its week on Sunday
+while the Polish one started on Monday. A language code says nothing about the
+country the guest is in, so the default no longer guesses from it. A site for
+an American audience writes `d2-booking-week-start="sun"`, and one that sets a
+region in `<html lang>` per locale writes `auto`.
 
 **The rules come from the answer, not from the page.** `min_units` and
 `max_units` bound the number of nights, `lead_time_hours` closes the days that
