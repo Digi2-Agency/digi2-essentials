@@ -3,7 +3,24 @@
 // Kept small on purpose: one headless Chromium, two workers, < 2 minutes.
 const { defineConfig } = require('@playwright/test');
 
-const PORT = 5179;
+const { execFileSync } = require('child_process');
+
+// The gate's own server port. 5179 is the habit, but this machine runs several
+// teams, and a gate (or a server left behind) on 5179 made ours fail with
+// "already used" before any test ran. So: 5179 when it is free, otherwise any
+// free port the OS gives. Chosen once in the runner and handed to the workers
+// through the environment (each worker loads this file again). Kept
+// synchronous because Playwright reads the config synchronously.
+function pickPort() {
+  if (process.env.D2_GATE_PORT) return Number(process.env.D2_GATE_PORT);
+  const probe = "const s=require('net').createServer();"
+    + "s.once('error',()=>{const t=require('net').createServer();t.listen(0,'127.0.0.1',()=>{process.stdout.write(String(t.address().port));t.close();});});"
+    + "s.listen(Number(process.argv[1]),'127.0.0.1',()=>{process.stdout.write(process.argv[1]);s.close();});";
+  const port = Number(execFileSync(process.execPath, ['-e', probe, '5179'], { encoding: 'utf8' }));
+  process.env.D2_GATE_PORT = String(port);
+  return port;
+}
+const PORT = pickPort();
 
 module.exports = defineConfig({
   testDir: 'tests/browser',

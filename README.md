@@ -1482,9 +1482,11 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       would otherwise open another popup 500 ms after this one closed.
     - `contact` closes the popup and scrolls to the contact form: the first
       `[d2-ma-contact]` (alias `data-d2-ma-contact`), else `#kontakt`; with
-      neither it only closes. Only in a popup built from a panel template —
-      the built-in popups and a page's own `[d2-ma-popup]` keep closing only
-      (their page handles the form itself, e.g. the demo footer script).
+      neither it only closes. In a popup whose content the script makes: one
+      built from a panel template and, since ma.49, the built-in `promo-filter`
+      (its button is `href="#"`, so before ma.49 it only closed and nothing on
+      the page scrolled). A page's own `[d2-ma-popup]` keeps closing only —
+      its markup is the page's, and so is the form.
     - Each button takes its action from its own block: `open_unit` gets the
       unit's address, `link` keeps its `href`, in any order.
     - Scrolling waits 450 ms: the popup gives back the page scroll as it
@@ -5593,7 +5595,8 @@ then: repeat the purge by hand).
 The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
 opens `sandbox/gate-forms.html`, `sandbox/gate-popups.html` and the
 `sandbox/gate-booking*.html` pages from a local server
-(`tests/browser/serve.js`, 127.0.0.1:5179). They all load
+(`tests/browser/serve.js`, 127.0.0.1:5179 — or, when another gate or a
+leftover server holds 5179, any free port; `D2_GATE_PORT` forces one). They all load
 `dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
 jsDelivr serves after the tag. It checks, in a real browser:
 
