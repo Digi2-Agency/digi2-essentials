@@ -27,6 +27,9 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   **Kogo dotyczy:** strony z `d2-ma` i scenariuszem z popupem `promo-filter`
   (dziś Demo marketing automation na digi2.agency). Strona przypięta do
   `@v1.9.0-ma.4x` dostaje poprawkę dopiero po przepięciu na `ma.49`.
+- Bramka wydania (bez wpływu na strony): serwer testów w przeglądarce bierze
+  5179, a gdy port jest zajęty (inna bramka albo pozostawiony serwer), dowolny
+  wolny. Wcześniej bramka padała na czerwono, zanim ruszył jakikolwiek test.
 
 ## v1.9.0-ma.48 — 2026-11-09 (przedpremierowa, `@latest`: patrz uwaga na górze)
 

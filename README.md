@@ -5595,7 +5595,8 @@ then: repeat the purge by hand).
 The browser gate (`tests/browser/gate.spec.js`, Playwright + headless Chromium)
 opens `sandbox/gate-forms.html`, `sandbox/gate-popups.html` and the
 `sandbox/gate-booking*.html` pages from a local server
-(`tests/browser/serve.js`, 127.0.0.1:5179). They all load
+(`tests/browser/serve.js`, 127.0.0.1:5179 — or, when another gate or a
+leftover server holds 5179, any free port; `D2_GATE_PORT` forces one). They all load
 `dist/digi2-loader.min.js`, so the modules come from `dist/` — the exact files
 jsDelivr serves after the tag. It checks, in a real browser:
 
