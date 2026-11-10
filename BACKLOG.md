@@ -57,19 +57,3 @@ Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w C
   przez `rememberDesigner` przed wiązaniem).
 - **Warunek startu:** pierwsza zmiana w wiązaniu poza listą albo zgłoszenie ze
   strony.
-
-## d2-ma: teksty wbudowanego popupu `promo-filter` poza kodem (zasada 9)
-
-- **Dodano:** 2026-11-10, ustalenie z architekt-it po standardzie „Designer =
-  strona” (kanon: `docs/designer-zgodny-ze-strona.md` w repo webflow, #83).
-- **Problem:** wbudowany popup `promo-filter` ma teksty zaszyte w `ma.js`:
-  nagłówek „Dla Ciebie”, przycisk „Porozmawiajmy” (`LABELS`, `buildUnitless`)
-  i zdanie „Szukasz mieszkania N-pokojowego? Pokażemy wolne lokale i aktualne
-  promocje.” (`'promo-filter': function`). Zmiana któregoś z nich wymaga dziś
-  nowej wersji JS, a zasada 9 mówi, że teksty i ustawienia skryptów mają być
-  edytowalne w Webflow, CMS albo atrybutach.
-- **Kierunek:** nadpisanie z koperty (np. pola popupu w scenariuszu albo
-  `templates.popup[]` o id `promo-filter`, który już dziś wygrywa z wbudowanym)
-  albo z atrybutów strony. Dzisiejsze teksty zostają jako zapas, gdy nic ich
-  nie nadpisuje, więc strony bez zmian zachowują się jak dotąd.
-- **Warunek startu:** merge webflow#84 (zasada 9). Wcześniej nie przerabiamy.
