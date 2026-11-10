@@ -1482,11 +1482,14 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       would otherwise open another popup 500 ms after this one closed.
     - `contact` closes the popup and scrolls to the contact form: the first
       `[d2-ma-contact]` (alias `data-d2-ma-contact`), else `#kontakt`; with
-      neither it only closes. In a popup whose content the script makes: one
-      built from a panel template and, since ma.49, the built-in `promo-filter`
-      (its button is `href="#"`, so before ma.49 it only closed and nothing on
-      the page scrolled). A page's own `[d2-ma-popup]` keeps closing only —
-      its markup is the page's, and so is the form.
+      neither it only closes. That is for a `contact` button **without an
+      address of its own** (`href` missing or `"#"`): a panel template's, the
+      built-in `promo-filter`'s (since ma.49) and, since ma.50, one in the
+      page's own `[d2-ma-popup]` (`d2-ma-template-cta="contact"`). Before ma.50
+      such a button in a page popup was dead — the jump to `#` was blocked and
+      nothing scrolled. A `contact` button **with** an address (`#kontakt`,
+      `/pl/kontakt`) is an ordinary link: it closes the popup and the browser
+      follows the address; before ma.50 that click was blocked too.
     - Each button takes its action from its own block: `open_unit` gets the
       unit's address, `link` keeps its `href`, in any order.
     - Scrolling waits 450 ms: the popup gives back the page scroll as it
@@ -2268,6 +2271,20 @@ only for this built-in text — it is not an envelope field like `roomsLabel`. A
 entry with that id wins over the built-in one, and the page's own
 `[d2-ma-popup="promo-filter"]` over both. Any envelope template without
 `{{unit.*}}` now also opens when the path has no unit.
+
+*Changing the texts (rule 9 of „Designer = strona”: no new JS version for a
+sentence).* The built-in texts („Dla Ciebie”, the sentence, „Porozmawiajmy”)
+are only the fallback. Two ways to own them, neither needs a release:
+
+1. **In Webflow (preferred):** build the popup in the Designer as
+   `[d2-ma-popup="promo-filter"]` (wrapper `display: none`, like `last-unit`).
+   The text is plain Designer text; the number comes from a span inside it —
+   `d2-ma-field="pref.rooms"` → „3”, `pref.roomsLabel` → „3 pokoje”,
+   `pref.floor` (ma.50; any popup, an empty one is hidden). The button is a
+   link with `d2-ma-cta` + `d2-ma-template-cta="contact"`: `href="#"` scrolls
+   to the form, a real `href` is followed. Close: `d2-ma-close`.
+2. **In the panel:** a `templates.popup[]` entry with id `promo-filter`;
+   `{{pref.rooms}}` / `{{pref.roomsLabel}}` work in its blocks.
 
 **GA4 events** (dataLayer, no visitor data, independent of the d2-ma profile
 consent — GA4 consent is Consent Mode's job; `d2-ma-search-events="off"` on the

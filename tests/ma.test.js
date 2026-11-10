@@ -3378,6 +3378,53 @@ test('ma.29: promo-filter „Szukasz mieszkania N-pokojowego?” dla 1, 2, 5, 12
   assert.equal(zero.popupy.length, 0, '0 pokoi to nie liczba do zdania — popup pominięty');
 });
 
+test('ma.50: własny popup promo-filter z Designera — liczba pokoi z d2-ma-field="pref.*", teksty strony nietknięte', async () => {
+  const k = koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const wlasny = element({ 'd2-ma-popup': 'promo-filter' });
+  wlasny.id = 'promo-z-designera';
+  const naglowek = element({}, 'H3');
+  naglowek.textContent = 'Tekst z Designera';
+  const liczba = element({ 'd2-ma-field': 'pref.rooms' }, 'SPAN');
+  const etykieta = element({ 'data-d2-ma-field': 'pref.roomsLabel' }, 'SPAN');
+  const pietro = element({ 'd2-ma-field': 'pref.floor' }, 'SPAN');
+  [naglowek, liczba, etykieta, pietro].forEach((x) => wlasny.appendChild(x));
+  const env = await start({ koperta: k, szablon: wlasny });
+  env.filtr({ rooms: [3] });
+  await env.minie(600);
+  assert.deepEqual(env.popupy.map((x) => x.name), ['d2-ma-promo-filter']);
+  assert.equal(naglowek.textContent, 'Tekst z Designera', 'tekst strony zostaje');
+  assert.equal(liczba.textContent, '3');
+  assert.equal(etykieta.textContent, '3 pokoje');
+  assert.equal(pietro.style.display, 'none', 'pole bez wartości ukryte');
+  assert.equal(potomkowie(env.window.document.body).some((x) => x.getAttribute && x.getAttribute('d2-ma-builtin') !== null), false, 'bez wbudowanego');
+});
+
+test('ma.50: przycisk contact w popupie strony — prawdziwy adres działa jak link, href="#" przewija', async () => {
+  const k = () => koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  for (const [href, blok, przew] of [['#kontakt', false, 0], ['/pl/kontakt', false, 0], ['#', true, 1], [null, true, 1]]) {
+    const wlasny = element({ 'd2-ma-popup': 'promo-filter' });
+    wlasny.id = 'promo-z-designera';
+    const atr = { 'd2-ma-cta': '', 'd2-ma-template-cta': 'contact' };
+    if (href != null) atr.href = href;
+    const przycisk = element(atr, 'A');
+    wlasny.appendChild(przycisk);
+    const env = await start({ koperta: k(), szablon: wlasny });
+    const kontakt = element({});
+    kontakt.id = 'kontakt';
+    kontakt.przew = 0;
+    kontakt.scrollIntoView = () => { kontakt.przew++; };
+    env.window.document.body.appendChild(kontakt);
+    env.filtr({ rooms: [2] });
+    await env.minie(600);
+    let zablokowany = false;
+    przycisk._klik({ preventDefault() { zablokowany = true; } });
+    await env.minie(500);
+    assert.equal(zablokowany, blok, String(href));
+    assert.equal(kontakt.przew, przew, String(href));
+    assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => e.action), ['contact'], String(href));
+  }
+});
+
 test('ma.29: szablon koperty bez {{unit.*}} znika (d2-ma-refresh) między decyzją a renderem — popup pominięty, bez TypeError', async () => {
   const promo = { templateId: 'promo-bez-lokalu', version: 1, blocks: [{ type: 'title', text: 'Mamy coś dla Ciebie' }, { type: 'cta', label: 'Porozmawiajmy', action: 'contact' }] };
   const sc = [scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-bez-lokalu', cta: 'contact', frequency: 'once_per_days:0' }])];
@@ -5028,7 +5075,9 @@ test('ma.37: contact z szablonu zamyka i przewija do [d2-ma-contact], potem #kon
   wb.window.document.body.appendChild(kontakt);
   przycisk._klik({ preventDefault() {} });
   await wb.minie(500);
-  assert.equal(kontakt.przew, 0, 'popup spoza szablonu panelu nie przewija');
+  // ma.50: własny popup strony z przyciskiem bez adresu (href="#") też przewija — wcześniej
+  // klik był martwy (preventDefault i nic). Z prawdziwym adresem: test ma.50 niżej.
+  assert.equal(kontakt.przew, 1, 'popup strony z href="#" przewija jak szablon');
 });
 
 test('ma.49: wbudowany popup (d2-ma-builtin, promo-filter) — „Porozmawiajmy” zamyka i przewija do #kontakt', async () => {

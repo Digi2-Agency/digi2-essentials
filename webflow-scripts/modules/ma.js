@@ -61,11 +61,14 @@
  *
  *   [d2-ma-popup="last-unit"]     Designer popup for that template (else built-in)
  *     [d2-ma-field="name|price|image|rooms|floor|area|pricePerSqm|building|summary|promoText"]
+ *                                 ma.50: also pref.rooms|pref.roomsLabel|pref.floor (profile),
+ *                                 in any popup, a unitless promo-filter from the Designer too
  *     [d2-ma-cta]                 open_unit → href of the unit; contact → keeps its href
  *                                 ma.37 template cta: + filter_rooms | scroll_to (#id) | close, ≤ 2 per popup;
  *                                 contact scrolls to [d2-ma-contact], else #kontakt
  *     [d2-ma-contact]             ma.37: contact form target of a template popup's contact button
- *                                 (ma.49: also the built-in promo-filter's "Porozmawiajmy")
+ *                                 (ma.49: also the built-in promo-filter's "Porozmawiajmy";
+ *                                 ma.50: any contact button without its own href, page popups too)
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
  *   [d2-ma-history]               List of viewed units, newest first
@@ -268,7 +271,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 49;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 50;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3099,11 +3102,15 @@
     }
   }
 
+  var PREF_FIELDS = { 'pref.rooms': 1, 'pref.floor': 1, 'pref.roomsLabel': 1 };
   function fill(root, unit) {
     var fields = root.querySelectorAll('[d2-ma-field], [data-d2-ma-field]');
     for (var i = 0; i < fields.length; i++) {
       var f = fields[i];
-      var v = fieldValue(_attr(f, 'd2-ma-field'), unit);
+      var key = _attr(f, 'd2-ma-field');
+      // ma.50: pref.* (liczba pokoi, piętro z profilu) także w popupie bez lokalu - tekst
+      // wokół pola jest w Designerze, skrypt wstawia tylko wartość.
+      var v = PREF_FIELDS[key] ? contentValue(key, unit) : fieldValue(key, unit);
       if (f.tagName === 'IMG') {
         var src = v ? safeImage(v) : null;
         if (src) { f.setAttribute('src', src); f.style.display = 'block'; } else { f.style.display = 'none'; }
@@ -3171,10 +3178,6 @@
       // link zostaje przy swoim href (do 2 przycisków o różnych akcjach).
       var act = (a.getAttribute && a.getAttribute('d2-ma-template-cta')) || cta;
       a._d2maCta = act;
-      // ma.49: przewinięcie „contact” należy do popupu, którego treść robi skrypt: szablon
-      // panelu albo wbudowany (promo-filter, href="#"). Popup strony zostaje przy swoim.
-      a._d2maTemplate = !!(root.getAttribute && (root.getAttribute('d2-ma-template') !== null
-        || root.getAttribute('d2-ma-builtin') !== null));
       var href = act === 'open_unit' && unit && unit.url ? safeLink(unit.url) : null;
       if (href && a.tagName === 'A') a.setAttribute('href', href);
       if (a._d2maBound) continue;
@@ -3182,8 +3185,11 @@
       a.addEventListener('click', function (e) {
         var u = this._d2maUnit;
         var own = this.getAttribute ? this.getAttribute('d2-ma-template-cta') : null;
-        // Przycisk „kontakt" z szablonu nie ma własnego adresu - bez skoku na „#".
-        if (own === 'contact' && e && e.preventDefault) e.preventDefault();
+        // ma.50: „contact” bez własnego adresu (szablon, wbudowany, przycisk strony z href="#")
+        // - bez skoku na „#”, przewinięcie niżej. Z adresem (#kontakt, /kontakt) to zwykły link.
+        var link = this.getAttribute ? String(this.getAttribute('href') || '').trim() : '';
+        var contactScroll = own === 'contact' && (link === '' || link === '#');
+        if (contactScroll && e && e.preventDefault) e.preventDefault();
         var inst = window.digi2.popups && window.digi2.popups.get && window.digi2.popups.get(name);
         // ma.37: przycisk szablonu ma własną akcję (do 2 w jednym popupie).
         if (own) ctaClicked(String(name).replace(/^d2-ma-/, ''), own);
@@ -3201,9 +3207,10 @@
           return;
         }
         if (inst) inst.hide();
-        // ma.37: contact z szablonu panelu przewija do formularza ([d2-ma-contact], potem
-        // #kontakt); bez żadnego - tylko zamyka. Od ma.49 tak samo wbudowany (promo-filter).
-        if (own === 'contact' && this._d2maTemplate) scrollLater(document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt'));
+        // ma.37: contact przewija do formularza ([d2-ma-contact], potem #kontakt); bez
+        // żadnego - tylko zamyka. ma.49: także wbudowany promo-filter; ma.50: każdy przycisk
+        // contact bez własnego adresu, też w popupie strony.
+        if (contactScroll) scrollLater(document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt'));
       });
     }
   }

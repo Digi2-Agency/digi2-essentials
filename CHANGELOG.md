@@ -16,6 +16,25 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.50 — 2026-11-10 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+- **`d2-ma`: popup `promo-filter` z własnymi tekstami bez wydania JS** (zasada 9
+  standardu „Designer = strona”). Wbudowane teksty („Dla Ciebie”, zdanie o
+  pokojach, „Porozmawiajmy”) zostają tylko jako zapas. Własne teksty daje
+  popup zbudowany w Designerze jako `[d2-ma-popup="promo-filter"]`: tekst jest
+  zwykłym tekstem Webflow, a liczba pokoi trafia do spana
+  `d2-ma-field="pref.rooms"` (albo `pref.roomsLabel` → „3 pokoje”,
+  `pref.floor`). Pola `pref.*` działają w każdym popupie; puste pole jest
+  ukrywane. Druga droga bez zmian: szablon panelu o id `promo-filter`.
+- **`d2-ma`: przycisk `contact` w popupie strony.** Bez własnego adresu
+  (`href="#"` albo brak) zamyka popup i przewija do `[d2-ma-contact]` /
+  `#kontakt`, jak w szablonie panelu. Z adresem (`#kontakt`, `/pl/kontakt`)
+  zamyka popup, a przeglądarka idzie pod adres. Do ma.49 oba warianty były
+  martwe: klik był blokowany i nic się nie działo.
+  **Kogo dotyczy:** strony z `d2-ma` i własnym `[d2-ma-popup]` z przyciskiem
+  `d2-ma-template-cta="contact"`. Dziś żadna znana strona nie ma takiego
+  popupu. Wbudowane popupy i szablony panelu działają jak w ma.49.
+
 ## v1.9.0-ma.49 — 2026-11-10 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 - **`d2-ma`: „Porozmawiajmy” we wbudowanym popupie `promo-filter` przewija do
