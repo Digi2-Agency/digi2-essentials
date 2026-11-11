@@ -3421,7 +3421,43 @@ test('ma.50: przycisk contact w popupie strony — prawdziwy adres działa jak l
     await env.minie(500);
     assert.equal(zablokowany, blok, String(href));
     assert.equal(kontakt.przew, przew, String(href));
-    assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => e.action), ['contact'], String(href));
+    assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => ({ ...e })), [{ event: 'ma_popup_cta', action: 'contact' }], String(href) + ': cel jest - bez no_target');
+    assert.equal(env.ostrzezenia.filter((w) => w.includes('contact button')).length, 0, String(href) + ': cel jest - bez ostrzeżenia');
+  }
+});
+
+test('ma.51: contact bez adresu i bez celu na stronie — ostrzeżenie w konsoli raz, klik liczony z no_target: true', async () => {
+  const k = () => koperta([scenariusz('promo', { event: 'search_filter' }, [{ do: 'popup', template: 'promo-filter', cta: 'contact', frequency: 'once_per_days:0' }])], { minScript: 'ma.17' });
+  const popupStrony = (href) => {
+    const p = element({ 'd2-ma-popup': 'promo-filter' });
+    p.id = 'promo-z-designera';
+    const atr = { 'd2-ma-cta': '', 'd2-ma-template-cta': 'contact' };
+    if (href != null) atr.href = href;
+    const b = element(atr, 'A');
+    p.appendChild(b);
+    return { p, b };
+  };
+  const ostrz = (env) => env.ostrzezenia.filter((w) => w.includes('popup "d2-ma-promo-filter" has a contact button without its own href'));
+
+  // Przy starcie: popup strony z przyciskiem bez adresu, na stronie ani [d2-ma-contact], ani #kontakt.
+  const { p, b } = popupStrony('#');
+  const env = await start({ koperta: k(), szablon: p, elementy: [p] });
+  assert.equal(ostrz(env).length, 1, 'ostrzeżenie przy starcie, zanim popup się pokaże');
+  env.filtr({ rooms: [2] });
+  await env.minie(600);
+  b._klik({ preventDefault() {} });
+  await env.minie(500);
+  assert.equal(ostrz(env).length, 1, 'raz na popup na odsłonę, nie drugi raz przy pokazaniu');
+  assert.deepEqual(env.dataLayer.filter((e) => e && e.event === 'ma_popup_cta').map((e) => ({ ...e })),
+    [{ event: 'ma_popup_cta', action: 'contact', no_target: true }], 'klik liczony, z informacją no_target');
+  const akcja = (env.zdarzenia['ma:action'] || []).filter((a) => a.do === 'popup_cta');
+  assert.deepEqual(akcja.map((a) => [a.action, a.no_target]), [['contact', true]]);
+
+  // Przycisk z prawdziwym adresem (zwykły link) i przycisk bez adresu - bez ostrzeżenia tylko ten pierwszy.
+  for (const [href, ile] of [['/pl/kontakt', 0], ['tel:+48500000000', 0], [null, 1], ['  #  ', 1]]) {
+    const { p: p2 } = popupStrony(href);
+    const e2 = await start({ koperta: k(), szablon: p2, elementy: [p2] });
+    assert.equal(ostrz(e2).length, ile, String(href));
   }
 });
 

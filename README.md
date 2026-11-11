@@ -1482,7 +1482,14 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       would otherwise open another popup 500 ms after this one closed.
     - `contact` closes the popup and scrolls to the contact form: the first
       `[d2-ma-contact]` (alias `data-d2-ma-contact`), else `#kontakt`; with
-      neither it only closes. That is for a `contact` button **without an
+      neither it only closes. Since ma.51 that case is visible: the script
+      warns once per popup per page view in the console (`[digi2.ma] popup
+      "d2-ma-…" has a contact button without its own href, but the page has no
+      [d2-ma-contact] or #kontakt…`) — at start for the page's own
+      `[d2-ma-popup]` elements, when shown for template and built-in popups
+      (they do not exist earlier). The click still counts as a contact
+      (Piotr, 11.11); `ma_popup_cta` and `ma:action` only get
+      `no_target: true`, and only then. That is for a `contact` button **without an
       address of its own** (`href` missing or `"#"`): a panel template's, the
       built-in `promo-filter`'s (since ma.49) and, since ma.50, one in the
       page's own `[d2-ma-popup]` (`d2-ma-template-cta="contact"`). Before ma.50
@@ -1498,7 +1505,8 @@ segment }` in `state.scenarios[scenarioId].nodes`.
       template }` and `dataLayer` `{ event: "ma_popup_cta", action }` — no
       visitor data; 2destate scoring does not count it. The built-in
       `promo-filter` button (`contact`) carries the same marker and pushes the
-      event too; a page's own `[d2-ma-popup]` buttons do not.
+      event too, as does a button with `d2-ma-template-cta` in a page's own
+      `[d2-ma-popup]`; a plain `d2-ma-cta` there does not.
   - `layout`: `position` `center` | `bottom-right` | `bottom` | `top`, `size`
     `sm` (320 px) | `md` (380) | `lg` (520).
   - `style`: only page tokens, `token:<name>` → `var(--<name>, <fallback>)`

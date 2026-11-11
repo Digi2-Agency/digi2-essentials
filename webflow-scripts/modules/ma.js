@@ -68,7 +68,9 @@
  *                                 contact scrolls to [d2-ma-contact], else #kontakt
  *     [d2-ma-contact]             ma.37: contact form target of a template popup's contact button
  *                                 (ma.49: also the built-in promo-filter's "Porozmawiajmy";
- *                                 ma.50: any contact button without its own href, page popups too)
+ *                                 ma.50: any contact button without its own href, page popups too;
+ *                                 ma.51: with no target a console.warn once per popup, and the
+ *                                 click is counted with no_target: true)
  *     [d2-ma-close]               Close button
  *   [d2-ma-profile="visits|views|lead|pref.rooms|pref.floor|last.name|last.price|segment|visitorId"]
  *   [d2-ma-history]               List of viewed units, newest first
@@ -271,7 +273,7 @@
   var DL_PARAMS = { ma_engaged: ['seconds', 'scroll_pct'], ma_form_abandon: ['form_id', 'fields_touched'],
     ma_content: ['slot', 'template_id'] };
   var CHANNELS = { email: 1, sms: 1, ai_call: 1 };
-  var SCRIPT_VERSION = 50;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
+  var SCRIPT_VERSION = 51;   // ma.19 = numer tagu (test pilnuje zgodności z CHANGELOG); porównywane z minScript koperty
   var SLOT_RE = /^[a-z0-9-]{1,64}$/;
   // Bez imp- (klasy mapy 2destate, np. imp-object-hidden ukryłby lokale) i d2-ma-.
   var CLASS_RE = /^(?!imp-|d2-ma-)[a-z0-9-]{1,40}$/;
@@ -3127,11 +3129,16 @@
   // kolejny popup zaraz po zamknięciu tego. Pominięty popup oddaje częstotliwość.
   var CTA_QUIET_MS = 5000;
   var ctaQuietUntil = 0;
-  function ctaClicked(template, action) {
+  // ma.51: noTarget - contact bez adresu i bez celu na stronie. Klik liczy się jak każdy
+  // (decyzja Piotra 11.11), dostaje tylko informację no_target: true. Pole tylko wtedy.
+  function ctaClicked(template, action, noTarget) {
     ctaQuietUntil = Date.now() + CTA_QUIET_MS;
-    _emit('ma:action', { 'do': 'popup_cta', action: action, template: template });
+    var ev = { 'do': 'popup_cta', action: action, template: template };
+    var dl = { event: 'ma_popup_cta', action: action };
+    if (noTarget) { ev.no_target = true; dl.no_target = true; }
+    _emit('ma:action', ev);
     window.dataLayer = window.dataLayer || [];
-    window.dataLayer.push({ event: 'ma_popup_cta', action: action });
+    window.dataLayer.push(dl);
   }
 
   // Popup po zamknięciu oddaje przewinięcie strony - przewijamy po jego animacji.
@@ -3169,7 +3176,34 @@
     scrollLater(document.querySelector('[data-imp-detached-menu]'));
   }
 
+  // ma.51: przycisk contact bez własnego adresu, a na stronie brak celu przewinięcia -
+  // klik tylko zamyka popup. Ostrzeżenie w konsoli raz na popup na odsłonę, dla
+  // budującego stronę (przy starcie dla popupów strony, przy pokazaniu dla reszty).
+  var contactWarned = {};
+  function hasOwnlessContact(root) {
+    var links = root && root.querySelectorAll ? root.querySelectorAll('[d2-ma-template-cta="contact"]') : [];
+    for (var i = 0; i < links.length; i++) {
+      var href = String(links[i].getAttribute('href') || '').trim();
+      if (href === '' || href === '#') return true;
+    }
+    return false;
+  }
+  function warnContactTarget(root, name) {
+    if (contactWarned[name] || !hasOwnlessContact(root)) return;
+    if (document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt')) return;
+    contactWarned[name] = true;
+    _warn('popup "' + name + '" has a contact button without its own href, but the page has no [d2-ma-contact] or #kontakt - the click only closes the popup. Mark the form with d2-ma-contact or give the button a real href.');
+  }
+  function warnPagePopupContacts() {
+    var own = document.querySelectorAll('[d2-ma-popup], [data-d2-ma-popup]');
+    for (var i = 0; i < own.length; i++) {
+      var n = own[i].getAttribute('d2-ma-popup') || own[i].getAttribute('data-d2-ma-popup') || '';
+      warnContactTarget(own[i], 'd2-ma-' + n);
+    }
+  }
+
   function wireCta(root, name, unit, cta) {
+    warnContactTarget(root, name);
     var links = root.querySelectorAll('[d2-ma-cta], [data-d2-ma-cta]');
     for (var i = 0; i < links.length; i++) {
       var a = links[i];
@@ -3190,9 +3224,10 @@
         var link = this.getAttribute ? String(this.getAttribute('href') || '').trim() : '';
         var contactScroll = own === 'contact' && (link === '' || link === '#');
         if (contactScroll && e && e.preventDefault) e.preventDefault();
+        var contactEl = contactScroll ? (document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt')) : null;
         var inst = window.digi2.popups && window.digi2.popups.get && window.digi2.popups.get(name);
         // ma.37: przycisk szablonu ma własną akcję (do 2 w jednym popupie).
-        if (own) ctaClicked(String(name).replace(/^d2-ma-/, ''), own);
+        if (own) ctaClicked(String(name).replace(/^d2-ma-/, ''), own, contactScroll && !contactEl);
         if (own === 'filter_rooms' || own === 'scroll_to' || own === 'close') {
           if (e && e.preventDefault) e.preventDefault();
           if (inst) inst.hide();
@@ -3210,7 +3245,7 @@
         // ma.37: contact przewija do formularza ([d2-ma-contact], potem #kontakt); bez
         // żadnego - tylko zamyka. ma.49: także wbudowany promo-filter; ma.50: każdy przycisk
         // contact bez własnego adresu, też w popupie strony.
-        if (contactScroll) scrollLater(document.querySelector(CONTACT_TARGET) || document.querySelector('#kontakt'));
+        if (contactScroll) scrollLater(contactEl);
       });
     }
   }
@@ -5845,6 +5880,7 @@
     hookContext();
     hookMap();
     bindUi();
+    try { warnPagePopupContacts(); } catch (e) {}
     deepLinkView();
     hookVisitorIdFields();
     hookLeadToken();
