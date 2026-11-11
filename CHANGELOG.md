@@ -16,6 +16,21 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.51 — 2026-11-11 (przedpremierowa, `@latest`: patrz uwaga na górze)
+
+- **`d2-ma`: ostrzeżenie, gdy przycisk kontaktu nie ma dokąd przewinąć.**
+  Przycisk `contact` bez własnego adresu (`href="#"` albo brak) przewija do
+  `[d2-ma-contact]`, a bez niego do `#kontakt`. Gdy na stronie nie ma żadnego
+  z nich, klik tylko zamyka popup. Teraz skrypt pisze o tym w konsoli, raz na
+  popup: `[digi2.ma] popup "d2-ma-promo-filter" has a contact button without
+  its own href, but the page has no [d2-ma-contact] or #kontakt…`. Popup
+  strony sprawdzany jest od razu po starcie, popup z szablonu panelu i
+  wbudowany — przy pokazaniu. Naprawa po stronie strony: oznacz formularz
+  `d2-ma-contact` albo daj przyciskowi prawdziwy adres (`/kontakt`, `tel:`).
+- **`d2-ma`: klik kontaktu bez celu dostaje informację `no_target: true`**
+  w `ma_popup_cta` (dataLayer) i `ma:action`. Klik dalej liczy się jako
+  kontakt; pole pojawia się tylko w tym przypadku, inne kliki bez zmian.
+
 ## v1.9.0-ma.50 — 2026-11-10 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 - **`d2-ma`: popup `promo-filter` z własnymi tekstami bez wydania JS** (zasada 9
