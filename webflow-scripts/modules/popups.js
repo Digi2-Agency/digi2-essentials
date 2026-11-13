@@ -34,6 +34,11 @@
  *   its turn once the screen is free; a popup the VISITOR asked for wins, and
  *   the one on screen closes before it appears. An open lightbox counts as a
  *   busy screen for automatic opens; they come after lightbox:close.
+ *   So does a modal this module does not own: the cookie banner
+ *   (#consentsBanner / .d2c), anything marked [d2-modal] / [data-d2-modal] and
+ *   any visible [aria-modal="true"]. An automatic popup parks until it is gone
+ *   (checked every second). digi2.popups.isScreenBusy() answers the same
+ *   question for the page's own scripts.
  *
  * Scroll lock (see _installScrollLock):
  *   window.digi2.scrollLock.acquire(owner) / .release(owner) / .isLocked() / .owners()
@@ -1240,6 +1245,21 @@
         return;
       }
 
+      // A modal this module does not own — the cookie consent banner, a popup
+      // the site wrote by hand — is a busy screen too, for automatic opens
+      // only. Nothing tells us when it goes away, so a short poll does.
+      if (auto) {
+        var foreign = _foreignModal();
+        if (foreign) {
+          if (park) {
+            this.pendingShow = true;
+            _watchForeignModals();
+          }
+          _log('show deferred — another modal is on screen → ' + this.name, foreign);
+          return;
+        }
+      }
+
       var busy = _visiblePopupOtherThan(this);
       if (busy) {
         if (auto) {
@@ -2161,6 +2181,80 @@
     return null;
   }
 
+  // ---- Modals this module does not own --------------------------------------
+  // The cookie consent banner (d2-cookies: #consentsBanner, .d2c) and popups a
+  // site wrote by hand are on screen just as much as ours. An automatic popup
+  // landing on the consent banner covers the one thing the visitor has to
+  // answer first. Sites mark their own with [d2-modal] / [data-d2-modal];
+  // a visible [aria-modal="true"] counts without marking. Ours (anything inside
+  // a registered popup) and the lightbox are tracked elsewhere and skipped.
+  var FOREIGN_MODAL_SELECTOR = '#consentsBanner, .d2c, [d2-modal], [data-d2-modal], [aria-modal="true"]';
+  var FOREIGN_POLL_MS = 1000;
+  var _foreignWatching = false;
+
+  function _isShown(el) {
+    if (!el) return false;
+    if (el.hidden === true || (el.hasAttribute && el.hasAttribute('hidden'))) return false;
+    if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false;
+    if (typeof el.getClientRects === 'function' && !el.getClientRects().length) return false;
+    // Rendered but parked off-canvas (a mobile menu slid out of view) is not on
+    // screen; waiting on it would hold every automatic popup for good.
+    if (typeof el.getBoundingClientRect === 'function' && typeof window.innerWidth === 'number') {
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || r.right <= 0 || r.bottom <= 0
+        || r.left >= window.innerWidth || r.top >= (window.innerHeight || 0)) return false;
+    }
+    var cs = null;
+    try {
+      if (typeof window.getComputedStyle === 'function') cs = window.getComputedStyle(el);
+    } catch (e) { cs = null; }
+    var st = cs || el.style || {};
+    if (st.display === 'none' || st.visibility === 'hidden') return false;
+    if (st.opacity !== undefined && st.opacity !== '' && parseFloat(st.opacity) === 0) return false;
+    return true;
+  }
+
+  function _ownedElement(el) {
+    if (el.closest && el.closest('[d2-lightbox-modal]')) return true;
+    for (var name in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+      var pe = registry[name] && registry[name].popupElement;
+      if (pe && (pe === el || (pe.contains && pe.contains(el)))) return true;
+    }
+    return false;
+  }
+
+  // The first visible modal on the page that is not ours, or null.
+  function _foreignModal() {
+    var list;
+    try { list = document.querySelectorAll(FOREIGN_MODAL_SELECTOR); } catch (e) { return null; }
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (_ownedElement(el)) continue;
+      if (_isShown(el)) return el;
+    }
+    return null;
+  }
+
+  // One poll for the whole page, only while something waits on a foreign
+  // modal. A MutationObserver would miss a banner hidden by a stylesheet class
+  // change on an ancestor; a 1 s check costs one querySelectorAll.
+  function _watchForeignModals() {
+    if (_foreignWatching) return;
+    _foreignWatching = true;
+    (function tick() {
+      setTimeout(function () {
+        if (_foreignModal()) { tick(); return; }
+        _foreignWatching = false;
+        _resumeParkedPopup();
+      }, FOREIGN_POLL_MS);
+    })();
+  }
+
+  function _screenBusy() {
+    return !!(_visiblePopupOtherThan(null) || _lightboxOpen() || _foreignModal());
+  }
+
   // A beat between one popup closing and a parked one opening. Without it the
   // promo appears in the same frame the visitor's form disappears, which feels
   // like the close button swapped one modal for another rather than giving the
@@ -2174,6 +2268,15 @@
     setTimeout(function () {
       if (_visiblePopupOtherThan(null)) return;   // someone got there first
       if (_lightboxOpen()) return;                // lightbox:close calls again
+      if (_foreignModal()) {                      // banner still up — keep watching
+        for (var n in registry) {
+          if (Object.prototype.hasOwnProperty.call(registry, n) && registry[n] && registry[n].pendingShow) {
+            _watchForeignModals();
+            break;
+          }
+        }
+        return;
+      }
       for (var name in registry) {
         if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
         var inst = registry[name];
@@ -2400,6 +2503,10 @@
         _log('sequence step waiting — the lightbox is open');
         return;
       }
+      if (_foreignModal()) {
+        _log('sequence step waiting — another modal is on screen');
+        return;
+      }
 
       const off = inst._onCloseInternal(() => this._stepClosed());
       // Scheduled, and the sequence runs its own clock: if the screen is busy it
@@ -2500,6 +2607,18 @@
 
     list() {
       return Object.keys(registry);
+    },
+
+    /**
+     * Is something modal on screen right now? Any popup of ours (also one
+     * still fading out), an open lightbox, the cookie consent banner, an
+     * element marked [d2-modal] / [data-d2-modal] or a visible
+     * [aria-modal="true"]. The question automatic popups ask before opening;
+     * a site's own popup script asks it instead of keeping a selector list.
+     * @returns {boolean}
+     */
+    isScreenBusy() {
+      return _screenBusy();
     },
 
     /**

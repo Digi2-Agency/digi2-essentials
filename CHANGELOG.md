@@ -16,6 +16,28 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.9.0-ma.52 — niewydana (czeka na akceptację wydania)
+
+- **Popupy: „jeden popup naraz” obejmuje też baner zgód i popupy pisane przez
+  stronę** (standard agencji z 13.11). Popup otwierany automatycznie
+  (`openAfterDelay`, exit intent, scroll, bezczynność, krok sekwencji) nie
+  wchodzi już na widoczny baner d2-cookies (`#consentsBanner`, `.d2c`), na
+  element oznaczony `d2-modal` / `data-d2-modal` ani na żaden widoczny
+  `[aria-modal="true"]` spoza biblioteki. Czeka (sprawdzanie co 1 s, tylko gdy
+  coś czeka) i wchodzi ~0,6 s po zniknięciu tamtego elementu; krok sekwencji
+  ponawia się na swoim takcie. Popup otwarty klikiem (`d2-show-popup`,
+  `digi2.popups.show()`) otwiera się od razu, jak dotąd. Element ukryty
+  (`hidden`, `aria-hidden="true"`, `display: none`, `visibility: hidden`,
+  `opacity: 0`, poza ekranem) niczego nie blokuje.
+  Co zrobić na stronie: popup pisany ręcznie oznacz na overlayu atrybutem
+  `data-d2-modal` (pusty). Uwaga: strona, której baner zgód nigdy nie znika
+  (np. odwiedzający go ignoruje), nie zobaczy popupów automatycznych, dopóki nie
+  odpowie na baner — to zamierzone.
+- **Nowe `digi2.popups.isScreenBusy()`** — `true`, gdy na ekranie jest popup
+  biblioteki (także w trakcie znikania), otwarty lightbox albo jeden z modali
+  wyżej. Własny skrypt popupu strony pyta o to zamiast trzymać własną listę
+  selektorów.
+
 ## v1.9.0-ma.51 — 2026-11-11 (przedpremierowa, `@latest`: patrz uwaga na górze)
 
 - **`d2-ma`: ostrzeżenie, gdy przycisk kontaktu nie ma dokąd przewinąć.**

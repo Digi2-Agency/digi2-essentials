@@ -1997,3 +1997,96 @@ test('a11y #14: focus moved away by the page right after opening (Webflow anchor
   env.dispatchDoc('focusin', section);
   assert.equal(env.document.activeElement, section, 'no guard after close');
 });
+
+// ---------------------------------------------------------------------------
+// Modals the module does not own: cookie banner, hand-written site popups
+// ---------------------------------------------------------------------------
+
+function bannerEnv(popupOpts) {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  // d2-cookies renders its root like this; hiding it sets the hidden attribute.
+  const banner = createElement('div', { class: 'd2c', role: 'dialog', 'aria-modal': 'true' });
+  env.body.appendChild(banner);
+  env.body.appendChild(createElement('div', { class: 'p-promo' }));
+  const promo = env.window.digi2.popups.create('promo', Object.assign({
+    popupSelector: '.p-promo', animation: 'none', cookieName: null, openAfterDelay: 5,
+  }, popupOpts || {}));
+  return { env, banner, promo };
+}
+
+test('an automatic popup waits for the cookie banner and opens once it is answered', () => {
+  const { env, banner, promo } = bannerEnv();
+  fireTimers(env, 5000);
+  assert.equal(promo.isVisible, false, 'it does not land on the consent banner');
+  assert.equal(promo.pendingShow, true, 'it parks instead of giving up');
+
+  fireTimers(env, 1000);                       // banner still up: keeps waiting
+  assert.equal(promo.isVisible, false);
+
+  banner.setAttribute('hidden', '');           // visitor answered
+  fireTimers(env, 1000);                       // the poll notices
+  assert.equal(promo.isVisible, false, 'not in the same frame the banner goes');
+  fireTimers(env, 600);
+  assert.equal(promo.isVisible, true, 'it took its turn');
+});
+
+test('a popup the visitor asked for still opens while the banner is up', () => {
+  const { env, promo } = bannerEnv({ openAfterDelay: null });
+  promo.show();
+  assert.equal(promo.isVisible, true);
+});
+
+test('a hidden banner, or a marked modal that is not shown, does not block anything', () => {
+  const { env, banner, promo } = bannerEnv();
+  banner.setAttribute('hidden', '');
+  env.body.appendChild(createElement('div', { 'data-d2-modal': '', style: '' }));
+  env.body.children[env.body.children.length - 1].style.display = 'none';
+  fireTimers(env, 5000);
+  assert.equal(promo.isVisible, true);
+});
+
+test('isScreenBusy(): our popups, marked site modals and aria-modal, but not our own aria-modal', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const own = createElement('div', { class: 'p-form', 'aria-modal': 'true' });
+  env.body.appendChild(own);
+  const form = env.window.digi2.popups.create('form', {
+    popupSelector: '.p-form', animation: 'none', cookieName: null,
+  });
+  own.style.display = 'none';
+  const api = env.window.digi2.popups;
+  assert.equal(api.isScreenBusy(), false, 'nothing on screen');
+
+  own.style.display = '';                      // ours is excluded by element, not by style
+  assert.equal(api.isScreenBusy(), false, 'our own aria-modal is not a foreign modal');
+
+  form.show();
+  assert.equal(api.isScreenBusy(), true, 'a popup of ours is on screen');
+  form.hide();
+  assert.equal(api.isScreenBusy(), false);
+
+  const site = createElement('div', { 'd2-modal': '' });
+  env.body.appendChild(site);
+  assert.equal(api.isScreenBusy(), true, 'a site popup marked d2-modal');
+  site.setAttribute('aria-hidden', 'true');
+  assert.equal(api.isScreenBusy(), false, 'aria-hidden counts as gone');
+});
+
+test('a sequence step waits while a site modal is on screen', () => {
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  const site = createElement('div', { 'data-d2-modal': '' });
+  env.body.appendChild(site);
+  env.body.appendChild(createElement('div', { class: 'p-promo' }));
+  env.window.digi2.popups.create('promo', {
+    popupSelector: '.p-promo', animation: 'none', cookieName: null,
+  });
+  env.window.digi2.popups.sequence([{ popup: 'promo', after: 0 }]);
+  const promo = env.window.digi2.popups.get('promo');
+  for (let i = 0; i < 3; i++) fireTimers(env, 1000);
+  assert.equal(promo.isVisible, false, 'the step does not land on the site modal');
+  site.style.display = 'none';
+  for (let i = 0; i < 3; i++) fireTimers(env, 1000);
+  assert.equal(promo.isVisible, true);
+});
