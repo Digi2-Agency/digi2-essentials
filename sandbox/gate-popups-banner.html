@@ -41,6 +41,9 @@
 <div class="strona">
   <h1>Popup a baner zgód</h1>
   <button id="otworz" d2-show-popup="promo">Pokaż ofertę</button>
+  <!-- Jak na bernardynska.com i osiedlebo.pl: atrybut d2-modal skryptu strony na
+       zawsze widocznym przycisku. Nie może blokować popupów (regresja 1.10.0). -->
+  <button type="button" d2-modal="open">Zapytaj o lokal</button>
 </div>
 
 <div class="d2c" id="consentsBanner" role="dialog" aria-modal="true" aria-label="Zgody">

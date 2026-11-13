@@ -774,8 +774,15 @@ these is visible:
 | Element | Where it comes from | Holds popups |
 |---|---|---|
 | `#consentsBanner`, `.d2c` | the d2-cookies consent banner (its root is `.d2c`, `role="dialog"`, hidden with the `hidden` attribute) | as long as it is up |
-| `[d2-modal]` / `[data-d2-modal]` | a popup the site wrote by hand — mark its overlay with this attribute | as long as it is up |
+| `[d2-popups-modal]` / `[data-d2-popups-modal]` | a popup the site wrote by hand — mark its overlay with this attribute | as long as it is up |
 | `[aria-modal="true"]`, `dialog[open]` | any accessible modal, without marking | **45 s at most** |
+
+Why not `d2-modal`: client sites already carry `d2-modal="open"`,
+`d2-modal="wrapper"`, `d2-modal-parent` and `d2-modal-product` from their own
+modal script (bernardynska.com, wielka16.com, osiedlebo.pl, rajska77.com,
+osiedlelatawcow.pl) — `open` sits on always-visible buttons. A marker with that
+name held every automatic popup on those pages forever; the release check before
+1.10.0 caught it. Do not reuse that prefix.
 
 Anything inside a registered popup and the lightbox (`[d2-lightbox-modal]`) is
 skipped — those are tracked by their own state, above. "Visible" means:
@@ -797,7 +804,7 @@ the next time the visitor opens it, it counts again. The same happens when it
 stops matching at all (`dialog.close()`, `aria-modal` removed, element removed
 from the page) and whenever a parked popup gets the screen, so a modal that
 closed while nothing was checking starts a fresh 45 s next time. A modal that really should
-hold popups for longer gets `data-d2-modal`.
+hold popups for longer gets `data-d2-popups-modal`.
 
 The parked popup cannot be told when such a modal goes away (the banner just
 gets `hidden`), so while a popup is parked the module checks every second, every
@@ -826,7 +833,7 @@ function openMine() {
 }
 ```
 
-Mark that overlay `data-d2-modal` too, so the library's popups wait for it in turn.
+Mark that overlay `data-d2-popups-modal` too, so the library's popups wait for it in turn.
 
 **The page scroll lock always comes back off.** The lock is shared by every
 popup and the lightbox (`digi2.scrollLock`, below) and released when the last

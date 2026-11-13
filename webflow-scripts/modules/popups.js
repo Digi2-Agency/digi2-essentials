@@ -35,7 +35,7 @@
  *   the one on screen closes before it appears. An open lightbox counts as a
  *   busy screen for automatic opens; they come after lightbox:close.
  *   So does a modal this module does not own: the cookie banner
- *   (#consentsBanner / .d2c) and anything marked [d2-modal] / [data-d2-modal]
+ *   (#consentsBanner / .d2c) and anything marked [d2-popups-modal] / [data-d2-popups-modal]
  *   for as long as they are up; a visible [aria-modal="true"] or open <dialog>
  *   for at most 45 s (then a console warning). An automatic popup parks and
  *   comes ~2 s after the modal is gone (checked every 1 s, every 5 s after a
@@ -2197,7 +2197,7 @@
   // The cookie consent banner (d2-cookies: #consentsBanner, .d2c) and popups a
   // site wrote by hand are on screen just as much as ours. An automatic popup
   // landing on the consent banner covers the one thing the visitor has to
-  // answer first. Sites mark their own with [d2-modal] / [data-d2-modal].
+  // answer first. Sites mark their own with [d2-popups-modal] / [data-d2-popups-modal].
   // A visible [aria-modal="true"] or an open <dialog> counts without marking,
   // but only for UNMARKED_MAX_MS: a modal closed some way this check cannot
   // see (a wrapper faded out by an interaction we do not recognise) must not
@@ -2205,7 +2205,7 @@
   // once in the console and stops waiting on that element. Ours (anything
   // inside a registered popup) and the lightbox are tracked elsewhere.
   var BANNER_SELECTOR = '#consentsBanner, .d2c';
-  var MARKED_SELECTOR = '[d2-modal], [data-d2-modal]';
+  var MARKED_SELECTOR = '[d2-popups-modal], [data-d2-popups-modal]';
   var UNMARKED_SELECTOR = '[aria-modal="true"], dialog[open]';
   var FOREIGN_MODAL_SELECTOR = BANNER_SELECTOR + ', ' + MARKED_SELECTOR + ', ' + UNMARKED_SELECTOR;
   var UNMARKED_MAX_MS = 45000;
@@ -2289,7 +2289,7 @@
     rec.gaveUp = true;
     console.warn('[digi2.popups] an [aria-modal] / <dialog> element has been on screen for '
       + Math.round(UNMARKED_MAX_MS / 1000) + ' s, so automatic popups stop waiting for it. '
-      + 'If it really is a modal, mark it d2-modal so popups wait for as long as it is up; '
+      + 'If it really is a modal, mark it d2-popups-modal so popups wait for as long as it is up; '
       + 'if it is closed, hide it with display:none, hidden or aria-hidden.', el);
     return false;
   }
@@ -2714,7 +2714,7 @@
     /**
      * Is something modal on screen right now? Any popup of ours (also one
      * still fading out), an open lightbox, the cookie consent banner, an
-     * element marked [d2-modal] / [data-d2-modal] or a visible
+     * element marked [d2-popups-modal] / [data-d2-popups-modal] or a visible
      * [aria-modal="true"]. The question automatic popups ask before opening;
      * a site's own popup script asks it instead of keeping a selector list.
      * @returns {boolean}

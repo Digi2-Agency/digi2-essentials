@@ -16,13 +16,40 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.10.0 — wersja stabilna (`@latest`), po akceptacji Piotra 2026-11-14
+
+Pierwsza wersja stabilna od 1.8.3. Strona na `@latest` (i na `@main`)
+dostaje naraz wszystko, co do tej pory było tylko w linii przedpremierowej
+`v1.9.0-ma.1` … `ma.52`. Szczegóły w wpisach niżej; dla strony na `@latest`
+liczy się to:
+
+- **Popupy:** „jeden popup naraz” obejmuje baner zgód d2-cookies i popupy
+  strony oznaczone `data-d2-popups-modal` (ma.52, wyżej). Nowe
+  `digi2.popups.isScreenBusy()`. Dostępność każdego popupu: `role="dialog"`,
+  `aria-modal`, fokus na przycisk zamknięcia i z powrotem po zamknięciu, Tab
+  w środku, Esc zamyka jak ✕ (opcje `manageFocus`, `closeOnEsc`). Fokus wraca
+  po przewinięciu kotwicy przez Webflow.
+- **Loader:** moduł, który rzuci błąd przy ładowaniu, nie zawiesza już karty.
+  Drugi loader na tej samej stronie (np. Embed w treści obok loadera witryny)
+  dołącza do pierwszego: `digi2.onReady` odpala raz (ma.46/ma.47, bezpiecznik
+  10 s).
+- **Lightbox:** Esc w galerii nie zamyka przy okazji popupu pod spodem.
+- **Nowe moduły dostępne ze stabilnego tagu:** `d2-booking` (rezerwacje) i
+  `d2-ma` (marketing automation). Strona bez tych atrybutów ich nie ładuje.
+  Strona z `d2-ma` na `@latest` dostaje od teraz `ma.min.js` z 1.10.0 zamiast
+  najnowszego tagu `ma.N`.
+- **Formularze, datalayer, cms, tabs, sliders i reszta:** bez zmian od 1.8.3.
+
+Przed tagiem: porównanie obecnej wersji z kandydatem w Chromium na każdej
+stronie klienta z `@latest` albo `@main` (raport w PR #82).
+
 ## v1.9.0-ma.52 — niewydana (czeka na akceptację wydania)
 
 - **Popupy: „jeden popup naraz” obejmuje też baner zgód i popupy pisane przez
   stronę** (standard agencji z 13.11). Popup otwierany automatycznie
   (`openAfterDelay`, exit intent, scroll, bezczynność, krok sekwencji) nie
   wchodzi już na widoczny baner d2-cookies (`#consentsBanner`, `.d2c`), na
-  element oznaczony `d2-modal` / `data-d2-modal` — tak długo, jak są widoczne.
+  element oznaczony `d2-popups-modal` / `data-d2-popups-modal` — tak długo, jak są widoczne.
   Nieoznaczony widoczny `[aria-modal="true"]` albo `<dialog open>` wstrzymuje
   popupy **najwyżej 45 s**; potem jedno ostrzeżenie w konsoli i popup przestaje
   na niego czekać (modal zamknięty w sposób, którego skrypt nie widzi, nie
@@ -33,8 +60,12 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   Element ukryty sam albo przez przodka (`hidden`, `aria-hidden="true"`,
   `inert`, `display: none`, `opacity: 0`) albo poza ekranem niczego nie
   blokuje. Po zamknięciu popupu fokus nie wraca na schowany przycisk banera.
+  Znacznik to `d2-popups-modal`, nie `d2-modal`: strony klientów mają już
+  `d2-modal="open"` / `"wrapper"` z własnego skryptu modali (bernardynska,
+  wielka16, osiedlebo, rajska77, osiedlelatawcow), a `open` stoi na zawsze
+  widocznych przyciskach. Te atrybuty niczego nie blokują.
   Co zrobić na stronie: popup pisany ręcznie oznacz na overlayu atrybutem
-  `data-d2-modal` (pusty). Uwaga: strona, której baner zgód nigdy nie znika
+  `data-d2-popups-modal` (pusty). Uwaga: strona, której baner zgód nigdy nie znika
   (np. odwiedzający go ignoruje), nie zobaczy popupów automatycznych, dopóki nie
   odpowie na baner — to zamierzone.
 - **Nie objęte:** baner, który wchodzi już po otwarciu popupu (pozycja w

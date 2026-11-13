@@ -2043,7 +2043,7 @@ test('a popup the visitor asked for still opens while the banner is up', () => {
 test('a hidden banner, or a marked modal that is not shown, does not block anything', () => {
   const { env, banner, promo } = bannerEnv();
   banner.setAttribute('hidden', '');
-  env.body.appendChild(createElement('div', { 'data-d2-modal': '', style: '' }));
+  env.body.appendChild(createElement('div', { 'data-d2-popups-modal': '', style: '' }));
   env.body.children[env.body.children.length - 1].style.display = 'none';
   fireTimers(env, 5000);
   assert.equal(promo.isVisible, true);
@@ -2069,9 +2069,9 @@ test('isScreenBusy(): our popups, marked site modals and aria-modal, but not our
   form.hide();
   assert.equal(api.isScreenBusy(), false);
 
-  const site = createElement('div', { 'd2-modal': '' });
+  const site = createElement('div', { 'd2-popups-modal': '' });
   env.body.appendChild(site);
-  assert.equal(api.isScreenBusy(), true, 'a site popup marked d2-modal');
+  assert.equal(api.isScreenBusy(), true, 'a site popup marked d2-popups-modal');
   site.setAttribute('aria-hidden', 'true');
   assert.equal(api.isScreenBusy(), false, 'aria-hidden counts as gone');
 });
@@ -2079,7 +2079,7 @@ test('isScreenBusy(): our popups, marked site modals and aria-modal, but not our
 test('a sequence step waits while a site modal is on screen', () => {
   const env = createEnvironment();
   loadPopupsModule(env);
-  const site = createElement('div', { 'data-d2-modal': '' });
+  const site = createElement('div', { 'data-d2-popups-modal': '' });
   env.body.appendChild(site);
   env.body.appendChild(createElement('div', { class: 'p-promo' }));
   env.window.digi2.popups.create('promo', {
@@ -2137,7 +2137,7 @@ test('a modal parked off-canvas (mobile menu slid out) does not block', () => {
   const { env, promo } = foreignEnv();
   env.window.innerWidth = 400;
   env.window.innerHeight = 800;
-  const menu = createElement('div', { 'd2-modal': '' });
+  const menu = createElement('div', { 'd2-popups-modal': '' });
   menu.getBoundingClientRect = () => ({ left: 400, right: 800, top: 0, bottom: 800, width: 400, height: 800 });
   env.body.appendChild(menu);
   assert.equal(env.window.digi2.popups.isScreenBusy(), false);
@@ -2183,11 +2183,11 @@ test('an unmarked aria-modal holds popups for 45 s at most, then one warning and
   } finally { console.warn = origWarn; clock.restore(); }
 });
 
-test('a marked d2-modal and the banner hold popups for as long as they are up — no 45 s cap', () => {
+test('a marked d2-popups-modal and the banner hold popups for as long as they are up — no 45 s cap', () => {
   const { env, promo } = foreignEnv();
   const clock = fakeClock(env);
   try {
-    env.body.appendChild(createElement('div', { 'data-d2-modal': '' }));
+    env.body.appendChild(createElement('div', { 'data-d2-popups-modal': '' }));
     fireTimers(env, 5000);
     for (let i = 0; i < 120; i++) { clock.advance(1000); fireTimers(env, 1000); fireTimers(env, 5000); }
     assert.equal(promo.isVisible, false);
@@ -2198,7 +2198,7 @@ test('the poll slows to 5 s after a minute and stops once nothing is parked', ()
   const { env, promo } = foreignEnv();
   const clock = fakeClock(env);
   try {
-    env.body.appendChild(createElement('div', { 'data-d2-modal': '' }));
+    env.body.appendChild(createElement('div', { 'data-d2-popups-modal': '' }));
     fireTimers(env, 5000);
     const pending = (ms) => env.timers.filter((t) => t.ms === ms && !t.fired).length;
     assert.equal(pending(1000), 1, 'polling every second');
@@ -2310,4 +2310,18 @@ test('regression #82: a modal closed while no poll ran does not keep gaveUp once
     fireTimers(env, 600);
     assert.equal(api.isScreenBusy(), true, 'the old gaveUp did not survive the free screen');
   } finally { console.warn = origWarn; clock.restore(); }
+});
+
+test('regression 1.10.0: the sites own d2-modal attributes (2destate: open / wrapper / product) never block popups', () => {
+  // bernardynska.com, wielka16.com, osiedlebo.pl, rajska77.com and osiedlelatawcow.pl
+  // carry d2-modal="open" on always-visible buttons. Marking with [d2-modal] held
+  // every automatic popup on those pages forever; the marker is d2-popups-modal.
+  const { env, promo } = foreignEnv();
+  env.body.appendChild(createElement('div', { 'd2-modal': 'open', class: 'button-secondary' }));
+  env.body.appendChild(createElement('div', { 'd2-modal': '' }));
+  env.body.appendChild(createElement('div', { 'd2-modal': 'wrapper' }));
+  env.body.appendChild(createElement('div', { 'data-d2-modal': 'open' }));
+  assert.equal(env.window.digi2.popups.isScreenBusy(), false);
+  fireTimers(env, 5000);
+  assert.equal(promo.isVisible, true);
 });
