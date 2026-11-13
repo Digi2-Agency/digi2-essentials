@@ -2299,6 +2299,17 @@
     var list;
     try { list = document.querySelectorAll(FOREIGN_MODAL_SELECTOR); } catch (e) { return null; }
     var found = null;
+    // A record whose element no longer matches at all — dialog.close(),
+    // aria-modal removed, node taken out of the page — is a closed modal too;
+    // left behind, its clock (or gaveUp) would carry over to the next open.
+    for (var k = _unmarkedSeen.length - 1; k >= 0; k--) {
+      var recEl = _unmarkedSeen[k].el;
+      var still = false;
+      for (var m = 0; m < list.length; m++) if (list[m] === recEl) { still = true; break; }
+      // querySelectorAll only returns nodes in the document, so a removed
+      // node falls out here as well.
+      if (!still) _unmarkedSeen.splice(k, 1);
+    }
     for (var i = 0; i < list.length; i++) {
       var el = list[i];
       if (_ownedElement(el)) continue;
@@ -2372,8 +2383,13 @@
         if (inst._isCookieSet()) { inst.pendingShow = false; continue; }
         _log('screen free — resuming deferred popup → ' + name);
         inst.showIfPending({ auto: true });
-        return;                                   // one at a time, always
+        break;                                    // one at a time, always
       }
+      // The screen was free: whatever an unmarked modal's clock said is
+      // history. One closed and reopened while no poll ran would otherwise
+      // keep its gaveUp. Cleared after the resumed show(), so the popup that
+      // was let through is not parked again by a fresh clock.
+      _unmarkedSeen = [];
     }, typeof delayMs === 'number' ? delayMs : RESUME_AFTER_CLOSE_MS);
   }
 

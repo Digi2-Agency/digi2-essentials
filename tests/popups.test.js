@@ -2259,3 +2259,55 @@ test('closing a popup that waited for the banner does not send focus to the hidd
   inst.hide();
   assert.notEqual(env.document.activeElement, accept, 'not back to a hidden button');
 });
+
+test('regression #82: dialog.close() or aria-modal removed resets the 45 s clock', () => {
+  const { env, promo } = foreignEnv({ openAfterDelay: null });
+  const clock = fakeClock(env);
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const api = env.window.digi2.popups;
+    const dlg = createElement('dialog', { open: '' });
+    env.body.appendChild(dlg);
+    assert.equal(api.isScreenBusy(), true);
+    clock.advance(46000);
+    assert.equal(api.isScreenBusy(), false, 'gave up after 45 s');
+
+    dlg.removeAttribute('open');               // dialog.close(): no longer matches
+    assert.equal(api.isScreenBusy(), false);
+    dlg.setAttribute('open', '');              // the visitor opens it again
+    assert.equal(api.isScreenBusy(), true, 'a fresh 45 s, not the old gaveUp');
+
+    const m = createElement('div', { 'aria-modal': 'true' });
+    dlg.removeAttribute('open');
+    env.body.appendChild(m);
+    assert.equal(api.isScreenBusy(), true, 'm counts from now');
+    clock.advance(46000);
+    assert.equal(api.isScreenBusy(), false, 'm gave up');
+    m.removeAttribute('aria-modal');
+    assert.equal(api.isScreenBusy(), false);
+    m.setAttribute('aria-modal', 'true');
+    assert.equal(api.isScreenBusy(), true, 'aria-modal put back = counts anew');
+    void promo;
+  } finally { console.warn = origWarn; clock.restore(); }
+});
+
+test('regression #82: a modal closed while no poll ran does not keep gaveUp once a popup got the screen', () => {
+  const { env, promo } = foreignEnv({ openAfterDelay: null });
+  const clock = fakeClock(env);
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    const api = env.window.digi2.popups;
+    const m = createElement('div', { 'aria-modal': 'true' });
+    env.body.appendChild(m);
+    assert.equal(api.isScreenBusy(), true);
+    clock.advance(46000);
+    assert.equal(api.isScreenBusy(), false, 'gave up');
+    // Closed and reopened with nothing checking in between (no poll running).
+    promo.show();                              // visitor opens a popup
+    promo.hide();                              // and closes it: resume runs
+    fireTimers(env, 600);
+    assert.equal(api.isScreenBusy(), true, 'the old gaveUp did not survive the free screen');
+  } finally { console.warn = origWarn; clock.restore(); }
+});

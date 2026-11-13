@@ -1460,7 +1460,7 @@ digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)</
       <tr><td>Opening a popup deliberately dismisses whatever is in the way</td><td>The visitor asked for this one. The popup on screen closes first, and the new one opens after that close finishes — never both at once</td></tr>
       <tr><td>The <a href="#scroll-lock">scroll lock is shared</a> by popups and the lightbox</td><td>Released when the last one holding it closes, in any order — two overlapping modals used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
       <tr><td>A step waits while the lightbox is open</td><td>The visitor is looking at a gallery they opened; the step comes once it closes</td></tr>
-      <tr><td>A step waits while the cookie banner or a site modal is on screen</td><td><code>#consentsBanner</code> / <code>.d2c</code>, <code>[data-d2-modal]</code>, a visible <code>[aria-modal="true"]</code> — see One popup at a time</td></tr>
+      <tr><td>A step waits while the cookie banner or a site modal is on screen</td><td><code>#consentsBanner</code> / <code>.d2c</code> and <code>[data-d2-modal]</code> for as long as they are up; a visible <code>[aria-modal="true"]</code> or <code>&lt;dialog open&gt;</code> for 45 s at most — see One popup at a time</td></tr>
     </table>
 
     <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>

@@ -771,8 +771,6 @@ true` counts as open; the check never pulls the lightbox module in.
 time", 2026-11-13). For automatic opens the screen is also busy while any of
 these is visible:
 
-| Element | Where it comes from |
-|---|---|
 | Element | Where it comes from | Holds popups |
 |---|---|---|
 | `#consentsBanner`, `.d2c` | the d2-cookies consent banner (its root is `.d2c`, `role="dialog"`, hidden with the `hidden` attribute) | as long as it is up |
@@ -795,7 +793,10 @@ way the check cannot see would otherwise hold every automatic popup for the
 whole visit, silently, on every page of every site on `@latest`. After 45 s of
 one such element on screen the module writes one `console.warn` (with the
 element) and stops waiting for it. Once it is hidden the record is dropped, so
-the next time the visitor opens it, it counts again. A modal that really should
+the next time the visitor opens it, it counts again. The same happens when it
+stops matching at all (`dialog.close()`, `aria-modal` removed, element removed
+from the page) and whenever a parked popup gets the screen, so a modal that
+closed while nothing was checking starts a fresh 45 s next time. A modal that really should
 hold popups for longer gets `data-d2-modal`.
 
 The parked popup cannot be told when such a modal goes away (the banner just
