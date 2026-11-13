@@ -22,17 +22,26 @@ tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
   stronę** (standard agencji z 13.11). Popup otwierany automatycznie
   (`openAfterDelay`, exit intent, scroll, bezczynność, krok sekwencji) nie
   wchodzi już na widoczny baner d2-cookies (`#consentsBanner`, `.d2c`), na
-  element oznaczony `d2-modal` / `data-d2-modal` ani na żaden widoczny
-  `[aria-modal="true"]` spoza biblioteki. Czeka (sprawdzanie co 1 s, tylko gdy
-  coś czeka) i wchodzi ~0,6 s po zniknięciu tamtego elementu; krok sekwencji
-  ponawia się na swoim takcie. Popup otwarty klikiem (`d2-show-popup`,
-  `digi2.popups.show()`) otwiera się od razu, jak dotąd. Element ukryty
-  (`hidden`, `aria-hidden="true"`, `display: none`, `visibility: hidden`,
-  `opacity: 0`, poza ekranem) niczego nie blokuje.
+  element oznaczony `d2-modal` / `data-d2-modal` — tak długo, jak są widoczne.
+  Nieoznaczony widoczny `[aria-modal="true"]` albo `<dialog open>` wstrzymuje
+  popupy **najwyżej 45 s**; potem jedno ostrzeżenie w konsoli i popup przestaje
+  na niego czekać (modal zamknięty w sposób, którego skrypt nie widzi, nie
+  zablokuje popupów na całą wizytę). Popup wchodzi ~2 s po zniknięciu tamtego
+  elementu (sprawdzanie co 1 s, po minucie co 5 s, tylko gdy coś czeka); krok
+  sekwencji ponawia się na swoim takcie. Popup otwarty klikiem
+  (`d2-show-popup`, `digi2.popups.show()`) otwiera się od razu, jak dotąd.
+  Element ukryty sam albo przez przodka (`hidden`, `aria-hidden="true"`,
+  `inert`, `display: none`, `opacity: 0`) albo poza ekranem niczego nie
+  blokuje. Po zamknięciu popupu fokus nie wraca na schowany przycisk banera.
   Co zrobić na stronie: popup pisany ręcznie oznacz na overlayu atrybutem
   `data-d2-modal` (pusty). Uwaga: strona, której baner zgód nigdy nie znika
   (np. odwiedzający go ignoruje), nie zobaczy popupów automatycznych, dopóki nie
   odpowie na baner — to zamierzone.
+- **Nie objęte:** baner, który wchodzi już po otwarciu popupu (pozycja w
+  BACKLOG, strona d2-cookies).
+- **Semver:** nowe API i zmiana zachowania, więc najbliższa wersja stabilna z
+  tą zmianą to **1.10.0** (minor), nie 1.8.x. Do tego czasu strony bez `d2-ma`
+  na `@latest` jej nie dostają (uwaga na górze).
 - **Nowe `digi2.popups.isScreenBusy()`** — `true`, gdy na ekranie jest popup
   biblioteki (także w trakcie znikania), otwarty lightbox albo jeden z modali
   wyżej. Własny skrypt popupu strony pyta o to zamiast trzymać własną listę

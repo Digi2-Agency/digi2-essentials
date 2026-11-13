@@ -773,23 +773,45 @@ these is visible:
 
 | Element | Where it comes from |
 |---|---|
-| `#consentsBanner`, `.d2c` | the d2-cookies consent banner (its root is `.d2c`, `role="dialog"`, hidden with the `hidden` attribute) |
-| `[d2-modal]` / `[data-d2-modal]` | a popup the site wrote by hand — mark its overlay with this attribute |
-| `[aria-modal="true"]` | any accessible modal dialog, without marking |
+| Element | Where it comes from | Holds popups |
+|---|---|---|
+| `#consentsBanner`, `.d2c` | the d2-cookies consent banner (its root is `.d2c`, `role="dialog"`, hidden with the `hidden` attribute) | as long as it is up |
+| `[d2-modal]` / `[data-d2-modal]` | a popup the site wrote by hand — mark its overlay with this attribute | as long as it is up |
+| `[aria-modal="true"]`, `dialog[open]` | any accessible modal, without marking | **45 s at most** |
 
 Anything inside a registered popup and the lightbox (`[d2-lightbox-modal]`) is
-skipped — those are tracked by their own state, above. "Visible" means: no
-`hidden` attribute, not `aria-hidden="true"`, rendered (`getClientRects()`),
-not `display: none` / `visibility: hidden` / `opacity: 0`, and the box overlaps
-the viewport — an off-canvas mobile menu marked `aria-modal` slid out of view
-does not hold popups back.
+skipped — those are tracked by their own state, above. "Visible" means:
+
+- no `hidden`, `aria-hidden="true"` or `inert` on the element **or any ancestor**,
+- rendered (`getClientRects()`), not `visibility: hidden`,
+- no `display: none` or `opacity: 0` on the element or any ancestor (Webflow
+  interactions close a modal by fading its wrapper; `opacity` does not inherit
+  into the computed style, so the module walks up),
+- the box overlaps the viewport — an off-canvas mobile menu slid out of view
+  does not hold popups back.
+
+**Why the 45 s cap on unmarked modals.** An `aria-modal` the site closes some
+way the check cannot see would otherwise hold every automatic popup for the
+whole visit, silently, on every page of every site on `@latest`. After 45 s of
+one such element on screen the module writes one `console.warn` (with the
+element) and stops waiting for it. Once it is hidden the record is dropped, so
+the next time the visitor opens it, it counts again. A modal that really should
+hold popups for longer gets `data-d2-modal`.
 
 The parked popup cannot be told when such a modal goes away (the banner just
-gets `hidden`), so while something waits on it the module checks once a second
-(one `querySelectorAll`, only while a popup is parked) and resumes the popup
-~0.6 s after the screen is free. A sequence step simply retries on its own
-tick. A popup the visitor asks for still opens over the banner — same rule as
-the lightbox.
+gets `hidden`), so while a popup is parked the module checks every second, every
+5 s after the first minute, and stops as soon as nothing is parked (closed,
+destroyed). It resumes the popup **~2 s** after the screen is free — a popup
+0.6 s after "Accept" reads as the banner turning into an ad. A sequence step
+simply retries on its own tick. A popup the visitor asks for still opens over
+the banner — same rule as the lightbox.
+
+If the popup's opener is hidden by the time it closes (the banner's "Accept"
+button), focus is not sent back to it: the module blurs instead, so focus goes
+back to the page.
+
+Not covered: the banner appearing *after* a popup is already open (two modals
+again). That is d2-cookies' side — it can ask `isScreenBusy()`; see BACKLOG.
 
 `digi2.popups.isScreenBusy()` returns `true` when any popup of ours is on screen
 (also one still fading out), the lightbox is open, or one of the modals above is
