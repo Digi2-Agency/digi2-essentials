@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sandbox: bramka wydania — popup a baner zgód</title>
+
+<!--
+  Strona kontroli przed wydaniem (tests/browser/gate.spec.js): „jeden popup
+  naraz” z banerem zgód. Baner ma kształt korzenia d2-cookies 0.1.5:
+  .d2c#consentsBanner, role=dialog, aria-modal=true, chowany atrybutem hidden.
+  Dwa przyciski jak na stronach klientów (Piotr 2026-11-14): „Ustawienia”
+  (baner zostaje, zmienia widok) i „Akceptuję wszystkie” (baner znika).
+  Obok modal strony zamknięty przez wrapper z opacity: 0 — nie może blokować.
+  Popup „promo” otwiera się sam po 1 s (openAfterDelay).
+
+  ?zgoda=1  -> baner od razu schowany (powracający odwiedzający).
+  Ręcznie: npm run sandbox  ->  http://localhost:5179/sandbox/gate-popups-banner.html
+-->
+
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #fbfaf8; color: #1a1d1c; font: 16px/1.5 "DejaVu Sans", Arial, sans-serif; }
+  .strona { max-width: 520px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  button { padding: 10px 18px; border: 0; border-radius: 8px; background: #1f6f5c; color: #fff; font: inherit; cursor: pointer; }
+  .popup__overlay { display: none; position: fixed; inset: 0; background: rgba(20, 24, 22, 0.55); align-items: center; justify-content: center; padding: 16px; }
+  .popup__box { position: relative; width: 100%; max-width: 380px; background: #fff; border-radius: 14px; padding: 24px; }
+  .popup__box h2 { margin: 0 0 8px; font-size: 20px; }
+  .popup-close { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; padding: 0; background: #eee; color: #1a1d1c; border-radius: 50%; }
+  .d2c { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 10; background: #fff; border: 1px solid #ccc; border-radius: 12px; padding: 16px; }
+  .d2c[hidden] { display: none; }
+  .site-modal-wrap { opacity: 0; pointer-events: none; position: fixed; inset: 0; }
+  .site-modal { margin: 80px auto; max-width: 300px; background: #fff; padding: 16px; }
+</style>
+
+<script src="../dist/digi2-loader.min.js" d2-popups d2-datalayer></script>
+</head>
+<body>
+<div class="strona">
+  <h1>Popup a baner zgód</h1>
+  <button id="otworz" d2-show-popup="promo">Pokaż ofertę</button>
+</div>
+
+<div class="d2c" id="consentsBanner" role="dialog" aria-modal="true" aria-label="Zgody">
+  <p id="widok">Baner zgód w sandboksie.</p>
+  <button id="ustawienia" type="button">Ustawienia</button>
+  <button id="akceptuj" type="button">Akceptuję wszystkie</button>
+</div>
+
+<div class="site-modal-wrap">
+  <div class="site-modal" role="dialog" aria-modal="true" aria-label="Zamknięty modal strony">Zamknięty przez wrapper</div>
+</div>
+
+<div class="popup__overlay" id="promo">
+  <div class="popup__box" role="dialog" aria-label="Oferta">
+    <button class="popup-close" aria-label="Zamknij">×</button>
+    <h2>Oferta testowa</h2>
+    <p>Treść popupu w sandboksie. Nic tu nie jest prawdziwe.</p>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var banner = document.getElementById('consentsBanner');
+    if (/[?&]zgoda=1\b/.test(location.search)) banner.hidden = true;
+    function close() { banner.hidden = true; }   // jak close() w d2-cookies; fokus zostaje na przycisku
+    document.getElementById('akceptuj').addEventListener('click', close);
+    // „Ustawienia” przełącza widok banera (jak view 2 w d2-cookies), baner zostaje.
+    document.getElementById('ustawienia').addEventListener('click', function () {
+      document.getElementById('widok').textContent = 'Ustawienia zgód (widok 2).';
+    });
+  })();
+  digi2.onReady(function () {
+    digi2.popups.create('promo', {
+      animation: 'fade',
+      animationDuration: 0.2,
+      closeTriggerSelector: '.popup-close',
+      cookieName: null,
+      openAfterDelay: 1,
+    });
+  });
+</script>
+</body>
+</html>

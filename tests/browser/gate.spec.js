@@ -156,6 +156,68 @@ test.describe('popups + datalayer', () => {
   });
 });
 
+// ---- popups wait for the consent banner (PR #82) ---------------------------
+
+// The banner has the shape of the d2-cookies root (.d2c#consentsBanner,
+// role=dialog, aria-modal, hidden on Accept). Next to it, a site modal faded
+// out through its wrapper — that one must not hold anything back.
+test.describe('popups + consent banner', () => {
+  async function open(page, query) {
+    await page.goto('/sandbox/gate-popups-banner.html' + (query || ''));
+    await ready(page, 'popups');
+    await page.waitForFunction(() => !!window.digi2.popups.get('promo'), null, { timeout: 10000 });
+  }
+  function views(page) {
+    return events(page).then((l) => l.filter((e) => e.event === 'view_promotion').length);
+  }
+
+  test('an automatic popup waits for the banner (also in its settings view), then opens once after "Akceptuję wszystkie"; focus does not go back to the hidden button', async ({ page }) => {
+    await open(page);
+    const popup = page.locator('#promo');
+
+    await page.waitForTimeout(2500);             // the 1 s delay is well past
+    await expect(popup).toBeHidden();
+    expect(await page.evaluate(() => window.digi2.popups.isScreenBusy())).toBe(true);
+    expect(await views(page)).toBe(0);
+
+    await page.click('#ustawienia');             // settings view: the banner stays
+    await page.waitForTimeout(1500);
+    await expect(page.locator('#consentsBanner')).toBeVisible();
+    await expect(popup).toBeHidden();
+
+    await page.click('#akceptuj');
+    await expect(page.locator('#consentsBanner')).toBeHidden();
+    await page.waitForTimeout(800);              // not straight after Accept
+    await expect(popup).toBeHidden();
+    await expect(popup).toBeVisible();           // ~1 s poll + ~2 s pause
+    await expect(popup).toHaveCSS('opacity', '1');
+    await pushed(page, 'view_promotion');
+    await page.waitForTimeout(1500);
+    expect(await views(page), 'exactly one view_promotion').toBe(1);
+
+    await page.click('.popup-close');
+    await expect(popup).toBeHidden();
+    const focusOnAccept = await page.evaluate(() => document.activeElement && document.activeElement.id === 'akceptuj');
+    expect(focusOnAccept, 'focus is not sent back to the hidden Accept button').toBe(false);
+  });
+
+  test('a click still opens the popup over the banner', async ({ page }) => {
+    await open(page);
+    await page.click('#otworz');
+    await expect(page.locator('#promo')).toBeVisible();
+    await expect(page.locator('#consentsBanner')).toBeVisible();
+  });
+
+  test('banner already answered: the popup opens on time, the faded site modal does not block it', async ({ page }) => {
+    await open(page, '?zgoda=1');
+    await expect(page.locator('#promo')).toBeVisible({ timeout: 3000 });
+    expect(await page.evaluate(() => window.digi2.popups.isScreenBusy())).toBe(true);   // it is ours now
+    await page.click('.popup-close');
+    await expect(page.locator('#promo')).toBeHidden();
+    expect(await page.evaluate(() => window.digi2.popups.isScreenBusy())).toBe(false);
+  });
+});
+
 // ---- booking: the calendar and the price ----------------------------------
 
 // The API is stubbed inside the page from tests/fixtures/booking-api/, so this
