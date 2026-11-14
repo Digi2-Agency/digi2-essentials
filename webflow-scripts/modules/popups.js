@@ -34,6 +34,13 @@
  *   its turn once the screen is free; a popup the VISITOR asked for wins, and
  *   the one on screen closes before it appears. An open lightbox counts as a
  *   busy screen for automatic opens; they come after lightbox:close.
+ *   So does a modal this module does not own: the cookie banner
+ *   (#consentsBanner / .d2c) and anything marked [d2-popups-modal] / [data-d2-popups-modal]
+ *   for as long as they are up; a visible [aria-modal="true"] or open <dialog>
+ *   for at most 45 s (then a console warning). An automatic popup parks and
+ *   comes ~2 s after the modal is gone (checked every 1 s, every 5 s after a
+ *   minute). digi2.popups.isScreenBusy() answers the same question for the
+ *   page's own scripts.
  *
  * Scroll lock (see _installScrollLock):
  *   window.digi2.scrollLock.acquire(owner) / .release(owner) / .isLocked() / .owners()
@@ -285,6 +292,23 @@
   function _focus(el) {
     if (!el || typeof el.focus !== 'function') return;
     try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) { /* no-op */ } }
+  }
+
+  // d2-ma-show-* / d2-ma-hide-* (or data-d2-ma-*) on the overlay.
+  function _hasMaCondition(el) {
+    var a = el.attributes;
+    if (!a) return false;
+    var names = [];
+    if (typeof a.length === 'number') {
+      for (var i = 0; i < a.length; i++) names.push(a[i].name);
+    } else {
+      names = Object.keys(a);                     // plain map (test DOM)
+    }
+    for (var j = 0; j < names.length; j++) {
+      var n = names[j];
+      if (n.indexOf('d2-ma-') === 0 || n.indexOf('data-d2-ma-') === 0) return true;
+    }
+    return false;
   }
 
   function _safeCall(fn, popupName, label, arg, fallback) {
@@ -1056,17 +1080,38 @@
       var active = document.activeElement;
       var ours = !active || active === document.body
         || (this.popupElement && this.popupElement.contains && this.popupElement.contains(active));
-      if (ours && (!document.body.contains || document.body.contains(back))) _focus(back);
+      if (!ours) return;
+      var usable = (!document.body.contains || document.body.contains(back))
+        && !(back.closest && back.closest('[hidden], [aria-hidden="true"], [inert]'))
+        && !(typeof back.getClientRects === 'function' && !back.getClientRects().length);
+      if (usable) { _focus(back); return; }
+      // The opener is gone or hidden — typically the "Accept" button of a
+      // consent banner this popup waited for. Focus on a hidden element is
+      // lost to the visitor; hand it back to the page instead.
+      if (active && active !== document.body && typeof active.blur === 'function') {
+        try { active.blur(); } catch (e) { /* no-op */ }
+      }
     }
 
     // d2-ma-show-* / d2-ma-hide-* on the overlay (d2-ma ma.5) veto an open the
     // same way canShow does. d2-ma resumes the parked show once the condition
     // holds. Without d2-ma on the page there is no veto.
+    //
+    // Until the ma module is in, digi2.ma is the loader's stub: any call on it
+    // FETCHES and runs ma.min.js and returns a Promise. Asking it on every
+    // show() pulled marketing automation into every page with a popup, d2-ma
+    // or not (caught on bernardynska.com before 1.10.0; same trap as the
+    // lightbox in v1.8.1). So: no d2-ma-* condition on the overlay, or the
+    // module not loaded by the page itself — no veto, and nothing is fetched.
     _isMaAllowed() {
       var el = this.popupElement;
-      var ma = window.digi2 && window.digi2.ma;
-      if (!el || !ma || typeof ma.allows !== 'function') return true;
-      return ma.allows(el);
+      if (!el || !_hasMaCondition(el)) return true;
+      var d2 = window.digi2;
+      if (!d2 || (d2._loaded && !d2._loaded.ma)) return true;
+      var ma = d2.ma;
+      if (!ma || typeof ma.allows !== 'function') return true;
+      var ok = ma.allows(el);
+      return ok === false ? false : true;
     }
 
     _isWithinSchedule() {
@@ -1238,6 +1283,21 @@
         if (park) this.pendingShow = true;
         _log('show deferred — the lightbox is open → ' + this.name);
         return;
+      }
+
+      // A modal this module does not own — the cookie consent banner, a popup
+      // the site wrote by hand — is a busy screen too, for automatic opens
+      // only. Nothing tells us when it goes away, so a short poll does.
+      if (auto) {
+        var foreign = _foreignModal();
+        if (foreign) {
+          if (park) {
+            this.pendingShow = true;
+            _watchForeignModals();
+          }
+          _log('show deferred — another modal is on screen → ' + this.name, foreign);
+          return;
+        }
       }
 
       var busy = _visiblePopupOtherThan(this);
@@ -2161,6 +2221,170 @@
     return null;
   }
 
+  // ---- Modals this module does not own --------------------------------------
+  // The cookie consent banner (d2-cookies: #consentsBanner, .d2c) and popups a
+  // site wrote by hand are on screen just as much as ours. An automatic popup
+  // landing on the consent banner covers the one thing the visitor has to
+  // answer first. Sites mark their own with [d2-popups-modal] / [data-d2-popups-modal].
+  // A visible [aria-modal="true"] or an open <dialog> counts without marking,
+  // but only for UNMARKED_MAX_MS: a modal closed some way this check cannot
+  // see (a wrapper faded out by an interaction we do not recognise) must not
+  // hold every automatic popup for the whole visit. Past that the module warns
+  // once in the console and stops waiting on that element. Ours (anything
+  // inside a registered popup) and the lightbox are tracked elsewhere.
+  var BANNER_SELECTOR = '#consentsBanner, .d2c';
+  var MARKED_SELECTOR = '[d2-popups-modal], [data-d2-popups-modal]';
+  var UNMARKED_SELECTOR = '[aria-modal="true"], dialog[open]';
+  var FOREIGN_MODAL_SELECTOR = BANNER_SELECTOR + ', ' + MARKED_SELECTOR + ', ' + UNMARKED_SELECTOR;
+  var UNMARKED_MAX_MS = 45000;
+  var FOREIGN_POLL_MS = 1000;
+  var FOREIGN_POLL_SLOW_MS = 5000;      // after FOREIGN_POLL_SLOW_AFTER_MS of waiting
+  var FOREIGN_POLL_SLOW_AFTER_MS = 60000;
+  // A popup straight after "Accept" on the banner reads as the banner turning
+  // into an ad. Our own popups closing keep the shorter RESUME_AFTER_CLOSE_MS.
+  var RESUME_AFTER_FOREIGN_MS = 2000;
+  var _foreignWatching = false;
+  var _unmarkedSeen = [];               // { el, since, gaveUp }
+
+  function _now() { return Date.now(); }
+
+  function _matches(el, selector) {
+    var fn = el.matches || el.msMatchesSelector || el.webkitMatchesSelector;
+    if (typeof fn === 'function') { try { return fn.call(el, selector); } catch (e) { return false; } }
+    // No matches() (old engines, the test DOM): closest() starts at el itself.
+    return !!(el.closest && el.closest(selector) === el);
+  }
+
+  function _styleOf(el) {
+    try {
+      if (typeof window.getComputedStyle === 'function') return window.getComputedStyle(el) || el.style || {};
+    } catch (e) { /* detached node */ }
+    return el.style || {};
+  }
+
+  function _isShown(el) {
+    if (!el) return false;
+    // Hidden, aria-hidden or inert anywhere up the tree: a modal "closed" by
+    // its wrapper is closed.
+    if (el.closest && el.closest('[hidden], [aria-hidden="true"], [inert]')) return false;
+    if (typeof el.getClientRects === 'function' && !el.getClientRects().length) return false;
+    var st = _styleOf(el);
+    if (st.visibility === 'hidden') return false;
+    // display and opacity do not inherit into the computed style, so walk up:
+    // Webflow interactions close a modal by fading or hiding its wrapper.
+    for (var n = el; n && n.nodeType !== 9 && n !== document.documentElement; n = n.parentElement) {
+      var ns = n === el ? st : _styleOf(n);
+      if (ns.display === 'none') return false;
+      if (ns.opacity !== undefined && ns.opacity !== '' && parseFloat(ns.opacity) === 0) return false;
+    }
+    // Rendered but parked off-canvas (a mobile menu slid out of view) is not on
+    // screen.
+    if (typeof el.getBoundingClientRect === 'function' && typeof window.innerWidth === 'number') {
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || r.right <= 0 || r.bottom <= 0
+        || r.left >= window.innerWidth || r.top >= (window.innerHeight || 0)) return false;
+    }
+    return true;
+  }
+
+  function _ownedElement(el) {
+    if (el.closest && el.closest('[d2-lightbox-modal]')) return true;
+    for (var name in registry) {
+      if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
+      var pe = registry[name] && registry[name].popupElement;
+      if (pe && (pe === el || (pe.contains && pe.contains(el)))) return true;
+    }
+    return false;
+  }
+
+  function _unmarkedRecord(el) {
+    for (var i = 0; i < _unmarkedSeen.length; i++) if (_unmarkedSeen[i].el === el) return _unmarkedSeen[i];
+    return null;
+  }
+
+  // An unmarked modal counts for UNMARKED_MAX_MS from the first time it was
+  // seen on screen, then never again while it stays up. Once it is gone the
+  // record is dropped, so the next time the visitor opens it, it counts anew.
+  function _unmarkedStillCounts(el, shown) {
+    var rec = _unmarkedRecord(el);
+    if (!shown) {
+      if (rec) _unmarkedSeen.splice(_unmarkedSeen.indexOf(rec), 1);
+      return false;
+    }
+    if (!rec) { rec = { el: el, since: _now(), gaveUp: false }; _unmarkedSeen.push(rec); }
+    if (rec.gaveUp) return false;
+    if (_now() - rec.since < UNMARKED_MAX_MS) return true;
+    rec.gaveUp = true;
+    console.warn('[digi2.popups] an [aria-modal] / <dialog> element has been on screen for '
+      + Math.round(UNMARKED_MAX_MS / 1000) + ' s, so automatic popups stop waiting for it. '
+      + 'If it really is a modal, mark it d2-popups-modal so popups wait for as long as it is up; '
+      + 'if it is closed, hide it with display:none, hidden or aria-hidden.', el);
+    return false;
+  }
+
+  // The first visible modal on the page that is not ours, or null.
+  function _foreignModal() {
+    var list;
+    try { list = document.querySelectorAll(FOREIGN_MODAL_SELECTOR); } catch (e) { return null; }
+    var found = null;
+    // A record whose element no longer matches at all — dialog.close(),
+    // aria-modal removed, node taken out of the page — is a closed modal too;
+    // left behind, its clock (or gaveUp) would carry over to the next open.
+    for (var k = _unmarkedSeen.length - 1; k >= 0; k--) {
+      var recEl = _unmarkedSeen[k].el;
+      var still = false;
+      for (var m = 0; m < list.length; m++) if (list[m] === recEl) { still = true; break; }
+      // querySelectorAll only returns nodes in the document, so a removed
+      // node falls out here as well.
+      if (!still) _unmarkedSeen.splice(k, 1);
+    }
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      if (_ownedElement(el)) continue;
+      var shown = _isShown(el);
+      var strong = _matches(el, BANNER_SELECTOR) || _matches(el, MARKED_SELECTOR);
+      if (!strong) {
+        // Keep walking even after a hit, so every unmarked record stays
+        // current (dropped when hidden).
+        if (_unmarkedStillCounts(el, shown) && !found) found = el;
+        continue;
+      }
+      if (shown && !found) found = el;
+    }
+    return found;
+  }
+
+  function _anyParked() {
+    for (var n in registry) {
+      if (Object.prototype.hasOwnProperty.call(registry, n) && registry[n] && registry[n].pendingShow) return true;
+    }
+    return false;
+  }
+
+  // One poll for the whole page, only while a popup is parked behind a foreign
+  // modal. Every second for the first minute, then every five. Stops as soon
+  // as nothing is parked any more (closed, destroyed, dismissed elsewhere).
+  // A MutationObserver would miss a banner hidden by a class change on an
+  // ancestor; a check costs one querySelectorAll.
+  function _watchForeignModals() {
+    if (_foreignWatching) return;
+    _foreignWatching = true;
+    var started = _now();
+    (function tick() {
+      var slow = _now() - started >= FOREIGN_POLL_SLOW_AFTER_MS;
+      setTimeout(function () {
+        if (!_anyParked()) { _foreignWatching = false; return; }
+        if (_foreignModal()) { tick(); return; }
+        _foreignWatching = false;
+        _resumeParkedPopup(RESUME_AFTER_FOREIGN_MS);
+      }, slow ? FOREIGN_POLL_SLOW_MS : FOREIGN_POLL_MS);
+    })();
+  }
+
+  function _screenBusy() {
+    return !!(_visiblePopupOtherThan(null) || _lightboxOpen() || _foreignModal());
+  }
+
   // A beat between one popup closing and a parked one opening. Without it the
   // promo appears in the same frame the visitor's form disappears, which feels
   // like the close button swapped one modal for another rather than giving the
@@ -2170,10 +2394,14 @@
   // Let one popup that stepped aside have the screen now that it is free.
   // Re-runs the full show() path, so a cookie written in the meantime, a promo
   // window that has closed or a canShow() veto still applies.
-  function _resumeParkedPopup() {
+  function _resumeParkedPopup(delayMs) {
     setTimeout(function () {
       if (_visiblePopupOtherThan(null)) return;   // someone got there first
       if (_lightboxOpen()) return;                // lightbox:close calls again
+      if (_foreignModal()) {                      // banner still up — keep watching
+        if (_anyParked()) _watchForeignModals();
+        return;
+      }
       for (var name in registry) {
         if (!Object.prototype.hasOwnProperty.call(registry, name)) continue;
         var inst = registry[name];
@@ -2183,9 +2411,14 @@
         if (inst._isCookieSet()) { inst.pendingShow = false; continue; }
         _log('screen free — resuming deferred popup → ' + name);
         inst.showIfPending({ auto: true });
-        return;                                   // one at a time, always
+        break;                                    // one at a time, always
       }
-    }, RESUME_AFTER_CLOSE_MS);
+      // The screen was free: whatever an unmarked modal's clock said is
+      // history. One closed and reopened while no poll ran would otherwise
+      // keep its gaveUp. Cleared after the resumed show(), so the popup that
+      // was let through is not parked again by a fresh clock.
+      _unmarkedSeen = [];
+    }, typeof delayMs === 'number' ? delayMs : RESUME_AFTER_CLOSE_MS);
   }
 
   const SEQ_TICK_MS = 1000;
@@ -2400,6 +2633,10 @@
         _log('sequence step waiting — the lightbox is open');
         return;
       }
+      if (_foreignModal()) {
+        _log('sequence step waiting — another modal is on screen');
+        return;
+      }
 
       const off = inst._onCloseInternal(() => this._stepClosed());
       // Scheduled, and the sequence runs its own clock: if the screen is busy it
@@ -2500,6 +2737,18 @@
 
     list() {
       return Object.keys(registry);
+    },
+
+    /**
+     * Is something modal on screen right now? Any popup of ours (also one
+     * still fading out), an open lightbox, the cookie consent banner, an
+     * element marked [d2-popups-modal] / [data-d2-popups-modal] or a visible
+     * [aria-modal="true"]. The question automatic popups ask before opening;
+     * a site's own popup script asks it instead of keeping a selector list.
+     * @returns {boolean}
+     */
+    isScreenBusy() {
+      return _screenBusy();
     },
 
     /**

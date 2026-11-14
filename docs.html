@@ -1187,7 +1187,8 @@ digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>)  
 digi2.popups.<span class="fn">close</span>(<span class="string">'name'</span>, <span class="keyword">false</span>)     <span class="comment">// no cookie</span>
 digi2.popups.<span class="fn">get</span>(<span class="string">'name'</span>)
 digi2.popups.<span class="fn">destroy</span>(<span class="string">'name'</span>)         <span class="comment">// an open popup is hidden, its scroll lock released</span>
-digi2.popups.<span class="fn">list</span>()</code></pre>
+digi2.popups.<span class="fn">list</span>()
+digi2.popups.<span class="fn">isScreenBusy</span>()       <span class="comment">// anything modal on screen? see One popup at a time</span></code></pre>
 
     <h3>Requiring a few pages first</h3>
     <p><code>openAfterPageViews: 2</code> <em>is</em> the trigger — it opens the moment the second page loads. When the condition is "they have been around a bit <strong>and</strong> stayed a while", use <code>minPageViews</code> instead: a gate that combines with whatever trigger you already have.</p>
@@ -1205,6 +1206,31 @@ digi2.popups.<span class="fn">list</span>()</code></pre>
       <tr><td><strong>The visitor</strong> — <code>d2-show-popup</code>, <code>openTriggerSelector</code>, <code>digi2.popups.show()</code>, an intercepted link</td><td><strong>Wins.</strong> What is on screen closes first; this one opens once that close has finished, so the two never overlap even for a frame</td></tr>
     </table>
     <p>An open <a href="#lightbox">lightbox</a> counts as a busy screen too — for automatic opens only. They park and come ~0.6 s after <code>lightbox:close</code>, and a sequence step waits the same way. A popup the visitor asks for (a button inside the gallery, <code>d2-show-popup</code>) still opens over it.</p>
+    <p>Modals this module does not own count too, for automatic opens only: the cookie consent banner (<code>#consentsBanner</code>, <code>.d2c</code>) and anything marked <code>d2-popups-modal</code> / <code>data-d2-popups-modal</code> for as long as they are up; a visible <code>[aria-modal="true"]</code> or open <code>&lt;dialog&gt;</code> for <strong>45 s at most</strong>, then one console warning and the popup stops waiting for it. The popup parks and comes ~2 s after the modal is gone; the module checks every second (every 5 s after a minute) and only while something is parked. <code>digi2.popups.isScreenBusy()</code> answers the same question for the page's own scripts.</p>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Overlay of a popup the site wrote by hand</span>
+        <span class="chip chip--attr"><span class="k">Name</span> data-d2-popups-modal</span>
+        <span class="chip chip--attr"><span class="k">Value</span> (empty)</span>
+        <span class="chip chip--note">← library popups wait while it is visible</span>
+      </div>
+    </div>
+    <table>
+      <tr><th>Case</th><th>Behaviour</th></tr>
+      <tr><td>Consent banner up, <code>openAfterDelay</code> comes due</td><td>Waits; opens ~0.6 s after the visitor answers the banner</td></tr>
+      <tr><td>Consent banner up, visitor clicks <code>d2-show-popup</code></td><td>Opens — the visitor asked for it</td></tr>
+      <tr><td>Element or any ancestor is <code>hidden</code>, <code>aria-hidden="true"</code>, <code>inert</code>, <code>display: none</code> or <code>opacity: 0</code>; the element is <code>visibility: hidden</code> or outside the viewport</td><td>Not on screen — blocks nothing</td></tr>
+      <tr><td>Unmarked <code>aria-modal</code> / <code>&lt;dialog open&gt;</code> up for 45 s</td><td>One <code>console.warn</code>, then popups stop waiting for it. Mark it <code>data-d2-popups-modal</code> if it should hold them longer</td></tr>
+      <tr><td>Popup closes and its opener (the banner's Accept button) is hidden</td><td>Focus goes back to the page, not to the hidden button</td></tr>
+      <tr><td>Banner appears <em>after</em> a popup opened</td><td>Not covered here — d2-cookies can ask <code>isScreenBusy()</code></td></tr>
+      <tr><td><code>aria-modal</code> inside one of our popups or the lightbox</td><td>Skipped — those have their own state</td></tr>
+      <tr><td>A <a href="#popups-sequences">sequence</a> step comes due</td><td>Retries on its next tick until the modal is gone</td></tr>
+    </table>
+    <pre><code><span class="comment">// your own popup script — no selector list of your own</span>
+<span class="keyword">function</span> <span class="fn">openMine</span>() {
+  <span class="keyword">if</span> (digi2.popups.<span class="fn">isScreenBusy</span>()) <span class="keyword">return</span> <span class="fn">setTimeout</span>(openMine, <span class="num">1000</span>)
+  myOverlay.hidden = <span class="keyword">false</span>
+}</code></pre>
     <p class="muted">On a page without <code>d2-lightbox</code> nothing waits: popups ask the loader whether the lightbox module is loaded before asking it anything, so the check neither fetches the module nor mistakes the loader’s placeholder for an open gallery (fixed in v1.8.2 — on v1.8.1 automatic popups never opened on such pages).</p>
     <p class="muted">A deferred popup re-runs every check when its turn comes — a dismissal cookie written while it waited, a <a href="#popups-schedule">schedule</a> that has since closed, a <code>canShow()</code> veto. It waits for a free screen; it does not book a guaranteed appearance.</p>
 
@@ -1434,6 +1460,7 @@ digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)</
       <tr><td>Opening a popup deliberately dismisses whatever is in the way</td><td>The visitor asked for this one. The popup on screen closes first, and the new one opens after that close finishes — never both at once</td></tr>
       <tr><td>The <a href="#scroll-lock">scroll lock is shared</a> by popups and the lightbox</td><td>Released when the last one holding it closes, in any order — two overlapping modals used to leave the page permanently unscrollable, which reads as a close button that did nothing</td></tr>
       <tr><td>A step waits while the lightbox is open</td><td>The visitor is looking at a gallery they opened; the step comes once it closes</td></tr>
+      <tr><td>A step waits while the cookie banner or a site modal is on screen</td><td><code>#consentsBanner</code> / <code>.d2c</code> and <code>[data-d2-popups-modal]</code> for as long as they are up; a visible <code>[aria-modal="true"]</code> or <code>&lt;dialog open&gt;</code> for 45 s at most — see One popup at a time</td></tr>
     </table>
 
     <p class="muted">Give every popup in a chain its own <code>cookieName</code>. The default is the same <code>popup_clicked</code> for all of them, so closing step one would mark the rest as seen and the chain would skip to the end — the module warns in the console when it spots that.</p>

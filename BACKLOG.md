@@ -3,6 +3,19 @@
 Prace odłożone świadomie: co, dlaczego nie teraz i kiedy wracamy.
 Pozycja podjęta = gałąź + PR; po scaleniu usuń ją stąd (ślad zostaje w CHANGELOG).
 
+## popups: baner zgód wchodzi po otwartym popupie
+
+- **Dodano:** 2026-11-14, recenzja PR #82 (architekt-it, 🟡3).
+- **Szacunek:** ok. 1 h po stronie d2-cookies, w repo webflow.
+- **Powód:** PR #82 sprawia, że popup czeka na baner. Odwrotnej kolejności
+  nie obejmuje: gdy popup jest już otwarty, a baner pojawi się później
+  (opóźnione ładowanie d2-cookies), na ekranie są dwa modale.
+- **Zakres:** d2-cookies przed pokazaniem banera pyta
+  `digi2.popups.isScreenBusy()` i czeka, aż ekran się zwolni. Alternatywa po
+  stronie biblioteki to zamknięcie automatycznego popupu, gdy wchodzi baner.
+  Odrzucona na razie, bo gubi popup.
+- **Warunek startu:** PR #82 wydany (1.10.0), sesja webflow prowadzi d2-cookies.
+
 ## d2-booking: nagłówek ze zdjęciem i opisem w narysowanym widgecie
 
 - **Dodano:** 2026-11-09, reszta pozycji „zdjęcie i opis poza listą”. Samo

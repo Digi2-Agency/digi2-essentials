@@ -767,6 +767,81 @@ page without `d2-lightbox` every automatic popup used to park for a
 `lightbox:close` that never comes (v1.8.1, fixed in v1.8.2). Only `isOpen() ===
 true` counts as open; the check never pulls the lightbox module in.
 
+The same goes for the `d2-ma` page condition (`d2-ma-show-*` / `d2-ma-hide-*`
+on the overlay): `digi2.ma` is a loader stub until the page itself loads the
+ma module, and a call on it fetches and runs `ma.min.js`. `show()` asks it only
+when the overlay carries a `d2-ma-*` attribute **and** `digi2._loaded.ma` is set;
+otherwise there is no veto and nothing is fetched (caught on a client site
+before 1.10.0, where every popup open was pulling the module in).
+
+**Modals the module does not own count too** (agency standard "one popup at a
+time", 2026-11-13). For automatic opens the screen is also busy while any of
+these is visible:
+
+| Element | Where it comes from | Holds popups |
+|---|---|---|
+| `#consentsBanner`, `.d2c` | the d2-cookies consent banner (its root is `.d2c`, `role="dialog"`, hidden with the `hidden` attribute) | as long as it is up |
+| `[d2-popups-modal]` / `[data-d2-popups-modal]` | a popup the site wrote by hand — mark its overlay with this attribute | as long as it is up |
+| `[aria-modal="true"]`, `dialog[open]` | any accessible modal, without marking | **45 s at most** |
+
+Why not `d2-modal`: client sites already carry `d2-modal="open"`,
+`d2-modal="wrapper"`, `d2-modal-parent` and `d2-modal-product` from their own
+modal script (bernardynska.com, wielka16.com, osiedlebo.pl, rajska77.com,
+osiedlelatawcow.pl) — `open` sits on always-visible buttons. A marker with that
+name held every automatic popup on those pages forever; the release check before
+1.10.0 caught it. Do not reuse that prefix.
+
+Anything inside a registered popup and the lightbox (`[d2-lightbox-modal]`) is
+skipped — those are tracked by their own state, above. "Visible" means:
+
+- no `hidden`, `aria-hidden="true"` or `inert` on the element **or any ancestor**,
+- rendered (`getClientRects()`), not `visibility: hidden`,
+- no `display: none` or `opacity: 0` on the element or any ancestor (Webflow
+  interactions close a modal by fading its wrapper; `opacity` does not inherit
+  into the computed style, so the module walks up),
+- the box overlaps the viewport — an off-canvas mobile menu slid out of view
+  does not hold popups back.
+
+**Why the 45 s cap on unmarked modals.** An `aria-modal` the site closes some
+way the check cannot see would otherwise hold every automatic popup for the
+whole visit, silently, on every page of every site on `@latest`. After 45 s of
+one such element on screen the module writes one `console.warn` (with the
+element) and stops waiting for it. Once it is hidden the record is dropped, so
+the next time the visitor opens it, it counts again. The same happens when it
+stops matching at all (`dialog.close()`, `aria-modal` removed, element removed
+from the page) and whenever a parked popup gets the screen, so a modal that
+closed while nothing was checking starts a fresh 45 s next time. A modal that really should
+hold popups for longer gets `data-d2-popups-modal`.
+
+The parked popup cannot be told when such a modal goes away (the banner just
+gets `hidden`), so while a popup is parked the module checks every second, every
+5 s after the first minute, and stops as soon as nothing is parked (closed,
+destroyed). It resumes the popup **~2 s** after the screen is free — a popup
+0.6 s after "Accept" reads as the banner turning into an ad. A sequence step
+simply retries on its own tick. A popup the visitor asks for still opens over
+the banner — same rule as the lightbox.
+
+If the popup's opener is hidden by the time it closes (the banner's "Accept"
+button), focus is not sent back to it: the module blurs instead, so focus goes
+back to the page.
+
+Not covered: the banner appearing *after* a popup is already open (two modals
+again). That is d2-cookies' side — it can ask `isScreenBusy()`; see BACKLOG.
+
+`digi2.popups.isScreenBusy()` returns `true` when any popup of ours is on screen
+(also one still fading out), the lightbox is open, or one of the modals above is
+visible. A site's own popup script asks it before opening instead of keeping its
+own selector list:
+
+```js
+function openMine() {
+  if (digi2.popups && digi2.popups.isScreenBusy()) return setTimeout(openMine, 1000);
+  myOverlay.hidden = false;
+}
+```
+
+Mark that overlay `data-d2-popups-modal` too, so the library's popups wait for it in turn.
+
 **The page scroll lock always comes back off.** The lock is shared by every
 popup and the lightbox (`digi2.scrollLock`, below) and released when the last
 holder closes — but the release used
@@ -879,6 +954,7 @@ digi2.popups.close('name', false)     // no cookie
 digi2.popups.get('name')
 digi2.popups.destroy('name')         // an open popup is hidden, its scroll lock released
 digi2.popups.list()
+digi2.popups.isScreenBusy()           // anything modal on screen? (see "One popup at a time")
 ```
 
 ### Requiring a few pages first — `minPageViews`
