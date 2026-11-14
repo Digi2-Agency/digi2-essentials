@@ -2325,3 +2325,27 @@ test('regression 1.10.0: the sites own d2-modal attributes (2destate: open / wra
   fireTimers(env, 5000);
   assert.equal(promo.isVisible, true);
 });
+
+test('regression 1.10.0: show() never touches the loader stub of digi2.ma (it would fetch and run ma.min.js)', () => {
+  // On bernardynska.com every popup open pulled ma.min.js in: digi2.ma is the
+  // loader's stub until the module loads, and calling allows() on it fetches it.
+  [{ attrs: {} }, { attrs: { 'd2-ma-show-segment': '2-pokoje' } }].forEach(({ attrs }, i) => {
+    const env = createEnvironment();
+    loadPopupsModule(env);
+    let calls = 0;
+    env.window.digi2._loaded = { popups: true };          // loader present, ma not loaded
+    env.window.digi2.ma = { allows: () => { calls++; return Promise.resolve(); } };
+    env.body.appendChild(createElement('div', Object.assign({ class: 'popup__overlay' }, attrs)));
+    const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true, cookieName: null });
+    assert.equal(inst.isVisible, true, 'case ' + i + ': opens');
+    assert.equal(calls, 0, 'case ' + i + ': the stub was not called');
+  });
+  // ma loaded by the page: the condition is asked.
+  const env = createEnvironment();
+  loadPopupsModule(env);
+  env.window.digi2._loaded = { popups: true, ma: true };
+  env.window.digi2.ma = { allows: () => false };
+  env.body.appendChild(createElement('div', { class: 'popup__overlay', 'd2-ma-show-segment': 'x' }));
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true, cookieName: null });
+  assert.equal(inst.isVisible, false, 'loaded ma still vetoes');
+});

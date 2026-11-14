@@ -294,6 +294,23 @@
     try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) { /* no-op */ } }
   }
 
+  // d2-ma-show-* / d2-ma-hide-* (or data-d2-ma-*) on the overlay.
+  function _hasMaCondition(el) {
+    var a = el.attributes;
+    if (!a) return false;
+    var names = [];
+    if (typeof a.length === 'number') {
+      for (var i = 0; i < a.length; i++) names.push(a[i].name);
+    } else {
+      names = Object.keys(a);                     // plain map (test DOM)
+    }
+    for (var j = 0; j < names.length; j++) {
+      var n = names[j];
+      if (n.indexOf('d2-ma-') === 0 || n.indexOf('data-d2-ma-') === 0) return true;
+    }
+    return false;
+  }
+
   function _safeCall(fn, popupName, label, arg, fallback) {
     if (typeof fn !== 'function') return fallback;
     try {
@@ -1079,11 +1096,22 @@
     // d2-ma-show-* / d2-ma-hide-* on the overlay (d2-ma ma.5) veto an open the
     // same way canShow does. d2-ma resumes the parked show once the condition
     // holds. Without d2-ma on the page there is no veto.
+    //
+    // Until the ma module is in, digi2.ma is the loader's stub: any call on it
+    // FETCHES and runs ma.min.js and returns a Promise. Asking it on every
+    // show() pulled marketing automation into every page with a popup, d2-ma
+    // or not (caught on bernardynska.com before 1.10.0; same trap as the
+    // lightbox in v1.8.1). So: no d2-ma-* condition on the overlay, or the
+    // module not loaded by the page itself — no veto, and nothing is fetched.
     _isMaAllowed() {
       var el = this.popupElement;
-      var ma = window.digi2 && window.digi2.ma;
-      if (!el || !ma || typeof ma.allows !== 'function') return true;
-      return ma.allows(el);
+      if (!el || !_hasMaCondition(el)) return true;
+      var d2 = window.digi2;
+      if (!d2 || (d2._loaded && !d2._loaded.ma)) return true;
+      var ma = d2.ma;
+      if (!ma || typeof ma.allows !== 'function') return true;
+      var ok = ma.allows(el);
+      return ok === false ? false : true;
     }
 
     _isWithinSchedule() {

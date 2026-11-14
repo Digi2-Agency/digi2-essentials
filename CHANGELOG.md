@@ -34,6 +34,12 @@ liczy się to:
   dołącza do pierwszego: `digi2.onReady` odpala raz (ma.46/ma.47, bezpiecznik
   10 s).
 - **Lightbox:** Esc w galerii nie zamyka przy okazji popupu pod spodem.
+- **Popupy nie dociągają już modułu `d2-ma`.** W linii `ma.N` każde otwarcie
+  popupu pytało `digi2.ma.allows()`, a na stronie bez `d2-ma` to zaślepka
+  loadera, która pobiera i uruchamia `ma.min.js`. Teraz warunek `d2-ma` jest
+  sprawdzany tylko wtedy, gdy overlay ma atrybut `d2-ma-show-*` /
+  `d2-ma-hide-*`, a moduł załadowała sama strona. Wykryte w porównaniu na
+  bernardynska.com przed tagiem.
 - **Nowe moduły dostępne ze stabilnego tagu:** `d2-booking` (rezerwacje) i
   `d2-ma` (marketing automation). Strona bez tych atrybutów ich nie ładuje.
   Strona z `d2-ma` na `@latest` dostaje od teraz `ma.min.js` z 1.10.0 zamiast

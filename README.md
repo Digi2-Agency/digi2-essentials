@@ -767,6 +767,13 @@ page without `d2-lightbox` every automatic popup used to park for a
 `lightbox:close` that never comes (v1.8.1, fixed in v1.8.2). Only `isOpen() ===
 true` counts as open; the check never pulls the lightbox module in.
 
+The same goes for the `d2-ma` page condition (`d2-ma-show-*` / `d2-ma-hide-*`
+on the overlay): `digi2.ma` is a loader stub until the page itself loads the
+ma module, and a call on it fetches and runs `ma.min.js`. `show()` asks it only
+when the overlay carries a `d2-ma-*` attribute **and** `digi2._loaded.ma` is set;
+otherwise there is no veto and nothing is fetched (caught on a client site
+before 1.10.0, where every popup open was pulling the module in).
+
 **Modals the module does not own count too** (agency standard "one popup at a
 time", 2026-11-13). For automatic opens the screen is also busy while any of
 these is visible:
