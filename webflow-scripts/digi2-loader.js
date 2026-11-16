@@ -32,6 +32,12 @@
  * ─── Loader Attributes ──────────────────────────────────────────────────────
  *
  *   d2-gtm="GTM-XXXXXXX"               GTM container ID — auto-loads google module
+ *   d2-attribution                     v1.11, opt-in: digi2.attribution — visit sources (UTM, ad
+ *                                      clicks, referrers) for forms / popups; memory only without
+ *                                      analytics_storage, localStorage d2_attribution with it;
+ *                                      click id values only with ad_storage. Part of the loader,
+ *                                      not a module. Alias data-d2-attribution.
+ *   d2-attribution-days="395"          How long the visit history lasts (default 13 months)
  *   d2-ab-tests="configName"           A/B test map on window[configName]
  *   d2-ma="URL"                        Scenario envelope JSON (digi2.app /api/ma/scenario/<site>.json;
  *                                      ma.23: only https://digi2.app or https://api.2destate.com)
@@ -184,15 +190,17 @@
  *   ipTracking:           false               Fetch & inject visitor IP address
  *   pageMeta:             true                Inject page_url, page_title, page_referrer
  *   cookieDurationDays:   365                 How long UTM/click cookies persist
+ *                                             (none of these cookies with d2-attribution: fields come
+ *                                             from digi2.attribution, + ATTRIBUTION_PATH / _STATUS)
  *   customFields:         {}                  { fieldName: 'value' } — extra hidden fields
  *   ipApiUrl:             'https://api.ipify.org?format=json'
  *   onReady:              null                Callback(instance) after all fields injected
  *
  *   Auto-injected hidden input names:
- *     utm_campaign_hidden, utm_source_hidden, utm_medium_hidden,
- *     utm_content_hidden, utm_term_hidden,
- *     gclid, fbclid, msclkid, gaclientid,
- *     page_url, page_title, page_referrer, ip_address
+ *     UTM_CAMPAIGN, UTM_SOURCE, UTM_MEDIUM, UTM_CONTENT, UTM_TERM,
+ *     GCLID, FBCLID, MSCLKID, GOOGLE_ANALYTICS_ID,
+ *     PAGE_URL, PAGE_TITLE, PAGE_REFERRER, IP_ADDRESS
+ *     + ATTRIBUTION_PATH, ATTRIBUTION_STATUS with d2-attribution on the loader
  *
  * ─── Events ─────────────────────────────────────────────────────────────────
  *
@@ -498,6 +506,460 @@
   var useMin = /\.min\.js(\?|$)/.test(src);
 
   window.digi2.log('loader', 'initialized', { baseUrl: baseUrl, minified: useMin, debug: window.digi2.debug });
+
+  // ---- d2-attribution — sources of visits (UTM, ad clicks) ------------------
+  // Opt-in per site: the d2-attribution flag (alias data-d2-attribution) on a
+  // loader tag. Without it nothing here runs and forms / popups keep their
+  // pre-1.11 behaviour (utm_* cookies). Design: specs/atrybucja-utm.md.
+  //
+  // One place that knows where the visitor came from, for every module:
+  //   - without analytics consent: only this pageview, in memory, nothing stored
+  //   - with analytics_storage: localStorage d2_attribution, a history of up to
+  //     20 visits, 13 months (d2-attribution-days)
+  //   - with ad_storage as well: click id VALUES (gclid, fbclid, …) for offline
+  //     conversion imports; without it only the kind of click
+  //   - consent denied: the stored history is deleted
+  // The old utm_* / click id cookies of forms.js and popups.js are not written
+  // and are removed: they were set without asking.
+  if (!window.digi2.attribution
+    && (loaderScript.hasAttribute('d2-attribution') || loaderScript.hasAttribute('data-d2-attribution'))) {
+    try { _installAttribution(loaderScript); } catch (e) { console.warn('[digi2.attribution] not started', e); }
+  }
+
+  function _installAttribution(tag) {
+    var KEY = 'd2_attribution';
+    var CONSENT_KEY = 'consentModeV2';
+    var CAT_UTM = 'analytics_storage';   // AT-D3
+    var CAT_ADS = 'ad_storage';          // AT-D4
+    var DAY_MS = 864e5;
+    var VISIT_GAP_MS = 30 * 60 * 1000;   // same visit rule as d2-ma
+    var MAX_STORED = 20;
+    var PATH_MAX_ENTRIES = 10;
+    var PATH_MAX_CHARS = 500;
+    var UTM = ['source', 'medium', 'campaign', 'content', 'term', 'id'];
+    // Order = precedence when a URL carries several (as touchpoints v1 in ma.js).
+    var CLICK_IDS = ['gclid', 'gbraid', 'wbraid', 'dclid', 'fbclid', 'ttclid', 'msclkid'];
+    var LEGACY_COOKIES = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term',
+      'gclid', 'fbclid', 'msclkid', 'gaclientid'];
+
+    function cfg(name) {
+      var v = tag.getAttribute(name);
+      return v == null ? tag.getAttribute('data-' + name) : v;
+    }
+    var days = parseFloat(cfg('d2-attribution-days'));
+    if (!(days > 0)) days = 395;   // 13 months (AT-D5)
+
+    function log(action, data) { window.digi2.log('attribution', action, data); }
+
+    // ---- One entry from a URL + referrer (touchpoints v1, kept in step with ma.js)
+    var PHONE_RE = /\+\d{2}[\s-]?\d|\d{3}[\s-]\d{3}[\s-]\d{3}|^\d{9}$/;
+    var UNPRINTABLE_RE;
+    try { UNPRINTABLE_RE = new RegExp('(?! )[\\p{C}\\p{Z}]', 'u'); } catch (e) { UNPRINTABLE_RE = /[\u0000-\u001f\u007f-\u009f]/; }
+    // Personal data in a UTM (an e-mail, a phone number) → null; a value that
+    // would break the lead mail (new line, control character) → null.
+    function utmValue(v, field) {
+      v = v == null ? '' : String(v).replace(/^\s+|\s+$/g, '');
+      if (!v || v.indexOf('@') >= 0 || UNPRINTABLE_RE.test(v)) return null;
+      if ((field === 'content' || field === 'term') && PHONE_RE.test(v)) return null;
+      return v.slice(0, 100);
+    }
+    var HOST_LABEL = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+    var HOST_RE = new RegExp('^' + HOST_LABEL + '(?:\\.' + HOST_LABEL + ')*$');
+    function refHost(h) {
+      h = h == null ? '' : String(h).toLowerCase();
+      return h && h.length <= 100 && HOST_RE.test(h) ? h : null;
+    }
+    function siteHost(h) { return String(h || '').toLowerCase().replace(/^www\./, ''); }
+
+    function parseTouchpoint(href, referrer) {
+      var u = null;
+      try { u = new URL(String(href || ''), 'https://invalid.local/'); } catch (e) { u = null; }
+      var web = !!u && u.hostname !== 'invalid.local' && (u.protocol === 'https:' || u.protocol === 'http:');
+      var q = u ? u.searchParams : null;
+      var e = {};
+      UTM.forEach(function (k) { e['utm_' + k] = utmValue(q ? q.get('utm_' + k) : null, k); });
+      e.click_type = 'none';
+      for (var i = 0; q && i < CLICK_IDS.length; i++) {
+        if (q.get(CLICK_IDS[i])) { e.click_type = CLICK_IDS[i]; break; }
+      }
+      var own = web ? siteHost(u.hostname) : null;
+      var ref = null;
+      try { ref = referrer ? new URL(String(referrer)).hostname.toLowerCase() : null; } catch (x) { ref = null; }
+      e.referrer_internal = !!ref && siteHost(ref) === own;
+      e.referrer_host = !e.referrer_internal ? refHost(ref) : null;
+      var lp = web ? (u.pathname || '/') : null;
+      e.landing_path = lp && !/@|%40/i.test(lp) ? lp.slice(0, 200) : null;
+      return e;
+    }
+
+    function hasUtm(e) {
+      for (var i = 0; i < UTM.length; i++) if (e['utm_' + UTM[i]]) return true;
+      return false;
+    }
+    function hasSource(e) {
+      return !!e && (hasUtm(e) || (e.click_type && e.click_type !== 'none') || !!e.referrer_host);
+    }
+    function utmKey(e) { return [e.utm_source, e.utm_medium, e.utm_campaign].join('|'); }
+    // Within a visit only a new campaign makes a new entry (ma.js newCampaign).
+    function newCampaign(e, last) {
+      var utm = !!(e.utm_source || e.utm_medium || e.utm_campaign);
+      if (utm && (!last || utmKey(last) !== utmKey(e))) return true;
+      if (e.click_type === 'none' || e.referrer_internal) return false;
+      return !last || last.click_type !== e.click_type || utmKey(last) !== utmKey(e);
+    }
+
+    // ---- Consent (Consent Mode; same order of sources as ma.js consentState)
+    var gtag = { update: {}, def: {}, region: {} };
+    function isGtag(entry) {
+      return Object.prototype.toString.call(entry) === '[object Arguments]' && entry[0] === 'consent';
+    }
+    function onGtag(args) {
+      var kind = args[1], st = args[2];
+      if ((kind !== 'default' && kind !== 'update') || !st || typeof st !== 'object') return;
+      [CAT_UTM, CAT_ADS].forEach(function (c) {
+        var v = st[c];
+        if (v !== 'granted' && v !== 'denied') return;
+        if (kind === 'update') gtag.update[c] = v;
+        else if (st.region != null) { if (v === 'denied') gtag.region[c] = true; }
+        else gtag.def[c] = v;
+      });
+    }
+    function tagEntry(c) {
+      try { return window.google_tag_data.ics.entries[c] || null; } catch (e) { return null; }
+    }
+    function savedConsent(c) {
+      var s = null;
+      try { s = JSON.parse(window.localStorage.getItem(CONSENT_KEY) || 'null'); } catch (e) { s = null; }
+      var v = s && s[c];
+      return v === 'granted' || v === 'denied' ? v : null;
+    }
+    // 'granted' | 'denied' | 'unknown' — only an explicit choice is 'denied'.
+    function consent(c) {
+      if (gtag.update[c]) return gtag.update[c];
+      var e = tagEntry(c);
+      var raw = e ? (e.update !== undefined ? e.update : e['default']) : undefined;
+      var tagV = raw === true ? 'granted' : raw === false ? 'denied' : null;
+      if (tagV === 'granted' && e.update !== undefined) return 'granted';
+      if (e && e.update === false) return 'denied';
+      var saved = savedConsent(c);
+      if (saved) return saved;
+      if (tagV === 'granted') return 'granted';
+      if (tagV === 'denied' || gtag.region[c]) return 'unknown';
+      return gtag.def[c] === 'granted' ? 'granted' : 'unknown';
+    }
+
+    // ---- Storage --------------------------------------------------------------
+    function store() { try { return window.localStorage || null; } catch (e) { return null; } }
+    function readStore() {
+      var s = store();
+      if (!s) return null;
+      try {
+        var d = JSON.parse(s.getItem(KEY) || 'null');
+        return d && d.v === 1 && Array.isArray(d.touches) ? d : null;
+      } catch (e) { return null; }
+    }
+    function writeStore(d) {
+      var s = store();
+      if (!s) return false;
+      try { s.setItem(KEY, JSON.stringify(d)); return true; } catch (e) { return false; }
+    }
+    function dropStore() {
+      var s = store();
+      if (s) { try { s.removeItem(KEY); } catch (e) { /* blocked */ } }
+    }
+    function dropLegacyCookies() {
+      LEGACY_COOKIES.forEach(function (n) {
+        try {
+          if (new RegExp('(?:^|;\\s*)' + n + '=').test(document.cookie || '')) {
+            document.cookie = n + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+          }
+        } catch (e) { /* cookies blocked */ }
+      });
+    }
+
+    function params() {
+      try { return new URLSearchParams((window.location && window.location.search) || ''); } catch (e) { return null; }
+    }
+    function now() { return Date.now(); }
+
+    // ---- State ------------------------------------------------------------------
+    var href = null, referrer = null;
+    try { href = window.location && window.location.href; } catch (e) { href = null; }
+    try { referrer = document.referrer || null; } catch (e) { referrer = null; }
+    var page = parseTouchpoint(href, referrer);   // this pageview, without ts
+    var pageTs = now();
+    var data = null;          // the stored history — only while consent is granted
+    var pageCounted = false;  // this pageview already went into the history
+
+    function entry(t, newVisit) {
+      var e = {};
+      for (var k in page) if (Object.prototype.hasOwnProperty.call(page, k)) e[k] = page[k];
+      e.ts = t;
+      // A new visit through an internal link carrying a passed-through gclid is not an ad click.
+      if (newVisit && e.referrer_internal) e.click_type = 'none';
+      delete e.referrer_internal;
+      return e;
+    }
+
+    function prune(d) {
+      var min = now() - days * DAY_MS;
+      d.touches = d.touches.filter(function (e) { return e && e.ts >= min; }).slice(-MAX_STORED);
+      if (d.last && !(d.last.ts >= min)) d.last = null;
+      var clicks = d.clicks && typeof d.clicks === 'object' ? d.clicks : {};
+      Object.keys(clicks).forEach(function (k) { if (!(clicks[k] && clicks[k].ts >= min)) delete clicks[k]; });
+      d.clicks = clicks;
+    }
+
+    function persist() {
+      var d = readStore() || { v: 1, touches: [], last: null, clicks: {}, seen: 0 };
+      prune(d);
+      if (!pageCounted) {
+        pageCounted = true;
+        var lastT = d.touches.length ? d.touches[d.touches.length - 1] : null;
+        var newVisit = !d.seen || pageTs - d.seen > VISIT_GAP_MS;
+        if (newVisit || newCampaign(page, lastT)) {
+          var e = entry(pageTs, newVisit);
+          d.touches.push(e);
+          d.touches = d.touches.slice(-MAX_STORED);
+          // A new campaign replaces the whole set — never single UTM fields.
+          if (hasSource(e)) d.last = e;
+        }
+      }
+      d.seen = now();
+      if (consent(CAT_ADS) === 'granted') {
+        var q = params();
+        if (q && !page.referrer_internal) {
+          CLICK_IDS.forEach(function (k) {
+            var v = q.get(k);
+            if (v && !UNPRINTABLE_RE.test(v)) d.clicks[k] = { value: String(v).slice(0, 200), ts: pageTs };
+          });
+        }
+      } else {
+        d.clicks = {};
+      }
+      data = writeStore(d) ? d : null;
+    }
+
+    var lastKey = null;
+    function refresh() {
+      var u = consent(CAT_UTM), a = consent(CAT_ADS), key = u + '|' + a;
+      if (key === lastKey) return;
+      lastKey = key;
+      if (u === 'granted') {
+        persist();
+      } else {
+        if (u === 'denied') { dropStore(); log('consent denied — history deleted'); }
+        data = null;
+        pageCounted = false;
+      }
+      log('state', { consent: u, adsConsent: a, stored: !!data });
+      window.digi2.emit('attribution:change', snapshot());
+    }
+
+    // ---- Output -----------------------------------------------------------------
+    function out(e) {
+      if (!e) return null;
+      var o = {};
+      for (var k in e) if (Object.prototype.hasOwnProperty.call(e, k) && k !== 'referrer_internal') o[k] = e[k];
+      return o;
+    }
+
+    function history() {
+      if (data && data.touches.length) return { touches: data.touches.slice(), last: data.last };
+      var pe = entry(pageTs, true);
+      return { touches: [pe], last: hasSource(pe) ? pe : null };
+    }
+
+    function status(h) {
+      if (consent(CAT_UTM) !== 'granted') return 'no-consent';
+      var any = h.touches.some(hasSource);
+      if (!any) return 'none';
+      return data && h.touches.length > 1 ? 'stored' : 'url';
+    }
+
+    function snapshot() {
+      var h = history();
+      var clicks = {};
+      if (data && consent(CAT_ADS) === 'granted') {
+        Object.keys(data.clicks || {}).forEach(function (k) { clicks[k] = data.clicks[k].value; });
+      }
+      return {
+        v: 1,
+        consent: consent(CAT_UTM),
+        adsConsent: consent(CAT_ADS),
+        status: status(h),
+        page: out(entry(pageTs, true)),
+        last: out(h.last),
+        touches: h.touches.map(out),
+        clicks: clicks,
+      };
+    }
+
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    function day(ts) {
+      var d = new Date(ts);
+      return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    }
+    // "/" separates source/medium/campaign and " > " separates entries; a new
+    // line would break the lead mail parser — none of them may come from a value.
+    function clean(v) { return String(v).replace(/[\/<>\r\n\t]/g, '-'); }
+    function label(e) {
+      var s, m, c;
+      if (hasUtm(e)) {
+        s = e.utm_source || '(not set)';
+        m = e.utm_medium || '(not set)';
+        c = e.utm_campaign || '(not set)';
+      } else {
+        s = e.referrer_host || '(direct)';
+        m = e.referrer_host ? '(referral)' : '(none)';
+        c = '(not set)';
+      }
+      var l = clean(s) + '/' + clean(m) + '/' + clean(c);
+      if (e.click_type && e.click_type !== 'none') l += ' [' + e.click_type + ']';
+      return l;
+    }
+    // "2026-10-02 google/cpc/x [gclid] > 2026-10-09 (direct)/(none)/(not set) x2"
+    // Oldest first; the last 10 entries, at most 500 characters, "... > " when cut.
+    function path(list) {
+      var groups = [];
+      list.forEach(function (e) {
+        var t = day(e.ts) + ' ' + label(e);
+        var g = groups[groups.length - 1];
+        if (g && g.t === t) g.n++;
+        else groups.push({ t: t, n: 1 });
+      });
+      var parts = groups.map(function (g) { return g.t + (g.n > 1 ? ' x' + g.n : ''); });
+      var cut = parts.length > PATH_MAX_ENTRIES;
+      if (cut) parts = parts.slice(-PATH_MAX_ENTRIES);
+      var s = parts.join(' > ');
+      while (parts.length > 1 && (cut ? 6 : 0) + s.length > PATH_MAX_CHARS) {
+        parts.shift();
+        cut = true;
+        s = parts.join(' > ');
+      }
+      return (cut ? '... > ' : '') + s;
+    }
+
+    // Hidden form fields — the names Make already maps (UTM_*, GCLID…) plus
+    // ATTRIBUTION_PATH / ATTRIBUTION_STATUS.
+    function fields() {
+      var h = history();
+      var L = h.last || {};
+      var snap = snapshot();
+      return {
+        UTM_SOURCE: L.utm_source || '',
+        UTM_MEDIUM: L.utm_medium || '',
+        UTM_CAMPAIGN: L.utm_campaign || '',
+        UTM_CONTENT: L.utm_content || '',
+        UTM_TERM: L.utm_term || '',
+        GCLID: snap.clicks.gclid || '',
+        FBCLID: snap.clicks.fbclid || '',
+        MSCLKID: snap.clicks.msclkid || '',
+        ATTRIBUTION_PATH: path(h.touches),
+        ATTRIBUTION_STATUS: snap.status,
+      };
+    }
+
+    var OPTIONAL = { GCLID: 1, FBCLID: 1, MSCLKID: 1 };
+    function fill(form) {
+      if (!form || typeof form.querySelector !== 'function') return;
+      var f = fields();
+      Object.keys(f).forEach(function (name) {
+        var input = form.querySelector('input[name="' + name + '"]');
+        if (!input) {
+          if (OPTIONAL[name] && !f[name]) return;
+          input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          form.appendChild(input);
+        }
+        input.value = f[name];
+      });
+    }
+
+    // Value of one traffic key for d2-popup-utm: utm_* from the last source
+    // (this pageview without consent), any other key from this URL only (AT-D7).
+    function value(key) {
+      var k = String(key || '');
+      var m = /^utm_(source|medium|campaign|content|term|id)$/i.exec(k);
+      if (m) {
+        var L = history().last;
+        return (L && L['utm_' + m[1].toLowerCase()]) || '';
+      }
+      var q = params();
+      return (q && q.get(k)) || '';
+    }
+
+    window.digi2.attribution = {
+      enabled: true,
+      get: snapshot,
+      fields: fields,
+      path: function () { return path(history().touches); },
+      status: function () { return status(history()); },
+      value: value,
+      fill: fill,
+      consent: function (category) { return consent(category || CAT_UTM); },
+      clear: function () {
+        dropStore();
+        data = null;
+        pageCounted = false;
+        lastKey = null;
+        refresh();
+      },
+      parseTouchpoint: function (h, r) { return out(parseTouchpoint(h, r)); },
+    };
+
+    // ---- Wiring -----------------------------------------------------------------
+    var dl = window.dataLayer = window.dataLayer || [];
+    for (var i = 0; i < dl.length; i++) { try { if (isGtag(dl[i])) onGtag(dl[i]); } catch (e) { /* skip */ } }
+    if (!dl._d2attrHooked) {
+      dl._d2attrHooked = true;
+      var original = dl.push;
+      dl.push = function () {
+        var r = original.apply(dl, arguments);
+        var touched = false;
+        for (var j = 0; j < arguments.length; j++) {
+          var a = arguments[j];
+          try {
+            if (isGtag(a)) { onGtag(a); touched = true; }
+            else if (a && typeof a === 'object' && typeof a.event === 'string') touched = true;
+          } catch (e) { /* skip */ }
+        }
+        // A banner from a GTM template changes consent without a gtag command —
+        // it shows only in the Google tag state, so every event re-checks it.
+        if (touched) refresh();
+        return r;
+      };
+    }
+    window.digi2.on('consent:updated', refresh);
+
+    dropLegacyCookies();
+    refresh();
+
+    // Forms outside d2-forms (WordPress, Shopify, Webstudio, embeds):
+    // <form d2-attribution-fill> gets the same hidden fields, refreshed on submit.
+    function autoFill() {
+      var forms = [];
+      try {
+        forms = document.querySelectorAll('form[d2-attribution-fill], form[data-d2-attribution-fill], '
+          + '[d2-attribution-fill] form, [data-d2-attribution-fill] form');
+      } catch (e) { forms = []; }
+      for (var n = 0; n < forms.length; n++) {
+        var f = forms[n];
+        if (f._d2attrFill) continue;
+        f._d2attrFill = true;
+        fill(f);
+        (function (form) {
+          form.addEventListener('submit', function () { fill(form); }, true);
+        })(f);
+      }
+    }
+    if (document.readyState === 'loading' && document.addEventListener) {
+      document.addEventListener('DOMContentLoaded', autoFill);
+    } else {
+      autoFill();
+    }
+  }
 
   // ---- Internal: load a single module by name (returns a Promise) ----------
   var _loadPromises = {};
@@ -899,8 +1361,9 @@
         var bookingKey = el.getAttribute('d2-booking');
         if (bookingKey) window.digi2._bookingKey = bookingKey;
         _pushModule(into, 'booking');
-      } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules') {
-        // not a module flag
+      } else if (name === 'd2-debug-mode' || name === 'd2-module' || name === 'd2-modules'
+        || name === 'd2-attribution' || name.indexOf('d2-attribution-') === 0) {
+        // not a module flag (d2-attribution is part of the loader itself)
       } else if (name.indexOf('d2-') === 0) {
         var m = name.substring(3); // "d2-popups" -> "popups"
         if (m.indexOf('format-') === 0) m = 'format'; // format-price/-number/-sum → format

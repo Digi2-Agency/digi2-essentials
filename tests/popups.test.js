@@ -2349,3 +2349,28 @@ test('regression 1.10.0: show() never touches the loader stub of digi2.ma (it wo
   const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true, cookieName: null });
   assert.equal(inst.isVisible, false, 'loaded ma still vetoes');
 });
+
+// d2-attribution (v1.11): the gate reads digi2.attribution, never the cookie,
+// and writes nothing.
+function attributionUtmEnv({ search = '', cookie = '', value = () => '' } = {}) {
+  const env = createEnvironment({ search, cookie });
+  loadPopupsModule(env);
+  env.window.digi2.attribution = { enabled: true, value };
+  const el = createElement('div', { class: 'popup__overlay', 'd2-popup-utm': 'utm_source:facebook' });
+  env.body.appendChild(el);
+  const inst = env.window.digi2.popups.create('promo', { animation: 'none', openOnLoad: true, cookieName: null });
+  return { env, inst };
+}
+
+test('d2-attribution: the utm gate reads the loader, not the old cookie', () => {
+  const stale = attributionUtmEnv({ cookie: 'utm_source=facebook' });
+  assert.equal(stale.inst.isVisible, false, 'an old cookie does not open the gate');
+  const fromLayer = attributionUtmEnv({ value: (k) => (k === 'utm_source' ? 'facebook' : '') });
+  assert.equal(fromLayer.inst.isVisible, true);
+});
+
+test('d2-attribution: no campaign cookie is written', () => {
+  const first = attributionUtmEnv({ search: '?utm_source=facebook', value: (k) => (k === 'utm_source' ? 'facebook' : '') });
+  assert.equal(first.inst.isVisible, true);
+  assert.equal(first.env.document.cookie, '');
+});

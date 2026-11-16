@@ -756,6 +756,17 @@
 
   <div class="sidebar-group is-collapsed">
     <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
+      Attribution
+      <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div class="sidebar-group-items">
+      <a href="#attribution">Overview</a>
+      <a href="#attribution-fields">Lead Fields &amp; Path</a>
+    </div>
+  </div>
+
+  <div class="sidebar-group is-collapsed">
+    <button class="sidebar-group-toggle" onclick="this.parentElement.classList.toggle('is-collapsed')">
       A/B Testing
       <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
     </button>
@@ -1119,7 +1130,7 @@ digi2.<span class="fn">log</span>(<span class="string">'myModule'</span>, <span 
       <tr><td><code>startOn</code></td><td><code>null</code></td><td><code>'intro:done'</code> — hold the automatic triggers until that milestone. <code>{ event, timeout }</code> tunes the failsafe. Also readable from <code>d2-popup-start-on</code>. See <a href="#popups-start-gate">Waiting for an Intro</a></td></tr>
       <tr><td><code>utm</code></td><td><code>null</code></td><td><code>'utm_source:facebook|instagram'</code> — only show to that traffic. See <a href="#popups-traffic">Campaign Targeting</a></td></tr>
       <tr><td><code>utmExclude</code></td><td><code>null</code></td><td><code>'utm_medium:cpc'</code> — never show to that traffic. Beats <code>utm</code></td></tr>
-      <tr><td><code>utmCookie</code></td><td><code>true</code></td><td>Remember the campaign on first touch, so the gate still matches after the visitor navigates</td></tr>
+      <tr><td><code>utmCookie</code></td><td><code>true</code></td><td>Remember the campaign on first touch, so the gate still matches after the visitor navigates. Ignored with <a href="#attribution">d2-attribution</a></td></tr>
       <tr><td><code>utmCookieDays</code></td><td><code>365</code></td><td>How long that memory lasts</td></tr>
       <tr><td><code>sequence</code></td><td><code>null</code></td><td><code>[4, {after: 60, afterPageChange: true}, 180]</code> — show this popup repeatedly across the visit. See <a href="#popups-sequences">Sequences</a></td></tr>
     </table>
@@ -1422,6 +1433,7 @@ digi2.<span class="fn">signal</span>(<span class="string">'intro:done'</span>)</
 
     <h3>It survives navigation</h3>
     <p>A campaign parameter only exists in the URL of the landing page. A gate reading just the query string would go dark the moment the visitor clicks through — taking <code>openAfterDelay</code>, <code>openAfterPageViews</code> and sequences with it. So the module reads the URL first and falls back to a cookie it writes on first touch, under the same name the forms module uses (<code>utm_source</code>, …) — one shared value, not two copies. Set <code>utmCookie: false</code> to skip that write.</p>
+    <p>With <a href="#attribution">d2-attribution</a> on the loader the gate reads the loader instead: <code>utm_*</code> from the last source of the visit (stored only after consent), any other key from the current URL only. No cookie is written; <code>utmCookie</code> / <code>utmCookieDays</code> do nothing.</p>
 
     <h3>Where the gate sits</h3>
     <p>URL filters first (they block everything, including <code>digi2.popups.show()</code>), then traffic, then schedule, then promotion state, then a <a href="#ma-conditions">d2-ma condition</a> on the overlay (parked; d2-ma resumes it), then <code>canShow</code>.</p>
@@ -1778,20 +1790,22 @@ digi2.forms.<span class="fn">validate</span>(<span class="string">''</span>, { <
     <p>Auto-injected hidden inputs:</p>
     <table>
       <tr><th>Input name</th><th>Source</th><th>Option</th></tr>
-      <tr><td><code>utm_campaign_hidden</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
-      <tr><td><code>utm_source_hidden</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
-      <tr><td><code>utm_medium_hidden</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
-      <tr><td><code>utm_content_hidden</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
-      <tr><td><code>utm_term_hidden</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
-      <tr><td><code>gclid</code></td><td>URL param → cookie</td><td><code>clickIdTracking</code></td></tr>
-      <tr><td><code>fbclid</code></td><td>URL param → cookie</td><td><code>clickIdTracking</code></td></tr>
-      <tr><td><code>msclkid</code></td><td>URL param → cookie</td><td><code>clickIdTracking</code></td></tr>
-      <tr><td><code>gaclientid</code></td><td><code>_ga</code> cookie</td><td><code>gaClientId</code></td></tr>
-      <tr><td><code>page_url</code></td><td><code>location.href</code></td><td><code>pageMeta</code></td></tr>
-      <tr><td><code>page_title</code></td><td><code>document.title</code></td><td><code>pageMeta</code></td></tr>
-      <tr><td><code>page_referrer</code></td><td><code>document.referrer</code></td><td><code>pageMeta</code></td></tr>
-      <tr><td><code>ip_address</code></td><td>ipify.org API</td><td><code>ipTracking</code></td></tr>
+      <tr><td><code>UTM_CAMPAIGN</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>UTM_SOURCE</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>UTM_MEDIUM</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>UTM_CONTENT</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>UTM_TERM</code></td><td>URL param → cookie</td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>GCLID</code></td><td>URL param → cookie (skipped when empty)</td><td><code>clickIdTracking</code></td></tr>
+      <tr><td><code>FBCLID</code></td><td>URL param → cookie (skipped when empty)</td><td><code>clickIdTracking</code></td></tr>
+      <tr><td><code>MSCLKID</code></td><td>URL param → cookie (skipped when empty)</td><td><code>clickIdTracking</code></td></tr>
+      <tr><td><code>GOOGLE_ANALYTICS_ID</code></td><td><code>_ga</code> cookie</td><td><code>gaClientId</code></td></tr>
+      <tr><td><code>PAGE_URL</code></td><td><code>location.href</code></td><td><code>pageMeta</code></td></tr>
+      <tr><td><code>PAGE_TITLE</code></td><td><code>document.title</code></td><td><code>pageMeta</code></td></tr>
+      <tr><td><code>PAGE_REFERRER</code></td><td><code>document.referrer</code></td><td><code>pageMeta</code></td></tr>
+      <tr><td><code>ATTRIBUTION_PATH</code> / <code>ATTRIBUTION_STATUS</code></td><td>Only with <a href="#attribution">d2-attribution</a></td><td><code>utmTracking</code></td></tr>
+      <tr><td><code>IP_ADDRESS</code></td><td>ipify.org API</td><td><code>ipTracking</code></td></tr>
     </table>
+    <p class="muted">Names are uppercase — that is what Make scenarios map. With <a href="#attribution">d2-attribution</a> on the loader every UTM / click id field comes from <code>digi2.attribution</code> instead of cookies: nothing written before consent, and never a set mixed from two campaigns. See <a href="#attribution-fields">Lead Fields &amp; Path</a>.</p>
   </section>
 
   <!-- ── FORMS · CONTEXT CAPTURE ── -->
@@ -1917,6 +1931,79 @@ digi2.google.consent.<span class="fn">reset</span>()
 digi2.google.consent.<span class="fn">categories</span>()
 digi2.google.<span class="fn">dataLayerPush</span>({ <span class="prop">event</span>: <span class="string">'custom'</span> })
 digi2.google.<span class="fn">getGtmId</span>()</code></pre>
+  </section>
+
+  <!-- ── ATTRIBUTION ── -->
+  <section id="attribution">
+    <h2>Attribution <span class="muted">(d2-attribution, v1.11, opt-in)</span></h2>
+    <p>One place in the loader that knows where the visitor came from — UTM, ad clicks, referrers — for forms, popups and the lead mail. <strong>Opt-in per site:</strong> without the flag nothing changes and forms / popups keep their old <code>utm_*</code> cookies. It lives in the loader, not in a module, because the source has to be caught on the landing page, which often has no form.</p>
+
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Loader <code>&lt;script&gt;</code> tag</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-attribution</span>
+        <span class="chip chip--note">← turns the layer on for the whole site</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Loader tag <span class="muted">(optional)</span></span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-attribution-days</span>
+        <span class="chip chip--attr"><span class="k">Value</span> 30</span>
+        <span class="chip chip--note">← keep the history 30 days (default 395 = 13 months)</span>
+      </div>
+      <div class="wf-el">
+        <span class="wf-elname">Any <code>&lt;form&gt;</code> outside d2-forms</span>
+        <span class="chip chip--attr"><span class="k">Name</span> d2-attribution-fill</span>
+        <span class="chip chip--note">← same hidden fields (WordPress, Shopify, embeds)</span>
+      </div>
+    </div>
+
+    <pre><code>&lt;script src=<span class="string">".../digi2-loader.min.js"</span> d2-attribution d2-forms&gt;&lt;/script&gt;</code></pre>
+
+    <h3>Consent</h3>
+    <table>
+      <tr><th>State</th><th>What happens</th></tr>
+      <tr><td><code>analytics_storage</code> unknown / denied</td><td>This pageview only, in memory. Nothing in cookies or storage — the next page knows nothing.</td></tr>
+      <tr><td><code>analytics_storage</code> granted</td><td><code>localStorage d2_attribution</code>: up to 20 visits, 13 months. Consent given on the page stores this pageview at once.</td></tr>
+      <tr><td>+ <code>ad_storage</code> granted</td><td>Click id <em>values</em> (<code>gclid</code>, <code>fbclid</code>, <code>msclkid</code>, …). Without it only the kind of click.</td></tr>
+      <tr><td><code>analytics_storage</code> denied explicitly</td><td>The stored history is deleted.</td></tr>
+    </table>
+    <p class="muted">Consent is read like <a href="#ma">d2-ma</a> reads it: <code>gtag('consent', 'update')</code> in the dataLayer, the Google tag state, <code>localStorage consentModeV2</code> (d2-cookies banner, <a href="#google">d2-gtm</a>), then defaults. With the flag on, the old cookies <code>utm_*</code>, <code>gclid</code>, <code>fbclid</code>, <code>msclkid</code>, <code>gaclientid</code> are removed and never written again. The flag needs a loader ≥ 1.11 on that tag — an older loader requests <code>modules/attribution.min.js</code> (404).</p>
+
+    <h3>Entries</h3>
+    <p>One entry per visit (30-minute gap), direct visits included; within a visit only a new campaign adds one. A new campaign replaces the <strong>whole</strong> UTM set — never <code>utm_source</code> of a new campaign with <code>utm_content</code> of an old one. Values are trimmed to 100 characters; an e-mail, a phone number in <code>utm_content</code>/<code>utm_term</code>, a new line or a control character is dropped.</p>
+
+    <h3>API</h3>
+    <pre><code>digi2.attribution.<span class="fn">get</span>()      <span class="comment">// { consent, adsConsent, status, page, last, touches[], clicks{} }</span>
+digi2.attribution.<span class="fn">fields</span>()   <span class="comment">// hidden field values, see below</span>
+digi2.attribution.<span class="fn">path</span>()     <span class="comment">// ATTRIBUTION_PATH</span>
+digi2.attribution.<span class="fn">status</span>()   <span class="comment">// ATTRIBUTION_STATUS</span>
+digi2.attribution.<span class="fn">value</span>(<span class="string">'utm_source'</span>)    <span class="comment">// what d2-popup-utm compares</span>
+digi2.attribution.<span class="fn">fill</span>(formEl)           <span class="comment">// add / update the fields in any form</span>
+digi2.attribution.<span class="fn">consent</span>(<span class="string">'ad_storage'</span>)  <span class="comment">// 'granted' | 'denied' | 'unknown'</span>
+digi2.attribution.<span class="fn">clear</span>()                <span class="comment">// delete the stored history</span>
+digi2.<span class="fn">on</span>(<span class="string">'attribution:change'</span>, fn)</code></pre>
+  </section>
+
+  <section id="attribution-fields">
+    <h2>Lead Fields &amp; Path</h2>
+    <p>With the flag, <a href="#forms-tracking">d2-forms</a> and <code>&lt;form d2-attribution-fill&gt;</code> get these hidden inputs. They are filled when the form starts and again on submit and on <code>attribution:change</code> — consent usually comes later. A field the form already has (any case, or an alias such as <code>GOOGLE_ADS_ID</code>) is left alone.</p>
+    <table>
+      <tr><th>Field</th><th>Value</th></tr>
+      <tr><td><code>UTM_SOURCE</code> … <code>UTM_TERM</code></td><td>The last visit with a source (UTM, ad click or foreign referrer) — empty when that source has no UTM</td></tr>
+      <tr><td><code>GCLID</code> / <code>FBCLID</code> / <code>MSCLKID</code></td><td>Stored value, only with <code>ad_storage</code>; added only when non-empty</td></tr>
+      <tr><td><code>ATTRIBUTION_PATH</code></td><td>The visit history, oldest first</td></tr>
+      <tr><td><code>ATTRIBUTION_STATUS</code></td><td><code>stored</code> · <code>url</code> (consent, only this visit known) · <code>no-consent</code> · <code>none</code> (consent, no source)</td></tr>
+    </table>
+    <pre><code><span class="string">2026-10-02 google/cpc/latawce-search [gclid] &gt; 2026-10-09 (direct)/(none)/(not set) x2 &gt; 2026-11-16 newsletter/email/dni-otwarte-2026-11</span></code></pre>
+    <table>
+      <tr><th>Rule</th><th>Detail</th></tr>
+      <tr><td>Entry</td><td><code>YYYY-MM-DD source/medium/campaign</code>, the visitor's local date</td></tr>
+      <tr><td>No UTM</td><td><code>domain/(referral)/(not set)</code> or <code>(direct)/(none)/(not set)</code></td></tr>
+      <tr><td>Ad click</td><td><code> [gclid]</code> etc. — the kind only, never the value</td></tr>
+      <tr><td>Repeats</td><td>Same entry on the same day → <code> x2</code></td></tr>
+      <tr><td>Characters</td><td>ASCII separators only; <code>/</code>, <code>&lt;</code>, <code>&gt;</code> in a value → <code>-</code>; never a new line</td></tr>
+      <tr><td>Length</td><td>Last 10 entries, at most 500 characters; cut from the start with <code>... &gt; </code></td></tr>
+    </table>
   </section>
 
   <!-- ── A/B TESTING ── -->

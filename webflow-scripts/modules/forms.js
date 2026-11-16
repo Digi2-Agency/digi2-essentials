@@ -53,6 +53,11 @@
  *   UTM_CAMPAIGN, UTM_SOURCE, UTM_MEDIUM, UTM_CONTENT, UTM_TERM,
  *   GCLID, FBCLID, MSCLKID, GOOGLE_ANALYTICS_ID,
  *   PAGE_URL, PAGE_TITLE, PAGE_REFERRER, IP_ADDRESS
+ *
+ * With d2-attribution on the loader (v1.11): UTM_* / GCLID / FBCLID / MSCLKID
+ * come from digi2.attribution (one consistent set, no cookies, stored only
+ * after consent), plus ATTRIBUTION_PATH and ATTRIBUTION_STATUS; refreshed on
+ * submit and on attribution:change. README → Attribution.
  */
 (function () {
   'use strict';
@@ -286,6 +291,14 @@
       new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)')
     );
     return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  // d2-attribution on the loader (v1.11): the loader's digi2.attribution is the
+  // only source of UTM / click ids — no utm_* cookies. Without the flag: null,
+  // and this module keeps its cookie behaviour.
+  function _attr() {
+    var a = window.digi2 && window.digi2.attribution;
+    return a && a.enabled && typeof a.fields === 'function' ? a : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -543,6 +556,16 @@
 
       // 3. Inject hidden fields
       this._injectTrackingFields();
+      if (_attr()) {
+        var selfAttr = this;
+        this._boundAttributionRefresh = function () {
+          var a = _attr();
+          if (a && selfAttr.formElement) selfAttr._injectAttributionFields(a);
+        };
+        // Capture phase, registered before validation: Webflow reads the form after.
+        this.formElement.addEventListener('submit', this._boundAttributionRefresh, true);
+        if (window.digi2.on) window.digi2.on('attribution:change', this._boundAttributionRefresh);
+      }
 
       // 4. Wire consent master checkboxes
       this._setupConsentMasters();
@@ -625,6 +648,12 @@
       if (this.formElement && this._boundSubmitHandler) {
         this.formElement.removeEventListener('submit', this._boundSubmitHandler);
       }
+      if (this._boundAttributionRefresh) {
+        if (this.formElement) this.formElement.removeEventListener('submit', this._boundAttributionRefresh, true);
+        if (window.digi2.off) window.digi2.off('attribution:change', this._boundAttributionRefresh);
+        this._boundAttributionRefresh = null;
+      }
+      this._attributionNames = null;
 
       this._inputFilters.forEach(function (entry) {
         entry.input.removeEventListener('input', entry.handler);
@@ -1273,6 +1302,7 @@
     // ---- Capture URL params to cookies --------------------------------------
 
     _captureUrlParams() {
+      if (_attr()) { _log('d2-attribution → no utm / click id cookies'); return; }
       var days = this.options.cookieDurationDays;
 
       try {
@@ -1353,6 +1383,44 @@
     }
 
     _injectTrackingFields() {
+      var attribution = _attr();
+      if (attribution) this._injectAttributionFields(attribution);
+      else this._injectCookieTrackingFields();
+      this._injectPageFields();
+    }
+
+    // d2-attribution: one consistent set from the loader (the last visit with
+    // a source — never fields from two campaigns), the visit history in
+    // ATTRIBUTION_PATH and ATTRIBUTION_STATUS. Same names Make already maps; a
+    // field the form already has (any alias) is left alone, as in cookie mode.
+    // Called again on submit and on attribution:change — consent may come late.
+    _injectAttributionFields(attribution) {
+      var self = this;
+      if (!this._attributionNames) {
+        var names = [];
+        if (this.options.utmTracking) {
+          names.push('UTM_SOURCE', 'UTM_MEDIUM', 'UTM_CAMPAIGN', 'UTM_CONTENT', 'UTM_TERM',
+            'ATTRIBUTION_PATH', 'ATTRIBUTION_STATUS');
+        }
+        if (this.options.clickIdTracking) names.push('GCLID', 'FBCLID', 'MSCLKID');
+        if (this.options.gaClientId) names.push('GOOGLE_ANALYTICS_ID');
+        this._attributionNames = names.filter(function (n) {
+          if (!self._hasField(n)) return true;
+          _log('skip duplicate → ' + n);
+          return false;
+        });
+      }
+      var f = attribution.fields();
+      f.GOOGLE_ANALYTICS_ID = this._getGAClientId() || '';
+      this._attributionNames.forEach(function (n) {
+        var v = f[n] || '';
+        var optional = n === 'GCLID' || n === 'FBCLID' || n === 'MSCLKID';
+        if (optional && !v && !self.formElement.querySelector('input[name="' + n + '"]')) return;
+        self._injectField(n, v);
+      });
+    }
+
+    _injectCookieTrackingFields() {
       if (this.options.utmTracking) {
         var self = this;
         UTM_PARAMS.forEach(function (param) {
@@ -1390,6 +1458,9 @@
         }
       }
 
+    }
+
+    _injectPageFields() {
       if (this.options.pageMeta) {
         if (!this._hasField('PAGE_URL')) {
           this._injectField('PAGE_URL', window.location.href);
@@ -1834,7 +1905,18 @@
   function _outcomeContext(formEl) {
     var ctx = {};
     try { ctx.formLocation = window.location.pathname || '/'; } catch (e) {}
-    try {
+    var attribution = _attr();
+    if (attribution) {
+      try {
+        var snap = attribution.get();
+        var last = snap.last || {};
+        ctx.leadSource = last.utm_source || null;
+        ctx.leadMedium = last.utm_medium || null;
+        ctx.leadCampaign = last.utm_campaign || null;
+        ctx.hasGclid = !!(snap.clicks.gclid || last.click_type === 'gclid');
+        ctx.hasFbclid = !!(snap.clicks.fbclid || last.click_type === 'fbclid');
+      } catch (e) { /* attribution failed — lead without source */ }
+    } else try {
       var params = new URLSearchParams(window.location.search);
       ctx.leadSource = params.get('utm_source') || _getCookie('utm_source') || null;
       ctx.leadMedium = params.get('utm_medium') || _getCookie('utm_medium') || null;

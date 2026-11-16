@@ -283,6 +283,100 @@ digi2.google.getGtmId()
 
 ---
 
+## Attribution (`d2-attribution`)
+
+**Opt-in per site, v1.11.** One place in the loader that knows where the
+visitor came from — UTM, ad clicks, referrers — for forms, popups and the
+lead mail. Without the flag nothing changes: forms and popups keep their old
+`utm_*` cookies. Design and Piotr's decisions (AT-D1…D8, 2026-11-16):
+[`specs/atrybucja-utm.md`](specs/atrybucja-utm.md).
+
+```html
+<script src=".../digi2-loader.min.js" d2-attribution d2-forms></script>
+<!-- optional: keep the history 30 days instead of 13 months -->
+<script src=".../digi2-loader.min.js" d2-attribution d2-attribution-days="30" d2-forms></script>
+```
+
+It lives in the loader, not in a module: the source has to be caught on the
+landing page, which often has no form and no popup. `d2-attribution` and
+`d2-attribution-*` are loader flags — an older loader (≤ 1.10) would treat the
+attribute as a module name and request `modules/attribution.min.js` (404), so
+the flag needs a loader ≥ 1.11 on that tag. Alias: `data-d2-attribution`.
+
+**Consent** (Consent Mode; same sources and order as `d2-ma`: `gtag('consent',
+'update')` in the dataLayer, the Google tag state, `localStorage consentModeV2`
+written by the d2-cookies banner and `d2-gtm`, then defaults):
+
+| State | What happens |
+|---|---|
+| `analytics_storage` unknown or denied | This pageview only, in memory. Nothing in cookies, `localStorage` or `sessionStorage`. The next page knows nothing (MP-D13). |
+| `analytics_storage` granted | `localStorage d2_attribution`: up to 20 visits, 13 months (`d2-attribution-days`). Consent given on the page stores this pageview at once. |
+| `ad_storage` granted as well | Click id **values** (`gclid`, `gbraid`, `wbraid`, `dclid`, `fbclid`, `ttclid`, `msclkid`). Without it only the kind of click (`[gclid]` in the path). Withdrawn → values dropped. |
+| `analytics_storage` denied (explicit) | `d2_attribution` deleted. Unknown consent neither reads nor deletes it. |
+
+With the flag on, the old cookies `utm_source` … `utm_term`, `gclid`, `fbclid`,
+`msclkid`, `gaclientid` are removed on every pageview (they were written without
+consent) and never written again.
+
+**Entries.** One entry per visit (30 min gap, as `d2-ma`), including direct
+visits; within a visit only a new campaign adds one. Values go through the
+touchpoints v1 rules: trimmed, ≤ 100 characters, an `@`, a phone number in
+`utm_content` / `utm_term`, a new line or another control character → dropped.
+A new campaign replaces the **whole** UTM set — the cookie mode mixed
+`utm_source` of a new campaign with `utm_content` of an old one.
+
+**Hidden fields** (forms with `d2-forms`, or any `<form d2-attribution-fill>`):
+
+| Field | Value |
+|---|---|
+| `UTM_SOURCE` … `UTM_TERM` | the last visit with a source (UTM, ad click or a foreign referrer) — "last non-direct"; empty when that source has no UTM |
+| `GCLID` / `FBCLID` / `MSCLKID` | stored value, only with `ad_storage`; field added only when non-empty |
+| `ATTRIBUTION_PATH` | the visit history, oldest first, see below |
+| `ATTRIBUTION_STATUS` | `stored` (history from storage) · `url` (consent, only this visit known) · `no-consent` · `none` (consent, no source at all) |
+
+`ATTRIBUTION_PATH` format (agreed with architekt-it 2026-11-16 for the Vox lead
+mail; ASCII only, one line):
+
+```
+2026-10-02 google/cpc/latawce-search [gclid] > 2026-10-09 (direct)/(none)/(not set) x2 > 2026-11-16 newsletter/email/dni-otwarte-2026-11
+```
+
+- entry `YYYY-MM-DD source/medium/campaign`, the visitor's local date
+- no UTM: `domain/(referral)/(not set)` or `(direct)/(none)/(not set)` (GA4 convention)
+- ` [gclid]` etc. — the kind of click only, never the value
+- the same entry on the same day again → ` x2`, ` x3`
+- `/`, `<`, `>` inside a value → `-`
+- the last 10 entries, at most 500 characters; older ones cut from the start with `... > `
+
+Fields are filled when the form starts and again on `submit` (capture phase)
+and on `attribution:change` — consent often comes after the form was built.
+A field the form already has (same name in any case, or an alias such as
+`GOOGLE_ADS_ID`) is left alone, as in cookie mode.
+
+**Popups.** `d2-popup-utm` / `-exclude` read `digi2.attribution.value(key)`:
+`utm_*` from the last source (this pageview without consent), any other key
+(`refID`, …) from this URL only (AT-D7). `utmCookie` / `utmCookieDays` do
+nothing. Lead measurement (`datalayer`): `lead_source` / `lead_medium` /
+`lead_campaign` from the same last source.
+
+### API
+
+```js
+digi2.attribution.get()      // { v:1, consent, adsConsent, status, page, last, touches[], clicks{} }
+digi2.attribution.fields()   // { UTM_SOURCE, …, GCLID, FBCLID, MSCLKID, ATTRIBUTION_PATH, ATTRIBUTION_STATUS }
+digi2.attribution.path()     // ATTRIBUTION_PATH alone
+digi2.attribution.status()   // ATTRIBUTION_STATUS alone
+digi2.attribution.value('utm_source')   // what d2-popup-utm compares
+digi2.attribution.fill(formEl)          // add / update the hidden fields in any <form>
+digi2.attribution.consent('ad_storage') // 'granted' | 'denied' | 'unknown'
+digi2.attribution.clear()               // delete the stored history
+digi2.attribution.parseTouchpoint(href, referrer)  // one entry, no storage
+digi2.on('attribution:change', fn)      // consent changed / pageview stored
+```
+
+Not in scope yet: `d2-ma` keeps its own touchpoints in `d2ma` (migration M4 in
+the spec), the layer sends nothing to a server and does not add UTM to links.
+
 ## A/B Tests
 
 Runtime module for `d2-ab-tests="configName"` on the loader tag. The value points to a global object on `window` that is the test map.
@@ -675,6 +769,11 @@ keeping two copies. `utmCookie: false` turns that write off; `utmCookieDays`
 
 The key is not restricted to `utm_*` — `d2-popup-utm="ref:partner-a"` works for
 any query parameter.
+
+With [`d2-attribution`](#attribution-d2-attribution) on the loader the gate reads
+the loader instead: `utm_*` from the last source of the visit (stored only after
+consent), other keys from the current URL only; no cookie is written and
+`utmCookie` / `utmCookieDays` do nothing.
 
 > These two attributes are read raw, not through the [responsive parser](#responsive-attributes),
 > because a campaign value may legitimately contain `;` or `@`. Per-breakpoint
@@ -2688,6 +2787,11 @@ by name (a CRM, a Make scenario) needs the names as written here.
 | `UTM_TERM` | URL param → cookie |
 | `GCLID` / `FBCLID` / `MSCLKID` | URL param → cookie (skipped when empty) |
 | `GOOGLE_ANALYTICS_ID` | `_ga` cookie |
+| `ATTRIBUTION_PATH` / `ATTRIBUTION_STATUS` | only with `d2-attribution` on the loader |
+
+With [`d2-attribution`](#attribution-d2-attribution) on the loader every UTM /
+click id field comes from `digi2.attribution` instead of cookies, nothing is
+written before consent, and the set is never mixed across campaigns.
 | `PAGE_URL` / `PAGE_TITLE` / `PAGE_REFERRER` | Page meta |
 | `IP_ADDRESS` | ipify — off by default (`ipTracking: true`) |
 | `ip_address` | ipify API |

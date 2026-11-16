@@ -118,6 +118,57 @@ test.describe('forms + datalayer', () => {
 
 // ---- popups ---------------------------------------------------------------
 
+test.describe('d2-attribution + forms', () => {
+  const field = (page, n) => page.locator(`#sandbox-form input[name=${n}]`);
+  async function open(page, query) {
+    await page.goto('/sandbox/gate-attribution.html' + (query || ''));
+    await ready(page, 'forms');
+    await page.waitForFunction(() => !!window.digi2.forms.get('kontakt'), null, { timeout: 10000 });
+  }
+  function grant(page, state) {
+    return page.evaluate((st) => {
+      // gtag() puts an arguments object into the dataLayer — as the d2-cookies banner does.
+      (function () { window.dataLayer.push(arguments); })('consent', 'update', st);
+    }, state);
+  }
+
+  test('without consent: fields from this URL, nothing stored, old cookies removed', async ({ page }) => {
+    // A cookie left by the old cookie mode of d2-forms, from an earlier campaign.
+    await page.goto('/sandbox/gate-forms.html');
+    await page.evaluate(() => { document.cookie = 'utm_content=stale;path=/'; });
+    await open(page, '?utm_source=newsletter&utm_medium=email&utm_campaign=nov');
+    await expect(field(page, 'UTM_SOURCE')).toHaveValue('newsletter');
+    await expect(field(page, 'UTM_CONTENT')).toHaveValue('');
+    await expect(field(page, 'ATTRIBUTION_STATUS')).toHaveValue('no-consent');
+    await expect(field(page, 'ATTRIBUTION_PATH')).toHaveValue(/^\d{4}-\d\d-\d\d newsletter\/email\/nov$/);
+    expect(await page.evaluate(() => localStorage.getItem('d2_attribution'))).toBeNull();
+    expect(await page.evaluate(() => document.cookie)).not.toMatch(/utm_/);
+  });
+
+  test('consent on the page stores the visit; the next page still knows the source', async ({ page }) => {
+    await open(page, '?utm_source=newsletter&utm_medium=email&utm_campaign=nov');
+    await grant(page, { analytics_storage: 'granted' });
+    await expect(field(page, 'ATTRIBUTION_STATUS')).toHaveValue('url');
+    expect(JSON.parse(await page.evaluate(() => localStorage.getItem('d2_attribution'))).touches).toHaveLength(1);
+
+    // The banner saves its choice; the next pageview has no UTM in the URL.
+    await page.evaluate(() => localStorage.setItem('consentModeV2', JSON.stringify({ analytics_storage: 'granted', ad_storage: 'denied' })));
+    await open(page, '');
+    await expect(field(page, 'UTM_SOURCE')).toHaveValue('newsletter');
+    await expect(field(page, 'ATTRIBUTION_PATH')).toHaveValue(/^\d{4}-\d\d-\d\d newsletter\/email\/nov$/);
+    expect(await page.evaluate(() => document.cookie)).not.toMatch(/utm_/);
+  });
+
+  test('refusal deletes the history', async ({ page }) => {
+    await open(page, '?utm_source=a');
+    await grant(page, { analytics_storage: 'granted' });
+    expect(await page.evaluate(() => localStorage.getItem('d2_attribution'))).not.toBeNull();
+    await grant(page, { analytics_storage: 'denied' });
+    expect(await page.evaluate(() => localStorage.getItem('d2_attribution'))).toBeNull();
+    await expect(field(page, 'ATTRIBUTION_STATUS')).toHaveValue('no-consent');
+  });
+});
+
 test.describe('popups + datalayer', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/sandbox/gate-popups.html');
