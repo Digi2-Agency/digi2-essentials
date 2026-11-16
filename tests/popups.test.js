@@ -2389,3 +2389,17 @@ test('d2-attribution: an explicit utmCookie option warns that it does nothing', 
   } finally { console.warn = orig; }
   assert.ok(warnings.some((w) => /utmCookie \/ utmCookieDays do nothing with d2-attribution/.test(w)), warnings.join('\n'));
 });
+
+test('without d2-attribution an explicit utmCookie option does not warn', () => {
+  const env = createEnvironment({ search: '?utm_source=facebook' });
+  loadPopupsModule(env);
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    const el = createElement('div', { class: 'popup__overlay', 'd2-popup-utm': 'utm_source:facebook' });
+    env.body.appendChild(el);
+    env.window.digi2.popups.create('promo', { animation: 'none', cookieName: null, utmCookie: true });
+  } finally { console.warn = orig; }
+  assert.equal(warnings.filter((w) => /d2-attribution/.test(w)).length, 0);
+});

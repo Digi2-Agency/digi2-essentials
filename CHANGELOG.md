@@ -16,6 +16,23 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.11.2 — niewydana (dotyczy tylko stron z `d2-attribution`)
+
+Strona bez flagi: bez zmian. Z flagą `d2-attribution`:
+
+- **Pola, które formularz już ma, dostają wartości z warstwy.** Dotyczy pól o tej
+  samej nazwie, aliasów `GOOGLE_ADS_ID` / `META_ADS_ID` oraz
+  `data-input-name="utm_source_hidden"`… ze starego skryptu w stopce. Obok nich
+  nie powstają duplikaty. Do v1.11.1 takie pole zostawało puste, bo skrypt strony
+  czytał cookies, które warstwa kasuje.
+- **Warunek wejścia:** przed włączeniem flagi usuń ze strony skrypt
+  `parseUrlParameters()` / `populateFormFields()`. W Make zmapuj dwa nowe pola:
+  `ATTRIBUTION_PATH` i `ATTRIBUTION_STATUS`.
+- **`PAGE_URL`:** odświeża się przy wysłaniu formularza i bierze bieżący adres
+  (także po `pushState`).
+- **`digi2.attribution.onChange(fn)`:** każdy słuchacz działa osobno, więc błąd
+  w jednym nie pomija pozostałych. d2-forms korzysta z tej subskrypcji.
+
 ## v1.11.1 — wersja stabilna (`@latest`), po poleceniu Piotra 2026-11-17 („scal i wdróż w nocy PR-y z kolejki”); poprawki z recenzji #84, dotyczą tylko stron z `d2-attribution`
 
 Strona bez flagi: bez zmian. Z flagą `d2-attribution`:

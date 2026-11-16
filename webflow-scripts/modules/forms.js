@@ -564,7 +564,11 @@
         };
         // Capture phase, registered before validation: Webflow reads the form after.
         this.formElement.addEventListener('submit', this._boundAttributionRefresh, true);
-        if (window.digi2.on) window.digi2.on('attribution:change', this._boundAttributionRefresh);
+        // The layer's own subscription (v1.11.2): another listener throwing on
+        // the event bus cannot skip this one. Older loaders: the bus.
+        var layer = _attr();
+        if (layer && typeof layer.onChange === 'function') this._attributionUnsub = layer.onChange(this._boundAttributionRefresh);
+        else if (window.digi2.on) window.digi2.on('attribution:change', this._boundAttributionRefresh);
       }
 
       // 4. Wire consent master checkboxes
@@ -650,7 +654,8 @@
       }
       if (this._boundAttributionRefresh) {
         if (this.formElement) this.formElement.removeEventListener('submit', this._boundAttributionRefresh, true);
-        if (window.digi2.off) window.digi2.off('attribution:change', this._boundAttributionRefresh);
+        if (this._attributionUnsub) { this._attributionUnsub(); this._attributionUnsub = null; }
+        else if (window.digi2.off) window.digi2.off('attribution:change', this._boundAttributionRefresh);
         this._boundAttributionRefresh = null;
       }
       this._attributionNames = null;
@@ -1348,9 +1353,16 @@
      * equivalent fields in Webflow (e.g. UTM_SOURCE vs utm_source_hidden).
      */
     _hasField(name) {
-      if (!this.formElement) return false;
+      return !!this._findField(name);
+    }
+
+    // The input this form already has for a digi2 field: same name in any
+    // case, or a known alias (GOOGLE_ADS_ID for GCLID…). null when none.
+    _findField(name) {
+      if (!this.formElement) return null;
       // Exact match
-      if (this.formElement.querySelector('input[name="' + name + '"]')) return true;
+      var exact = this.formElement.querySelector('input[name="' + name + '"]');
+      if (exact) return exact;
 
       // Known aliases: digi2 field name → common Webflow equivalents (uppercase)
       var ALIASES = {
@@ -1372,14 +1384,25 @@
         namesToCheck = namesToCheck.concat(aliases);
       }
 
+      // Also the convention of the sites' old inline tracking script:
+      // data-input-name="utm_source_hidden", "gclid_hidden", "gaclientid_hidden".
+      var LEGACY_INPUT_NAMES = {
+        'UTM_SOURCE': 'utm_source_hidden', 'UTM_MEDIUM': 'utm_medium_hidden',
+        'UTM_CAMPAIGN': 'utm_campaign_hidden', 'UTM_CONTENT': 'utm_content_hidden',
+        'UTM_TERM': 'utm_term_hidden', 'GCLID': 'gclid_hidden', 'FBCLID': 'fbclid_hidden',
+        'MSCLKID': 'msclkid_hidden', 'GOOGLE_ANALYTICS_ID': 'gaclientid_hidden', 'PAGE_URL': 'page_url',
+      };
+      var legacy = LEGACY_INPUT_NAMES[upper];
+
       var inputs = this.formElement.querySelectorAll('input');
       for (var i = 0; i < inputs.length; i++) {
-        var inputUpper = inputs[i].name.toUpperCase();
+        var inputUpper = String(inputs[i].name || '').toUpperCase();
         for (var j = 0; j < namesToCheck.length; j++) {
-          if (inputUpper === namesToCheck[j]) return true;
+          if (inputUpper === namesToCheck[j]) return inputs[i];
         }
+        if (legacy && inputs[i].getAttribute && inputs[i].getAttribute('data-input-name') === legacy) return inputs[i];
       }
-      return false;
+      return null;
     }
 
     _injectTrackingFields() {
@@ -1391,8 +1414,12 @@
 
     // d2-attribution: one consistent set from the loader (the last visit with
     // a source — never fields from two campaigns), the visit history in
-    // ATTRIBUTION_PATH and ATTRIBUTION_STATUS. Same names Make already maps; a
-    // field the form already has (any alias) is left alone, as in cookie mode.
+    // ATTRIBUTION_PATH and ATTRIBUTION_STATUS, PAGE_URL without what consent
+    // does not allow. Same names Make already maps.
+    // v1.11.2: a field the form already has (same name in any case, or an alias
+    // such as GOOGLE_ADS_ID) gets the layer's value too — with the flag the
+    // layer is the only source, and leaving the site's field to an old script
+    // reading utm_* cookies (which the layer removes) sent empty UTM to Make.
     // Called again on submit and on attribution:change — consent may come late.
     _injectAttributionFields(attribution) {
       var self = this;
@@ -1404,18 +1431,18 @@
         }
         if (this.options.clickIdTracking) names.push('GCLID', 'FBCLID', 'MSCLKID');
         if (this.options.gaClientId) names.push('GOOGLE_ANALYTICS_ID');
-        this._attributionNames = names.filter(function (n) {
-          if (!self._hasField(n)) return true;
-          _log('skip duplicate → ' + n);
-          return false;
-        });
+        if (this.options.pageMeta) names.push('PAGE_URL');
+        this._attributionNames = names;
       }
       var f = attribution.fields();
       f.GOOGLE_ANALYTICS_ID = this._getGAClientId() || '';
+      f.PAGE_URL = typeof attribution.pageUrl === 'function' ? attribution.pageUrl() : window.location.href;
       this._attributionNames.forEach(function (n) {
         var v = f[n] || '';
+        var own = self._findField(n);
+        if (own) { own.value = v; return; }
         var optional = n === 'GCLID' || n === 'FBCLID' || n === 'MSCLKID';
-        if (optional && !v && !self.formElement.querySelector('input[name="' + n + '"]')) return;
+        if (optional && !v) return;
         self._injectField(n, v);
       });
     }
@@ -1462,11 +1489,9 @@
 
     _injectPageFields() {
       if (this.options.pageMeta) {
-        if (!this._hasField('PAGE_URL')) {
-          var attrUrl = _attr();
-          // d2-attribution: without consent no click id / UTM in PAGE_URL either.
-          this._injectField('PAGE_URL', attrUrl && typeof attrUrl.pageUrl === 'function'
-            ? attrUrl.pageUrl() : window.location.href);
+        // With d2-attribution PAGE_URL is the layer's (_injectAttributionFields).
+        if (!_attr() && !this._hasField('PAGE_URL')) {
+          this._injectField('PAGE_URL', window.location.href);
         }
         if (!this._hasField('PAGE_TITLE')) {
           this._injectField('PAGE_TITLE', document.title);

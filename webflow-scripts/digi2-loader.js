@@ -740,6 +740,7 @@
       data = writeStore(d) ? d : null;
     }
 
+    var subscribers = [];
     var lastKey = null;
     function refresh() {
       var u = consent(CAT_UTM), a = consent(CAT_ADS), key = u + '|' + a;
@@ -754,7 +755,13 @@
       }
       log('state', { consent: u, adsConsent: a, stored: !!data });
       // A failing listener must not stop the layer (or the dataLayer push that got us here).
-      try { window.digi2.emit('attribution:change', snapshot()); } catch (e) { console.error('[digi2.attribution] attribution:change listener failed', e); }
+      var snap = snapshot();
+      // Own subscribers first, each on its own (v1.11.2): one throwing must
+      // not skip the next — d2-forms refreshes the lead fields here.
+      subscribers.slice().forEach(function (fn) {
+        try { fn(snap); } catch (e) { console.error('[digi2.attribution] onChange listener failed', e); }
+      });
+      try { window.digi2.emit('attribution:change', snap); } catch (e) { console.error('[digi2.attribution] attribution:change listener failed', e); }
     }
 
     // ---- Output -----------------------------------------------------------------
@@ -872,11 +879,28 @@
     }
 
     var OPTIONAL = { GCLID: 1, FBCLID: 1, MSCLKID: 1 };
+    // The field a form already has for a lead field: same name in any case, an
+    // alias Make scenarios use, or the data-input-name of the sites' old inline
+    // tracking script (utm_source_hidden…) — same rules as d2-forms.
+    var ALIASES = { GCLID: ['GOOGLE_ADS_ID'], FBCLID: ['META_ADS_ID'], MSCLKID: ['BING_ADS_ID'] };
+    function findField(form, name) {
+      var exact = form.querySelector('input[name="' + name + '"]');
+      if (exact) return exact;
+      var want = [name].concat(ALIASES[name] || []);
+      var legacy = /^(UTM_[A-Z]+|GCLID|FBCLID|MSCLKID)$/.test(name) ? name.toLowerCase() + '_hidden' : null;
+      var inputs = typeof form.querySelectorAll === 'function' ? form.querySelectorAll('input') : [];
+      for (var i = 0; i < inputs.length; i++) {
+        var n = String(inputs[i].name || '').toUpperCase();
+        if (want.indexOf(n) !== -1) return inputs[i];
+        if (legacy && inputs[i].getAttribute && inputs[i].getAttribute('data-input-name') === legacy) return inputs[i];
+      }
+      return null;
+    }
     function fill(form) {
       if (!form || typeof form.querySelector !== 'function') return;
       var f = fields();
       Object.keys(f).forEach(function (name) {
-        var input = form.querySelector('input[name="' + name + '"]');
+        var input = findField(form, name);
         if (!input) {
           if (OPTIONAL[name] && !f[name]) return;
           input = document.createElement('input');
@@ -895,7 +919,10 @@
     // the stored history, so the lead carries nothing the visitor refused.
     function pageUrl() {
       var u;
-      try { u = new URL(String(href || '')); } catch (e) { return href || ''; }
+      // The address now, not at load: a site may change it with pushState.
+      var now = href;
+      try { now = window.location.href; } catch (e) { now = href; }
+      try { u = new URL(String(now || '')); } catch (e) { return now || ''; }
       var ads = consent(CAT_ADS) === 'granted', utm = consent(CAT_UTM) === 'granted';
       CLICK_IDS.forEach(function (k) { if (!ads) u.searchParams['delete'](k); });
       if (!utm) UTM.forEach(function (k) { u.searchParams['delete']('utm_' + k); });
@@ -922,6 +949,11 @@
       value: value,
       fill: fill,
       consent: function (category) { return consent(category || CAT_UTM); },
+      onChange: function (fn) {
+        if (typeof fn !== 'function') return function () {};
+        subscribers.push(fn);
+        return function () { subscribers = subscribers.filter(function (f) { return f !== fn; }); };
+      },
       clear: function () {
         dropStore();
         data = null;
