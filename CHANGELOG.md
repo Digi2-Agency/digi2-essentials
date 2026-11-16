@@ -24,7 +24,9 @@ Strona bez flagi: bez zmian. Z flagą `d2-attribution`:
   samej nazwie, aliasów `GOOGLE_ADS_ID` / `META_ADS_ID` oraz
   `data-input-name="utm_source_hidden"`… ze starego skryptu w stopce. Obok nich
   nie powstają duplikaty. Do v1.11.1 takie pole zostawało puste, bo skrypt strony
-  czytał cookies, które warstwa kasuje.
+  czytał cookies, które warstwa kasuje. Dotyczy też `GOOGLE_ANALYTICS_ID` i
+  `PAGE_URL`: wartość z warstwy nadpisuje pole strony. Bez flagi dopasowanie po
+  `data-input-name` nie działa — `d2-forms` wstrzykuje pola jak w v1.11.1.
 - **Warunek wejścia:** przed włączeniem flagi usuń ze strony skrypt
   `parseUrlParameters()` / `populateFormFields()`. W Make zmapuj dwa nowe pola:
   `ATTRIBUTION_PATH` i `ATTRIBUTION_STATUS`.

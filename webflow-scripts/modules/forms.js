@@ -1352,13 +1352,17 @@
      * Prevents duplicate tracking fields when the user already placed
      * equivalent fields in Webflow (e.g. UTM_SOURCE vs utm_source_hidden).
      */
+    // Cookie mode (no d2-attribution): name and alias only, exactly as up to
+    // v1.11.1 — data-input-name never stops an injection here.
     _hasField(name) {
-      return !!this._findField(name);
+      return !!this._findField(name, false);
     }
 
     // The input this form already has for a digi2 field: same name in any
-    // case, or a known alias (GOOGLE_ADS_ID for GCLID…). null when none.
-    _findField(name) {
+    // case, or a known alias (GOOGLE_ADS_ID for GCLID…); with legacy (only the
+    // d2-attribution path) also data-input-name of the old inline script.
+    // null when none.
+    _findField(name, legacy) {
       if (!this.formElement) return null;
       // Exact match
       var exact = this.formElement.querySelector('input[name="' + name + '"]');
@@ -1392,7 +1396,7 @@
         'UTM_TERM': 'utm_term_hidden', 'GCLID': 'gclid_hidden', 'FBCLID': 'fbclid_hidden',
         'MSCLKID': 'msclkid_hidden', 'GOOGLE_ANALYTICS_ID': 'gaclientid_hidden', 'PAGE_URL': 'page_url',
       };
-      var legacy = LEGACY_INPUT_NAMES[upper];
+      var legacyName = legacy ? LEGACY_INPUT_NAMES[upper] : null;
 
       var inputs = this.formElement.querySelectorAll('input');
       for (var i = 0; i < inputs.length; i++) {
@@ -1400,7 +1404,7 @@
         for (var j = 0; j < namesToCheck.length; j++) {
           if (inputUpper === namesToCheck[j]) return inputs[i];
         }
-        if (legacy && inputs[i].getAttribute && inputs[i].getAttribute('data-input-name') === legacy) return inputs[i];
+        if (legacyName && inputs[i].getAttribute && inputs[i].getAttribute('data-input-name') === legacyName) return inputs[i];
       }
       return null;
     }
@@ -1439,7 +1443,7 @@
       f.PAGE_URL = typeof attribution.pageUrl === 'function' ? attribution.pageUrl() : window.location.href;
       this._attributionNames.forEach(function (n) {
         var v = f[n] || '';
-        var own = self._findField(n);
+        var own = self._findField(n, true);
         if (own) { own.value = v; return; }
         var optional = n === 'GCLID' || n === 'FBCLID' || n === 'MSCLKID';
         if (optional && !v) return;

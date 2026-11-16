@@ -1230,6 +1230,21 @@ test('without d2-attribution: PAGE_URL is location.href and a site field is stil
   assert.equal(own.value, 'site-script');
 });
 
+test('without d2-attribution: data-input-name never stops an injection (as in v1.11.1)', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  delete env.window.digi2.attribution;
+  env.window.location.search = '?utm_medium=cpc';
+  const medium = createElement('input', { type: 'hidden', name: 'Medium', 'data-input-name': 'utm_medium_hidden' });
+  const url = createElement('input', { type: 'hidden', name: 'Adres', 'data-input-name': 'page_url' });
+  env.form.appendChild(medium);
+  env.form.appendChild(url);
+  env.window.digi2.forms.create('lead', { autoValidation: false, gaClientId: false, utmTracking: true });
+  assert.ok(env.form.querySelector('input[name="UTM_MEDIUM"]'), 'UTM_MEDIUM injected next to the site field');
+  assert.ok(env.form.querySelector('input[name="PAGE_URL"]'), 'PAGE_URL injected next to the site field');
+  assert.equal(medium.value, '', 'site field untouched');
+  assert.equal(url.value, '');
+});
+
 test('d2-attribution: PAGE_URL is refreshed on submit', () => {
   const env = attributionEnv(ATTR_FIELDS);
   let url = 'https://example.com/contact';

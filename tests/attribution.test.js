@@ -412,3 +412,18 @@ test('fill() writes into the fields of the old inline script (alias, data-input-
   assert.equal(inputs.filter((i) => i.name === 'GCLID').length, 0, 'no duplicate GCLID');
   assert.ok(inputs.some((i) => i.name === 'ATTRIBUTION_PATH'));
 });
+
+test('fill() without ad_storage empties the GOOGLE_ADS_ID field of the site', () => {
+  const mk = (name, din, value) => ({ name, value, getAttribute: (a) => (a === 'data-input-name' ? din : null) });
+  const ads = mk('GOOGLE_ADS_ID', 'gclid_hidden', 'from-old-cookie');
+  const inputs = [ads];
+  const form = {
+    querySelector(sel) { const m = /name="([^"]+)"/.exec(sel); return inputs.find((i) => i.name === m[1]) || null; },
+    querySelectorAll() { return inputs; },
+    appendChild(el) { inputs.push(el); },
+    addEventListener() {},
+  };
+  const p = pageview({ url: 'https://site.pl/?gclid=Cj0', storage: makeStorage({ consentModeV2: GRANTED }) });
+  p.attribution.fill(form);
+  assert.equal(ads.value, '');
+});
