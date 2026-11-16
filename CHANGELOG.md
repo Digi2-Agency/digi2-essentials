@@ -16,7 +16,7 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
-## v1.11.2 — niewydana (dotyczy tylko stron z `d2-attribution`)
+## v1.11.2 — wersja stabilna (`@latest`), po poleceniu Piotra 2026-11-17 („scal i wdróż w nocy PR-y z kolejki”), recenzja #86 APPROVE; dotyczy tylko stron z `d2-attribution`
 
 Strona bez flagi: bez zmian. Z flagą `d2-attribution`:
 
