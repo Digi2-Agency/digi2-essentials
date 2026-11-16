@@ -345,18 +345,26 @@ mail; ASCII only, one line):
 - no UTM: `domain/(referral)/(not set)` or `(direct)/(none)/(not set)` (GA4 convention)
 - ` [gclid]` etc. — the kind of click only, never the value
 - the same entry on the same day again → ` x2`, ` x3`
-- `/`, `<`, `>` inside a value → `-`
+- `/`, `<`, `>`, `:` inside a value → `-`; Polish letters transliterated (`ż` → `z`),
+  any other character outside printable ASCII (emoji, other scripts) → `-` (v1.11.1)
 - the last 10 entries, at most 500 characters; older ones cut from the start with `... > `
 
 Fields are filled when the form starts and again on `submit` (capture phase)
 and on `attribution:change` — consent often comes after the form was built.
+`<form d2-attribution-fill>` is picked up once, at DOMContentLoaded; a form
+added later (a popup built by a script, an embed loaded on scroll) needs
+`digi2.attribution.fill(form)` — call it again right before sending.
+
+`PAGE_URL` (v1.11.1) is `digi2.attribution.pageUrl()`: the page address
+without click ids unless `ad_storage` is granted and without `utm_*` unless
+`analytics_storage` is — the lead never carries what the visitor refused.
 A field the form already has (same name in any case, or an alias such as
 `GOOGLE_ADS_ID`) is left alone, as in cookie mode.
 
 **Popups.** `d2-popup-utm` / `-exclude` read `digi2.attribution.value(key)`:
 `utm_*` from the last source (this pageview without consent), any other key
 (`refID`, …) from this URL only (AT-D7). `utmCookie` / `utmCookieDays` do
-nothing. Lead measurement (`datalayer`): `lead_source` / `lead_medium` /
+nothing (an explicit option logs a console warning since v1.11.1). Lead measurement (`datalayer`): `lead_source` / `lead_medium` /
 `lead_campaign` from the same last source.
 
 ### API
@@ -371,6 +379,7 @@ digi2.attribution.fill(formEl)          // add / update the hidden fields in any
 digi2.attribution.consent('ad_storage') // 'granted' | 'denied' | 'unknown'
 digi2.attribution.clear()               // delete the stored history
 digi2.attribution.parseTouchpoint(href, referrer)  // one entry, no storage
+digi2.attribution.pageUrl()             // this address without what consent does not allow (PAGE_URL)
 digi2.on('attribution:change', fn)      // consent changed / pageview stored
 ```
 

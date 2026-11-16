@@ -16,6 +16,22 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.11.1 — wersja stabilna (`@latest`), po poleceniu Piotra 2026-11-17 („scal i wdróż w nocy PR-y z kolejki”); poprawki z recenzji #84, dotyczą tylko stron z `d2-attribution`
+
+Strona bez flagi: bez zmian. Z flagą `d2-attribution`:
+
+- `ATTRIBUTION_PATH` zawiera tylko znaki ASCII. Polskie litery tracą ogonki
+  (`Zażółć` → `Zazolc`), emoji i inne pismo → `-`, a `:` w wartości → `-`
+  (`promo:xmas` → `promo-xmas`). Powód: Make i parser maila Vox.
+- `PAGE_URL` bez `gclid` / `fbclid` / … bez zgody reklamowej i bez `utm_*` bez
+  zgody analitycznej. Nowe `digi2.attribution.pageUrl()`.
+- Błąd w cudzym słuchaczu `attribution:change` nie zatrzymuje już warstwy ani
+  `dataLayer.push` (wpis w konsoli zamiast wyjątku).
+- Popup z jawną opcją `utmCookie` / `utmCookieDays` przy fladze zostawia
+  ostrzeżenie w konsoli, że opcja nic nie robi.
+- Dokumentacja: `d2-attribution-fill` łapie formularze obecne przy
+  DOMContentLoaded; dodany później wymaga `digi2.attribution.fill(form)`.
+
 ## v1.11.0 — wersja stabilna (`@latest`), po akceptacji Piotra 2026-11-17 („AKCEPTUJĘ na 84”: scalenie + wydanie)
 
 Strona bez flagi `d2-attribution` dostaje tylko większy loader (min 10,9 → 19,5 KB,

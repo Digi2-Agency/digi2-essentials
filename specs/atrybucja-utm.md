@@ -1,6 +1,6 @@
 # Warstwa atrybucji (UTM i identyfikatory kliknięć) w digi2-essentials — DESIGN
 
-> **Status:** decyzje AT-D1…AT-D8 rozstrzygnięte przez Piotra 2026-11-16 (§5.0); format pola ścieżki (§3.5) do uzgodnienia z architekt-it. Kod: osobny PR za flagą `d2-attribution`.
+> **Status:** decyzje AT-D1…AT-D8 rozstrzygnięte przez Piotra 2026-11-16 (§5.0); format pola ścieżki (§3.5) uzgodniony. Kod: v1.11.0 (#84, wydane 2026-11-17 po „AKCEPTUJĘ na 84”), poprawki z recenzji v1.11.1.
 > **Zlecenie:** architekt-it 2026-11-16, kierunek Piotra (czat `wlasciciel`, przekazane): *„Docelowo chcemy używać
 > digi2-essentials więc do zweryfikowania dokładnie co tu się dzieje i jak to zrobić aby było skalowane i dobre dla naszej
 > firmy biorąc pod uwagę nasz stack technologiczny.”*
@@ -196,22 +196,22 @@ przez dwie subdomeny.
 | `ma.js` | własny `pageUtm`, `state.utm`, touchpoints | parser i zgoda z loadera; touchpoints i `state.utm` zostają w `d2ma` (kontrakt z 2destate bez zmian). Nowe klucze `d2-ma-show-utm-source` / `-utm-campaign` (MP-D16, PR N1 silnika) czytają `digi2.attribution` — przed zgodą adres odsłony, po zgodzie wizyta = dokładnie MP-D13. |
 | `datalayer.js` | kontekst z forms | `lead_source` / `lead_medium` / `lead_campaign` z `last`; `has_gclid` / `has_fbclid` z `last.click_type` (bez wartości). Do GA4 nie wysyłamy UTM osobnym zdarzeniem — GA4 ma własną atrybucję. |
 
-### 3.5 Pole ścieżki w leadzie — PROPOZYCJA (do uzgodnienia z architekt-it, potem standard maila Vox)
+### 3.5 Pole ścieżki w leadzie — uzgodnione z architekt-it 2026-11-16, wdrożone w v1.11.0 / v1.11.1
 
 - **`ATTRIBUTION_PATH`** — jedno ukryte pole tekstowe. Wpisy od najstarszego do najnowszego, separator ` > `.
 - **Wpis:** `RRRR-MM-DD source/medium/campaign`, data lokalna przeglądarki, dzień wejścia.
   - Brak UTM: `source` = domena obcego referrera albo `(direct)`, `medium` = `(referral)` / `(none)`,
     `campaign` = `(not set)` (konwencja GA4).
   - Kliknięcie reklamy: dopisek ` [gclid]` / ` [fbclid]` / … — sam rodzaj, nigdy wartość.
-  - Kolejne wizyty z tym samym źródłem tego samego dnia sklejone z licznikiem ` ×N`.
-  - W wartościach `/` i `>` zamieniane na `-`, sanityzacja danych osobowych jak w §3.2.
+  - Kolejne wizyty z tym samym źródłem tego samego dnia sklejone z licznikiem ` xN` (ASCII).
+  - W wartościach `/`, `<`, `>` i `:` zamieniane na `-`. Polskie litery tracą ogonki, inne znaki spoza ASCII → `-`. Sanityzacja danych osobowych jak w §3.2. Pole zawiera wyłącznie ASCII (uzgodnione z architekt-it 16.11, recenzje #84 i silnika #2355).
 - **Wpis = wizyta** (przerwa 30 min, reguła `d2-ma`), także wejście bezpośrednie.
-- **Limit:** ostatnie 10 wpisów i najwyżej 500 znaków. Starsze odcinane od początku, z prefiksem `… > `.
+- **Limit:** ostatnie 10 wpisów i najwyżej 500 znaków. Starsze odcinane od początku, z prefiksem `... > `.
   Magazyn trzyma 20 wizyt (jak touchpoints) przez 13 miesięcy (AT-D5).
 - **Bez zgody analitycznej:** tylko wpis bieżącej odsłony, a `ATTRIBUTION_STATUS=no-consent`.
 - **`ATTRIBUTION_STATUS`:** `stored` (ścieżka z magazynu), `url` (tylko ta odsłona, zgoda jest), `no-consent`, `none`.
 - **Przykład:**
-  `2026-10-02 google/cpc/latawce-search [gclid] > 2026-10-09 (direct)/(none)/(not set) ×2 > 2026-11-16 newsletter/email/dni-otwarte-2026-11`
+  `2026-10-02 google/cpc/latawce-search [gclid] > 2026-10-09 (direct)/(none)/(not set) x2 > 2026-11-16 newsletter/email/dni-otwarte-2026-11`
 
 ### 3.6 Czego warstwa nie robi
 

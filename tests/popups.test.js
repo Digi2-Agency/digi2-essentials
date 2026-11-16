@@ -2374,3 +2374,18 @@ test('d2-attribution: no campaign cookie is written', () => {
   assert.equal(first.inst.isVisible, true);
   assert.equal(first.env.document.cookie, '');
 });
+
+test('d2-attribution: an explicit utmCookie option warns that it does nothing', () => {
+  const env = createEnvironment({ search: '?utm_source=facebook' });
+  loadPopupsModule(env);
+  env.window.digi2.attribution = { enabled: true, value: () => 'facebook' };
+  const warnings = [];
+  const orig = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  try {
+    const el = createElement('div', { class: 'popup__overlay', 'd2-popup-utm': 'utm_source:facebook' });
+    env.body.appendChild(el);
+    env.window.digi2.popups.create('promo', { animation: 'none', cookieName: null, utmCookie: true });
+  } finally { console.warn = orig; }
+  assert.ok(warnings.some((w) => /utmCookie \/ utmCookieDays do nothing with d2-attribution/.test(w)), warnings.join('\n'));
+});

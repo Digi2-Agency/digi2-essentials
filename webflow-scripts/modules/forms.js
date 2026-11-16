@@ -1463,7 +1463,10 @@
     _injectPageFields() {
       if (this.options.pageMeta) {
         if (!this._hasField('PAGE_URL')) {
-          this._injectField('PAGE_URL', window.location.href);
+          var attrUrl = _attr();
+          // d2-attribution: without consent no click id / UTM in PAGE_URL either.
+          this._injectField('PAGE_URL', attrUrl && typeof attrUrl.pageUrl === 'function'
+            ? attrUrl.pageUrl() : window.location.href);
         }
         if (!this._hasField('PAGE_TITLE')) {
           this._injectField('PAGE_TITLE', document.title);

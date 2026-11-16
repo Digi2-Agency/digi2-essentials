@@ -1981,12 +1981,13 @@ digi2.attribution.<span class="fn">value</span>(<span class="string">'utm_source
 digi2.attribution.<span class="fn">fill</span>(formEl)           <span class="comment">// add / update the fields in any form</span>
 digi2.attribution.<span class="fn">consent</span>(<span class="string">'ad_storage'</span>)  <span class="comment">// 'granted' | 'denied' | 'unknown'</span>
 digi2.attribution.<span class="fn">clear</span>()                <span class="comment">// delete the stored history</span>
+digi2.attribution.<span class="fn">pageUrl</span>()              <span class="comment">// PAGE_URL without what consent does not allow</span>
 digi2.<span class="fn">on</span>(<span class="string">'attribution:change'</span>, fn)</code></pre>
   </section>
 
   <section id="attribution-fields">
     <h2>Lead Fields &amp; Path</h2>
-    <p>With the flag, <a href="#forms-tracking">d2-forms</a> and <code>&lt;form d2-attribution-fill&gt;</code> get these hidden inputs. They are filled when the form starts and again on submit and on <code>attribution:change</code> — consent usually comes later. A field the form already has (any case, or an alias such as <code>GOOGLE_ADS_ID</code>) is left alone.</p>
+    <p>With the flag, <a href="#forms-tracking">d2-forms</a> and <code>&lt;form d2-attribution-fill&gt;</code> get these hidden inputs. They are filled when the form starts and again on submit and on <code>attribution:change</code> — consent usually comes later. A field the form already has (any case, or an alias such as <code>GOOGLE_ADS_ID</code>) is left alone. <code>&lt;form d2-attribution-fill&gt;</code> is picked up once, at DOMContentLoaded — a form added later needs <code>digi2.attribution.fill(form)</code>. <code>PAGE_URL</code> drops click ids without <code>ad_storage</code> and <code>utm_*</code> without <code>analytics_storage</code> (<code>digi2.attribution.pageUrl()</code>).</p>
     <table>
       <tr><th>Field</th><th>Value</th></tr>
       <tr><td><code>UTM_SOURCE</code> … <code>UTM_TERM</code></td><td>The last visit with a source (UTM, ad click or foreign referrer) — empty when that source has no UTM</td></tr>
@@ -2001,7 +2002,7 @@ digi2.<span class="fn">on</span>(<span class="string">'attribution:change'</span
       <tr><td>No UTM</td><td><code>domain/(referral)/(not set)</code> or <code>(direct)/(none)/(not set)</code></td></tr>
       <tr><td>Ad click</td><td><code> [gclid]</code> etc. — the kind only, never the value</td></tr>
       <tr><td>Repeats</td><td>Same entry on the same day → <code> x2</code></td></tr>
-      <tr><td>Characters</td><td>ASCII separators only; <code>/</code>, <code>&lt;</code>, <code>&gt;</code> in a value → <code>-</code>; never a new line</td></tr>
+      <tr><td>Characters</td><td>ASCII only: <code>/</code>, <code>&lt;</code>, <code>&gt;</code>, <code>:</code> in a value → <code>-</code>; Polish letters transliterated (<code>ż</code> → <code>z</code>), emoji and other scripts → <code>-</code>; never a new line</td></tr>
       <tr><td>Length</td><td>Last 10 entries, at most 500 characters; cut from the start with <code>... &gt; </code></td></tr>
     </table>
   </section>

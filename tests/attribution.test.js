@@ -331,3 +331,42 @@ test('<form d2-attribution-fill> gets the hidden fields, refreshed on submit', (
   assert.equal(byName('ATTRIBUTION_STATUS').value, 'url');
   assert.ok(p.attribution);
 });
+
+// ---- v1.11.1: review #84 ----------------------------------------------------
+
+test('a ":" in a value becomes "-" (would read as a header in the Vox mail)', () => {
+  const p = pageview({ url: 'https://site.pl/?utm_source=promo%3Axmas&utm_medium=email', storage: makeStorage({ consentModeV2: GRANTED }) });
+  assert.equal(p.attribution.fields().ATTRIBUTION_PATH, '2026-10-02 promo-xmas/email/(not set)');
+});
+
+test('path is ASCII even for Polish letters and emoji (Polish transliterated)', () => {
+  const storage = makeStorage({ consentModeV2: GRANTED });
+  const p = pageview({
+    url: 'https://site.pl/?utm_source=' + encodeURIComponent('Zażółć') + '&utm_medium=' + encodeURIComponent('e🎉mail')
+      + '&utm_campaign=' + encodeURIComponent('日本'),
+    storage,
+  });
+  const f = p.attribution.fields().ATTRIBUTION_PATH;
+  assert.equal(f, '2026-10-02 Zazolc/e-mail/--');
+  assert.match(f, /^[\x20-\x7e]*$/);
+});
+
+test('a throwing attribution:change listener stops neither the layer nor dataLayer.push', () => {
+  const storage = makeStorage();
+  const dl = [];
+  const p = pageview({ url: 'https://site.pl/?utm_source=a', storage, dataLayer: dl });
+  p.window.digi2.on('attribution:change', () => { throw new Error('site bug'); });
+  assert.doesNotThrow(() => dl.push(gtagArgs('consent', 'update', { analytics_storage: 'granted' })));
+  assert.ok(storage.getItem('d2_attribution'), 'stored despite the listener');
+  assert.equal(dl.length, 1, 'the push itself went through');
+});
+
+test('pageUrl(): click ids only with ad_storage, utm_* only with analytics_storage', () => {
+  const url = 'https://site.pl/oferta?utm_source=a&utm_medium=b&gclid=X&fbclid=Y&lokal=12';
+  const none = pageview({ url, storage: makeStorage() });
+  assert.equal(none.attribution.pageUrl(), 'https://site.pl/oferta?lokal=12');
+  const stats = pageview({ url, storage: makeStorage({ consentModeV2: GRANTED }) });
+  assert.equal(stats.attribution.pageUrl(), 'https://site.pl/oferta?utm_source=a&utm_medium=b&lokal=12');
+  const all = pageview({ url, storage: makeStorage({ consentModeV2: ALL }) });
+  assert.equal(all.attribution.pageUrl(), url);
+});
