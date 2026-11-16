@@ -753,7 +753,8 @@
         pageCounted = false;
       }
       log('state', { consent: u, adsConsent: a, stored: !!data });
-      window.digi2.emit('attribution:change', snapshot());
+      // A failing listener must not stop the layer (or the dataLayer push that got us here).
+      try { window.digi2.emit('attribution:change', snapshot()); } catch (e) { console.error('[digi2.attribution] attribution:change listener failed', e); }
     }
 
     // ---- Output -----------------------------------------------------------------
@@ -801,8 +802,18 @@
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
     }
     // "/" separates source/medium/campaign and " > " separates entries; a new
-    // line would break the lead mail parser — none of them may come from a value.
-    function clean(v) { return String(v).replace(/[\/<>\r\n\t]/g, '-'); }
+    // line or a ":" would break the lead mail parser — none of them may come from a value.
+    // ASCII only (v1.11.1, review #84): Polish letters transliterated, anything
+    // else outside printable ASCII (emoji, other scripts) → "-".
+    var PL = { 'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
+      'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z' };
+    function clean(v) {
+      return String(v)
+        .replace(/[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/g, function (c) { return PL[c]; })
+        .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '-')
+        .replace(/[^\x20-\x7e]/g, '-')
+        .replace(/[\/<>:]/g, '-');   // ":" would look like a header line to the Vox mail parser
+    }
     function label(e) {
       var s, m, c;
       if (hasUtm(e)) {
@@ -879,6 +890,18 @@
 
     // Value of one traffic key for d2-popup-utm: utm_* from the last source
     // (this pageview without consent), any other key from this URL only (AT-D7).
+    // This page's address for PAGE_URL (v1.11.1, review #84): click ids only
+    // with ad_storage, utm_* only with analytics_storage — the same rules as
+    // the stored history, so the lead carries nothing the visitor refused.
+    function pageUrl() {
+      var u;
+      try { u = new URL(String(href || '')); } catch (e) { return href || ''; }
+      var ads = consent(CAT_ADS) === 'granted', utm = consent(CAT_UTM) === 'granted';
+      CLICK_IDS.forEach(function (k) { if (!ads) u.searchParams['delete'](k); });
+      if (!utm) UTM.forEach(function (k) { u.searchParams['delete']('utm_' + k); });
+      return u.toString();
+    }
+
     function value(key) {
       var k = String(key || '');
       var m = /^utm_(source|medium|campaign|content|term|id)$/i.exec(k);
@@ -907,6 +930,7 @@
         refresh();
       },
       parseTouchpoint: function (h, r) { return out(parseTouchpoint(h, r)); },
+      pageUrl: pageUrl,
     };
 
     // ---- Wiring -----------------------------------------------------------------
@@ -927,7 +951,7 @@
         }
         // A banner from a GTM template changes consent without a gtag command —
         // it shows only in the Google tag state, so every event re-checks it.
-        if (touched) refresh();
+        if (touched) { try { refresh(); } catch (e) { console.error('[digi2.attribution] refresh failed', e); } }
         return r;
       };
     }

@@ -822,6 +822,10 @@
       // through to the next page.
       // d2-attribution on the loader: the loader remembers the source (after
       // consent only), so no cookie here — utmCookie / utmCookieDays do nothing.
+      if (_attribution() && ('utmCookie' in this._rawOptions || 'utmCookieDays' in this._rawOptions)) {
+        console.warn('[digi2.popups] "' + this.name + '" — utmCookie / utmCookieDays do nothing with d2-attribution:'
+          + ' the loader remembers the source, after consent only.');
+      }
       if (this.options.utmCookie && !_attribution()) {
         [this._utm, this._utmExclude].forEach(function (f) {
           if (!f) return;

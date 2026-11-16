@@ -1210,3 +1210,10 @@ test('d2-attribution: a field the form already has is left alone, as in cookie m
   assert.equal(env.form.querySelector('input[name="UTM_SOURCE"]'), null);
   assert.equal(own.value, 'site-script');
 });
+
+test('d2-attribution: PAGE_URL comes from digi2.attribution.pageUrl() (no click ids without consent)', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  env.window.digi2.attribution.pageUrl = () => 'https://example.com/contact?from=layer';
+  env.window.digi2.forms.create('lead', { autoValidation: false, gaClientId: false });
+  assert.equal(env.form.querySelector('input[name="PAGE_URL"]').value, 'https://example.com/contact?from=layer');
+});
