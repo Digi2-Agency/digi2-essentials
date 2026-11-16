@@ -1126,3 +1126,87 @@ test('submitting with Enter still reports the attempt', () => {
   env.fire(env.email, 'submit');
   assert.equal(env.of('form:submitclick').length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// d2-attribution (v1.11): fields from the loader's digi2.attribution, no cookies
+// ---------------------------------------------------------------------------
+
+function attributionEnv(fields) {
+  const body = createElement('body');
+  const wrapper = createElement('div', { 'd2-form': 'lead' });
+  const form = createElement('form');
+  wrapper.appendChild(form);
+  body.appendChild(wrapper);
+  const writes = [];
+  const document = {
+    body, head: createElement('head'), title: '', referrer: '',
+    createElement(tagName) { return createElement(tagName); },
+    querySelector(selector) { return body.querySelector(selector); },
+    querySelectorAll(selector) { return body.querySelectorAll(selector); },
+  };
+  Object.defineProperty(document, 'cookie', { get: () => '', set: (v) => writes.push(v) });
+  const current = Object.assign({}, fields);
+  const listeners = {};
+  const window = {
+    digi2: {
+      log() {},
+      on(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      off(ev, fn) { listeners[ev] = (listeners[ev] || []).filter((f) => f !== fn); },
+      attribution: {
+        enabled: true,
+        fields: () => Object.assign({}, current),
+        get: () => ({ last: { utm_source: current.UTM_SOURCE, click_type: 'gclid' }, clicks: {} }),
+      },
+    },
+    location: { search: '?utm_source=url-value&gclid=zzz', href: 'https://example.com/contact' },
+  };
+  const context = vm.createContext({
+    window, document, console, Event, setTimeout, URLSearchParams,
+    getComputedStyle: () => ({ display: '', visibility: '', opacity: '1' }),
+    fetch: () => Promise.resolve({ json: () => Promise.resolve({}) }),
+  });
+  vm.runInContext(fs.readFileSync(modulePath, 'utf8'), context, { filename: modulePath });
+  return { window, form, writes, current, listeners };
+}
+
+const ATTR_FIELDS = {
+  UTM_SOURCE: 'newsletter', UTM_MEDIUM: 'email', UTM_CAMPAIGN: 'nov', UTM_CONTENT: '', UTM_TERM: '',
+  GCLID: '', FBCLID: '', MSCLKID: '',
+  ATTRIBUTION_PATH: '2026-11-16 newsletter/email/nov', ATTRIBUTION_STATUS: 'no-consent',
+};
+
+test('d2-attribution: forms take every tracking field from digi2.attribution and write no cookie', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  env.window.digi2.forms.create('lead', { pageMeta: false, autoValidation: false, gaClientId: false });
+  const val = (n) => { const i = env.form.querySelector(`input[name="${n}"]`); return i ? i.value : undefined; };
+  assert.equal(val('UTM_SOURCE'), 'newsletter', 'not the URL value');
+  assert.equal(val('UTM_CONTENT'), '');
+  assert.equal(val('ATTRIBUTION_PATH'), '2026-11-16 newsletter/email/nov');
+  assert.equal(val('ATTRIBUTION_STATUS'), 'no-consent');
+  assert.equal(val('GCLID'), undefined, 'no click id value without ad consent');
+  assert.deepEqual(env.writes, [], 'no utm_* / gclid cookies');
+});
+
+test('d2-attribution: the fields are refreshed on submit and on attribution:change', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  env.window.digi2.forms.create('lead', { pageMeta: false, autoValidation: false, gaClientId: false });
+  const val = (n) => { const i = env.form.querySelector(`input[name="${n}"]`); return i ? i.value : undefined; };
+  env.current.ATTRIBUTION_STATUS = 'stored';
+  env.current.GCLID = 'Cj0abc';
+  env.form.dispatchEvent({ type: 'submit', preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+  assert.equal(val('ATTRIBUTION_STATUS'), 'stored');
+  assert.equal(val('GCLID'), 'Cj0abc');
+  env.current.UTM_SOURCE = 'meta';
+  env.listeners['attribution:change'].forEach((fn) => fn({}));
+  assert.equal(val('UTM_SOURCE'), 'meta');
+});
+
+test('d2-attribution: a field the form already has is left alone, as in cookie mode', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  const own = createElement('input', { type: 'hidden', name: 'utm_source' });
+  own.value = 'site-script';
+  env.form.appendChild(own);
+  env.window.digi2.forms.create('lead', { pageMeta: false, autoValidation: false, gaClientId: false });
+  assert.equal(env.form.querySelector('input[name="UTM_SOURCE"]'), null);
+  assert.equal(own.value, 'site-script');
+});

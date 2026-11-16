@@ -15,6 +15,8 @@
  *   animationDuration:    0.4                    — seconds
  *   utm:                  'utm_source:facebook'  — only show to traffic carrying it
  *   utmExclude:           'utm_medium:cpc'       — never show to this traffic
+ *                         with d2-attribution on the loader both read digi2.attribution
+ *                         (no utm cookie; utmCookie / utmCookieDays ignored)
  *   startOn:              'intro:done'           — hold automatic triggers until this milestone
  *
  * Start gate (see _openWhen):
@@ -818,7 +820,9 @@
       // First touch: if the key this popup cares about is in the URL right now,
       // remember it, or the gate goes dark as soon as the visitor clicks
       // through to the next page.
-      if (this.options.utmCookie) {
+      // d2-attribution on the loader: the loader remembers the source (after
+      // consent only), so no cookie here — utmCookie / utmCookieDays do nothing.
+      if (this.options.utmCookie && !_attribution()) {
         [this._utm, this._utmExclude].forEach(function (f) {
           if (!f) return;
           var fresh = _urlParam(f.key);
@@ -2072,6 +2076,12 @@
     } catch (e) { /* cookies blocked — the URL read still works this pageview */ }
   }
 
+  // digi2.attribution from the loader (d2-attribution flag), or null.
+  function _attribution() {
+    var a = window.digi2 && window.digi2.attribution;
+    return a && a.enabled && typeof a.value === 'function' ? a : null;
+  }
+
   function _urlParam(key) {
     try {
       return new URLSearchParams(window.location.search).get(key) || '';
@@ -2081,6 +2091,15 @@
   // Current value of a campaign key: this pageview's URL wins, the cookie from
   // the landing page is the fallback.
   function _trafficValue(key) {
+    var a = _attribution();
+    if (a) {
+      // utm_* from the last source of the visit (this pageview without
+      // consent), any other key from this URL only.
+      var v = a.value(key);
+      if (v) return v;
+      var low = String(key).toLowerCase();
+      return low === key ? '' : a.value(low);
+    }
     var exact = _urlParam(key) || _readCookieRaw(key);
     if (exact) return exact;
     var lower = String(key).toLowerCase();

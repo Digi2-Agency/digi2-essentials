@@ -16,6 +16,43 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.11.0 — niewydana (czeka na „AKCEPTUJĘ” Piotra; pilot: magicznylukecin.pl)
+
+**Nowa flaga `d2-attribution` na tagu loadera — opt-in per strona.** Strona bez
+flagi działa dokładnie jak w 1.10.0: formularze i popupy dalej zapisują
+cookies `utm_*` / `gclid` jak dotąd. Decyzje Piotra 2026-11-16: `specs/atrybucja-utm.md` §5.0.
+
+Z flagą:
+
+- **Formularze (`d2-forms`):** pola `UTM_SOURCE` … `UTM_TERM` biorą jeden spójny
+  zestaw z ostatniego wejścia ze źródłem — koniec mieszania `utm_source` nowej
+  kampanii z `utm_content` starej. Nowe ukryte pola:
+  - `ATTRIBUTION_PATH` — historia wejść do Make / Vox, np.
+    `2026-10-02 google/cpc/x [gclid] > 2026-11-16 newsletter/email/nov`;
+  - `ATTRIBUTION_STATUS` — `stored` / `url` / `no-consent` / `none`.
+  
+  Pola odświeżają się przy wysłaniu formularza (zgoda często przychodzi później).
+- **Zgoda:** bez zgody analitycznej nic nie trafia do przeglądarki (tylko bieżąca
+  odsłona, w pamięci). Z nią historia ląduje w `localStorage d2_attribution`:
+  do 20 wizyt, 13 miesięcy (`d2-attribution-days`). Wartości `gclid` / `fbclid` /
+  `msclkid` (pola `GCLID` …) zapisują się tylko przy zgodzie reklamowej. Odmowa
+  kasuje historię.
+- **Stare cookies** `utm_*`, `gclid`, `fbclid`, `msclkid`, `gaclientid` są usuwane
+  i więcej nie powstają. **Skutek:** lead od osoby bez zgody, która przed
+  wysłaniem przeszła na inną podstronę, przyjdzie bez UTM, z
+  `ATTRIBUTION_STATUS=no-consent`. To świadoma decyzja (AT-D8); przez 2–4 tyg.
+  liczymy skalę.
+- **Popupy (`d2-popup-utm`):** czytają źródło z loadera, a nie z cookie;
+  `utmCookie` nic nie robi. Klucze spoza `utm_*` (np. `refID`) działają tylko
+  na odsłonie z parametrem w adresie.
+- **Formularze spoza `d2-forms`** (WordPress, Shopify, embed): `<form d2-attribution-fill>`
+  dostaje te same ukryte pola. JS: `digi2.attribution.fill(form)`, `.fields()`,
+  `.get()`, `.path()`.
+
+**Wymóg:** flaga działa tylko z loaderem ≥ 1.11 na tym samym tagu. Starszy
+loader potraktuje `d2-attribution` jak nazwę modułu i spróbuje pobrać
+`modules/attribution.min.js` (404, bez skutków dla reszty strony).
+
 ## v1.10.0 — wersja stabilna (`@latest`), po akceptacji Piotra 2026-11-14
 
 Pierwsza wersja stabilna od 1.8.3. Strona na `@latest` (i na `@main`)
