@@ -16,7 +16,11 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
-## v1.11.0 — niewydana (czeka na „AKCEPTUJĘ” Piotra; pilot: magicznylukecin.pl)
+## v1.11.0 — wersja stabilna (`@latest`), po akceptacji Piotra 2026-11-17 („AKCEPTUJĘ na 84”: scalenie + wydanie)
+
+Strona bez flagi `d2-attribution` dostaje tylko większy loader (min 10,9 → 19,5 KB,
+gzip 3,9 → 7,2 KB), bez zmiany zachowania. Pilot z flagą: magicznylukecin.pl
+(osobno, sesja `webflow`).
 
 **Nowa flaga `d2-attribution` na tagu loadera — opt-in per strona.** Strona bez
 flagi działa dokładnie jak w 1.10.0: formularze i popupy dalej zapisują
