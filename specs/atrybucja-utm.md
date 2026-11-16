@@ -136,7 +136,7 @@ w wydaniu stabilnym trafia od razu na formularze leadowe tych stron.
   z `d2-forms` gubi wejście (problem 3 z §1);
 - loader jest na każdej stronie z essentials, niezależnie od platformy (Webflow: kod witryny; WordPress: WPCode / motyw;
   Webstudio: custom code; Shopify: `theme.liquid`), bez dodatkowego żądania;
-- kod mały (szacunek **W**: 2–3 kB po terserze): parser (przeniesiony z `ma.js parseTouchpoint` + `utmValue`), odczyt
+- koszt zmierzony w PR #84 (**S**): loader po terserze 10,9 → 19,5 KB, gzip 3,9 → 7,2 KB, dla każdej strony, także bez flagi. Wcześniejszy szacunek 2–3 kB był zaniżony. Rdzeń to parser (przeniesiony z `ma.js parseTouchpoint` + `utmValue`), odczyt
   zgody (przeniesiony z `ma.js consentState`), magazyn.
 
 Opcja odrzucona: osobny moduł `attribution.js` dociągany przez forms / popups / ma — nie łapie wejścia na stronie bez
