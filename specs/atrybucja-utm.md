@@ -1,6 +1,6 @@
 # Warstwa atrybucji (UTM i identyfikatory kliknięć) w digi2-essentials — DESIGN
 
-> **Status:** decyzje AT-D1…AT-D8 rozstrzygnięte przez Piotra 2026-11-16 (§5.0); format pola ścieżki (§3.6) do uzgodnienia z architekt-it. Kod: osobny PR za flagą `d2-attribution`.
+> **Status:** decyzje AT-D1…AT-D8 rozstrzygnięte przez Piotra 2026-11-16 (§5.0); format pola ścieżki (§3.5) do uzgodnienia z architekt-it. Kod: osobny PR za flagą `d2-attribution`.
 > **Zlecenie:** architekt-it 2026-11-16, kierunek Piotra (czat `wlasciciel`, przekazane): *„Docelowo chcemy używać
 > digi2-essentials więc do zweryfikowania dokładnie co tu się dzieje i jak to zrobić aby było skalowane i dobre dla naszej
 > firmy biorąc pod uwagę nasz stack technologiczny.”*
@@ -196,7 +196,7 @@ przez dwie subdomeny.
 | `ma.js` | własny `pageUtm`, `state.utm`, touchpoints | parser i zgoda z loadera; touchpoints i `state.utm` zostają w `d2ma` (kontrakt z 2destate bez zmian). Nowe klucze `d2-ma-show-utm-source` / `-utm-campaign` (MP-D16, PR N1 silnika) czytają `digi2.attribution` — przed zgodą adres odsłony, po zgodzie wizyta = dokładnie MP-D13. |
 | `datalayer.js` | kontekst z forms | `lead_source` / `lead_medium` / `lead_campaign` z `last`; `has_gclid` / `has_fbclid` z `last.click_type` (bez wartości). Do GA4 nie wysyłamy UTM osobnym zdarzeniem — GA4 ma własną atrybucję. |
 
-### 3.6 Pole ścieżki w leadzie — PROPOZYCJA (do uzgodnienia z architekt-it, potem standard maila Vox)
+### 3.5 Pole ścieżki w leadzie — PROPOZYCJA (do uzgodnienia z architekt-it, potem standard maila Vox)
 
 - **`ATTRIBUTION_PATH`** — jedno ukryte pole tekstowe. Wpisy od najstarszego do najnowszego, separator ` > `.
 - **Wpis:** `RRRR-MM-DD source/medium/campaign`, data lokalna przeglądarki, dzień wejścia.
@@ -213,7 +213,7 @@ przez dwie subdomeny.
 - **Przykład:**
   `2026-10-02 google/cpc/latawce-search [gclid] > 2026-10-09 (direct)/(none)/(not set) ×2 > 2026-11-16 newsletter/email/dni-otwarte-2026-11`
 
-### 3.5 Czego warstwa nie robi
+### 3.6 Czego warstwa nie robi
 
 - Nie wysyła niczego na serwer i nie łączy wizyt z osobą (to `ma.js` + 2destate, za zgodą).
 - Nie zastępuje atrybucji GA4 / Google Ads / Meta — zasila tylko CRM (Make, Vox) i treść strony.
@@ -255,7 +255,7 @@ przychodzi bez zgody, i dopiero z tą liczbą Piotr decyduje o wyłączeniu zapi
 **Skutek dla planu (§4):** M2 i M3 łączą się w jeden krok **za flagą opt-in per strona** (atrybut na tagu loadera,
 `d2-attribution`); bez flagi zachowanie biblioteki bez zmian (stare cookies forms / popups jak dziś). Flaga włączona =
 nowa warstwa, ścieżka w leadzie, zapis wyłącznie po zgodzie, bez starych cookies. Wydanie i włączenie flagi na stronie
-pilotażowej — po „AKCEPTUJĘ” Piotra na wypisany zakres. Format pola ścieżki — §3.6 (uzgadniany z architekt-it, silnik
+pilotażowej — po „AKCEPTUJĘ” Piotra na wypisany zakres. Format pola ścieżki — §3.5 (uzgadniany z architekt-it, silnik
 dopisuje pole do standardu maila Vox).
 
 ### 5.1 Pierwotne opcje (archiwum, z rekomendacją specu)
