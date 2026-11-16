@@ -355,11 +355,23 @@ and on `attribution:change` — consent often comes after the form was built.
 added later (a popup built by a script, an embed loaded on scroll) needs
 `digi2.attribution.fill(form)` — call it again right before sending.
 
-`PAGE_URL` (v1.11.1) is `digi2.attribution.pageUrl()`: the page address
+`PAGE_URL` (v1.11.1; refreshed on submit and read from the current address
+since v1.11.2) is `digi2.attribution.pageUrl()`: the page address
 without click ids unless `ad_storage` is granted and without `utm_*` unless
 `analytics_storage` is — the lead never carries what the visitor refused.
-A field the form already has (same name in any case, or an alias such as
-`GOOGLE_ADS_ID`) is left alone, as in cookie mode.
+A field the form already has gets the layer's value (v1.11.2; until v1.11.1
+it was left alone): the same name in any case, an alias (`GOOGLE_ADS_ID`,
+`META_ADS_ID`, `BING_ADS_ID`), or the `data-input-name="utm_source_hidden"`,
+`gclid_hidden`… of the old inline tracking script some sites carry in their
+footer (`parseUrlParameters()` / `populateFormFields()`). No duplicate field
+is added next to it.
+
+**Before turning the flag on, remove any site script that writes `utm_*` /
+`gclid` cookies** (that inline script stores every URL parameter as a cookie
+without consent). With the flag the layer deletes those cookies, so the script
+would fill the fields with nothing — or, running after d2-forms, overwrite the
+layer's values. Make keeps its mapping; only `ATTRIBUTION_PATH` and
+`ATTRIBUTION_STATUS` are new fields to map.
 
 **Popups.** `d2-popup-utm` / `-exclude` read `digi2.attribution.value(key)`:
 `utm_*` from the last source (this pageview without consent), any other key
@@ -380,6 +392,7 @@ digi2.attribution.consent('ad_storage') // 'granted' | 'denied' | 'unknown'
 digi2.attribution.clear()               // delete the stored history
 digi2.attribution.parseTouchpoint(href, referrer)  // one entry, no storage
 digi2.attribution.pageUrl()             // this address without what consent does not allow (PAGE_URL)
+digi2.attribution.onChange(fn)          // → unsubscribe(); each subscriber isolated (v1.11.2)
 digi2.on('attribution:change', fn)      // consent changed / pageview stored
 ```
 

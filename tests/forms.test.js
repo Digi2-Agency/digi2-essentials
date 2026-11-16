@@ -1201,14 +1201,58 @@ test('d2-attribution: the fields are refreshed on submit and on attribution:chan
   assert.equal(val('UTM_SOURCE'), 'meta');
 });
 
-test('d2-attribution: a field the form already has is left alone, as in cookie mode', () => {
-  const env = attributionEnv(ATTR_FIELDS);
+test('d2-attribution (v1.11.2): a field the form already has gets the layer value, no duplicate', () => {
+  const env = attributionEnv(Object.assign({}, ATTR_FIELDS, { GCLID: 'Cj0abc' }));
   const own = createElement('input', { type: 'hidden', name: 'utm_source' });
   own.value = 'site-script';
   env.form.appendChild(own);
+  // Native Webflow form with the old inline script's fields (magicznylukecin.pl, 16.11):
+  const ads = createElement('input', { type: 'hidden', name: 'GOOGLE_ADS_ID', 'data-input-name': 'gclid_hidden' });
+  const medium = createElement('input', { type: 'hidden', name: 'Medium', 'data-input-name': 'utm_medium_hidden' });
+  env.form.appendChild(ads);
+  env.form.appendChild(medium);
   env.window.digi2.forms.create('lead', { pageMeta: false, autoValidation: false, gaClientId: false });
-  assert.equal(env.form.querySelector('input[name="UTM_SOURCE"]'), null);
+  assert.equal(env.form.querySelector('input[name="UTM_SOURCE"]'), null, 'no second UTM_SOURCE');
+  assert.equal(own.value, 'newsletter');
+  assert.equal(ads.value, 'Cj0abc', 'alias GOOGLE_ADS_ID');
+  assert.equal(medium.value, 'email', 'data-input-name of the old inline script');
+  assert.equal(env.form.querySelector('input[name="GCLID"]'), null);
+});
+
+test('without d2-attribution: PAGE_URL is location.href and a site field is still left alone', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  delete env.window.digi2.attribution;
+  const own = createElement('input', { type: 'hidden', name: 'UTM_SOURCE' });
+  own.value = 'site-script';
+  env.form.appendChild(own);
+  env.window.digi2.forms.create('lead', { autoValidation: false, gaClientId: false, utmTracking: true });
+  assert.equal(env.form.querySelector('input[name="PAGE_URL"]').value, 'https://example.com/contact');
   assert.equal(own.value, 'site-script');
+});
+
+test('without d2-attribution: data-input-name never stops an injection (as in v1.11.1)', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  delete env.window.digi2.attribution;
+  env.window.location.search = '?utm_medium=cpc';
+  const medium = createElement('input', { type: 'hidden', name: 'Medium', 'data-input-name': 'utm_medium_hidden' });
+  const url = createElement('input', { type: 'hidden', name: 'Adres', 'data-input-name': 'page_url' });
+  env.form.appendChild(medium);
+  env.form.appendChild(url);
+  env.window.digi2.forms.create('lead', { autoValidation: false, gaClientId: false, utmTracking: true });
+  assert.ok(env.form.querySelector('input[name="UTM_MEDIUM"]'), 'UTM_MEDIUM injected next to the site field');
+  assert.ok(env.form.querySelector('input[name="PAGE_URL"]'), 'PAGE_URL injected next to the site field');
+  assert.equal(medium.value, '', 'site field untouched');
+  assert.equal(url.value, '');
+});
+
+test('d2-attribution: PAGE_URL is refreshed on submit', () => {
+  const env = attributionEnv(ATTR_FIELDS);
+  let url = 'https://example.com/contact';
+  env.window.digi2.attribution.pageUrl = () => url;
+  env.window.digi2.forms.create('lead', { autoValidation: false, gaClientId: false });
+  url = 'https://example.com/contact?step=2';
+  env.form.dispatchEvent({ type: 'submit', preventDefault() {}, stopPropagation() {}, stopImmediatePropagation() {} });
+  assert.equal(env.form.querySelector('input[name="PAGE_URL"]').value, 'https://example.com/contact?step=2');
 });
 
 test('d2-attribution: PAGE_URL comes from digi2.attribution.pageUrl() (no click ids without consent)', () => {

@@ -370,3 +370,60 @@ test('pageUrl(): click ids only with ad_storage, utm_* only with analytics_stora
   const all = pageview({ url, storage: makeStorage({ consentModeV2: ALL }) });
   assert.equal(all.attribution.pageUrl(), url);
 });
+
+// ---- v1.11.2 ------------------------------------------------------------------
+
+test('onChange: a throwing subscriber does not skip the next one', () => {
+  const dl = [];
+  const p = pageview({ url: 'https://site.pl/?utm_source=a', storage: makeStorage(), dataLayer: dl });
+  const got = [];
+  p.attribution.onChange(() => { throw new Error('site bug'); });
+  const off = p.attribution.onChange((s) => got.push(s.status));
+  dl.push(gtagArgs('consent', 'update', { analytics_storage: 'granted' }));
+  assert.deepEqual(got, ['url']);
+  off();
+  dl.push(gtagArgs('consent', 'update', { analytics_storage: 'denied' }));
+  assert.deepEqual(got, ['url'], 'unsubscribed');
+});
+
+test('pageUrl() reads the address now (pushState), not the one at load', () => {
+  const p = pageview({ url: 'https://site.pl/a?gclid=X', storage: makeStorage() });
+  p.window.location.href = 'https://site.pl/b?gclid=X&x=1';
+  assert.equal(p.attribution.pageUrl(), 'https://site.pl/b?x=1');
+});
+
+test('fill() writes into the fields of the old inline script (alias, data-input-name)', () => {
+  const mk = (name, din) => ({ name, value: '', getAttribute: (a) => (a === 'data-input-name' ? din : null) });
+  const inputs = [mk('UTM_SOURCE', 'utm_source_hidden'), mk('Kampania', 'utm_campaign_hidden'), mk('GOOGLE_ADS_ID', 'gclid_hidden')];
+  const form = {
+    querySelector(sel) { const m = /name="([^"]+)"/.exec(sel); return inputs.find((i) => i.name === m[1]) || null; },
+    querySelectorAll() { return inputs; },
+    appendChild(el) { inputs.push(el); },
+    addEventListener() {},
+  };
+  const p = pageview({
+    url: 'https://site.pl/?utm_source=google&utm_campaign=lato&gclid=Cj0',
+    storage: makeStorage({ consentModeV2: ALL }),
+  });
+  p.attribution.fill(form);
+  assert.equal(inputs[0].value, 'google');
+  assert.equal(inputs[1].value, 'lato', 'by data-input-name');
+  assert.equal(inputs[2].value, 'Cj0', 'GOOGLE_ADS_ID alias');
+  assert.equal(inputs.filter((i) => i.name === 'GCLID').length, 0, 'no duplicate GCLID');
+  assert.ok(inputs.some((i) => i.name === 'ATTRIBUTION_PATH'));
+});
+
+test('fill() without ad_storage empties the GOOGLE_ADS_ID field of the site', () => {
+  const mk = (name, din, value) => ({ name, value, getAttribute: (a) => (a === 'data-input-name' ? din : null) });
+  const ads = mk('GOOGLE_ADS_ID', 'gclid_hidden', 'from-old-cookie');
+  const inputs = [ads];
+  const form = {
+    querySelector(sel) { const m = /name="([^"]+)"/.exec(sel); return inputs.find((i) => i.name === m[1]) || null; },
+    querySelectorAll() { return inputs; },
+    appendChild(el) { inputs.push(el); },
+    addEventListener() {},
+  };
+  const p = pageview({ url: 'https://site.pl/?gclid=Cj0', storage: makeStorage({ consentModeV2: GRANTED }) });
+  p.attribution.fill(form);
+  assert.equal(ads.value, '');
+});
