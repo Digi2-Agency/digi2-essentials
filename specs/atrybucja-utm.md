@@ -1,6 +1,6 @@
 # Warstwa atrybucji (UTM i identyfikatory kliknięć) w digi2-essentials — DESIGN
 
-> **Status:** propozycja do decyzji Piotra (decyzje AT-D1…AT-D8 niżej). Nic z tego nie jest wdrożone.
+> **Status:** decyzje AT-D1…AT-D8 rozstrzygnięte przez Piotra 2026-11-16 (§5.0); format pola ścieżki (§3.6) do uzgodnienia z architekt-it. Kod: osobny PR za flagą `d2-attribution`.
 > **Zlecenie:** architekt-it 2026-11-16, kierunek Piotra (czat `wlasciciel`, przekazane): *„Docelowo chcemy używać
 > digi2-essentials więc do zweryfikowania dokładnie co tu się dzieje i jak to zrobić aby było skalowane i dobre dla naszej
 > firmy biorąc pod uwagę nasz stack technologiczny.”*
@@ -196,6 +196,23 @@ przez dwie subdomeny.
 | `ma.js` | własny `pageUtm`, `state.utm`, touchpoints | parser i zgoda z loadera; touchpoints i `state.utm` zostają w `d2ma` (kontrakt z 2destate bez zmian). Nowe klucze `d2-ma-show-utm-source` / `-utm-campaign` (MP-D16, PR N1 silnika) czytają `digi2.attribution` — przed zgodą adres odsłony, po zgodzie wizyta = dokładnie MP-D13. |
 | `datalayer.js` | kontekst z forms | `lead_source` / `lead_medium` / `lead_campaign` z `last`; `has_gclid` / `has_fbclid` z `last.click_type` (bez wartości). Do GA4 nie wysyłamy UTM osobnym zdarzeniem — GA4 ma własną atrybucję. |
 
+### 3.6 Pole ścieżki w leadzie — PROPOZYCJA (do uzgodnienia z architekt-it, potem standard maila Vox)
+
+- **`ATTRIBUTION_PATH`** — jedno ukryte pole tekstowe. Wpisy od najstarszego do najnowszego, separator ` > `.
+- **Wpis:** `RRRR-MM-DD source/medium/campaign`, data lokalna przeglądarki, dzień wejścia.
+  - Brak UTM: `source` = domena obcego referrera albo `(direct)`, `medium` = `(referral)` / `(none)`,
+    `campaign` = `(not set)` (konwencja GA4).
+  - Kliknięcie reklamy: dopisek ` [gclid]` / ` [fbclid]` / … — sam rodzaj, nigdy wartość.
+  - Kolejne wizyty z tym samym źródłem tego samego dnia sklejone z licznikiem ` ×N`.
+  - W wartościach `/` i `>` zamieniane na `-`, sanityzacja danych osobowych jak w §3.2.
+- **Wpis = wizyta** (przerwa 30 min, reguła `d2-ma`), także wejście bezpośrednie.
+- **Limit:** ostatnie 10 wpisów i najwyżej 500 znaków. Starsze odcinane od początku, z prefiksem `… > `.
+  Magazyn trzyma 20 wizyt (jak touchpoints) przez 13 miesięcy (AT-D5).
+- **Bez zgody analitycznej:** tylko wpis bieżącej odsłony, a `ATTRIBUTION_STATUS=no-consent`.
+- **`ATTRIBUTION_STATUS`:** `stored` (ścieżka z magazynu), `url` (tylko ta odsłona, zgoda jest), `no-consent`, `none`.
+- **Przykład:**
+  `2026-10-02 google/cpc/latawce-search [gclid] > 2026-10-09 (direct)/(none)/(not set) ×2 > 2026-11-16 newsletter/email/dni-otwarte-2026-11`
+
 ### 3.5 Czego warstwa nie robi
 
 - Nie wysyła niczego na serwer i nie łączy wizyt z osobą (to `ma.js` + 2destate, za zgodą).
@@ -219,7 +236,29 @@ Strony na `@latest` dostają wydanie stabilne od razu, strony na `@main` — od 
 Kolejność M1 → M2 → (dane) → M3 jest celowa: najpierw naprawiamy jakość (mieszanie kampanii), mierzymy, ile leadów
 przychodzi bez zgody, i dopiero z tą liczbą Piotr decyduje o wyłączeniu zapisu bez zgody.
 
-## 5. Decyzje do Piotra
+## 5. Decyzje Piotra
+
+### 5.0 Rozstrzygnięcia — Piotr, 2026-11-16 (czat `wlasciciel`, przekazane przez architekt-it; cytaty to dowód)
+
+| ID | Rozstrzygnięcie | Cytat |
+|---|---|---|
+| kierunek | warstwa zbiera **wszystkie** źródła wejść (jak touchpoints `d2-ma`), żeby lead niósł historię ścieżki | *„Chciałbym już żeby to działało w ten sposób jak chcemy zrobić w marketing automation, czyli żeby zbierało wszystko źródła (UTM) po to żeby móc lepiej przeanalizować historię ścieżki tego leada jak wyśle formularz”* |
+| start | M2 (naprawa mieszania kampanii) **razem** z historią wejść w leadzie; najpierw jedna strona pilotażowa | *„Od razu ścieżka w leadzie”* |
+| AT-D1 | ✅ (a) rdzeń w loaderze | *„W głównym skrypcie digi2-essentials”* |
+| AT-D2 | ✅ zastąpione: `UTM_*` = ostatnie źródło + pełna ścieżka wejść w jednym polu (zamiast `FIRST_UTM_*`) | jw. „Od razu ścieżka w leadzie” |
+| AT-D3 / AT-D4 | ✅ (a) / (a) | *„UTM i historia za zgodą analityczną, gclid/fbclid za reklamową”* |
+| AT-D5 | ✅ **13 miesięcy** (praktyka rynkowa, nie opinia prawna) | *„13 miesięcy”* (wcześniej *„Jak najdłużej się da”*) |
+| AT-D6 / AT-D7 | ✅ (a) / (a) | *„localStorage; inne parametry tylko dla bieżącej strony”* |
+| AT-D8 | ✅ (b) **od razu** z nową wersją: zapis tylko po zgodzie; przez 2–4 tyg. liczymy skalę z `ATTRIBUTION_STATUS` | *„Od razu z nową wersją”* |
+| MP-D16 | zgodne z AT-D1 | — |
+
+**Skutek dla planu (§4):** M2 i M3 łączą się w jeden krok **za flagą opt-in per strona** (atrybut na tagu loadera,
+`d2-attribution`); bez flagi zachowanie biblioteki bez zmian (stare cookies forms / popups jak dziś). Flaga włączona =
+nowa warstwa, ścieżka w leadzie, zapis wyłącznie po zgodzie, bez starych cookies. Wydanie i włączenie flagi na stronie
+pilotażowej — po „AKCEPTUJĘ” Piotra na wypisany zakres. Format pola ścieżki — §3.6 (uzgadniany z architekt-it, silnik
+dopisuje pole do standardu maila Vox).
+
+### 5.1 Pierwotne opcje (archiwum, z rekomendacją specu)
 
 | ID | Pytanie | Opcje | Rekomendacja | Dlaczego |
 |---|---|---|---|---|
