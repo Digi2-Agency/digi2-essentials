@@ -206,8 +206,9 @@
  *
  *   digi2.on('loaded', fn)              All modules loaded
  *   digi2.on('module:loaded', fn)       Single module loaded (receives name)
- *   digi2.on('module:error', fn)        Module failed (receives name): not found, or it ran but
- *                                       threw before registering digi2.<namespace>
+ *   digi2.on('module:error', fn)        Module failed (receives name): not found twice (one
+ *                                       retry after 1.5 s), or it ran but threw before
+ *                                       registering digi2.<namespace>
  *   digi2.on('consent:updated', fn)     Consent state changed (receives state)
  *   digi2.off('loaded', fn)             Remove listener
  *   digi2.emit('custom', data)          Emit custom event
@@ -1019,6 +1020,8 @@
 
   // ---- Internal: load a single module by name (returns a Promise) ----------
   var _loadPromises = {};
+  var MODULE_LOAD_ATTEMPTS = 2;      // first request + one retry
+  var MODULE_RETRY_DELAY_MS = 1500;
 
   function _requestedElsewhere(moduleName) {
     var found = null;
@@ -1058,31 +1061,48 @@
       var ext = useMin ? '.min.js' : '.js';
       var url = baseUrl + 'modules/' + moduleName + ext;
       window.digi2.log('loader', 'loading module → ' + moduleName, url);
-      var script = document.createElement('script');
-      script.src = url;
-      script.onload = function () {
-        // A script that throws while running still fires onload. If the module
-        // never replaced the loader's stub on digi2.<namespace>, it did not
-        // start: report it as a failed load, not a loaded one.
-        var ns = _namespaceOf(moduleName);
-        if (ns && _stubs[ns] && window.digi2[ns] === _stubs[ns]) {
-          console.error('[digi2] Module "' + moduleName + '" loaded from ' + url
-            + ' but did not register digi2.' + ns + ' (it probably threw while running — see the error above).');
+      _inject(1);
+
+      // A CDN hiccup (one request in a few hundred) used to leave the module
+      // out for the whole visit: its stub stayed on digi2.<namespace> and page
+      // code got Promises back from sync calls like forms.list(). The file is
+      // asked for once more after MODULE_RETRY_DELAY_MS; only when that fails
+      // too is it reported (module:error) and the load rejected.
+      function _inject(attempt) {
+        var script = document.createElement('script');
+        script.src = url;
+        script.onload = function () {
+          // A script that throws while running still fires onload. If the module
+          // never replaced the loader's stub on digi2.<namespace>, it did not
+          // start: report it as a failed load, not a loaded one.
+          var ns = _namespaceOf(moduleName);
+          if (ns && _stubs[ns] && window.digi2[ns] === _stubs[ns]) {
+            console.error('[digi2] Module "' + moduleName + '" loaded from ' + url
+              + ' but did not register digi2.' + ns + ' (it probably threw while running — see the error above).');
+            window.digi2.emit('module:error', moduleName);
+            reject(new Error('[digi2] Module "' + moduleName + '" did not register digi2.' + ns));
+            return;
+          }
+          window.digi2._loaded[moduleName] = true;
+          window.digi2.log('loader', 'module loaded ✓ ' + moduleName);
+          window.digi2.emit('module:loaded', moduleName);
+          resolve(moduleName);
+        };
+        script.onerror = function () {
+          if (attempt < MODULE_LOAD_ATTEMPTS) {
+            if (script.parentNode) script.parentNode.removeChild(script);
+            console.warn('[digi2] Module "' + moduleName + '" did not load from ' + url
+              + ' — trying again in ' + MODULE_RETRY_DELAY_MS + ' ms.');
+            setTimeout(function () { _inject(attempt + 1); }, MODULE_RETRY_DELAY_MS);
+            return;
+          }
+          console.error('[digi2] Failed to load module "' + moduleName + '" from ' + url
+            + ' (' + attempt + ' attempts)');
           window.digi2.emit('module:error', moduleName);
-          reject(new Error('[digi2] Module "' + moduleName + '" did not register digi2.' + ns));
-          return;
-        }
-        window.digi2._loaded[moduleName] = true;
-        window.digi2.log('loader', 'module loaded ✓ ' + moduleName);
-        window.digi2.emit('module:loaded', moduleName);
-        resolve(moduleName);
-      };
-      script.onerror = function () {
-        console.error('[digi2] Failed to load module "' + moduleName + '" from ' + url);
-        window.digi2.emit('module:error', moduleName);
-        reject(new Error('[digi2] Module "' + moduleName + '" failed to load'));
-      };
-      document.head.appendChild(script);
+          reject(new Error('[digi2] Module "' + moduleName + '" failed to load'));
+        };
+        document.head.appendChild(script);
+      }
     });
 
     return _loadPromises[moduleName];
@@ -1546,10 +1566,11 @@
         _announce();
       }, GUEST_LOADED_TIMEOUT_MS);
     }
-    Promise.all(own).then(_announce, function () {
-      // Some modules failed — still mark done so onReady fires
-      _announce();
-    });
+    // Wait for every module to settle, loaded or failed. Promise.all rejects
+    // on the first failure, which used to fire onReady while the other modules
+    // were still on their way — page code then hit their stubs.
+    Promise.all(own.map(function (p) { return p.then(null, function () { return null; }); }))
+      .then(_announce);
   }
 
   if (document.readyState === 'loading' && document.addEventListener) {

@@ -4025,9 +4025,12 @@ digi2.modules.<span class="fn">list</span>()                              <span 
     <table>
       <tr><th>Module file</th><th>What happens to a call made through the stub</th></tr>
       <tr><td>loads and registers <code>digi2.&lt;namespace&gt;</code></td><td>Runs once on the real module; the Promise resolves with its result</td></tr>
-      <tr><td>loads but throws first (broken build, old browser, script clash)</td><td><code>console.error</code>, <code>module:error</code>, <code>digi2.modules.check()</code> stays <code>false</code>; the Promise is rejected and the call is not run. <code>onReady</code> still fires — early, without waiting for modules still downloading. No retry: later calls to that module are rejected at once until a reload</td></tr>
-      <tr><td>fails to download</td><td>Same as above (<code>module:error</code>, rejected, early <code>onReady</code>, no retry)</td></tr>
+      <tr><td>loads but throws first (broken build, old browser, script clash)</td><td><code>console.error</code>, <code>module:error</code>, <code>digi2.modules.check()</code> stays <code>false</code>; the Promise is rejected and the call is not run. <code>onReady</code> still fires once the other requested modules have settled. No retry: later calls to that module are rejected at once until a reload</td></tr>
+      <tr><td>fails to download once (CDN hiccup)</td><td><code>console.warn</code>, then the file is asked for <b>once more after 1.5 s</b>. If it arrives, nothing else happens: no <code>module:error</code>, the call runs, <code>onReady</code> waits for it</td></tr>
+      <tr><td>fails to download twice</td><td>Same as “throws first” (<code>module:error</code> once, rejected, no further retry)</td></tr>
     </table>
+    <p class="muted">Since 1.11.3: one retry of a failed download, and <code>onReady</code> waits for every requested module to load or fail. Before, the first failure fired <code>onReady</code> at once, while other modules were still on their way.</p>
+    <p class="muted">A stub's methods always return a Promise, even <code>list()</code> or <code>get()</code>. Page code that runs outside <code>onReady</code> and uses a sync result checks <code>digi2.modules.check('forms')</code> first — <code>digi2.forms.list().forEach(…)</code> throws while <code>forms</code> is a stub.</p>
     <p class="muted">Before 1.8.3 a module that threw made the stub replay the call on itself forever — the whole tab froze.</p>
     <h3>Live Status</h3>
     <div class="demo-box" id="module-status"></div>

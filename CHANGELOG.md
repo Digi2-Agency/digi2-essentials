@@ -16,6 +16,30 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.11.3 — wersja stabilna (`@latest`), poprawka loadera; wydanie czeka na decyzję Piotra; dotyczy każdej strony z loaderem
+
+Zgłoszenie sesji webflow 2026-11-18 (wielka16): przy chwilowej awarii jsDelivr
+moduł `forms` nie przyszedł w 1 na 79 wczytań i formularze nie działały do
+przeładowania strony.
+
+- **Moduł, który nie przyszedł z CDN, jest pobierany jeszcze raz po 1,5 s.**
+  W konsoli pojawia się wtedy ostrzeżenie zamiast błędu. Gdy druga próba się
+  uda, strona działa normalnie: `module:error` nie pada, a `onReady` czeka na
+  ten moduł. Dopiero druga porażka daje `console.error` i `module:error`, jak
+  dotąd. Moduł, który się pobrał, ale rzucił błędem, nie jest ponawiany.
+- **`onReady` czeka, aż każdy zamówiony moduł się wczyta albo padnie.** Do
+  v1.11.2 pierwszy moduł, który padł, od razu odpalał `onReady`, choć inne
+  moduły jeszcze się pobierały. Kod w `onReady` trafiał wtedy w ich zaślepki.
+  Teraz `onReady` przy awarii jednego modułu rusza najwyżej o 1,5 s później niż
+  dotąd i ma już wszystkie moduły, które przyszły.
+- **Do kodu strony:** dopóki moduł nie przyjdzie (a po porażce do końca
+  wizyty), `digi2.forms`, `digi2.popups` itd. są zaślepkami loadera, a każda
+  ich metoda, także `list()` i `get()`, zwraca Promise. Kod w rodzaju
+  `digi2.forms.list().forEach(…)` uruchamiaj w `onReady` i po sprawdzeniu
+  `digi2.modules.check('forms')`. Biblioteka nie naprawi `digi2 is not
+  defined`: ten błąd znaczy, że nie przyszedł sam loader. Inline
+  `digi2.onReady(…)` może się zabezpieczyć: `if (window.digi2) digi2.onReady(…)`.
+
 ## v1.11.2 — wersja stabilna (`@latest`), po poleceniu Piotra 2026-11-17 („scal i wdróż w nocy PR-y z kolejki”), recenzja #86 APPROVE; dotyczy tylko stron z `d2-attribution`
 
 Strona bez flagi: bez zmian. Z flagą `d2-attribution`:

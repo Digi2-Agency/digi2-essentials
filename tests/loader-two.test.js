@@ -183,21 +183,101 @@ test('a single loader still announces loaded once', async () => {
   assert.equal(calls, 1);
 });
 
+// Fail every pending request for a module (the first one and, after the
+// retry timer, the second one).
+async function failModule(p, module) {
+  const errors = console.error;
+  const warn = console.warn;
+  console.error = () => {};
+  console.warn = () => {};
+  try {
+    const first = p.injected.find((s) => s.src.indexOf('/modules/' + module + '.') !== -1 && !s._done);
+    first._done = true;
+    first.onerror();
+    const retry = p.timers.filter((t) => t.live && t.ms === 1500);
+    assert.equal(retry.length, 1, 'one retry timer for "' + module + '"');
+    retry[0].live = false;
+    retry[0].fn();
+    const second = p.injected.find((s) => s.src.indexOf('/modules/' + module + '.') !== -1 && !s._done);
+    assert.ok(second, 'module "' + module + '" asked for a second time');
+    second._done = true;
+    second.onerror();
+    await p.settle();
+    await p.settle();
+  } finally { console.error = errors; console.warn = warn; }
+}
+
 test('a module failing in the second loader does not keep the page from loaded', async () => {
-  const p = page();
+  const p = page({ fakeClock: true });
   p.runLoader(STABLE, SITE, { 'd2-forms': '' });
   p.runLoader(CURRENT, EMBED, { 'd2-booking': 'pk_test' });
   let calls = 0;
   p.window.digi2.onReady(() => { calls++; });
-  const errors = console.error;
-  console.error = () => {};
-  try {
-    p.arrive('forms');
-    p.injected.find((s) => s.src.indexOf('/modules/booking.') !== -1).onerror();
-    await p.settle();
-    await p.settle();
-  } finally { console.error = errors; }
+  p.arrive('forms');
+  await failModule(p, 'booking');
   assert.equal(calls, 1);
+});
+
+test('a module whose first request fails is asked for again and loads', async () => {
+  // MUTACJA: MODULE_LOAD_ATTEMPTS = 1 and forms stays a stub for the visit:
+  // forms.list() keeps returning a Promise (wielka16, 2026-11-18).
+  const p = page({ fakeClock: true });
+  p.runLoader(CURRENT, SITE, { 'd2-forms': '' });
+  let calls = 0;
+  const errors = [];
+  p.window.digi2.onReady(() => { calls++; });
+  p.window.digi2.on('module:error', (m) => errors.push(m));
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const first = p.injected.find((s) => s.src.indexOf('/modules/forms.') !== -1);
+    first._done = true;
+    first.onerror();
+  } finally { console.warn = warn; }
+  await p.settle();
+  assert.equal(calls, 0, 'onReady waits for the retry');
+  assert.deepEqual(errors, [], 'no module:error on the first failure');
+  const retry = p.timers.filter((t) => t.live && t.ms === 1500);
+  assert.equal(retry.length, 1);
+  retry[0].fn();
+  p.arrive('forms');
+  await p.settle();
+  await p.settle();
+  assert.equal(calls, 1);
+  assert.equal(p.window.digi2.modules.check('forms'), true);
+  assert.equal(p.injected.filter((s) => s.src.indexOf('/modules/forms.') !== -1).length, 2, 'two requests, no more');
+  assert.deepEqual(errors, []);
+});
+
+test('a module that fails twice is reported once and onReady still runs', async () => {
+  const p = page({ fakeClock: true });
+  p.runLoader(CURRENT, SITE, { 'd2-forms': '' });
+  let calls = 0;
+  const errors = [];
+  p.window.digi2.onReady(() => { calls++; });
+  p.window.digi2.on('module:error', (m) => errors.push(m));
+  await failModule(p, 'forms');
+  assert.equal(calls, 1);
+  assert.deepEqual(errors, ['forms']);
+  assert.equal(p.injected.filter((s) => s.src.indexOf('/modules/forms.') !== -1).length, 2);
+  assert.equal(p.window.digi2.modules.check('forms'), false);
+});
+
+test('one module failing does not fire onReady while another is still loading', async () => {
+  // MUTACJA: back to Promise.all(own).then(_announce, _announce) and onReady
+  // runs as soon as forms fails, with popups still a stub.
+  const p = page({ fakeClock: true });
+  p.runLoader(CURRENT, SITE, { 'd2-forms': '', 'd2-popups': '' });
+  let calls = 0;
+  let popupsReal = null;
+  p.window.digi2.onReady(() => { calls++; popupsReal = p.window.digi2.popups && p.window.digi2.popups.real; });
+  await failModule(p, 'forms');
+  assert.equal(calls, 0, 'popups still on its way');
+  p.arrive('popups');
+  await p.settle();
+  await p.settle();
+  assert.equal(calls, 1);
+  assert.equal(popupsReal, 'popups', 'onReady sees the real popups module');
 });
 
 test('current + current: an early call on the booking stub fetches booking once, from the second loader', async () => {

@@ -5681,14 +5681,27 @@ loader reports it as a failed load:
 
 - `console.error` naming the module, `module:error` on the bus, `digi2.modules.check()` stays `false`;
 - the call's Promise is **rejected** and the call is not run;
-- `onReady` / `loaded` still fire for the rest of the page — but **early**:
-  as soon as one requested module fails, without waiting for the others still
-  downloading. A callback that calls another module through its stub still
-  works (the stub loads it first); one that reads `digi2.modules.check()` or a
-  module's state directly may run before that module has arrived;
-- **no retry**: the failed load is remembered, so every later call to that
-  module (and `digi2.modules.require()`) is rejected at once until the page
-  is reloaded.
+- `onReady` / `loaded` still fire for the rest of the page, once every other
+  requested module has loaded or failed (since 1.11.3; before, the first
+  failure fired them at once, while other modules were still downloading);
+- **no retry** for a module that loaded but threw: the failed load is
+  remembered, so every later call to that module (and
+  `digi2.modules.require()`) is rejected at once until the page is reloaded.
+
+**A module file that does not download** (`onerror`: network error, CDN 5xx,
+404) is asked for **once more**, after `MODULE_RETRY_DELAY_MS` (1.5 s), with a
+`console.warn`. A CDN hiccup hits roughly one request in a few hundred and used
+to leave the module out for the whole visit (wielka16, 2026-11-18: `forms`
+missing in 1 of 79 loads). If the retry arrives, the load counts as a normal
+one: no `module:error`, `onReady` waits for it. If it fails too, the module is
+reported as above (`console.error`, `module:error` once, rejected). The failed
+`<script>` element is removed before the retry. There is no retry for a file
+that loaded and threw — the same file would throw again.
+
+**Sync methods on a stub return a Promise.** `digi2.forms.list()` called while
+`forms` is still (or, after a failed load, for good) a stub returns a Promise,
+so `digi2.forms.list().forEach(…)` throws `TypeError`. Page code that needs a
+sync result runs in `onReady` and checks `digi2.modules.check('forms')` first.
 
 Before 1.8.3 the stub replayed the call on itself forever — an endless
 microtask loop that froze the whole tab (`load` never fired).
