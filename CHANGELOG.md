@@ -16,6 +16,24 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
+## v1.11.4 — poprawka country-picker: flagi na Windows; wydanie czeka na decyzję Piotra; dotyczy tylko stron z `d2-country-picker`
+
+Zgłoszenie sesji webflow 2026-11-20 (wielka16, /kontakt i popup „Zapytaj
+doradcę”): Chrome i Edge na Windows pokazywały „PL”, „UA”, „GB” zamiast flag,
+w przełączniku i na liście krajów. Windows nie ma glifów flag emoji.
+
+- **Na Windows flagi są teraz widoczne.** Moduł sprawdza na pierwszym polu z
+  flagami, czy system rysuje flagę w kolorze. Tylko gdy nie (Chromium na
+  Windows), dokłada czcionkę z samymi flagami „Twemoji Country Flags” (pakiet
+  `country-flag-emoji-polyfill@0.1.8` z jsDelivr, ok. 78 kB, pobierana dopiero,
+  gdy flaga jest na ekranie). `unicode-range` ogranicza ją do flag: reszta
+  tekstu na stronie się nie zmienia.
+- **macOS, iOS, Android i Firefox: bez zmian**, nic się nie pobiera.
+- **Własny element `[d2-country-picker-flag]` też dostaje tę czcionkę.** Jeśli
+  twoja klasa ustawia na nim `font-family`, wygrywa twoja reguła i na Windows
+  wrócą litery: dopisz tam `"Twemoji Country Flags"` na początku listy.
+- `d2-country-picker-flags="false"`: bez flag i bez pobierania czcionki.
+
 ## v1.11.3 — wersja stabilna (`@latest`), poprawka loadera; wydanie czeka na decyzję Piotra; dotyczy każdej strony z loaderem
 
 Zgłoszenie sesji webflow 2026-11-18 (wielka16): przy chwilowej awarii jsDelivr

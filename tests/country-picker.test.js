@@ -110,6 +110,27 @@ function matches(node, selector) {
   return false;
 }
 
+// A 1x1 canvas that answers like a browser: a glyph the system draws in colour
+// paints the same pixel whatever fillStyle is; one it cannot draw comes out as
+// letters in fillStyle. support = { emoji, flags }.
+function fakeCanvas(support) {
+  let fill = '#000';
+  let text = '';
+  const ctx = {
+    textBaseline: '', font: '',
+    set fillStyle(v) { fill = v; },
+    get fillStyle() { return fill; },
+    scale() {}, clearRect() {},
+    fillText(t) { text = t; },
+    getImageData() {
+      const isFlag = /^[\u{1F1E6}-\u{1F1FF}]+$/u.test(text);
+      if (isFlag ? support.flags : support.emoji) return { data: [200, 30, 40, 255] };
+      return { data: fill === '#fff' ? [255, 255, 255, 255] : [0, 0, 0, 255] };
+    },
+  };
+  return { getContext() { return ctx; } };
+}
+
 function createEnvironment(opts) {
   const body = createElement('body');
   const head = createElement('head');
@@ -124,7 +145,10 @@ function createEnvironment(opts) {
     removeEventListener(type, fn) {
       if (docListeners[type]) docListeners[type] = docListeners[type].filter((h) => h !== fn);
     },
-    createElement,
+    createElement(tagName, attrs) {
+      if (tagName === 'canvas' && opts && opts.canvas) return fakeCanvas(opts.canvas);
+      return createElement(tagName, attrs);
+    },
     querySelector(selector) { return body.querySelector(selector); },
     querySelectorAll(selector) { return body.querySelectorAll(selector); },
   };
@@ -672,4 +696,45 @@ test('search finds a country by either language name', () => {
 
   picker._renderOptions('niemcy');
   assert.deepEqual(Array.from(picker.optionsBox.children.map((o) => o.getAttribute('d2-cp-iso'))), ['DE']);
+});
+
+// --- Flags on Windows: a flags-only font where the system has none ---------
+
+function flagFontStyles(env) {
+  return env.head.children.filter((c) => c.hasAttribute('d2-country-picker-flag-font'));
+}
+
+test('Windows (emoji yes, flags no): the flag font is loaded once, pinned, limited by unicode-range', () => {
+  const env = createEnvironment({ canvas: { emoji: true, flags: false } });
+  addField(env, { 'd2-country-picker': '' });
+  addField(env, { name: 'PHONE2', 'd2-country-picker': 'DE' });
+  load(env);
+  const styles = flagFontStyles(env);
+  assert.equal(styles.length, 1, 'one style for every picker on the page');
+  const css = styles[0].textContent;
+  assert.match(css, /@font-face\{font-family:"Twemoji Country Flags"/);
+  assert.match(css, /country-flag-emoji-polyfill@0\.1\.8\/dist\/TwemojiCountryFlags\.woff2/);
+  assert.match(css, /unicode-range:U\+1F1E6-1F1FF/);
+  assert.match(css, /\.d2-cp-flag,\[d2-country-picker-flag\]\{font-family:"Twemoji Country Flags",/);
+});
+
+test('system with flags (macOS, iOS, Android, Firefox): no font is loaded', () => {
+  const env = createEnvironment({ canvas: { emoji: true, flags: true } });
+  addField(env, { 'd2-country-picker': '' });
+  load(env);
+  assert.equal(flagFontStyles(env).length, 0);
+});
+
+test('no colour emoji at all: no font either', () => {
+  const env = createEnvironment({ canvas: { emoji: false, flags: false } });
+  addField(env, { 'd2-country-picker': '' });
+  load(env);
+  assert.equal(flagFontStyles(env).length, 0);
+});
+
+test('d2-country-picker-flags="false": no flags, so no font even on Windows', () => {
+  const env = createEnvironment({ canvas: { emoji: true, flags: false } });
+  addField(env, { 'd2-country-picker': '', 'd2-country-picker-flags': 'false' });
+  load(env);
+  assert.equal(flagFontStyles(env).length, 0);
 });

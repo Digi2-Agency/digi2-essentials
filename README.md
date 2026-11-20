@@ -2925,7 +2925,7 @@ itself — no hidden inputs, no second field to map in your CRM.
 | `d2-country-picker-preferred="PL\|DE"` | Pinned to the top of the list, in that order |
 | `d2-country-picker-only="PL\|DE\|CZ"` | Restrict the list — e.g. the countries you actually sell to |
 | `d2-country-picker-search="false"` | Hide the search box (it appears on its own for lists over 8 entries) |
-| `d2-country-picker-flags="false"` | Dialing codes only. Worth knowing: **Windows has no emoji flags** and renders two letters instead, so on a Windows-heavy audience this is the safer look |
+| `d2-country-picker-flags="false"` | Dialing codes only, no flags (and no flag font loaded — see [Flags on Windows](#flags-on-windows)) |
 | `d2-country-picker-lang="en"` | List language: `pl` (default) or `en`. Without it the URL decides — see [Language](#language) |
 | `d2-country-picker-layout="split"` | Flag as its own box **next to** the field instead of inside it — see [Two layouts](#two-layouts) |
 | `d2-country-picker-toggle="PHONE"` | **On your own element**, not the field: that element becomes the picker — see [Your own toggle](#your-own-toggle-built-in-the-designer) |
@@ -2936,6 +2936,33 @@ itself — no hidden inputs, no second field to map in your CRM.
 
 Any one of these switches the picker on — a field carrying only
 `d2-country-picker-mode="separate"` works, the bare `d2-country-picker` is not required.
+
+### Flags on Windows
+
+Flags are emoji (two regional-indicator letters), not image files. Windows ships
+no glyphs for them, so Chrome and Edge on Windows draw `PL` instead of 🇵🇱. Since
+v1.11.4 the module fixes that by itself:
+
+- On the first picker with flags it checks, on a 1×1 canvas, whether the system
+  draws a flag in colour. Only when colour emoji work but flags do not (Chromium
+  on Windows) does it add a `<style d2-country-picker-flag-font>` with an
+  `@font-face` **"Twemoji Country Flags"** — a flags-only font from the npm
+  package `country-flag-emoji-polyfill`, pinned to `@0.1.8` on jsDelivr (~78 kB
+  woff2, `font-display: swap`).
+- `unicode-range` limits the font to flag code points (`U+1F1E6-1F1FF` plus the
+  tag sequences for England / Scotland / Wales), so no other character on the
+  page changes, and the browser downloads it only when a flag is on screen.
+- The font is put first on `.d2-cp-flag` and on your own `[d2-country-picker-flag]`.
+  macOS, iOS, Android and Firefox (own emoji font) pass the check and load nothing.
+- `d2-country-picker-flags="false"` skips the check and the font.
+
+Edge cases:
+
+| Situation | What happens |
+|---|---|
+| Your class sets `font-family` on the `[d2-country-picker-flag]` element | Your rule has the same weight as ours and comes later, so it wins and Windows shows letters again. Put `"Twemoji Country Flags"` first in that rule |
+| Site CSP blocks fonts from `cdn.jsdelivr.net` | The font does not load, letters stay — same as before v1.11.4 |
+| The site already runs `country-flag-emoji-polyfill` itself | Same family name, same file: nothing breaks |
 
 ### Your own toggle, built in the Designer
 
