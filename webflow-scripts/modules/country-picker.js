@@ -24,6 +24,8 @@
  *   d2-country-picker-only="PL|DE|CZ"       restrict the list to these
  *   d2-country-picker-search="false"        hide the search box
  *   d2-country-picker-flags="false"         dialing codes only, no emoji flags
+ *                                           (Windows has no flag glyphs: there the module
+ *                                           loads a flags-only Twemoji font, see below)
  *   d2-country-picker-lang="en"             list language (pl / en). Without it the
  *                                           URL decides (/en), then <html lang>
  *   d2-country-picker-layout="split"        flag as its own box next to the field
@@ -247,6 +249,70 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Flags on Windows. Windows ships no flag glyphs, so Chrome and Edge draw 🇵🇱
+  // as the letters "PL" — in the toggle and in the list. There, and only there,
+  // we load a font with nothing but the flags (Twemoji, from the npm package
+  // country-flag-emoji-polyfill, pinned version) and put it first on the flag
+  // elements. unicode-range keeps every other character on the page untouched.
+  // Firefox brings its own emoji font, macOS / iOS / Android have flags: the
+  // canvas check below sees colour there and loads nothing.
+  // ---------------------------------------------------------------------------
+  var FLAG_FONT = 'Twemoji Country Flags';
+  var FLAG_FONT_URL = 'https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1.8/dist/TwemojiCountryFlags.woff2';
+  var EMOJI_FONTS = '"Twemoji Mozilla","Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol",' +
+    '"Noto Color Emoji","EmojiOne Color","Android Emoji",sans-serif';
+
+  // A colour glyph paints the same pixel whatever fillStyle says; a missing
+  // glyph falls back to letters drawn in fillStyle (or to nothing at all).
+  function drawsInColour(ctx, text) {
+    function pixel(fill) {
+      ctx.clearRect(0, 0, 100, 100);
+      ctx.fillStyle = fill;
+      ctx.fillText(text, 0, 0);
+      return Array.prototype.join.call(ctx.getImageData(0, 0, 1, 1).data, ',');
+    }
+    var white = pixel('#fff');
+    var black = pixel('#000');
+    return white === black && black.indexOf('0,0,0,') !== 0;
+  }
+
+  function needsFlagFont() {
+    try {
+      var canvas = document.createElement('canvas');
+      var ctx = canvas && canvas.getContext && canvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return false;
+      canvas.width = canvas.height = 1;
+      ctx.textBaseline = 'top';
+      ctx.font = '100px ' + EMOJI_FONTS;
+      ctx.scale(0.01, 0.01);
+      // Emoji work but flags do not = Windows. No emoji at all = leave it be.
+      return drawsInColour(ctx, '😊') && !drawsInColour(ctx, flagEmoji('CH'));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  var _flagsChecked = false;
+  function ensureFlagFont() {
+    if (_flagsChecked) return;
+    var parent = document.head || document.body;
+    if (!parent || !document.createElement) return;
+    _flagsChecked = true;
+    if (!needsFlagFont()) return;
+    var style = document.createElement('style');
+    style.setAttribute('d2-country-picker-flag-font', '');
+    style.textContent =
+      '@font-face{font-family:"' + FLAG_FONT + '";' +
+      'unicode-range:U+1F1E6-1F1FF,U+1F3F4,U+E0062-E0063,U+E0065,U+E0067,U+E006C,U+E006E,U+E0073-E0074,U+E0077,U+E007F;' +
+      'src:url("' + FLAG_FONT_URL + '") format("woff2");font-display:swap;}' +
+      // Author's own [d2-country-picker-flag] too. Same weight as a class, so a
+      // site class that sets font-family wins — then list FLAG_FONT first there.
+      '.d2-cp-flag,[d2-country-picker-flag]{font-family:"' + FLAG_FONT + '",' + EMOJI_FONTS + ';}';
+    parent.appendChild(style);
+    _log('flag-font', { url: FLAG_FONT_URL });
+  }
+
+  // ---------------------------------------------------------------------------
   // Picker
   // ---------------------------------------------------------------------------
   var registry = [];   // [{ input, picker }]
@@ -319,6 +385,7 @@
     var opts = this.options;
 
     injectCSS();
+    if (opts.flags !== false) ensureFlagFont();
 
     this.lang = normalizeLang(opts.lang) || detectLang(input);
     this.t = strings(this.lang);
