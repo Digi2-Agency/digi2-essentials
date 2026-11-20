@@ -731,6 +731,9 @@
       <a href="#forms-tracking">UTM Tracking</a>
       <a href="#forms-reset">Reset After Success</a>
       <a href="#forms-context">Context Capture</a>
+      <a href="#country-picker">Phone Country Picker</a>
+      <a href="#country-picker-modes">Country Picker: Modes &amp; Layouts</a>
+      <a href="#country-picker-windows">Country Picker: Flags on Windows</a>
     </div>
   </div>
 
@@ -1903,6 +1906,189 @@ digi2.forms.<span class="fn">setField</span>(<span class="string">'lead'</span>,
       <tr><td><code>d2-form-data-prefix="p_"</code></td><td>Prepend a prefix to every field name</td></tr>
     </table>
     <p class="muted">The <code>data-d2-</code> prefix works too. Re-clicking another card overwrites the field (no duplicates). The form must be created with <code>digi2.forms.create()</code> / <code>createAll()</code>.</p>
+  </section>
+
+  <!-- ── COUNTRY PICKER ── -->
+  <section id="country-picker">
+    <h2>Phone Country Picker</h2>
+    <p>One attribute on a phone field and it gets a country selector — flag, dialing code and a searchable list of 245 countries (Polish and English names). The code goes into the field itself, so the form sends <code>+48 601 234 567</code> and <strong>nothing is added to the payload</strong>. Loader flag: <code>d2-country-picker</code>. No init call: fields added later (CMS rows, a form inside a popup) are picked up automatically.</p>
+
+    <div class="platform" data-platform>
+      <div class="platform-tabs">
+        <button class="platform-tab is-active" data-platform-tab="webflow"><span class="dot"></span>Webflow</button>
+        <button class="platform-tab" data-platform-tab="js"><span class="dot"></span>JavaScript</button>
+      </div>
+
+      <div class="platform-panel is-active" data-platform-panel="webflow">
+        <p>Phone field → Element settings → Custom attributes. Then <code>d2-country-picker</code> in the loader tag (Project settings → Custom code → Head) and publish. The field keeps its class and styles; the flag lands inside it.</p>
+        <div class="wf-map">
+          <div class="wf-el">
+            <span class="wf-elname">Form Block</span>
+          </div>
+          <div class="wf-children">
+            <div class="wf-el">
+              <span class="wf-elname">Input <span class="muted">(type tel, Name: PHONE)</span></span>
+              <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker = PL</span>
+              <span class="chip chip--note">← empty value = Poland</span>
+            </div>
+          </div>
+        </div>
+        <pre><code>&lt;input type=<span class="string">"tel"</span> name=<span class="string">"PHONE"</span> <span class="prop">d2-country-picker</span>=<span class="string">"PL"</span>&gt;</code></pre>
+      </div>
+
+      <div class="platform-panel" data-platform-panel="js">
+        <pre><code><span class="keyword">var</span> picker = digi2.countryPicker.<span class="fn">get</span>(<span class="string">'#PHONE'</span>)   <span class="comment">// or .create(input, opts)</span>
+picker.<span class="fn">setCountry</span>(<span class="string">'DE'</span>)
+picker.<span class="fn">getCountry</span>()    <span class="comment">// { iso: 'DE', dial: '49', name: 'Niemcy' }</span>
+picker.<span class="fn">getNumber</span>()     <span class="comment">// normalises first, then returns the field value</span>
+
+digi2.countryPicker.<span class="fn">countries</span>(<span class="string">'en'</span>)  <span class="comment">// [{ iso, dial, name, pl, en }, …]</span>
+digi2.countryPicker.<span class="fn">language</span>()      <span class="comment">// language detected on this page</span>
+digi2.countryPicker.<span class="fn">list</span>()          <span class="comment">// inputs the module handles</span>
+digi2.countryPicker.<span class="fn">init</span>()          <span class="comment">// scan the DOM now</span>
+digi2.countryPicker.<span class="fn">destroy</span>(<span class="string">'#PHONE'</span>)
+
+digi2.<span class="fn">on</span>(<span class="string">'country-picker:change'</span>, <span class="keyword">function</span> (e) { <span class="comment">/* e.iso, e.dial, e.name, e.input */</span> })
+digi2.<span class="fn">on</span>(<span class="string">'country-picker:open'</span>, <span class="keyword">function</span> (e) { <span class="comment">/* e.iso, e.input */</span> })</code></pre>
+      </div>
+    </div>
+
+    <h3>What it does on its own</h3>
+    <table>
+      <tr><th>Moment</th><th>Behaviour</th></tr>
+      <tr><td>On load</td><td>Country from the number the field already holds, else from the attribute, else Poland. The field is <strong>not</strong> pre-filled — a lone <code>+48</code> would make a <code>required</code> check think the visitor answered</td></tr>
+      <tr><td>While typing</td><td>Paste or type <code>+380…</code> and the flag follows the number</td></tr>
+      <tr><td>On blur</td><td>The number gets its prefix: <code>0601234567</code> → <code>+48 601234567</code> (the national trunk zero goes)</td></tr>
+      <tr><td>On submit</td><td>Normalised again in the capture phase, so <code>d2-forms</code> validates the final number</td></tr>
+      <tr><td>Switching country</td><td>Rewrites an existing prefix: PL → DE turns <code>+48 601…</code> into <code>+49 601…</code></td></tr>
+    </table>
+
+    <h3>Attributes</h3>
+    <table>
+      <tr><th>Attribute</th><th>Role</th></tr>
+      <tr><td><code>d2-country-picker="PL"</code></td><td>Country selected on load (ISO 3166-1 alpha-2). Empty = Poland</td></tr>
+      <tr><td><code>d2-country-picker-preferred="PL|DE"</code></td><td>Pinned to the top of the list, in that order</td></tr>
+      <tr><td><code>d2-country-picker-only="PL|DE|CZ"</code></td><td>Restrict the list — e.g. the countries you actually sell to</td></tr>
+      <tr><td><code>d2-country-picker-search="false"</code></td><td>Hide the search box <span class="muted">(it appears on its own for lists over 8 entries)</span></td></tr>
+      <tr><td><code>d2-country-picker-flags="false"</code></td><td>Dialing codes only, no flags — and no flag font check on Windows (see <a href="#country-picker-windows">Flags on Windows</a>)</td></tr>
+      <tr><td><code>d2-country-picker-lang="en"</code></td><td>List language: <code>pl</code> or <code>en</code>. On the field or on <code>&lt;html&gt;</code>. Without it: any <code>/en</code> URL segment → English, <code>/pl</code> → Polish, then <code>&lt;html lang&gt;</code>, then Polish</td></tr>
+      <tr><td><code>d2-country-picker-layout="split"</code></td><td>Flag with a caret as its own box <strong>next to</strong> the field. Default <code>inside</code>: flag inside the field, the module pads the field from the left</td></tr>
+      <tr><td><code>d2-country-picker-mode="separate"</code></td><td>Field stays digits-only; the code goes into hidden fields instead (see <a href="#country-picker-modes">Modes &amp; Layouts</a>)</td></tr>
+      <tr><td><code>d2-country-picker-dial-field="PHONE_DIAL"</code></td><td>Name of the hidden dialing-code field <span class="muted">(separate mode; default <code>&lt;field&gt;_DIAL</code>)</span></td></tr>
+      <tr><td><code>d2-country-picker-country-field="PHONE_COUNTRY"</code></td><td>Name of the hidden country field <span class="muted">(default <code>&lt;field&gt;_COUNTRY</code>)</span></td></tr>
+      <tr><td><code>d2-country-picker-toggle="PHONE"</code></td><td><strong>On your own element</strong>, not the field: that element becomes the picker (see <a href="#country-picker-modes">Modes &amp; Layouts</a>)</td></tr>
+      <tr><td><code>d2-country-picker-flag</code> / <code>-dial</code></td><td>Slots inside your toggle the module writes the flag and the code into</td></tr>
+    </table>
+    <p class="muted">Any one of these switches the picker on — a field with only <code>d2-country-picker-mode="separate"</code> works. The search matches both languages whatever is displayed (“Germany” finds Niemcy in a Polish list) and codes too (<code>DE</code>, <code>+49</code>, <code>49</code>).</p>
+
+    <h3>Options</h3>
+    <p><code>digi2.countryPicker.create(input, opts)</code> — same names as the attributes; options win over attributes.</p>
+    <table>
+      <tr><th>Option</th><th>Default</th><th>Description</th></tr>
+      <tr><td><code>country</code></td><td><code>''</code></td><td>Country on load (empty = Poland)</td></tr>
+      <tr><td><code>preferred</code></td><td><code>[]</code></td><td>ISO codes pinned to the top</td></tr>
+      <tr><td><code>only</code></td><td><code>[]</code></td><td>Restrict the list (empty = all 245)</td></tr>
+      <tr><td><code>search</code></td><td><code>true</code></td><td><code>false</code> hides the search box</td></tr>
+      <tr><td><code>flags</code></td><td><code>true</code></td><td><code>false</code> = codes only, no flag font on Windows</td></tr>
+      <tr><td><code>lang</code></td><td><code>''</code></td><td><code>'pl'</code> / <code>'en'</code>; empty = detect (URL, <code>&lt;html lang&gt;</code>)</td></tr>
+      <tr><td><code>layout</code></td><td><code>'inside'</code></td><td><code>'inside'</code> or <code>'split'</code></td></tr>
+      <tr><td><code>mode</code></td><td><code>'prefix'</code></td><td><code>'prefix'</code> or <code>'separate'</code></td></tr>
+      <tr><td><code>dialField</code></td><td><code>''</code></td><td>Hidden dialing-code field name (default <code>&lt;field&gt;_DIAL</code>)</td></tr>
+      <tr><td><code>countryField</code></td><td><code>''</code></td><td>Hidden country field name (default <code>&lt;field&gt;_COUNTRY</code>)</td></tr>
+    </table>
+  </section>
+
+  <section id="country-picker-modes">
+    <h2>Country Picker: Modes &amp; Layouts</h2>
+    <table>
+      <tr><th></th><th><code>prefix</code> (default)</th><th><code>separate</code></th></tr>
+      <tr><td>Field value</td><td><code>+48 601 234 567</code></td><td><code>601234567</code> — digits only</td></tr>
+      <tr><td>Extra fields</td><td>none</td><td><code>PHONE_DIAL</code> = <code>+48</code>, <code>PHONE_COUNTRY</code> = <code>PL</code></td></tr>
+      <tr><td>Good for</td><td>A plain Webflow form, number straight into the notification e-mail</td><td>A field with <code>pattern="\d+"</code>, or a CRM that assembles E.164 itself</td></tr>
+    </table>
+    <p>In <code>separate</code> mode the module creates the hidden fields itself, but Webflow lists only fields it knows in <strong>Forms → Submissions</strong> and in the notification template. Declare them in an <strong>Embed inside the form</strong> — the module reuses them by name, no duplicates:</p>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Form Block</span>
+      </div>
+      <div class="wf-children">
+        <div class="wf-el">
+          <span class="wf-elname">Input <span class="muted">(Name: PHONE)</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker = PL</span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker-mode = separate</span>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Embed</span>
+          <span class="chip chip--note">← hidden PHONE_DIAL + PHONE_COUNTRY</span>
+        </div>
+      </div>
+    </div>
+    <pre><code>&lt;input type=<span class="string">"hidden"</span> name=<span class="string">"PHONE_DIAL"</span>&gt;
+&lt;input type=<span class="string">"hidden"</span> name=<span class="string">"PHONE_COUNTRY"</span>&gt;</code></pre>
+
+    <h3>Layouts</h3>
+    <table>
+      <tr><th>Layout</th><th>What you get</th></tr>
+      <tr><td><code>inside</code> (default)</td><td>Flag inside the field, intl-tel-input style. The module measures its button and sets the field’s left padding — drop any left-icon class from the field, the flag becomes the icon</td></tr>
+      <tr><td><code>split</code></td><td>Flag + caret as its own box on the left. The module wraps the field in a flex row, puts the button <strong>before</strong> it in the DOM (Tab reaches the country first) and matches heights. The field’s padding is not touched</td></tr>
+      <tr><td>Your own toggle</td><td><code>d2-country-picker-toggle="PHONE"</code> on a Div / Link Block / Button you built. The field is not wrapped, moved or padded; the list is appended inside your element. Div and Link Block get <code>role="button"</code> + <code>tabindex="0"</code>, a real button gets <code>type="button"</code>. Empty value = the phone field in the same <code>&lt;label&gt;</code> or <code>&lt;form&gt;</code></td></tr>
+    </table>
+    <div class="wf-map">
+      <div class="wf-el">
+        <span class="wf-elname">Div Block <span class="muted">(your flex row)</span></span>
+      </div>
+      <div class="wf-children">
+        <div class="wf-el">
+          <span class="wf-elname">Div Block <span class="muted">(your toggle)</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker-toggle = PHONE</span>
+        </div>
+        <div class="wf-children">
+          <div class="wf-el">
+            <span class="wf-elname">Text Block</span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker-flag</span>
+            <span class="chip chip--note">← leave empty</span>
+          </div>
+          <div class="wf-el">
+            <span class="wf-elname">Text Block</span>
+            <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker-dial</span>
+          </div>
+        </div>
+        <div class="wf-el">
+          <span class="wf-elname">Input <span class="muted">(Name: PHONE)</span></span>
+          <span class="chip chip--attr"><span class="k">attr</span> d2-country-picker = PL</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>Styling</h3>
+    <p>Every part carries a <code>.d2-cp-*</code> class and the injected CSS has no <code>!important</code>: <code>.d2-cp</code> (wrapper), <code>.d2-cp-toggle</code>, <code>.d2-cp-flag</code>, <code>.d2-cp-dial</code>, <code>.d2-cp-caret</code>, <code>.d2-cp-list</code>, <code>.d2-cp-search</code>, <code>.d2-cp-option</code> (<code>.d2-cp-option-name</code> / <code>-dial</code>). The open wrapper gets <code>[d2-cp-open]</code>, the selected option <code>[d2-is-active]</code>, the keyboard-highlighted one <code>[d2-cp-cursor]</code>.</p>
+    <pre><code><span class="comment">/* split: make the country button look like the input next to it */</span>
+.d2-cp-split .d2-cp-toggle {
+  <span class="prop">border</span>: <span class="num">1px</span> solid var(--white-smoke);
+  <span class="prop">border-radius</span>: <span class="num">8px</span>;
+  <span class="prop">min-height</span>: <span class="num">50px</span>;
+  <span class="prop">padding-inline</span>: <span class="num">1rem</span>;
+}</code></pre>
+    <p class="muted">Replacing intl-tel-input: remove its script, CSS and init code first — two pickers on one field means two flags and two paddings. A leftover <code>pattern="\d+"</code> goes with <code>separate</code> mode, or relax it to something like <code>[\d+\s]+</code>.</p>
+  </section>
+
+  <section id="country-picker-windows">
+    <h2>Country Picker: Flags on Windows</h2>
+    <p>Flags are emoji (two regional-indicator letters), not images. Windows ships no glyphs for them, so Chrome and Edge on Windows draw <code>PL</code> instead of 🇵🇱. Since v1.11.4 the module fixes that by itself.</p>
+    <table>
+      <tr><th>Step</th><th>What happens</th></tr>
+      <tr><td>Check</td><td>On the first picker with flags, a 1×1 canvas test: does the system draw a flag in colour?</td></tr>
+      <tr><td>Only when emoji work but flags don’t</td><td>(Chromium on Windows) it adds <code>&lt;style d2-country-picker-flag-font&gt;</code> with <code>@font-face</code> <strong>“Twemoji Country Flags”</strong> — <code>country-flag-emoji-polyfill@0.1.8</code> on jsDelivr, ~78 kB woff2, <code>font-display: swap</code></td></tr>
+      <tr><td>Scope</td><td><code>unicode-range</code> = flag code points only, so no other character changes, and the browser downloads it only when a flag is on screen. The font goes first on <code>.d2-cp-flag</code> and on your <code>[d2-country-picker-flag]</code></td></tr>
+      <tr><td>Everywhere else</td><td>macOS, iOS, Android, Firefox pass the check and load nothing. <code>d2-country-picker-flags="false"</code> skips the check and the font</td></tr>
+    </table>
+    <h3>Edge cases</h3>
+    <table>
+      <tr><th>Situation</th><th>What happens</th></tr>
+      <tr><td>Your class sets <code>font-family</code> on the <code>[d2-country-picker-flag]</code> element</td><td>Same weight as ours and later, so yours wins and Windows shows letters again. Put <code>"Twemoji Country Flags"</code> first in that rule</td></tr>
+      <tr><td>Site CSP blocks fonts from <code>cdn.jsdelivr.net</code></td><td>The font does not load, letters stay — same as before v1.11.4</td></tr>
+      <tr><td>The site already runs <code>country-flag-emoji-polyfill</code></td><td>Same family name, same file: nothing breaks</td></tr>
+    </table>
   </section>
 
   <!-- ── GOOGLE ── -->
