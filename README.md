@@ -5886,8 +5886,10 @@ jsDelivr serves after the tag. It checks, in a real browser:
   30 differing pixels). A missing baseline fails; it is never written by the
   gate. After a deliberate visual change:
   `npm run test:browser -- --update-snapshots`, look at the new PNGs, commit
-  them. Baselines exist for Linux only (`-linux.png`) and use the system
-  font, so the gate is meant to run on this machine.
+  them. Baselines exist for Linux (`-linux.png`) and Windows (`-win32.png`,
+  added 2026-11-20 for releases from the Windows machine) and use the system
+  font, so each platform compares only with its own. After a deliberate visual
+  change, update both.
 - **every test** — fails on any `pageerror` / `console.error`, any HTTP ≥ 400
   (a module missing from `dist/`) and any request outside localhost.
 
