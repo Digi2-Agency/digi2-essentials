@@ -2902,7 +2902,7 @@ itself — no hidden inputs, no second field to map in your CRM.
 
 | Moment | Behaviour |
 |---|---|
-| On load | Country from the attribute (`d2-country-picker="DE"`), or read from a number the field already holds, else Poland. The field is **not** pre-filled — a lone `+48` would make a `required` check think the visitor answered |
+| On load | Country read from a number the field already holds, else from the attribute (`d2-country-picker="DE"`), else Poland — a prefilled `+49…` wins over `d2-country-picker="PL"`. The field is **not** pre-filled — a lone `+48` would make a `required` check think the visitor answered |
 | While typing | Paste or type `+380…` and the flag follows the number |
 | On blur | The typed number gets its prefix: `0601234567` → `+48 601234567` (the national trunk zero goes) |
 | On submit | Normalised again in the capture phase, so `d2-forms` validates the final number |
@@ -3130,9 +3130,12 @@ picker.setCountry('DE')
 picker.getCountry()        // { iso: 'DE', dial: '49', name: 'Niemcy' }
 picker.getNumber()         // normalises first, then returns the field value
 digi2.countryPicker.countries()   // all 245 entries
+digi2.countryPicker.list()        // inputs the module handles
+digi2.countryPicker.init()        // scan the DOM now (it also watches it by itself)
 digi2.countryPicker.destroy('#PHONE')
 
-digi2.on('country-picker:change', function (e) { console.log(e.iso, e.dial) })
+digi2.on('country-picker:change', function (e) { console.log(e.iso, e.dial, e.name, e.input) })
+digi2.on('country-picker:open', function (e) { console.log(e.iso, e.input) })
 ```
 
 Fields added later (CMS rows, a form inside a popup) are picked up automatically

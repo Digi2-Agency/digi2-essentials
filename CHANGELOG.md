@@ -33,6 +33,12 @@ w przełączniku i na liście krajów. Windows nie ma glifów flag emoji.
   twoja klasa ustawia na nim `font-family`, wygrywa twoja reguła i na Windows
   wrócą litery: dopisz tam `"Twemoji Country Flags"` na początku listy.
 - `d2-country-picker-flags="false"`: bez flag i bez pobierania czcionki.
+- **Dokumentacja country-picker w `docs.html` i `docs/`** (wcześniej tylko
+  README): atrybuty, opcje `create()`, tryby `prefix`/`separate`, układy,
+  własny przełącznik, style i flagi na Windows. Kod bez zmian. README
+  poprawione: na starcie wygrywa kraj z numeru, który pole już ma (`+49…`
+  przy `d2-country-picker="PL"` daje Niemcy), a nie atrybut; w API doszły
+  `list()`, `init()` i zdarzenie `country-picker:open`.
 
 ## v1.11.3 — wersja stabilna (`@latest`), poprawka loadera; wydanie czeka na decyzję Piotra; dotyczy każdej strony z loaderem
 

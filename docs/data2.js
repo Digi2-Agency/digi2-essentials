@@ -733,6 +733,73 @@
     }
   };
 
+  /* ════════════════════════ COUNTRY PICKER ════════════════════════ */
+  M.countrypicker = {
+    name: 'Country Picker — kraj przy numerze telefonu',
+    short: 'Wybór kraju (telefon)',
+    cat: 'Formularze',
+    flag: 'd2-country-picker',
+    icon: 'form',
+    size: '25,5 KB min',
+    auto: true,
+    tagline: 'Flaga i numer kierunkowy w polu telefonu — jeden atrybut, numer wychodzi jako +48 601 234 567.',
+    desc: 'Atrybut na polu <code>type="tel"</code> dodaje przełącznik kraju z flagą i listą 245 krajów (nazwy po polsku i angielsku, wyszukiwarka po nazwie w obu językach i po kodzie). Numer kierunkowy trafia do samego pola — formularz nie dostaje żadnych dodatkowych pól. Na blur i przy wysyłce numer jest normalizowany (<code>0601…</code> → <code>+48 601…</code>), wklejony <code>+49…</code> sam przełącza flagę na Niemcy. Pola dodane później (CMS, formularz w popupie) moduł podchwytuje sam. Od v1.11.4 na Windows (Chrome, Edge), gdzie system nie ma flag i pokazuje litery „PL”, moduł sam dociąga czcionkę z samymi flagami.',
+
+    structures: [
+      { title: 'Tryb domyślny — flaga w polu', tree: [
+        { l: 'Form Block', t: 'form', c: [
+          { l: 'Input — telefon', t: 'input', a: [['name', 'PHONE'], ['d2-country-picker', 'PL']], n: 'wysyła +48 601 234 567' }
+        ]}
+      ]},
+      { title: 'Tryb separate — numer bez kierunkowego', tree: [
+        { l: 'Form Block', t: 'form', c: [
+          { l: 'Input — telefon', t: 'input', a: [['name', 'PHONE'], ['d2-country-picker', 'PL'], ['d2-country-picker-mode', 'separate']], n: 'wysyła 601234567' },
+          { l: 'Embed — ukryte pola', t: 'embed', n: '&lt;input type="hidden" name="PHONE_DIAL"&gt; i PHONE_COUNTRY — żeby Webflow pokazał je w Submissions' }
+        ]}
+      ]},
+      { title: 'Własny przełącznik z Designera', tree: [
+        { l: 'Div Block — wiersz (flex)', t: 'div', c: [
+          { l: 'Div Block — przełącznik', t: 'div', a: [['d2-country-picker-toggle', 'PHONE']], c: [
+            { l: 'Text — flaga', t: 'text', a: [['d2-country-picker-flag']], n: 'puste, moduł wpisze flagę' },
+            { l: 'Text — kierunkowy', t: 'text', a: [['d2-country-picker-dial']], n: 'puste, moduł wpisze +48' },
+            { l: 'Image — Twoja strzałka', t: 'img' }
+          ]},
+          { l: 'Input — telefon', t: 'input', a: [['name', 'PHONE'], ['d2-country-picker', 'PL']] }
+        ]}
+      ]}
+    ],
+
+    attrs: [
+      { a: 'd2-country-picker', v: 'kod ISO, np. PL | DE (puste = PL)', el: 'Input type="tel"', req: true, d: 'Włącza przełącznik; wartość = kraj wybrany na starcie. Kraj z numeru, który pole już ma, wygrywa z atrybutem. Pole <b>nie</b> jest wypełniane samym „+48” — inaczej <code>required</code> uznałby je za wypełnione.', n: 'każdy z atrybutów d2-country-picker-* też włącza pole — samo d2-country-picker nie jest wymagane' },
+      { a: 'd2-country-picker-preferred', v: 'PL|DE|UA', el: 'ten input', d: 'Kraje przypięte na górze listy, w tej kolejności.' },
+      { a: 'd2-country-picker-only', v: 'PL|DE|CZ', el: 'ten input', d: 'Ogranicza listę do tych krajów (np. tam, gdzie faktycznie sprzedajesz).' },
+      { a: 'd2-country-picker-search', v: 'false', el: 'ten input', d: 'Ukrywa wyszukiwarkę (sama pojawia się przy liście dłuższej niż 8 pozycji).' },
+      { a: 'd2-country-picker-flags', v: 'false', el: 'ten input', d: 'Same numery kierunkowe, bez flag — i bez sprawdzania oraz pobierania czcionki z flagami na Windows.' },
+      { a: 'd2-country-picker-lang', v: 'pl | en', el: 'ten input albo &lt;html&gt;', d: 'Język nazw krajów, placeholdera i komunikatów. Bez atrybutu decyduje adres (segment <code>/en</code> → angielski, <code>/pl</code> → polski), potem <code>&lt;html lang&gt;</code>, na końcu polski.', n: 'wyszukiwarka zawsze znajduje nazwę w obu językach (Germany i Niemcy) oraz kod (DE, +49, 49)' },
+      { a: 'd2-country-picker-layout', v: 'inside | split', el: 'ten input', d: '<code>inside</code> (domyślnie): flaga w polu, moduł dodaje polu lewy padding. <code>split</code>: flaga ze strzałką jako osobne pole obok, moduł owija pole w wiersz flex i nie rusza jego paddingu.' },
+      { a: 'd2-country-picker-mode', v: 'prefix | separate', el: 'ten input', d: '<code>prefix</code> (domyślnie): kierunkowy w polu. <code>separate</code>: pole zostaje z samymi cyframi, kierunkowy i kraj idą w ukrytych polach.', n: 'separate pasuje do pola z pattern="\\d+" albo CRM, który sam składa E.164' },
+      { a: 'd2-country-picker-dial-field', v: 'nazwa pola', el: 'ten input', d: 'Nazwa ukrytego pola z kierunkowym w trybie separate (domyślnie <code>&lt;pole&gt;_DIAL</code>, np. PHONE_DIAL = +48).' },
+      { a: 'd2-country-picker-country-field', v: 'nazwa pola', el: 'ten input', d: 'Nazwa ukrytego pola z kodem kraju (domyślnie <code>&lt;pole&gt;_COUNTRY</code>, np. PHONE_COUNTRY = PL).', n: 'ukryte pola o tych nazwach, które już są w formularzu, moduł używa zamiast tworzyć nowe' },
+      { a: 'd2-country-picker-toggle', v: 'name pola (puste = pole z tego samego label/form)', el: 'Twój Div / Link Block / Button', d: 'Twój element z Designera staje się przełącznikiem: pole nie jest owijane, przesuwane ani paddingowane, lista ląduje w środku Twojego elementu. Div i Link Block dostają role="button" i tabindex, Button dostaje type="button".' },
+      { a: 'd2-country-picker-flag', v: '', el: 'element w Twoim przełączniku', d: 'Tu moduł wpisuje flagę. Bez slotów moduł dodaje własne dwa spany na początku.' },
+      { a: 'd2-country-picker-dial', v: '', el: 'element w Twoim przełączniku', d: 'Tu moduł wpisuje numer kierunkowy.' },
+      { a: 'd2-country-picker-ready', v: '', el: 'input', set: true, d: 'Pole zostało obsłużone (nie zostanie zainicjowane drugi raz).' },
+      { a: 'd2-cp-open', v: '', el: 'wrapper / Twój przełącznik', set: true, d: 'Lista jest otwarta — do stylowania stanu.' },
+      { a: 'd2-is-active', v: '', el: '.d2-cp-option', set: true, d: 'Wybrany kraj na liście (<code>[d2-cp-cursor]</code> = podświetlony klawiaturą).' },
+      { a: 'd2-country-picker-flag-font', v: '', el: '&lt;style&gt; w head', set: true, d: 'Tylko w Chrome/Edge na Windows: styl z <code>@font-face</code> „Twemoji Country Flags” (country-flag-emoji-polyfill@0.1.8 z jsDelivr, ok. 78 kB, <code>unicode-range</code> = same flagi, pobierany dopiero, gdy flaga jest na ekranie). macOS, iOS, Android i Firefox niczego nie pobierają.', n: 'Twoja klasa z font-family na [d2-country-picker-flag] wygrywa i Windows znów pokaże litery — wstaw „Twemoji Country Flags” na początek tej reguły. CSP blokujące fonty z cdn.jsdelivr.net = litery jak przed v1.11.4.' }
+    ],
+
+    api: {
+      desc: 'Pola z atrybutami startują same. JS jest potrzebny tylko do sterowania z kodu. Opcje <code>create()</code> mają te same nazwy co atrybuty i je nadpisują. Klasy do stylowania (CSS modułu bez <code>!important</code>): <code>.d2-cp</code>, <code>.d2-cp-toggle</code>, <code>.d2-cp-flag</code>, <code>.d2-cp-dial</code>, <code>.d2-cp-caret</code>, <code>.d2-cp-list</code>, <code>.d2-cp-search</code>, <code>.d2-cp-option</code>.',
+      code: "var picker = digi2.countryPicker.get('#PHONE');  // albo .create(input, opcje)\ndigi2.countryPicker.create('#PHONE', {\n  country: 'PL',          // kraj na starcie\n  preferred: ['PL', 'DE'],\n  only: [],               // pusta = wszystkie\n  search: true,\n  flags: true,            // false = bez flag i bez czcionki na Windows\n  lang: 'pl',             // pl | en, puste = wykryj (URL, html lang)\n  layout: 'inside',       // inside | split\n  mode: 'prefix',         // prefix | separate\n  dialField: '',          // separate: nazwa pola, domyślnie PHONE_DIAL\n  countryField: ''        // domyślnie PHONE_COUNTRY\n});\npicker.setCountry('DE');\npicker.getCountry();      // { iso: 'DE', dial: '49', name: 'Niemcy' }\npicker.getNumber();       // normalizuje i zwraca wartość pola\ndigi2.countryPicker.countries('en');  // 245 krajów: { iso, dial, name, pl, en }\ndigi2.countryPicker.language();       // język wykryty na stronie\ndigi2.countryPicker.list();           // obsłużone pola\ndigi2.countryPicker.init();           // przeskanuj DOM teraz\ndigi2.countryPicker.destroy('#PHONE');\n\ndigi2.on('country-picker:change', function (e) { /* e.iso, e.dial, e.name, e.input */ });\ndigi2.on('country-picker:open', function (e) { /* e.iso, e.input */ });"
+    },
+
+    examples: [
+      { title: 'Split: przycisk kraju wyglądający jak pole obok', desc: 'W układzie <code>split</code> przycisk jest osobnym elementem — nadpisz <code>.d2-cp-toggle</code>, żeby pasował do Twojego inputa.', code: '.d2-cp-split .d2-cp-toggle {\n  border: 1px solid var(--white-smoke);\n  border-radius: 8px;\n  min-height: 50px;\n  padding-inline: 1rem;\n}' },
+      { title: 'Zamiana intl-tel-input', desc: 'Najpierw usuń jego skrypt, CSS i kod inicjujący — dwa pickery na jednym polu to dwie flagi i dwa paddingi. Zostawiony <code>pattern="\\d+"</code> pasuje tylko do trybu <code>separate</code>; w trybie prefix poluzuj go, np. do <code>[\\d+\\s]+</code>.', code: '<input type="tel" name="PHONE" pattern="\\d+"\n       d2-country-picker="PL" d2-country-picker-mode="separate">' }
+    ]
+  };
+
   /* ════════════════════════ COOKIES ════════════════════════ */
   M.cookies = {
     name: 'Cookies — helpery',

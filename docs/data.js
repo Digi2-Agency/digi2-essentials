@@ -6,7 +6,7 @@ window.D2DOCS = {
   categories: [
     { label: 'Start', items: ['start', 'loader'] },
     { label: 'Listy CMS', items: ['cms', 'filter'] },
-    { label: 'Formularze', items: ['forms'] },
+    { label: 'Formularze', items: ['forms', 'countrypicker'] },
     { label: 'Komponenty UI', items: ['popups', 'toasts', 'tabs', 'dropdowns', 'sliders', 'lightbox', 'interactions', 'floatingdock'] },
     { label: 'Efekty', items: ['animate', 'scroll', 'lazy'] },
     { label: 'Narzędzia', items: ['format', 'countdown', 'copy', 'cookies'] },
@@ -26,6 +26,7 @@ window.D2DOCS = {
     builderFlags: [
       { key: 'cms', label: 'CMS — listy', flag: 'd2-cms' },
       { key: 'forms', label: 'Formularze', flag: 'd2-forms' },
+      { key: 'countrypicker', label: 'Kraj przy telefonie', flag: 'd2-country-picker' },
       { key: 'popups', label: 'Popupy', flag: 'd2-popups' },
       { key: 'tabs', label: 'Taby / akordeony', flag: 'd2-tabs' },
       { key: 'dropdowns', label: 'Dropdowny', flag: 'd2-dropdowns' },
