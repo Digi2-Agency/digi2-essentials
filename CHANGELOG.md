@@ -16,7 +16,7 @@ każdy nieznany atrybut `d2-x` na moduł `x`. Strona z `d2-ma` wskazuje
 przypiętą wersję (`@v1.9.0-ma.N/dist/...`). Strony bez `d2-ma` na `@latest` nowych
 tagów `ma.N` nie dostają — także zmian w `popups.js` z tej linii.
 
-## v1.11.4 — poprawka country-picker: flagi na Windows; wydanie czeka na decyzję Piotra; dotyczy tylko stron z `d2-country-picker`
+## v1.11.4 — wersja stabilna (`@latest`), po poleceniu Piotra 2026-11-20 („wydaj v1.11.4”); poprawka country-picker: flagi na Windows; dotyczy tylko stron z `d2-country-picker`
 
 Zgłoszenie sesji webflow 2026-11-20 (wielka16, /kontakt i popup „Zapytaj
 doradcę”): Chrome i Edge na Windows pokazywały „PL”, „UA”, „GB” zamiast flag,
